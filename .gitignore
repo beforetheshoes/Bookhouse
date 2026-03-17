@@ -31,3 +31,4 @@ pnpm-debug.log*
 
 # TanStack generated
 **/routeTree.gen.ts
+AGENTS.md
