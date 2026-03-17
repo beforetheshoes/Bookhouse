@@ -1,13 +1,14 @@
 {
   "compilerOptions": {
     "strict": true,
-    "target": "ES2024",
+    "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "lib": ["ES2024"],
+    "lib": ["ESNext"],
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
+    "jsx": "react-jsx",
     "resolveJsonModule": true,
     "isolatedModules": true,
     "declaration": true,
