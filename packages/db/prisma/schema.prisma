@@ -158,6 +158,7 @@ model FileAsset {
   mtime              DateTime?
   partialHash        String?
   fullHash           String?
+  metadata           Json?
   mediaKind          MediaKind
   availabilityStatus AvailabilityStatus @default(PRESENT)
   lastSeenAt         DateTime?

@@ -1,12 +1,13 @@
 import { pathToFileURL } from "node:url";
 import IORedis from "ioredis";
 import { Job, Worker } from "bullmq";
-import { hashFileAsset, scanLibraryRoot } from "@bookhouse/ingest";
+import { hashFileAsset, parseFileAssetMetadata, scanLibraryRoot } from "@bookhouse/ingest";
 import {
   LIBRARY_JOB_NAMES,
   type HashFileAssetJobPayload,
   type LibraryJobName,
   type LibraryJobPayload,
+  type ParseFileAssetMetadataJobPayload,
   QUEUES,
   type ScanLibraryRootJobPayload,
   getQueueConnectionConfig,
@@ -14,12 +15,14 @@ import {
 
 export interface LibraryWorkerHandlers {
   hashFileAsset: typeof hashFileAsset;
+  parseFileAssetMetadata: typeof parseFileAssetMetadata;
   scanLibraryRoot: typeof scanLibraryRoot;
 }
 
 export function createLibraryWorkerProcessor(
   handlers: LibraryWorkerHandlers = {
     hashFileAsset,
+    parseFileAssetMetadata,
     scanLibraryRoot,
   },
 ) {
@@ -31,6 +34,8 @@ export function createLibraryWorkerProcessor(
         return handlers.scanLibraryRoot(job.data as ScanLibraryRootJobPayload);
       case LIBRARY_JOB_NAMES.HASH_FILE_ASSET:
         return handlers.hashFileAsset(job.data as HashFileAssetJobPayload);
+      case LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA:
+        return handlers.parseFileAssetMetadata(job.data as ParseFileAssetMetadataJobPayload);
       default:
         throw new Error(`Unsupported library job: ${job.name}`);
     }
@@ -40,6 +45,7 @@ export function createLibraryWorkerProcessor(
 export function createLibraryWorker(
   handlers: LibraryWorkerHandlers = {
     hashFileAsset,
+    parseFileAssetMetadata,
     scanLibraryRoot,
   },
 ) {

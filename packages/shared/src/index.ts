@@ -5,6 +5,7 @@ export const QUEUES = {
 export const LIBRARY_JOB_NAMES = {
   SCAN_LIBRARY_ROOT: "scan-library-root",
   HASH_FILE_ASSET: "hash-file-asset",
+  PARSE_FILE_ASSET_METADATA: "parse-file-asset-metadata",
 } as const;
 
 export interface ScanLibraryRootJobPayload {
@@ -16,9 +17,14 @@ export interface HashFileAssetJobPayload {
   forceFullHash?: boolean;
 }
 
+export interface ParseFileAssetMetadataJobPayload {
+  fileAssetId: string;
+}
+
 export interface LibraryJobPayloads {
   [LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT]: ScanLibraryRootJobPayload;
   [LIBRARY_JOB_NAMES.HASH_FILE_ASSET]: HashFileAssetJobPayload;
+  [LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA]: ParseFileAssetMetadataJobPayload;
 }
 
 export type LibraryJobName = keyof LibraryJobPayloads;

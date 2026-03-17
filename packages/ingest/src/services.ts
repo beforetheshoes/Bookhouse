@@ -15,11 +15,24 @@ import {
   type HashFileAssetJobPayload,
   type LibraryJobName,
   type LibraryJobPayload,
+  type ParseFileAssetMetadataJobPayload,
   QUEUES,
   getQueueConnectionConfig,
 } from "@bookhouse/shared";
 import { classifyMediaKind, getFileExtension, normalizeRelativePath, normalizeRootPath } from "./classification";
+import { parseEpubMetadata, type ParsedEpubMetadataRaw } from "./epub";
 import { hashFileContents } from "./hashing";
+import { normalizeBookMetadata, type NormalizedBookMetadata } from "./metadata";
+
+export interface ParsedFileAssetMetadata {
+  normalized?: NormalizedBookMetadata;
+  parsedAt: string;
+  parserVersion: number;
+  raw?: ParsedEpubMetadataRaw;
+  source: "epub";
+  status: "parsed" | "unparseable";
+  warnings: string[];
+}
 
 type FileAssetRecord = Pick<
   FileAsset,
@@ -27,7 +40,9 @@ type FileAssetRecord = Pick<
   | "availabilityStatus"
   | "fullHash"
   | "id"
+  | "mediaKind"
   | "mtime"
+  | "metadata"
   | "partialHash"
   | "sizeBytes"
 >;
@@ -43,6 +58,7 @@ interface FileAssetCreateInput {
   lastSeenAt: Date;
   libraryRootId: string;
   mediaKind: MediaKind;
+  metadata?: FileAsset["metadata"];
   mtime: Date;
   relativePath: string;
   sizeBytes: bigint;
@@ -99,6 +115,7 @@ export interface IngestDependencies {
   listDirectory: typeof readdir;
   readStats: typeof lstat;
   hashFile: typeof hashFileContents;
+  parseEpub: typeof parseEpubMetadata;
 }
 
 export interface ScanLibraryRootInput {
@@ -123,6 +140,19 @@ export interface HashFileAssetResult {
   fullHash?: string;
   partialHash?: string;
 }
+
+export interface ParseFileAssetMetadataInput extends ParseFileAssetMetadataJobPayload {
+  now?: Date;
+}
+
+export interface ParseFileAssetMetadataResult {
+  availabilityStatus: AvailabilityStatus;
+  fileAssetId: string;
+  metadata?: ParsedFileAssetMetadata;
+  skipped: boolean;
+}
+
+const EPUB_PARSER_VERSION = 1;
 
 let queueSingleton:
   | {
@@ -239,6 +269,7 @@ export function createIngestServices(
   const listDirectory = dependencies.listDirectory ?? readdir;
   const readStats = dependencies.readStats ?? lstat;
   const hashFile = dependencies.hashFile ?? hashFileContents;
+  const parseEpub = dependencies.parseEpub ?? parseEpubMetadata;
   const enqueueJob = dependencies.enqueueLibraryJob ?? enqueueLibraryJob;
 
   async function scanLibraryRoot(input: ScanLibraryRootInput): Promise<ScanLibraryRootResult> {
@@ -282,6 +313,7 @@ export function createIngestServices(
           lastSeenAt: now,
           libraryRootId: libraryRoot.id,
           mediaKind: classifyMediaKind(absolutePath),
+          metadata: null,
           mtime: fileStats.mtime,
           relativePath,
           sizeBytes: BigInt(fileStats.size),
@@ -368,6 +400,12 @@ export function createIngestServices(
         },
       });
 
+      if (fileAsset.mediaKind === MediaKind.EPUB) {
+        await enqueueJob(LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA, {
+          fileAssetId: fileAsset.id,
+        });
+      }
+
       return {
         availabilityStatus: AvailabilityStatus.PRESENT,
         fileAssetId: fileAsset.id,
@@ -402,8 +440,108 @@ export function createIngestServices(
     }
   }
 
+  async function parseFileAssetMetadata(
+    input: ParseFileAssetMetadataInput,
+  ): Promise<ParseFileAssetMetadataResult> {
+    const now = input.now ?? new Date();
+    const fileAsset = await ingestDb.fileAsset.findUnique({
+      where: { id: input.fileAssetId },
+    });
+
+    if (fileAsset === null) {
+      throw new Error(`File asset "${input.fileAssetId}" was not found`);
+    }
+
+    if (fileAsset.mediaKind !== MediaKind.EPUB) {
+      return {
+        availabilityStatus: fileAsset.availabilityStatus,
+        fileAssetId: fileAsset.id,
+        skipped: true,
+      };
+    }
+
+    try {
+      const raw = await parseEpub(fileAsset.absolutePath);
+      const metadata: ParsedFileAssetMetadata = {
+        normalized: normalizeBookMetadata(raw),
+        parsedAt: now.toISOString(),
+        parserVersion: EPUB_PARSER_VERSION,
+        raw,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      };
+
+      await ingestDb.fileAsset.update({
+        where: { id: fileAsset.id },
+        data: {
+          availabilityStatus: AvailabilityStatus.PRESENT,
+          lastSeenAt: now,
+          metadata: metadata as unknown as FileAsset["metadata"],
+        },
+      });
+
+      return {
+        availabilityStatus: AvailabilityStatus.PRESENT,
+        fileAssetId: fileAsset.id,
+        metadata,
+        skipped: false,
+      };
+    } catch (error) {
+      const errorCode =
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        typeof error.code === "string"
+          ? error.code
+          : undefined;
+
+      if (errorCode === "ENOENT") {
+        await ingestDb.fileAsset.update({
+          where: { id: fileAsset.id },
+          data: {
+            availabilityStatus: AvailabilityStatus.MISSING,
+            lastSeenAt: now,
+          },
+        });
+
+        return {
+          availabilityStatus: AvailabilityStatus.MISSING,
+          fileAssetId: fileAsset.id,
+          skipped: false,
+        };
+      }
+
+      const warning = error instanceof Error ? error.message : "Unknown EPUB parsing error";
+      const metadata: ParsedFileAssetMetadata = {
+        parsedAt: now.toISOString(),
+        parserVersion: EPUB_PARSER_VERSION,
+        source: "epub",
+        status: "unparseable",
+        warnings: [warning],
+      };
+
+      await ingestDb.fileAsset.update({
+        where: { id: fileAsset.id },
+        data: {
+          availabilityStatus: AvailabilityStatus.PRESENT,
+          lastSeenAt: now,
+          metadata: metadata as unknown as FileAsset["metadata"],
+        },
+      });
+
+      return {
+        availabilityStatus: AvailabilityStatus.PRESENT,
+        fileAssetId: fileAsset.id,
+        metadata,
+        skipped: false,
+      };
+    }
+  }
+
   return {
     hashFileAsset,
+    parseFileAssetMetadata,
     scanLibraryRoot,
   };
 }
@@ -412,4 +550,8 @@ const services = createIngestServices();
 
 export const scanLibraryRoot = services.scanLibraryRoot;
 export const hashFileAsset = services.hashFileAsset;
+export const parseFileAssetMetadata = services.parseFileAssetMetadata;
 export { classifyMediaKind, getFileExtension, hashFileContents, isFileChanged, normalizeRelativePath, normalizeRootPath, walkRegularFiles };
+export { parseEpubMetadata } from "./epub";
+export { createIdentifierMap, normalizeBookMetadata } from "./metadata";
+export type { NormalizedBookMetadata, ParsedEpubMetadataRaw };

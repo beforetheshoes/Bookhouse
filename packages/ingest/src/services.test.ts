@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, symlink, utimes, writeFile } from "node:fs/promises
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AvailabilityStatus, MediaKind } from "@bookhouse/domain";
+import { AvailabilityStatus, type FileAsset, MediaKind } from "@bookhouse/domain";
 import { LIBRARY_JOB_NAMES } from "@bookhouse/shared";
 import {
   createIngestServices,
@@ -25,6 +25,7 @@ interface TestFileAsset {
   lastSeenAt: Date | null;
   libraryRootId: string;
   mediaKind: MediaKind;
+  metadata: FileAsset["metadata"];
   mtime: Date;
   partialHash: string | null;
   relativePath: string;
@@ -97,6 +98,7 @@ function createTestDb(state: TestState): IngestDb {
             ...create,
             fullHash: null,
             id: `file-${sequence}`,
+            metadata: create.metadata ?? null,
             partialHash: null,
           };
           state.fileAssets.set(created.absolutePath, created);
@@ -129,6 +131,8 @@ describe("ingest services", () => {
       availabilityStatus: AvailabilityStatus.PRESENT,
       fullHash: "full",
       id: "file-1",
+      mediaKind: MediaKind.EPUB,
+      metadata: null,
       mtime: new Date("2024-01-01T00:00:00.000Z"),
       partialHash: "partial",
       sizeBytes: 10n,
@@ -455,6 +459,7 @@ describe("ingest services", () => {
 
     expect(services).toMatchObject({
       hashFileAsset: expect.any(Function),
+      parseFileAssetMetadata: expect.any(Function),
       scanLibraryRoot: expect.any(Function),
     });
   });
@@ -508,6 +513,7 @@ describe("ingest services", () => {
       lastSeenAt: new Date("2024-01-01T00:00:00.000Z"),
       libraryRootId: "root-1",
       mediaKind: MediaKind.EPUB,
+      metadata: null,
       mtime: new Date("2024-01-01T00:00:00.000Z"),
       partialHash: "existing-partial",
       relativePath: "book.epub",
@@ -518,6 +524,7 @@ describe("ingest services", () => {
 
     const services = createIngestServices({
       db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(async () => undefined),
       hashFile: vi.fn(async () => ({
         fullHash: "next-full",
         mtime: new Date("2025-01-01T00:00:00.000Z"),
@@ -546,6 +553,7 @@ describe("ingest services", () => {
 
     const missingServices = createIngestServices({
       db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(async () => undefined),
       hashFile: vi.fn(async () => {
         const error = new Error("missing") as NodeJS.ErrnoException;
         error.code = "ENOENT";
@@ -578,6 +586,7 @@ describe("ingest services", () => {
     };
     const services = createIngestServices({
       db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(async () => undefined),
     });
 
     await expect(
@@ -595,6 +604,7 @@ describe("ingest services", () => {
       lastSeenAt: null,
       libraryRootId: "root-1",
       mediaKind: MediaKind.EPUB,
+      metadata: null,
       mtime: new Date("2024-01-01T00:00:00.000Z"),
       partialHash: null,
       relativePath: "book.epub",
@@ -606,6 +616,7 @@ describe("ingest services", () => {
     const hashError = new Error("read failed");
     const failingServices = createIngestServices({
       db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(async () => undefined),
       hashFile: vi.fn(async () => {
         throw hashError;
       }),
@@ -614,5 +625,362 @@ describe("ingest services", () => {
     await expect(
       failingServices.hashFileAsset({ fileAssetId: "file-1" }),
     ).rejects.toBe(hashError);
+  });
+
+  it("enqueues metadata parsing after hashing EPUB assets", async () => {
+    const state: TestState = {
+      fileAssets: new Map(),
+      fileAssetsById: new Map(),
+      lastScannedAt: null,
+      rootPath: "/tmp/root",
+    };
+    const existing: TestFileAsset = {
+      absolutePath: "/tmp/root/book.epub",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.epub",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "epub",
+      fullHash: null,
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.EPUB,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: null,
+      relativePath: "book.epub",
+      sizeBytes: 4n,
+    };
+    state.fileAssets.set(existing.absolutePath, existing);
+    state.fileAssetsById.set(existing.id, existing);
+    const enqueueLibraryJob = vi.fn(async () => undefined);
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+      hashFile: vi.fn(async () => ({
+        fullHash: "next-full",
+        mtime: new Date("2025-01-01T00:00:00.000Z"),
+        partialHash: "next-partial",
+        sizeBytes: 12n,
+      })),
+    });
+
+    await services.hashFileAsset({ fileAssetId: "file-1" });
+
+    expect(enqueueLibraryJob).toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA,
+      { fileAssetId: "file-1" },
+    );
+  });
+
+  it("does not enqueue metadata parsing after hashing non-EPUB assets", async () => {
+    const state: TestState = {
+      fileAssets: new Map(),
+      fileAssetsById: new Map(),
+      lastScannedAt: null,
+      rootPath: "/tmp/root",
+    };
+    const existing: TestFileAsset = {
+      absolutePath: "/tmp/root/cover.jpg",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "cover.jpg",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "jpg",
+      fullHash: null,
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.COVER,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: null,
+      relativePath: "cover.jpg",
+      sizeBytes: 4n,
+    };
+    state.fileAssets.set(existing.absolutePath, existing);
+    state.fileAssetsById.set(existing.id, existing);
+    const enqueueLibraryJob = vi.fn(async () => undefined);
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+      hashFile: vi.fn(async () => ({
+        fullHash: "next-full",
+        mtime: new Date("2025-01-01T00:00:00.000Z"),
+        partialHash: "next-partial",
+        sizeBytes: 12n,
+      })),
+    });
+
+    await services.hashFileAsset({ fileAssetId: "file-1" });
+
+    expect(enqueueLibraryJob).not.toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA,
+      { fileAssetId: "file-1" },
+    );
+  });
+
+  it("parses EPUB metadata and persists normalized results", async () => {
+    const state: TestState = {
+      fileAssets: new Map(),
+      fileAssetsById: new Map(),
+      lastScannedAt: null,
+      rootPath: "/tmp/root",
+    };
+    const existing: TestFileAsset = {
+      absolutePath: "/tmp/root/book.epub",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.epub",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "epub",
+      fullHash: "full",
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.EPUB,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "partial",
+      relativePath: "book.epub",
+      sizeBytes: 4n,
+    };
+    state.fileAssets.set(existing.absolutePath, existing);
+    state.fileAssetsById.set(existing.id, existing);
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(async () => undefined),
+      parseEpub: vi.fn(async () => ({
+        authors: ["  N. K. Jemisin  ", "N. K. Jemisin"],
+        identifiers: [
+          { scheme: "ISBN-13", value: "978-0-316-49883-4" },
+          { value: "B012345678" },
+        ],
+        title: "  The Fifth Season ",
+      })),
+    });
+
+    const result = await services.parseFileAssetMetadata({
+      fileAssetId: "file-1",
+      now: new Date("2025-01-01T03:00:00.000Z"),
+    });
+
+    expect(result).toMatchObject({
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      fileAssetId: "file-1",
+      skipped: false,
+    });
+    expect(state.fileAssetsById.get("file-1")?.metadata).toMatchObject({
+      normalized: {
+        authors: ["N. K. Jemisin"],
+        identifiers: {
+          asin: "B012345678",
+          isbn13: "9780316498834",
+          unknown: [],
+        },
+        title: "The Fifth Season",
+      },
+      raw: {
+        authors: ["  N. K. Jemisin  ", "N. K. Jemisin"],
+      },
+      source: "epub",
+      status: "parsed",
+      warnings: [],
+    });
+  });
+
+  it("skips metadata parsing for non-EPUB assets", async () => {
+    const state: TestState = {
+      fileAssets: new Map(),
+      fileAssetsById: new Map(),
+      lastScannedAt: null,
+      rootPath: "/tmp/root",
+    };
+    const existing: TestFileAsset = {
+      absolutePath: "/tmp/root/cover.jpg",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "cover.jpg",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "jpg",
+      fullHash: "full",
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.COVER,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "partial",
+      relativePath: "cover.jpg",
+      sizeBytes: 4n,
+    };
+    state.fileAssets.set(existing.absolutePath, existing);
+    state.fileAssetsById.set(existing.id, existing);
+    const parseEpub = vi.fn();
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(async () => undefined),
+      parseEpub,
+    });
+
+    await expect(
+      services.parseFileAssetMetadata({ fileAssetId: "file-1" }),
+    ).resolves.toEqual({
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      fileAssetId: "file-1",
+      skipped: true,
+    });
+    expect(parseEpub).not.toHaveBeenCalled();
+  });
+
+  it("marks EPUB metadata as unparseable without failing the job", async () => {
+    const state: TestState = {
+      fileAssets: new Map(),
+      fileAssetsById: new Map(),
+      lastScannedAt: null,
+      rootPath: "/tmp/root",
+    };
+    const existing: TestFileAsset = {
+      absolutePath: "/tmp/root/book.epub",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.epub",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "epub",
+      fullHash: "full",
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.EPUB,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "partial",
+      relativePath: "book.epub",
+      sizeBytes: 4n,
+    };
+    state.fileAssets.set(existing.absolutePath, existing);
+    state.fileAssetsById.set(existing.id, existing);
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(async () => undefined),
+      parseEpub: vi.fn(async () => {
+        throw new Error("bad epub");
+      }),
+    });
+
+    const result = await services.parseFileAssetMetadata({ fileAssetId: "file-1" });
+
+    expect(result).toMatchObject({
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      fileAssetId: "file-1",
+      skipped: false,
+    });
+    expect(state.fileAssetsById.get("file-1")?.metadata).toMatchObject({
+      source: "epub",
+      status: "unparseable",
+      warnings: ["bad epub"],
+    });
+  });
+
+  it("uses a fallback warning for non-Error EPUB parse failures", async () => {
+    const state: TestState = {
+      fileAssets: new Map(),
+      fileAssetsById: new Map(),
+      lastScannedAt: null,
+      rootPath: "/tmp/root",
+    };
+    const existing: TestFileAsset = {
+      absolutePath: "/tmp/root/book.epub",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.epub",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "epub",
+      fullHash: "full",
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.EPUB,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "partial",
+      relativePath: "book.epub",
+      sizeBytes: 4n,
+    };
+    state.fileAssets.set(existing.absolutePath, existing);
+    state.fileAssetsById.set(existing.id, existing);
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(async () => undefined),
+      parseEpub: vi.fn(async () => {
+        throw "bad-value";
+      }),
+    });
+
+    await services.parseFileAssetMetadata({ fileAssetId: "file-1" });
+
+    expect(state.fileAssetsById.get("file-1")?.metadata).toMatchObject({
+      warnings: ["Unknown EPUB parsing error"],
+    });
+  });
+
+  it("marks missing EPUBs during metadata parsing when the file disappears", async () => {
+    const state: TestState = {
+      fileAssets: new Map(),
+      fileAssetsById: new Map(),
+      lastScannedAt: null,
+      rootPath: "/tmp/root",
+    };
+    const existing: TestFileAsset = {
+      absolutePath: "/tmp/root/book.epub",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.epub",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "epub",
+      fullHash: "full",
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.EPUB,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "partial",
+      relativePath: "book.epub",
+      sizeBytes: 4n,
+    };
+    state.fileAssets.set(existing.absolutePath, existing);
+    state.fileAssetsById.set(existing.id, existing);
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(async () => undefined),
+      parseEpub: vi.fn(async () => {
+        const error = new Error("missing") as NodeJS.ErrnoException;
+        error.code = "ENOENT";
+        throw error;
+      }),
+    });
+
+    await expect(
+      services.parseFileAssetMetadata({ fileAssetId: "file-1" }),
+    ).resolves.toEqual({
+      availabilityStatus: AvailabilityStatus.MISSING,
+      fileAssetId: "file-1",
+      skipped: false,
+    });
+    expect(state.fileAssetsById.get("file-1")?.availabilityStatus).toBe(
+      AvailabilityStatus.MISSING,
+    );
+  });
+
+  it("throws when metadata parsing is requested for an unknown file asset", async () => {
+    const services = createIngestServices({
+      db: createTestDb({
+        fileAssets: new Map(),
+        fileAssetsById: new Map(),
+        lastScannedAt: null,
+        rootPath: "/tmp/root",
+      }),
+      enqueueLibraryJob: vi.fn(async () => undefined),
+    });
+
+    await expect(
+      services.parseFileAssetMetadata({ fileAssetId: "missing-file" }),
+    ).rejects.toThrow('File asset "missing-file" was not found');
   });
 });
