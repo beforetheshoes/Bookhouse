@@ -1,0 +1,27 @@
+{
+  "name": "@bookhouse/library-worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsup src/index.ts --format esm --dts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bookhouse/db": "workspace:*",
+    "@bookhouse/domain": "workspace:*",
+    "@bookhouse/ingest": "workspace:*",
+    "@bookhouse/shared": "workspace:*",
+    "bullmq": "^5.71.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "tsup": "^8.5.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.output/
+*.tsbuildinfo
+
+# Prisma
+packages/db/prisma/migrations/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Spec
+Spec.md
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# TanStack generated
+**/routeTree.gen.ts

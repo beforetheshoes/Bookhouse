@@ -1,0 +1,354 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum LibraryRootKind {
+  EBOOKS
+  AUDIOBOOKS
+  MIXED
+}
+
+enum ScanMode {
+  FULL
+  INCREMENTAL
+}
+
+enum MediaKind {
+  EPUB
+  PDF
+  CBZ
+  AUDIO
+  COVER
+  SIDECAR
+  OTHER
+}
+
+enum AvailabilityStatus {
+  PRESENT
+  MISSING
+  IGNORED
+}
+
+enum FormatFamily {
+  EBOOK
+  AUDIOBOOK
+}
+
+enum ContributorRole {
+  AUTHOR
+  NARRATOR
+  EDITOR
+  TRANSLATOR
+  ILLUSTRATOR
+  OTHER
+}
+
+enum EditionFileRole {
+  PRIMARY
+  ALTERNATE_FORMAT
+  SUPPLEMENT
+  AUDIO_TRACK
+}
+
+enum CollectionKind {
+  MANUAL
+}
+
+enum ProgressKind {
+  EBOOK
+  AUDIO
+  READALOUD
+}
+
+enum DuplicateReason {
+  SAME_HASH
+  SAME_ISBN
+  SIMILAR_TITLE_AUTHOR
+  SAME_PATH_PATTERN
+}
+
+enum ReviewStatus {
+  PENDING
+  IGNORED
+  CONFIRMED
+  MERGED
+}
+
+enum ImportJobKind {
+  SCAN_ROOT
+  HASH_FILE
+  PARSE_FILE
+  REFRESH_METADATA
+  DETECT_DUPLICATES
+  MATCH_AUDIO
+}
+
+enum ImportJobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+model User {
+  id              String            @id @default(cuid())
+  email           String?           @unique
+  name            String?
+  image           String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  identities      UserIdentity[]
+  roles           UserRole[]
+  collections     Collection[]
+  readingProgress ReadingProgress[]
+}
+
+model UserIdentity {
+  id                String   @id @default(cuid())
+  userId            String
+  provider          String
+  providerAccountId String
+  metadata          Json?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model UserRole {
+  id     String @id @default(cuid())
+  userId String
+  role   String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, role])
+}
+
+model LibraryRoot {
+  id            String            @id @default(cuid())
+  name          String
+  path          String            @unique
+  kind          LibraryRootKind
+  scanMode      ScanMode          @default(INCREMENTAL)
+  isEnabled     Boolean           @default(true)
+  lastScannedAt DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  fileAssets FileAsset[]
+  importJobs ImportJob[]
+}
+
+model FileAsset {
+  id                 String             @id @default(cuid())
+  libraryRootId      String
+  absolutePath       String             @unique
+  relativePath       String
+  basename           String
+  extension          String?
+  mimeType           String?
+  sizeBytes          BigInt?
+  ctime              DateTime?
+  mtime              DateTime?
+  partialHash        String?
+  fullHash           String?
+  mediaKind          MediaKind
+  availabilityStatus AvailabilityStatus @default(PRESENT)
+  lastSeenAt         DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  libraryRoot LibraryRoot @relation(fields: [libraryRootId], references: [id], onDelete: Cascade)
+  editionFiles EditionFile[]
+
+  duplicateLeft  DuplicateCandidate[] @relation("DuplicateLeftFile")
+  duplicateRight DuplicateCandidate[] @relation("DuplicateRightFile")
+
+  @@index([libraryRootId])
+  @@index([partialHash])
+  @@index([fullHash])
+}
+
+model Work {
+  id             String   @id @default(cuid())
+  titleCanonical String
+  titleDisplay   String
+  sortTitle      String?
+  description    String?
+  language       String?
+  seriesId       String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  series   Series?   @relation(fields: [seriesId], references: [id])
+  editions Edition[]
+
+  @@index([titleCanonical])
+}
+
+model Edition {
+  id           String       @id @default(cuid())
+  workId       String
+  formatFamily FormatFamily
+  publisher    String?
+  publishedAt  DateTime?
+  isbn13       String?
+  isbn10       String?
+  asin         String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  work            Work                 @relation(fields: [workId], references: [id], onDelete: Cascade)
+  editionFiles    EditionFile[]
+  contributors    EditionContributor[]
+  collections     CollectionItem[]
+  readingProgress ReadingProgress[]
+  externalLinks   ExternalLink[]
+
+  duplicateLeft  DuplicateCandidate[] @relation("DuplicateLeftEdition")
+  duplicateRight DuplicateCandidate[] @relation("DuplicateRightEdition")
+
+  ebookLinks AudioLink[] @relation("EbookEdition")
+  audioLinks AudioLink[] @relation("AudioEdition")
+
+  @@index([workId])
+  @@index([isbn13])
+}
+
+model EditionFile {
+  id          String          @id @default(cuid())
+  editionId   String
+  fileAssetId String
+  role        EditionFileRole @default(PRIMARY)
+
+  edition   Edition   @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  fileAsset FileAsset @relation(fields: [fileAssetId], references: [id], onDelete: Cascade)
+
+  @@unique([editionId, fileAssetId])
+}
+
+model Contributor {
+  id            String   @id @default(cuid())
+  nameDisplay   String
+  nameCanonical String
+  createdAt     DateTime @default(now())
+
+  editions EditionContributor[]
+
+  @@index([nameCanonical])
+}
+
+model EditionContributor {
+  id            String          @id @default(cuid())
+  editionId     String
+  contributorId String
+  role          ContributorRole
+
+  edition     Edition     @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  contributor Contributor @relation(fields: [contributorId], references: [id], onDelete: Cascade)
+
+  @@unique([editionId, contributorId, role])
+}
+
+model Series {
+  id   String @id @default(cuid())
+  name String
+
+  works Work[]
+}
+
+model Collection {
+  id          String         @id @default(cuid())
+  ownerUserId String?
+  name        String
+  kind        CollectionKind @default(MANUAL)
+
+  ownerUser User? @relation(fields: [ownerUserId], references: [id])
+  items     CollectionItem[]
+}
+
+model CollectionItem {
+  id           String @id @default(cuid())
+  collectionId String
+  editionId    String
+
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  edition    Edition    @relation(fields: [editionId], references: [id], onDelete: Cascade)
+
+  @@unique([collectionId, editionId])
+}
+
+model ReadingProgress {
+  id           String       @id @default(cuid())
+  userId       String
+  editionId    String
+  progressKind ProgressKind
+  locator      Json
+  percent      Float?
+  source       String?
+  updatedAt    DateTime     @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  edition Edition @relation(fields: [editionId], references: [id], onDelete: Cascade)
+
+  @@index([userId, editionId])
+}
+
+model AudioLink {
+  id             String       @id @default(cuid())
+  ebookEditionId String
+  audioEditionId String
+  matchType      String
+  confidence     Float?
+  reviewStatus   ReviewStatus @default(PENDING)
+
+  ebookEdition Edition @relation("EbookEdition", fields: [ebookEditionId], references: [id], onDelete: Cascade)
+  audioEdition Edition @relation("AudioEdition", fields: [audioEditionId], references: [id], onDelete: Cascade)
+
+  @@unique([ebookEditionId, audioEditionId])
+}
+
+model ExternalLink {
+  id         String @id @default(cuid())
+  editionId  String
+  provider   String
+  externalId String
+  metadata   Json?
+
+  edition Edition @relation(fields: [editionId], references: [id], onDelete: Cascade)
+
+  @@unique([editionId, provider, externalId])
+}
+
+model DuplicateCandidate {
+  id               String          @id @default(cuid())
+  leftEditionId    String?
+  rightEditionId   String?
+  leftFileAssetId  String?
+  rightFileAssetId String?
+  reason           DuplicateReason
+  confidence       Float?
+  status           ReviewStatus    @default(PENDING)
+
+  leftEdition    Edition?  @relation("DuplicateLeftEdition", fields: [leftEditionId], references: [id])
+  rightEdition   Edition?  @relation("DuplicateRightEdition", fields: [rightEditionId], references: [id])
+  leftFileAsset  FileAsset? @relation("DuplicateLeftFile", fields: [leftFileAssetId], references: [id])
+  rightFileAsset FileAsset? @relation("DuplicateRightFile", fields: [rightFileAssetId], references: [id])
+}
+
+model ImportJob {
+  id            String          @id @default(cuid())
+  libraryRootId String?
+  kind          ImportJobKind
+  status        ImportJobStatus @default(QUEUED)
+  payload       Json?
+  error         String?
+
+  libraryRoot LibraryRoot? @relation(fields: [libraryRootId], references: [id])
+}

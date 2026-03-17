@@ -1,0 +1,51 @@
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bookhouse
+      POSTGRES_PASSWORD: bookhouse
+      POSTGRES_DB: bookhouse
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  queue:
+    image: valkey/valkey:8
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://bookhouse:bookhouse@db:5432/bookhouse
+      QUEUE_URL: redis://queue:6379
+      NODE_ENV: production
+    depends_on:
+      - db
+      - queue
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://bookhouse:bookhouse@db:5432/bookhouse
+      QUEUE_URL: redis://queue:6379
+      NODE_ENV: production
+    depends_on:
+      - db
+      - queue
+
+volumes:
+  pgdata:
