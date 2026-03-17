@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsup",
+    "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit",
     "enqueue-test": "tsx src/enqueue-test.ts"
   },

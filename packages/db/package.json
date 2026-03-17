@@ -8,13 +8,16 @@
   },
   "scripts": {
     "generate": "prisma generate",
+    "lint": "eslint src --ext .ts",
     "migrate": "prisma migrate dev",
     "push": "prisma db push",
     "studio": "prisma studio",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@prisma/client": "^7.5.0"
+    "@prisma/adapter-pg": "^7.5.0",
+    "@prisma/client": "^7.5.0",
+    "pg": "^8.20.0"
   },
   "devDependencies": {
     "prisma": "^7.5.0",

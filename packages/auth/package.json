@@ -7,10 +7,13 @@
     ".": "./src/index.ts"
   },
   "scripts": {
+    "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@bookhouse/db": "workspace:*"
+    "@bookhouse/db": "workspace:*",
+    "openid-client": "^6.8.2",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

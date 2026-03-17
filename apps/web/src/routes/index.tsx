@@ -1,14 +1,39 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import { getCurrentUserServerFn } from "../lib/auth-client";
 
 export const Route = createFileRoute("/")({
+  loader: async ({ serverContext }) => {
+    const authContext = serverContext as
+      | {
+          auth?: {
+            user?: Awaited<ReturnType<typeof getCurrentUserServerFn>>;
+          };
+        }
+      | undefined;
+    const user = authContext?.auth?.user ?? (await getCurrentUserServerFn());
+
+    if (!user) {
+      throw redirect({
+        href: "/auth/login",
+      });
+    }
+
+    return { user };
+  },
   component: Home,
 });
 
-function Home() {
+export function Home() {
+  const { user } = Route.useLoaderData();
+
   return (
     <div>
       <h1>Bookhouse</h1>
-      <p>Welcome to Bookhouse.</p>
+      <p>Signed in as {user.name ?? user.email ?? user.subject}.</p>
+      <p>{user.email ?? "No email available from your provider."}</p>
+      <form action="/auth/logout" method="post">
+        <button type="submit">Log out</button>
+      </form>
     </div>
   );
 }

@@ -10,6 +10,7 @@
     "dev": "pnpm -r --parallel dev",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
+    "test": "vitest run --coverage",
     "typecheck": "pnpm -r typecheck",
     "db:generate": "pnpm --filter @bookhouse/db generate",
     "db:migrate": "pnpm --filter @bookhouse/db migrate",
@@ -19,5 +20,14 @@
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "clean": "pnpm -r exec rm -rf dist node_modules/.cache .output"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.58.2",
+    "@types/node": "^25.5.0",
+    "@vitest/coverage-v8": "^4.1.0",
+    "eslint": "^10.0.3",
+    "typescript-eslint": "^8.57.1",
+    "vitest": "^4.1.0"
   }
 }

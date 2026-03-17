@@ -5,6 +5,15 @@ import tailwindcss from "@tailwindcss/vite";
 import { nitro } from "nitro/vite";
 
 export default defineConfig({
+  build: {
+    rollupOptions: {
+      external: [
+        "@prisma/client",
+        ".prisma/client/default",
+        ".prisma/client/index-browser",
+      ],
+    },
+  },
   server: {
     port: 3000,
   },

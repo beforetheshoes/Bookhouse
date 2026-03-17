@@ -29,6 +29,12 @@ services:
       DATABASE_URL: postgresql://bookhouse:bookhouse@db:5432/bookhouse
       QUEUE_URL: redis://queue:6379
       NODE_ENV: production
+      AUTH_SECRET: ${AUTH_SECRET}
+      AUTH_OIDC_ISSUER: ${AUTH_OIDC_ISSUER}
+      AUTH_OIDC_CLIENT_ID: ${AUTH_OIDC_CLIENT_ID}
+      AUTH_OIDC_CLIENT_SECRET: ${AUTH_OIDC_CLIENT_SECRET}
+      AUTH_OIDC_SCOPES: ${AUTH_OIDC_SCOPES:-openid profile email}
+      APP_URL: ${APP_URL}
     depends_on:
       - db
       - queue

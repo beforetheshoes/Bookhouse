@@ -19,6 +19,9 @@ RUN DATABASE_URL="postgresql://build:build@localhost:5432/build" pnpm db:generat
 RUN pnpm build
 
 FROM base AS web
+COPY --from=build /app/node_modules node_modules
+RUN PRISMA_DIR="$(find /app/node_modules/.pnpm -path '*/node_modules/@prisma' | head -n1)" \
+  && ln -s "$PRISMA_DIR" /app/node_modules/@prisma
 COPY --from=build /app/apps/web/.output .output
 CMD ["node", ".output/server/index.mjs"]
 
