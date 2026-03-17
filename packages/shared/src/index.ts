@@ -2,6 +2,28 @@ export const QUEUES = {
   LIBRARY: "library",
 } as const;
 
+export const LIBRARY_JOB_NAMES = {
+  SCAN_LIBRARY_ROOT: "scan-library-root",
+  HASH_FILE_ASSET: "hash-file-asset",
+} as const;
+
+export interface ScanLibraryRootJobPayload {
+  libraryRootId: string;
+}
+
+export interface HashFileAssetJobPayload {
+  fileAssetId: string;
+  forceFullHash?: boolean;
+}
+
+export interface LibraryJobPayloads {
+  [LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT]: ScanLibraryRootJobPayload;
+  [LIBRARY_JOB_NAMES.HASH_FILE_ASSET]: HashFileAssetJobPayload;
+}
+
+export type LibraryJobName = keyof LibraryJobPayloads;
+export type LibraryJobPayload<TName extends LibraryJobName> = LibraryJobPayloads[TName];
+
 export function getQueueUrl(): string {
   const url = process.env.QUEUE_URL;
   if (!url) {

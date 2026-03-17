@@ -70,6 +70,68 @@ describe("user linking", () => {
     });
   });
 
+  it("preserves existing profile fields when fresh claims omit them", async () => {
+    const updateUser = vi.fn().mockResolvedValue({
+      id: "user-1",
+      email: "reader@example.com",
+      name: "Reader",
+      image: "https://avatar.example.com/original.png",
+    });
+    const db = {
+      $transaction: async (callback: (tx: any) => Promise<unknown>) =>
+        callback({
+          userIdentity: {
+            findUnique: vi.fn().mockResolvedValue({
+              id: "identity-1",
+              userId: "user-1",
+              user: {
+                id: "user-1",
+                email: "reader@example.com",
+                name: "Reader",
+                image: "https://avatar.example.com/original.png",
+              },
+            }),
+            update: vi.fn().mockResolvedValue(undefined),
+          },
+          user: {
+            update: updateUser,
+          },
+        }),
+    };
+
+    await upsertOidcUser({
+      db: db as never,
+      config: {
+        secret: "a".repeat(32),
+        issuer: "https://issuer.example.com",
+        clientId: "bookhouse",
+        clientSecret: "secret",
+        appUrl: "http://localhost:3000",
+        scopes: ["openid"],
+      },
+      claims: {
+        sub: "subject-1",
+        email: null,
+        emailVerified: false,
+        name: null,
+        preferredUsername: null,
+        image: null,
+        raw: { sub: "subject-1" },
+      },
+    });
+
+    expect(updateUser).toHaveBeenCalledWith({
+      where: {
+        id: "user-1",
+      },
+      data: {
+        email: "reader@example.com",
+        name: "Reader",
+        image: "https://avatar.example.com/original.png",
+      },
+    });
+  });
+
   it("links by verified email when no identity exists", async () => {
     const createIdentity = vi.fn().mockResolvedValue(undefined);
     const createUser = vi.fn();
@@ -176,6 +238,57 @@ describe("user linking", () => {
       },
     });
     expect(user.id).toBe("user-3");
+  });
+
+  it("falls back to the email address when a new user has no display name claims", async () => {
+    const createUser = vi.fn().mockResolvedValue({
+      id: "user-4",
+      email: "email-only@example.com",
+      name: "email-only@example.com",
+      image: null,
+    });
+    const db = {
+      $transaction: async (callback: (tx: any) => Promise<unknown>) =>
+        callback({
+          userIdentity: {
+            findUnique: vi.fn().mockResolvedValue(null),
+            create: vi.fn().mockResolvedValue(undefined),
+          },
+          user: {
+            findUnique: vi.fn().mockResolvedValue(null),
+            create: createUser,
+          },
+        }),
+    };
+
+    await upsertOidcUser({
+      db: db as never,
+      config: {
+        secret: "a".repeat(32),
+        issuer: "https://issuer.example.com",
+        clientId: "bookhouse",
+        clientSecret: "secret",
+        appUrl: "http://localhost:3000",
+        scopes: ["openid"],
+      },
+      claims: {
+        sub: "subject-4",
+        email: "email-only@example.com",
+        emailVerified: false,
+        name: null,
+        preferredUsername: null,
+        image: null,
+        raw: { sub: "subject-4" },
+      },
+    });
+
+    expect(createUser).toHaveBeenCalledWith({
+      data: {
+        email: "email-only@example.com",
+        name: "email-only@example.com",
+        image: null,
+      },
+    });
   });
 
   it("resolves an authenticated user from the session", async () => {

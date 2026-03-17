@@ -12,7 +12,10 @@
   },
   "dependencies": {
     "@bookhouse/db": "workspace:*",
-    "@bookhouse/shared": "workspace:*"
+    "@bookhouse/domain": "workspace:*",
+    "@bookhouse/shared": "workspace:*",
+    "bullmq": "^5.71.0",
+    "ioredis": "5.9.3"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

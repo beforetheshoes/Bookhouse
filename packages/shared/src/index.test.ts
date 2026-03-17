@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { QUEUES, getQueueConnectionConfig, getQueueUrl } from "./index";
+import {
+  HashFileAssetJobPayload,
+  LIBRARY_JOB_NAMES,
+  QUEUES,
+  ScanLibraryRootJobPayload,
+  getQueueConnectionConfig,
+  getQueueUrl,
+} from "./index";
 
 describe("shared queue helpers", () => {
   it("returns the configured queue url", () => {
@@ -7,6 +14,8 @@ describe("shared queue helpers", () => {
 
     expect(getQueueUrl()).toBe("redis://user:pass@localhost:6379/2");
     expect(QUEUES.LIBRARY).toBe("library");
+    expect(LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT).toBe("scan-library-root");
+    expect(LIBRARY_JOB_NAMES.HASH_FILE_ASSET).toBe("hash-file-asset");
   });
 
   it("parses redis connection details", () => {
@@ -44,6 +53,22 @@ describe("shared queue helpers", () => {
       db: undefined,
       tls: undefined,
       maxRetriesPerRequest: null,
+    });
+  });
+
+  it("defines typed queue payload shapes for library jobs", () => {
+    const scanPayload: ScanLibraryRootJobPayload = {
+      libraryRootId: "root-1",
+    };
+    const hashPayload: HashFileAssetJobPayload = {
+      fileAssetId: "file-1",
+      forceFullHash: true,
+    };
+
+    expect(scanPayload).toEqual({ libraryRootId: "root-1" });
+    expect(hashPayload).toEqual({
+      fileAssetId: "file-1",
+      forceFullHash: true,
     });
   });
 });

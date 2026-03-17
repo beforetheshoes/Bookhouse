@@ -194,4 +194,29 @@ describe("oidc helpers", () => {
       }),
     ).rejects.toThrow("OIDC token response did not contain ID token claims");
   });
+
+  it("skips optional userinfo and logout calls when the provider does not advertise them", async () => {
+    discoveryMock.mockResolvedValue({
+      serverMetadata: () => ({}),
+    });
+    authorizationCodeGrantMock.mockResolvedValue({
+      access_token: undefined,
+      claims: () => ({
+        sub: "subject-2",
+      }),
+    });
+
+    const { exchangeAuthorizationCode } = await import("./oidc");
+    const result = await exchangeAuthorizationCode({
+      config: authConfig,
+      currentUrl: new URL("http://localhost:3000/auth/callback?code=abc&state=state"),
+      codeVerifier: "verifier",
+      expectedState: "state",
+      expectedNonce: "nonce",
+    });
+
+    expect(fetchUserInfoMock).not.toHaveBeenCalled();
+    expect(result.endSessionUrl).toBeNull();
+    expect(result.claims.sub).toBe("subject-2");
+  });
 });

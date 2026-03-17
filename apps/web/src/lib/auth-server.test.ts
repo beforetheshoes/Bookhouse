@@ -177,6 +177,41 @@ describe("auth server helpers", () => {
     expect(response.headers.get("location")).toBe("http://localhost:3000/books");
   });
 
+  it("falls back to the home page when the callback handshake has no return target", async () => {
+    const update = vi.fn();
+    useSessionMock.mockResolvedValue({
+      data: {
+        login: {
+          state: "state",
+          nonce: "nonce",
+          codeVerifier: "verifier",
+        },
+      },
+      update,
+    });
+    getRequestMock.mockReturnValue({
+      url: "http://localhost:3000/auth/callback?code=abc&state=state",
+    });
+    exchangeAuthorizationCodeMock.mockResolvedValue({
+      claims: {
+        sub: "subject-1",
+      },
+    });
+    upsertOidcUserMock.mockResolvedValue({
+      id: "user-1",
+    });
+    createAuthenticatedSessionMock.mockReturnValue({
+      userId: "user-1",
+      issuer: "https://issuer.example.com",
+      subject: "subject-1",
+    });
+
+    const { handleCallbackRequest } = await import("./auth-server");
+    const response = await handleCallbackRequest();
+
+    expect(response.headers.get("location")).toBe("http://localhost:3000/");
+  });
+
   it("redirects to login when the callback has no stored handshake", async () => {
     useSessionMock.mockResolvedValue({
       data: {},

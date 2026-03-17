@@ -66,4 +66,36 @@ describe("index route", () => {
     expect(React.isValidElement(element)).toBe(true);
     expect(loaderData).toEqual({ user });
   });
+
+  it("loads the current user from the server helper when server context is empty", async () => {
+    const { Home, Route } = await import("./index");
+    const user = {
+      id: "user-2",
+      email: null,
+      name: null,
+      image: null,
+      issuer: "https://issuer.example.com",
+      subject: "subject-2",
+    };
+    getCurrentUserServerFnMock.mockResolvedValueOnce(user);
+    const loader = Route.options.loader as unknown as (input: {
+      location: { pathname: string; search: string; hash: string };
+      serverContext?: unknown;
+    }) => Promise<{ user: typeof user }>;
+    const loaderData = await loader({
+      location: {
+        pathname: "/",
+        search: "",
+        hash: "",
+      },
+      serverContext: {},
+    });
+
+    vi.spyOn(Route, "useLoaderData").mockReturnValue(loaderData as never);
+
+    const element = Home();
+
+    expect(React.isValidElement(element)).toBe(true);
+    expect(loaderData).toEqual({ user });
+  });
 });

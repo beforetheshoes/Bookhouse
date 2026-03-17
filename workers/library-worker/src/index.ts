@@ -1,31 +1,87 @@
+import { pathToFileURL } from "node:url";
 import IORedis from "ioredis";
-import { Worker, Job } from "bullmq";
-import { QUEUES, getQueueConnectionConfig } from "@bookhouse/shared";
+import { Job, Worker } from "bullmq";
+import { hashFileAsset, scanLibraryRoot } from "@bookhouse/ingest";
+import {
+  LIBRARY_JOB_NAMES,
+  type HashFileAssetJobPayload,
+  type LibraryJobName,
+  type LibraryJobPayload,
+  QUEUES,
+  type ScanLibraryRootJobPayload,
+  getQueueConnectionConfig,
+} from "@bookhouse/shared";
 
-const connection = new IORedis(getQueueConnectionConfig());
-
-const worker = new Worker(
-  QUEUES.LIBRARY,
-  async (job: Job) => {
-    console.log(`Processing job ${job.id} [${job.name}]`, job.data);
-  },
-  { connection },
-);
-
-worker.on("ready", () => console.log("Worker ready, waiting for jobs..."));
-worker.on("completed", (job) => console.log(`Job ${job.id} completed`));
-worker.on("failed", (job, err) =>
-  console.error(`Job ${job?.id} failed:`, err.message),
-);
-
-async function shutdown() {
-  console.log("Shutting down worker...");
-  await worker.close();
-  await connection.quit();
-  process.exit(0);
+export interface LibraryWorkerHandlers {
+  hashFileAsset: typeof hashFileAsset;
+  scanLibraryRoot: typeof scanLibraryRoot;
 }
 
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+export function createLibraryWorkerProcessor(
+  handlers: LibraryWorkerHandlers = {
+    hashFileAsset,
+    scanLibraryRoot,
+  },
+) {
+  return async (
+    job: Job<LibraryJobPayload<LibraryJobName>, unknown, LibraryJobName>,
+  ) => {
+    switch (job.name) {
+      case LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT:
+        return handlers.scanLibraryRoot(job.data as ScanLibraryRootJobPayload);
+      case LIBRARY_JOB_NAMES.HASH_FILE_ASSET:
+        return handlers.hashFileAsset(job.data as HashFileAssetJobPayload);
+      default:
+        throw new Error(`Unsupported library job: ${job.name}`);
+    }
+  };
+}
 
-console.log(`library-worker listening on queue "${QUEUES.LIBRARY}"`);
+export function createLibraryWorker(
+  handlers: LibraryWorkerHandlers = {
+    hashFileAsset,
+    scanLibraryRoot,
+  },
+) {
+  const connection = new IORedis(getQueueConnectionConfig());
+  const worker = new Worker(
+    QUEUES.LIBRARY,
+    createLibraryWorkerProcessor(handlers),
+    { connection },
+  );
+
+  return { connection, worker };
+}
+
+export async function shutdownLibraryWorker(
+  worker: Pick<Worker, "close">,
+  connection: Pick<IORedis, "quit">,
+): Promise<void> {
+  await worker.close();
+  await connection.quit();
+}
+
+export async function bootstrapLibraryWorker(): Promise<void> {
+  const { connection, worker } = createLibraryWorker();
+
+  worker.on("ready", () => console.log("Worker ready, waiting for jobs..."));
+  worker.on("completed", (job) => console.log(`Job ${job.id} completed`));
+  worker.on("failed", (job, error) =>
+    console.error(`Job ${job?.id} failed:`, error.message),
+  );
+
+  const shutdown = async () => {
+    console.log("Shutting down worker...");
+    await shutdownLibraryWorker(worker, connection);
+    process.exit(0);
+  };
+
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+
+  console.log(`library-worker listening on queue "${QUEUES.LIBRARY}"`);
+}
+
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  void bootstrapLibraryWorker();
+}
