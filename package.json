@@ -15,6 +15,7 @@
     "db:migrate": "pnpm --filter @bookhouse/db migrate",
     "db:push": "pnpm --filter @bookhouse/db push",
     "db:studio": "pnpm --filter @bookhouse/db studio",
+    "queue:test": "pnpm --filter @bookhouse/library-worker enqueue-test",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "clean": "pnpm -r exec rm -rf dist node_modules/.cache .output"

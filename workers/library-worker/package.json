@@ -8,15 +8,17 @@
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsup src/index.ts --format esm --dts",
-    "typecheck": "tsc --noEmit"
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "enqueue-test": "tsx src/enqueue-test.ts"
   },
   "dependencies": {
     "@bookhouse/db": "workspace:*",
     "@bookhouse/domain": "workspace:*",
     "@bookhouse/ingest": "workspace:*",
     "@bookhouse/shared": "workspace:*",
-    "bullmq": "^5.71.0"
+    "bullmq": "^5.71.0",
+    "ioredis": "5.9.3"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

@@ -15,7 +15,7 @@ RUN pnpm install --frozen-lockfile
 
 FROM deps AS build
 COPY . .
-RUN pnpm db:generate
+RUN DATABASE_URL="postgresql://build:build@localhost:5432/build" pnpm db:generate
 RUN pnpm build
 
 FROM base AS web
@@ -24,5 +24,4 @@ CMD ["node", ".output/server/index.mjs"]
 
 FROM base AS worker
 COPY --from=build /app/workers/library-worker/dist dist
-COPY --from=build /app/node_modules node_modules
 CMD ["node", "dist/index.js"]
