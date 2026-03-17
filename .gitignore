@@ -6,9 +6,6 @@ dist/
 .output/
 *.tsbuildinfo
 
-# Prisma
-packages/db/prisma/migrations/
-
 # Environment
 .env
 .env.local
