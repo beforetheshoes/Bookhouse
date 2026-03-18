@@ -5,6 +5,7 @@ import {
   MatchFileAssetToEditionJobPayload,
   ParseFileAssetMetadataJobPayload,
   QUEUES,
+  RETRY_CONFIG,
   ScanLibraryRootJobPayload,
   getQueueConnectionConfig,
   getQueueUrl,
@@ -58,6 +59,22 @@ describe("shared queue helpers", () => {
       tls: undefined,
       maxRetriesPerRequest: null,
     });
+  });
+
+  it("defines retry config for every library job name", () => {
+    const jobNames = Object.values(LIBRARY_JOB_NAMES);
+    for (const name of jobNames) {
+      const config = RETRY_CONFIG[name];
+      expect(config).toBeDefined();
+      expect(config.attempts).toBeGreaterThanOrEqual(1);
+      expect(["exponential", "fixed"]).toContain(config.backoff.type);
+      expect(config.backoff.delay).toBeGreaterThan(0);
+    }
+  });
+
+  it("uses conservative retry counts for scan jobs", () => {
+    expect(RETRY_CONFIG[LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT].attempts).toBe(2);
+    expect(RETRY_CONFIG[LIBRARY_JOB_NAMES.HASH_FILE_ASSET].attempts).toBe(3);
   });
 
   it("defines typed queue payload shapes for library jobs", () => {

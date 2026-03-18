@@ -9,20 +9,24 @@ export const LIBRARY_JOB_NAMES = {
   MATCH_FILE_ASSET_TO_EDITION: "match-file-asset-to-edition",
 } as const;
 
-export interface ScanLibraryRootJobPayload {
+export interface BaseJobPayload {
+  importJobId?: string;
+}
+
+export interface ScanLibraryRootJobPayload extends BaseJobPayload {
   libraryRootId: string;
 }
 
-export interface HashFileAssetJobPayload {
+export interface HashFileAssetJobPayload extends BaseJobPayload {
   fileAssetId: string;
   forceFullHash?: boolean;
 }
 
-export interface ParseFileAssetMetadataJobPayload {
+export interface ParseFileAssetMetadataJobPayload extends BaseJobPayload {
   fileAssetId: string;
 }
 
-export interface MatchFileAssetToEditionJobPayload {
+export interface MatchFileAssetToEditionJobPayload extends BaseJobPayload {
   fileAssetId: string;
 }
 
@@ -35,6 +39,30 @@ export interface LibraryJobPayloads {
 
 export type LibraryJobName = keyof LibraryJobPayloads;
 export type LibraryJobPayload<TName extends LibraryJobName> = LibraryJobPayloads[TName];
+
+export interface JobRetryConfig {
+  attempts: number;
+  backoff: { type: "exponential" | "fixed"; delay: number };
+}
+
+export const RETRY_CONFIG: Record<LibraryJobName, JobRetryConfig> = {
+  [LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT]: {
+    attempts: 2,
+    backoff: { type: "exponential", delay: 5000 },
+  },
+  [LIBRARY_JOB_NAMES.HASH_FILE_ASSET]: {
+    attempts: 3,
+    backoff: { type: "exponential", delay: 2000 },
+  },
+  [LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA]: {
+    attempts: 3,
+    backoff: { type: "exponential", delay: 2000 },
+  },
+  [LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION]: {
+    attempts: 3,
+    backoff: { type: "exponential", delay: 2000 },
+  },
+};
 
 export function getQueueUrl(): string {
   const url = process.env.QUEUE_URL;

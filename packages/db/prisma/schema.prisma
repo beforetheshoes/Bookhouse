@@ -380,11 +380,21 @@ model DuplicateCandidate {
 
 model ImportJob {
   id            String          @id @default(cuid())
+  bullmqJobId   String?         @unique
   libraryRootId String?
   kind          ImportJobKind
   status        ImportJobStatus @default(QUEUED)
   payload       Json?
   error         String?
+  attemptsMade  Int             @default(0)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  startedAt     DateTime?
+  finishedAt    DateTime?
 
   libraryRoot LibraryRoot? @relation(fields: [libraryRootId], references: [id])
+
+  @@index([status])
+  @@index([kind])
+  @@index([createdAt])
 }

@@ -1,9 +1,11 @@
 import { pathToFileURL } from "node:url";
 import IORedis from "ioredis";
 import { Job, Worker } from "bullmq";
+import { db } from "@bookhouse/db";
 import { hashFileAsset, matchFileAssetToEdition, parseFileAssetMetadata, scanLibraryRoot } from "@bookhouse/ingest";
 import {
   LIBRARY_JOB_NAMES,
+  type BaseJobPayload,
   type HashFileAssetJobPayload,
   type LibraryJobName,
   type LibraryJobPayload,
@@ -24,6 +26,24 @@ export interface LibraryWorkerHandlers {
   scanLibraryRoot: typeof scanLibraryRoot;
 }
 
+function dispatch(
+  handlers: LibraryWorkerHandlers,
+  job: Job<LibraryJobPayload<LibraryJobName>, unknown, LibraryJobName>,
+) {
+  switch (job.name) {
+    case LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT:
+      return handlers.scanLibraryRoot(job.data as ScanLibraryRootJobPayload);
+    case LIBRARY_JOB_NAMES.HASH_FILE_ASSET:
+      return handlers.hashFileAsset(job.data as HashFileAssetJobPayload);
+    case LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION:
+      return handlers.matchFileAssetToEdition(job.data as MatchFileAssetToEditionJobPayload);
+    case LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA:
+      return handlers.parseFileAssetMetadata(job.data as ParseFileAssetMetadataJobPayload);
+    default:
+      throw new Error(`Unsupported library job: ${job.name}`);
+  }
+}
+
 export function createLibraryWorkerProcessor(
   handlers: LibraryWorkerHandlers = {
     hashFileAsset,
@@ -35,17 +55,43 @@ export function createLibraryWorkerProcessor(
   return async (
     job: Job<LibraryJobPayload<LibraryJobName>, unknown, LibraryJobName>,
   ) => {
-    switch (job.name) {
-      case LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT:
-        return handlers.scanLibraryRoot(job.data as ScanLibraryRootJobPayload);
-      case LIBRARY_JOB_NAMES.HASH_FILE_ASSET:
-        return handlers.hashFileAsset(job.data as HashFileAssetJobPayload);
-      case LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION:
-        return handlers.matchFileAssetToEdition(job.data as MatchFileAssetToEditionJobPayload);
-      case LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA:
-        return handlers.parseFileAssetMetadata(job.data as ParseFileAssetMetadataJobPayload);
-      default:
-        throw new Error(`Unsupported library job: ${job.name}`);
+    const importJobId = (job.data as BaseJobPayload).importJobId;
+
+    if (importJobId) {
+      await db.importJob.update({
+        where: { id: importJobId },
+        data: {
+          status: "RUNNING",
+          startedAt: new Date(),
+          attemptsMade: job.attemptsMade,
+        },
+      });
+    }
+
+    try {
+      const result = await dispatch(handlers, job);
+
+      if (importJobId) {
+        await db.importJob.update({
+          where: { id: importJobId },
+          data: { status: "SUCCEEDED", finishedAt: new Date() },
+        });
+      }
+
+      return result;
+    } catch (error) {
+      if (importJobId) {
+        await db.importJob.update({
+          where: { id: importJobId },
+          data: {
+            status: "FAILED",
+            finishedAt: new Date(),
+            error: error instanceof Error ? error.message : String(error),
+            attemptsMade: job.attemptsMade,
+          },
+        });
+      }
+      throw error;
     }
   };
 }
@@ -62,7 +108,11 @@ export function createLibraryWorker(
   const worker = new Worker(
     QUEUES.LIBRARY,
     createLibraryWorkerProcessor(handlers),
-    { connection },
+    {
+      connection,
+      removeOnComplete: { count: 1000 },
+      removeOnFail: { count: 5000 },
+    },
   );
 
   return { connection, worker };

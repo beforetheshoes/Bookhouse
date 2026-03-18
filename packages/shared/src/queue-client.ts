@@ -2,6 +2,7 @@ import IORedis from "ioredis";
 import { Queue } from "bullmq";
 import { QUEUES, getQueueConnectionConfig } from "./queues.js";
 import type { LibraryJobName, LibraryJobPayload } from "./queues.js";
+import { RETRY_CONFIG } from "./queues.js";
 import { QueueError } from "./errors.js";
 import { createLogger } from "./logger.js";
 
@@ -29,7 +30,11 @@ export async function enqueueLibraryJob<TName extends LibraryJobName>(
 ): Promise<string> {
   try {
     const queue = getQueue();
-    const job = await queue.add(jobName, payload);
+    const retryConfig = RETRY_CONFIG[jobName];
+    const job = await queue.add(jobName, payload, {
+      attempts: retryConfig.attempts,
+      backoff: retryConfig.backoff,
+    });
     logger.info({ jobName, jobId: job.id }, "Job enqueued");
     return job.id!;
   } catch (error) {

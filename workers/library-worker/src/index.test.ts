@@ -11,6 +11,7 @@ const hashFileAssetMock = vi.fn();
 const matchFileAssetToEditionMock = vi.fn();
 const parseFileAssetMetadataMock = vi.fn();
 const scanLibraryRootMock = vi.fn();
+const importJobUpdateMock = vi.fn();
 
 vi.mock("ioredis", () => ({
   default: class FakeRedis {
@@ -37,6 +38,14 @@ vi.mock("bullmq", () => ({
   },
 }));
 
+vi.mock("@bookhouse/db", () => ({
+  db: {
+    importJob: {
+      update: importJobUpdateMock,
+    },
+  },
+}));
+
 vi.mock("@bookhouse/ingest", () => ({
   hashFileAsset: hashFileAssetMock,
   matchFileAssetToEdition: matchFileAssetToEditionMock,
@@ -58,6 +67,8 @@ vi.mock("@bookhouse/shared", async () => {
 beforeEach(() => {
   addMock.mockReset();
   hashFileAssetMock.mockReset();
+  importJobUpdateMock.mockReset();
+  importJobUpdateMock.mockResolvedValue({});
   matchFileAssetToEditionMock.mockReset();
   onMock.mockReset();
   parseFileAssetMetadataMock.mockReset();
@@ -115,6 +126,85 @@ describe("library worker", () => {
     expect(parseFileAssetMetadataMock).toHaveBeenCalledWith({ fileAssetId: "file-1" });
   });
 
+  it("updates ImportJob to RUNNING then SUCCEEDED when importJobId is present", async () => {
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor({
+      hashFileAsset: hashFileAssetMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
+      parseFileAssetMetadata: parseFileAssetMetadataMock,
+      scanLibraryRoot: scanLibraryRootMock,
+    });
+
+    scanLibraryRootMock.mockResolvedValueOnce("scan-result");
+
+    await processor({
+      data: { libraryRootId: "root-1", importJobId: "ij-1" },
+      name: "scan-library-root",
+      attemptsMade: 1,
+    } as never);
+
+    expect(importJobUpdateMock).toHaveBeenCalledTimes(2);
+    expect(importJobUpdateMock).toHaveBeenNthCalledWith(1, {
+      where: { id: "ij-1" },
+      data: { status: "RUNNING", startedAt: expect.any(Date), attemptsMade: 1 },
+    });
+    expect(importJobUpdateMock).toHaveBeenNthCalledWith(2, {
+      where: { id: "ij-1" },
+      data: { status: "SUCCEEDED", finishedAt: expect.any(Date) },
+    });
+  });
+
+  it("updates ImportJob to FAILED when handler throws and importJobId is present", async () => {
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor({
+      hashFileAsset: hashFileAssetMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
+      parseFileAssetMetadata: parseFileAssetMetadataMock,
+      scanLibraryRoot: scanLibraryRootMock,
+    });
+
+    scanLibraryRootMock.mockRejectedValueOnce(new Error("Disk full"));
+
+    await expect(
+      processor({
+        data: { libraryRootId: "root-1", importJobId: "ij-2" },
+        name: "scan-library-root",
+        attemptsMade: 2,
+      } as never),
+    ).rejects.toThrow("Disk full");
+
+    expect(importJobUpdateMock).toHaveBeenCalledTimes(2);
+    expect(importJobUpdateMock).toHaveBeenNthCalledWith(2, {
+      where: { id: "ij-2" },
+      data: {
+        status: "FAILED",
+        finishedAt: expect.any(Date),
+        error: "Disk full",
+        attemptsMade: 2,
+      },
+    });
+  });
+
+  it("skips ImportJob updates when importJobId is absent", async () => {
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor({
+      hashFileAsset: hashFileAssetMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
+      parseFileAssetMetadata: parseFileAssetMetadataMock,
+      scanLibraryRoot: scanLibraryRootMock,
+    });
+
+    scanLibraryRootMock.mockResolvedValueOnce("scan-result");
+
+    await processor({
+      data: { libraryRootId: "root-1" },
+      name: "scan-library-root",
+      attemptsMade: 0,
+    } as never);
+
+    expect(importJobUpdateMock).not.toHaveBeenCalled();
+  });
+
   it("fails unknown jobs", async () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
@@ -141,7 +231,11 @@ describe("library worker", () => {
     expect(workerConstructorMock).toHaveBeenCalledWith(
       "library",
       expect.any(Function),
-      { connection: expect.any(Object) },
+      {
+        connection: expect.any(Object),
+        removeOnComplete: { count: 1000 },
+        removeOnFail: { count: 5000 },
+      },
     );
 
     await shutdownLibraryWorker(created.worker, created.connection);
