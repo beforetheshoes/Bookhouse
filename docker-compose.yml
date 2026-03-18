@@ -49,6 +49,9 @@ services:
       DATABASE_URL: postgresql://bookhouse:bookhouse@db:5432/bookhouse
       QUEUE_URL: redis://queue:6379
       NODE_ENV: production
+    volumes:
+      - /Volumes/data/media/ebooks:/data/ebooks:ro
+      - /Volumes/data/media/audiobooks:/data/audiobooks:ro
     depends_on:
       - db
       - queue
