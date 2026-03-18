@@ -4,6 +4,7 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
+import { Toaster } from "~/components/ui/sonner";
 import appCss from "~/styles/app.css?url";
 
 export const Route = createRootRoute({
@@ -26,6 +27,7 @@ export function RootComponent() {
       </head>
       <body>
         <Outlet />
+        <Toaster />
         <Scripts />
       </body>
     </html>
