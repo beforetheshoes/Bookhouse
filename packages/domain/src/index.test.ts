@@ -5,12 +5,14 @@ import {
   DuplicateReason,
   EditionFileRole,
   FormatFamily,
+  ImportJobKind,
+  ImportJobStatus,
   LibraryRootKind,
   MediaKind,
   ReviewStatus,
   ScanMode,
 } from "./index";
-import type { Batch1DomainModels, DuplicateCandidate } from "./index";
+import type { Batch1DomainModels, DuplicateCandidate, ImportJob } from "./index";
 
 describe("domain package", () => {
   it("re-exports the batch 1 model enums", () => {
@@ -22,6 +24,8 @@ describe("domain package", () => {
     expect(EditionFileRole.PRIMARY).toBe("PRIMARY");
     expect(DuplicateReason.SAME_HASH).toBe("SAME_HASH");
     expect(ReviewStatus.PENDING).toBe("PENDING");
+    expect(ImportJobKind.SCAN_ROOT).toBe("SCAN_ROOT");
+    expect(ImportJobStatus.QUEUED).toBe("QUEUED");
     expect(BATCH1_DOMAIN_MODEL_NAMES).toEqual([
       "LibraryRoot",
       "FileAsset",
@@ -40,5 +44,10 @@ describe("domain package", () => {
 
     expect(duplicateCandidate).toBeNull();
     expect(batchModelDuplicateCandidate).toBeNull();
+  });
+
+  it("re-exports ImportJob types", () => {
+    const importJob = null as ImportJob | null;
+    expect(importJob).toBeNull();
   });
 });

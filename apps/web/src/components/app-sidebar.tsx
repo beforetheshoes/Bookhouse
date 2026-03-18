@@ -1,6 +1,7 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import type { AuthenticatedUser } from "@bookhouse/auth";
 import {
+  Activity,
   BookOpen,
   Copy,
   FolderOpen,
@@ -33,6 +34,7 @@ const navItems = [
   { title: "Collections", href: "/collections", icon: FolderOpen },
   { title: "Duplicates", href: "/duplicates", icon: Copy },
   { title: "Audio Links", href: "/audio-links", icon: Headphones },
+  { title: "Jobs", href: "/settings/jobs", icon: Activity },
   { title: "Settings", href: "/settings", icon: Settings },
 ] as const;
 

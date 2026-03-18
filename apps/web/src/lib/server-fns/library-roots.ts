@@ -82,12 +82,28 @@ export const scanLibraryRootServerFn = createServerFn({
 })
   .inputValidator(scanLibraryRootSchema)
   .handler(async ({ data }) => {
+    const { db } = await import("@bookhouse/db");
     const { enqueueLibraryJob, LIBRARY_JOB_NAMES } = await import(
       "@bookhouse/shared"
     );
+
+    const importJob = await db.importJob.create({
+      data: {
+        kind: "SCAN_ROOT",
+        status: "QUEUED",
+        libraryRootId: data.libraryRootId,
+      },
+    });
+
     const jobId = await enqueueLibraryJob(
       LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT,
-      { libraryRootId: data.libraryRootId },
+      { libraryRootId: data.libraryRootId, importJobId: importJob.id },
     );
-    return { jobId };
+
+    await db.importJob.update({
+      where: { id: importJob.id },
+      data: { bullmqJobId: jobId },
+    });
+
+    return { jobId, importJobId: importJob.id };
   });

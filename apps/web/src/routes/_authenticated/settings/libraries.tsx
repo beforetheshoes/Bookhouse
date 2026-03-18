@@ -92,8 +92,17 @@ function LibraryRootCard({ root }: { root: LibraryRootRow }) {
   async function handleScan() {
     setScanning(true);
     try {
-      await scanLibraryRootServerFn({ data: { libraryRootId: root.id } });
-      toast.success(`Scan started for "${root.name}"`);
+      const result = await scanLibraryRootServerFn({ data: { libraryRootId: root.id } });
+      toast.success(`Scan started for "${root.name}"`, {
+        action: {
+          label: "View Job",
+          onClick: () =>
+            router.navigate({
+              to: "/settings/jobs/$jobId",
+              params: { jobId: result.importJobId },
+            }),
+        },
+      });
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to start scan",
