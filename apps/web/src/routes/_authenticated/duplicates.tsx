@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import { DataTable, DataTableColumnHeader } from "~/components/data-table";
 import { Badge } from "~/components/ui/badge";
+import { TablePageSkeleton } from "~/components/skeletons/table-page-skeleton";
 import {
   getDuplicatesServerFn,
   type DuplicateRow,
@@ -12,6 +13,7 @@ export const Route = createFileRoute("/_authenticated/duplicates")({
     const duplicates = await getDuplicatesServerFn();
     return { duplicates };
   },
+  pendingComponent: TablePageSkeleton,
   component: DuplicatesPage,
 });
 

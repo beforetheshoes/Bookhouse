@@ -1,26 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const addMock = vi.fn(async () => undefined);
-const queueConstructorMock = vi.fn();
-const redisConstructorMock = vi.fn();
-
-vi.mock("ioredis", () => ({
-  default: class FakeRedis {
-    constructor(config: unknown) {
-      redisConstructorMock(config);
-    }
-  },
-}));
-
-vi.mock("bullmq", () => ({
-  Queue: class FakeQueue {
-    constructor(...args: unknown[]) {
-      queueConstructorMock(...args);
-    }
-
-    add = addMock;
-  },
-}));
+const enqueueLibraryJobMock = vi.fn(async () => "job-1");
 
 vi.mock("@bookhouse/db", () => ({
   db: {
@@ -118,14 +98,12 @@ vi.mock("@bookhouse/shared", async () => {
 
   return {
     ...actual,
-    getQueueConnectionConfig: () => ({ host: "localhost", port: 6379 }),
+    enqueueLibraryJob: enqueueLibraryJobMock,
   };
 });
 
 beforeEach(() => {
-  addMock.mockClear();
-  queueConstructorMock.mockClear();
-  redisConstructorMock.mockClear();
+  enqueueLibraryJobMock.mockClear();
 });
 
 describe("ingest runtime defaults", () => {
@@ -157,12 +135,7 @@ describe("ingest runtime defaults", () => {
 
     expect(result.enqueuedHashJobs).toEqual(["file-1"]);
     expect(secondResult.enqueuedHashJobs).toEqual(["file-1"]);
-    expect(redisConstructorMock).toHaveBeenCalledWith({ host: "localhost", port: 6379 });
-    expect(redisConstructorMock).toHaveBeenCalledTimes(1);
-    expect(queueConstructorMock).toHaveBeenCalledWith("library", {
-      connection: expect.any(Object),
-    });
-    expect(addMock).toHaveBeenCalledWith("hash-file-asset", {
+    expect(enqueueLibraryJobMock).toHaveBeenCalledWith("hash-file-asset", {
       fileAssetId: "file-1",
     });
   });

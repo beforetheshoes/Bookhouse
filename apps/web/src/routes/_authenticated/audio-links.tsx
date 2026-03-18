@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import { DataTable, DataTableColumnHeader } from "~/components/data-table";
 import { Badge } from "~/components/ui/badge";
+import { TablePageSkeleton } from "~/components/skeletons/table-page-skeleton";
 import {
   getAudioLinksServerFn,
   type AudioLinkRow,
@@ -12,6 +13,7 @@ export const Route = createFileRoute("/_authenticated/audio-links")({
     const audioLinks = await getAudioLinksServerFn();
     return { audioLinks };
   },
+  pendingComponent: TablePageSkeleton,
   component: AudioLinksPage,
 });
 

@@ -11,8 +11,11 @@ import {
   type ParseFileAssetMetadataJobPayload,
   QUEUES,
   type ScanLibraryRootJobPayload,
+  createLogger,
   getQueueConnectionConfig,
 } from "@bookhouse/shared";
+
+const logger = createLogger("library-worker");
 
 export interface LibraryWorkerHandlers {
   hashFileAsset: typeof hashFileAsset;
@@ -76,14 +79,14 @@ export async function shutdownLibraryWorker(
 export async function bootstrapLibraryWorker(): Promise<void> {
   const { connection, worker } = createLibraryWorker();
 
-  worker.on("ready", () => console.log("Worker ready, waiting for jobs..."));
-  worker.on("completed", (job) => console.log(`Job ${job.id} completed`));
+  worker.on("ready", () => logger.info("Worker ready, waiting for jobs"));
+  worker.on("completed", (job) => logger.info({ jobId: job.id, jobName: job.name }, "Job completed"));
   worker.on("failed", (job, error) =>
-    console.error(`Job ${job?.id} failed:`, error.message),
+    logger.error({ jobId: job?.id, jobName: job?.name, err: error }, "Job failed"),
   );
 
   const shutdown = async () => {
-    console.log("Shutting down worker...");
+    logger.info("Shutting down worker");
     await shutdownLibraryWorker(worker, connection);
     process.exit(0);
   };
@@ -91,7 +94,7 @@ export async function bootstrapLibraryWorker(): Promise<void> {
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
-  console.log(`library-worker listening on queue "${QUEUES.LIBRARY}"`);
+  logger.info({ queue: QUEUES.LIBRARY }, "library-worker listening");
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {

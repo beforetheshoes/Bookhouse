@@ -14,9 +14,7 @@
     "@bookhouse/db": "workspace:*",
     "@bookhouse/domain": "workspace:*",
     "@bookhouse/shared": "workspace:*",
-    "bullmq": "^5.71.0",
     "fast-xml-parser": "^5.5.6",
-    "ioredis": "5.9.3",
     "yauzl-promise": "^4.0.0"
   },
   "devDependencies": {

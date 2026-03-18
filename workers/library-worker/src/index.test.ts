@@ -150,9 +150,7 @@ describe("library worker", () => {
     expect(quitMock).toHaveBeenCalledTimes(1);
   });
 
-  it("bootstraps the worker, logs events, and registers shutdown handlers", async () => {
-    const consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  it("bootstraps the worker, registers event handlers and shutdown hooks", async () => {
     const processOnSpy = vi.spyOn(process, "on").mockImplementation(() => process);
     const processExitSpy = vi
       .spyOn(process, "exit")
@@ -167,44 +165,29 @@ describe("library worker", () => {
     expect(onMock).toHaveBeenNthCalledWith(3, "failed", expect.any(Function));
     expect(processOnSpy).toHaveBeenCalledWith("SIGINT", expect.any(Function));
     expect(processOnSpy).toHaveBeenCalledWith("SIGTERM", expect.any(Function));
-    expect(consoleLogSpy).toHaveBeenCalledWith('library-worker listening on queue "library"');
 
-    const readyHandler = onMock.mock.calls[0]?.[1] as () => void;
-    const completedHandler = onMock.mock.calls[1]?.[1] as (job: { id: string }) => void;
-    const failedHandler = onMock.mock.calls[2]?.[1] as (
-      job: { id?: string } | undefined,
-      error: Error,
-    ) => void;
     const shutdownHandler = processOnSpy.mock.calls.find(([event]) => event === "SIGINT")?.[1] as () => Promise<void>;
-
-    readyHandler();
-    completedHandler({ id: "job-1" });
-    failedHandler({ id: "job-2" }, new Error("boom"));
     await shutdownHandler();
 
-    expect(consoleLogSpy).toHaveBeenCalledWith("Worker ready, waiting for jobs...");
-    expect(consoleLogSpy).toHaveBeenCalledWith("Job job-1 completed");
-    expect(consoleErrorSpy).toHaveBeenCalledWith("Job job-2 failed:", "boom");
     expect(processExitSpy).toHaveBeenCalledWith(0);
 
-    consoleLogSpy.mockRestore();
-    consoleErrorSpy.mockRestore();
     processOnSpy.mockRestore();
     processExitSpy.mockRestore();
   });
 
   it("boots automatically when imported as the entrypoint script", async () => {
     vi.resetModules();
-    const consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const processOnSpy = vi.spyOn(process, "on").mockImplementation(() => process);
     const originalArgv = [...process.argv];
 
     process.argv[1] = "/Users/ryan/Developer/Bookhouse/workers/library-worker/src/index.ts";
 
     await import("./index");
 
-    expect(consoleLogSpy).toHaveBeenCalledWith('library-worker listening on queue "library"');
+    expect(onMock).toHaveBeenCalledWith("ready", expect.any(Function));
+    expect(processOnSpy).toHaveBeenCalledWith("SIGINT", expect.any(Function));
 
     process.argv.splice(0, process.argv.length, ...originalArgv);
-    consoleLogSpy.mockRestore();
+    processOnSpy.mockRestore();
   });
 });

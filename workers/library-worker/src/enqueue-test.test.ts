@@ -1,15 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const waitUntilFinishedMock = vi.fn(async () => undefined);
-const addMock = vi.fn(async () => ({
-  id: "job-1",
-  name: "scan-library-root",
-  waitUntilFinished: waitUntilFinishedMock,
-}));
-const closeQueueMock = vi.fn(async () => undefined);
 const closeQueueEventsMock = vi.fn(async () => undefined);
 const duplicateMock = vi.fn(() => ({ duplicated: true }));
-const queueConstructorMock = vi.fn();
+const enqueueLibraryJobMock = vi.fn(async () => "job-1");
 const queueEventsConstructorMock = vi.fn();
 const quitMock = vi.fn(async () => "OK");
 const redisConstructorMock = vi.fn();
@@ -27,14 +20,6 @@ vi.mock("ioredis", () => ({
 }));
 
 vi.mock("bullmq", () => ({
-  Queue: class FakeQueue {
-    constructor(...args: unknown[]) {
-      queueConstructorMock(...args);
-    }
-
-    add = addMock;
-    close = closeQueueMock;
-  },
   QueueEvents: class FakeQueueEvents {
     constructor(...args: unknown[]) {
       queueEventsConstructorMock(...args);
@@ -52,44 +37,38 @@ vi.mock("@bookhouse/shared", async () => {
 
   return {
     ...actual,
+    enqueueLibraryJob: enqueueLibraryJobMock,
     getQueueConnectionConfig: () => ({ host: "localhost", port: 6379 }),
   };
 });
 
 beforeEach(() => {
-  addMock.mockClear();
   closeQueueEventsMock.mockClear();
-  closeQueueMock.mockClear();
   duplicateMock.mockClear();
-  queueConstructorMock.mockClear();
+  enqueueLibraryJobMock.mockClear();
   queueEventsConstructorMock.mockClear();
   quitMock.mockClear();
   redisConstructorMock.mockClear();
-  waitUntilFinishedMock.mockClear();
   waitUntilReadyMock.mockClear();
 });
 
 describe("enqueue test script", () => {
-  it("enqueues a real library scan job and waits for completion", async () => {
+  it("enqueues a real library scan job", async () => {
     const consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     await import("./enqueue-test");
 
     expect(redisConstructorMock).toHaveBeenCalledWith({ host: "localhost", port: 6379 });
-    expect(queueConstructorMock).toHaveBeenCalledWith("library", { connection: expect.any(Object) });
     expect(queueEventsConstructorMock).toHaveBeenCalledWith("library", {
-      connection: { duplicated: true },
+      connection: expect.any(Object),
     });
     expect(waitUntilReadyMock).toHaveBeenCalledTimes(1);
-    expect(addMock).toHaveBeenCalledWith("scan-library-root", {
+    expect(enqueueLibraryJobMock).toHaveBeenCalledWith("scan-library-root", {
       libraryRootId: "example-library-root-id",
     });
-    expect(waitUntilFinishedMock).toHaveBeenCalledTimes(1);
-    expect(closeQueueEventsMock).toHaveBeenCalledTimes(1);
-    expect(closeQueueMock).toHaveBeenCalledTimes(1);
-    expect(quitMock).toHaveBeenCalledTimes(1);
     expect(consoleLogSpy).toHaveBeenCalledWith("Enqueued job job-1 [scan-library-root]");
-    expect(consoleLogSpy).toHaveBeenCalledWith("Verified job job-1 completed");
+    expect(closeQueueEventsMock).toHaveBeenCalledTimes(1);
+    expect(quitMock).toHaveBeenCalledTimes(1);
 
     consoleLogSpy.mockRestore();
   });

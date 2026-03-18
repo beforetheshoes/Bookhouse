@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import { DataTable, DataTableColumnHeader } from "~/components/data-table";
 import { Badge } from "~/components/ui/badge";
+import { TablePageSkeleton } from "~/components/skeletons/table-page-skeleton";
 import {
   getCollectionsServerFn,
   type CollectionRow,
@@ -12,6 +13,7 @@ export const Route = createFileRoute("/_authenticated/collections")({
     const collections = await getCollectionsServerFn();
     return { collections };
   },
+  pendingComponent: TablePageSkeleton,
   component: CollectionsPage,
 });
 

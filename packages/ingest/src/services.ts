@@ -1,8 +1,6 @@
 import path from "node:path";
 import { Dirent } from "node:fs";
 import { lstat, readdir } from "node:fs/promises";
-import IORedis from "ioredis";
-import { Queue } from "bullmq";
 import {
   AvailabilityStatus,
   ContributorRole,
@@ -24,8 +22,7 @@ import {
   type LibraryJobPayload,
   type MatchFileAssetToEditionJobPayload,
   type ParseFileAssetMetadataJobPayload,
-  QUEUES,
-  getQueueConnectionConfig,
+  enqueueLibraryJob,
 } from "@bookhouse/shared";
 import { classifyMediaKind, getFileExtension, normalizeRelativePath, normalizeRootPath } from "./classification";
 import { parseEpubMetadata, type ParsedEpubMetadataRaw } from "./epub";
@@ -278,25 +275,6 @@ export interface MatchFileAssetToEditionResult {
 
 const EPUB_PARSER_VERSION = 1;
 
-let queueSingleton:
-  | {
-      connection: IORedis;
-      queue: Queue;
-    }
-  | undefined;
-
-async function enqueueLibraryJob<TName extends LibraryJobName>(
-  jobName: TName,
-  payload: LibraryJobPayload<TName>,
-): Promise<void> {
-  if (queueSingleton === undefined) {
-    const connection = new IORedis(getQueueConnectionConfig());
-    const queue = new Queue(QUEUES.LIBRARY, { connection });
-    queueSingleton = { connection, queue };
-  }
-
-  await queueSingleton.queue.add(jobName, payload);
-}
 
 function isFileChanged(existingFileAsset: FileAssetRecord | undefined, nextFileState: { mtime: Date; sizeBytes: bigint }): boolean {
   if (existingFileAsset === undefined) {
