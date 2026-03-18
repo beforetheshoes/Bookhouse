@@ -723,6 +723,7 @@ describe("ingest services", () => {
     const services = createIngestServices();
 
     expect(services).toMatchObject({
+      detectDuplicates: expect.any(Function),
       hashFileAsset: expect.any(Function),
       matchFileAssetToEdition: expect.any(Function),
       parseFileAssetMetadata: expect.any(Function),
@@ -1316,13 +1317,14 @@ describe("ingest services", () => {
       });
       addWork(state);
       addEdition(state, { [testCase.field]: testCase.value });
-      const services = createIngestServices({
+      const enqueueLibraryJob = vi.fn(async () => undefined);
+      const duplicateAwareServices = createIngestServices({
         db: createTestDb(state),
-        enqueueLibraryJob: vi.fn(async () => undefined),
+        enqueueLibraryJob,
       });
 
-      const firstResult = await services.matchFileAssetToEdition({ fileAssetId: "file-1" });
-      const secondResult = await services.matchFileAssetToEdition({ fileAssetId: "file-1" });
+      const firstResult = await duplicateAwareServices.matchFileAssetToEdition({ fileAssetId: "file-1" });
+      const secondResult = await duplicateAwareServices.matchFileAssetToEdition({ fileAssetId: "file-1" });
 
       expect(firstResult).toEqual({
         createdEdition: false,
@@ -1343,6 +1345,13 @@ describe("ingest services", () => {
         workId: "work-1",
       });
       expect([...state.editionFiles.values()]).toHaveLength(1);
+      expect(enqueueLibraryJob).toHaveBeenCalledWith(
+        LIBRARY_JOB_NAMES.DETECT_DUPLICATES,
+        {
+          editionId: "edition-1",
+          fileAssetId: "file-1",
+        },
+      );
     }
   });
 
@@ -1376,9 +1385,10 @@ describe("ingest services", () => {
     });
     addEditionContributor(state);
 
+    const enqueueLibraryJob = vi.fn(async () => undefined);
     const services = createIngestServices({
       db: createTestDb(state),
-      enqueueLibraryJob: vi.fn(async () => undefined),
+      enqueueLibraryJob,
     });
 
     const result = await services.matchFileAssetToEdition({ fileAssetId: "file-1" });
@@ -1400,6 +1410,13 @@ describe("ingest services", () => {
     });
     expect([...state.contributors.values()]).toHaveLength(1);
     expect([...state.editionContributors.values()]).toHaveLength(2);
+    expect(enqueueLibraryJob).toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.DETECT_DUPLICATES,
+      {
+        editionId: "edition-2",
+        fileAssetId: "file-1",
+      },
+    );
   });
 
   it("creates a new work, edition, contributors, and file link when no match exists", async () => {

@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { Link, createFileRoute, redirect } from "@tanstack/react-router";
 import { getCurrentUserServerFn } from "../lib/auth-client";
 
 export const Route = createFileRoute("/")({
@@ -31,6 +31,11 @@ export function Home() {
       <h1>Bookhouse</h1>
       <p>Signed in as {user.name ?? user.email ?? user.subject}.</p>
       <p>{user.email ?? "No email available from your provider."}</p>
+      <nav>
+        <Link to="/duplicates">Duplicate Review</Link>
+        {" · "}
+        <Link to="/settings">Settings</Link>
+      </nav>
       <form action="/auth/logout" method="post">
         <button type="submit">Log out</button>
       </form>

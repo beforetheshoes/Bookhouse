@@ -4,6 +4,8 @@ export {
   canonicalizeContributorNames,
   classifyMediaKind,
   createIdentifierMap,
+  detectDuplicates,
+  DUPLICATE_INTERNALS,
   getFileExtension,
   hashFileContents,
   hashFileAsset,
@@ -20,6 +22,8 @@ export {
 } from "./services";
 
 export type {
+  DetectDuplicatesInput,
+  DetectDuplicatesResult,
   HashFileAssetInput,
   HashFileAssetResult,
   IngestDb,
@@ -40,6 +44,8 @@ export const INGEST_PUBLIC_API = [
   "classifyMediaKind",
   "createIdentifierMap",
   "createIngestServices",
+  "detectDuplicates",
+  "DUPLICATE_INTERNALS",
   "canonicalizeBookTitle",
   "canonicalizeContributorName",
   "canonicalizeContributorNames",

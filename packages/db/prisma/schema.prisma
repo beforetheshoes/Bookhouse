@@ -64,6 +64,11 @@ enum ProgressKind {
   READALOUD
 }
 
+enum ProgressTrackingMode {
+  BY_EDITION
+  BY_WORK
+}
+
 enum DuplicateReason {
   SAME_HASH
   SAME_ISBN
@@ -103,9 +108,11 @@ model User {
   updatedAt       DateTime          @updatedAt
 
   identities      UserIdentity[]
+  preferences     UserPreference?
   roles           UserRole[]
   collections     Collection[]
   readingProgress ReadingProgress[]
+  workProgressPreferences WorkProgressPreference[]
 }
 
 model UserIdentity {
@@ -189,6 +196,7 @@ model Work {
 
   series   Series?   @relation(fields: [seriesId], references: [id])
   editions Edition[]
+  progressPreferences WorkProgressPreference[]
 
   @@index([titleCanonical])
 }
@@ -299,6 +307,27 @@ model ReadingProgress {
   edition Edition @relation(fields: [editionId], references: [id], onDelete: Cascade)
 
   @@index([userId, editionId])
+}
+
+model UserPreference {
+  id                   String               @id @default(cuid())
+  userId               String               @unique
+  progressTrackingMode ProgressTrackingMode @default(BY_EDITION)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model WorkProgressPreference {
+  id                   String               @id @default(cuid())
+  userId               String
+  workId               String
+  progressTrackingMode ProgressTrackingMode
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  work Work @relation(fields: [workId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workId])
+  @@index([workId])
 }
 
 model AudioLink {

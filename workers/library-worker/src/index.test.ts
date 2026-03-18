@@ -11,6 +11,7 @@ const hashFileAssetMock = vi.fn();
 const matchFileAssetToEditionMock = vi.fn();
 const parseFileAssetMetadataMock = vi.fn();
 const scanLibraryRootMock = vi.fn();
+const detectDuplicatesMock = vi.fn();
 
 vi.mock("ioredis", () => ({
   default: class FakeRedis {
@@ -38,6 +39,7 @@ vi.mock("bullmq", () => ({
 }));
 
 vi.mock("@bookhouse/ingest", () => ({
+  detectDuplicates: detectDuplicatesMock,
   hashFileAsset: hashFileAssetMock,
   matchFileAssetToEdition: matchFileAssetToEditionMock,
   parseFileAssetMetadata: parseFileAssetMetadataMock,
@@ -57,6 +59,7 @@ vi.mock("@bookhouse/shared", async () => {
 
 beforeEach(() => {
   addMock.mockReset();
+  detectDuplicatesMock.mockReset();
   hashFileAssetMock.mockReset();
   matchFileAssetToEditionMock.mockReset();
   onMock.mockReset();
@@ -73,12 +76,14 @@ describe("library worker", () => {
   it("dispatches supported jobs to ingest handlers", async () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
+      detectDuplicates: detectDuplicatesMock,
       hashFileAsset: hashFileAssetMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       scanLibraryRoot: scanLibraryRootMock,
     });
 
+    detectDuplicatesMock.mockResolvedValueOnce("detect-result");
     scanLibraryRootMock.mockResolvedValueOnce("scan-result");
     hashFileAssetMock.mockResolvedValueOnce("hash-result");
     matchFileAssetToEditionMock.mockResolvedValueOnce("match-result");
@@ -90,6 +95,12 @@ describe("library worker", () => {
         name: "scan-library-root",
       } as never),
     ).resolves.toBe("scan-result");
+    await expect(
+      processor({
+        data: { fileAssetId: "file-1" },
+        name: "detect-duplicates",
+      } as never),
+    ).resolves.toBe("detect-result");
     await expect(
       processor({
         data: { fileAssetId: "file-1" },
@@ -109,6 +120,7 @@ describe("library worker", () => {
       } as never),
     ).resolves.toBe("parse-result");
 
+    expect(detectDuplicatesMock).toHaveBeenCalledWith({ fileAssetId: "file-1" });
     expect(scanLibraryRootMock).toHaveBeenCalledWith({ libraryRootId: "root-1" });
     expect(hashFileAssetMock).toHaveBeenCalledWith({ fileAssetId: "file-1" });
     expect(matchFileAssetToEditionMock).toHaveBeenCalledWith({ fileAssetId: "file-1" });
@@ -118,6 +130,7 @@ describe("library worker", () => {
   it("fails unknown jobs", async () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
+      detectDuplicates: detectDuplicatesMock,
       hashFileAsset: hashFileAssetMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,

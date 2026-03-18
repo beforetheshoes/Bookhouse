@@ -6,6 +6,8 @@ export {
   FormatFamily,
   LibraryRootKind,
   MediaKind,
+  ProgressKind,
+  ProgressTrackingMode,
   ReviewStatus,
   ScanMode,
 } from "@bookhouse/db";
@@ -18,7 +20,9 @@ export type {
   FileAsset,
   LibraryRoot,
   Series,
+  UserPreference,
   Work,
+  WorkProgressPreference,
 } from "@bookhouse/db";
 
 import type {
@@ -29,7 +33,9 @@ import type {
   FileAsset,
   LibraryRoot,
   Series,
+  UserPreference,
   Work,
+  WorkProgressPreference,
 } from "@bookhouse/db";
 
 export interface Batch1DomainModels {
@@ -41,6 +47,8 @@ export interface Batch1DomainModels {
   contributor: Contributor;
   series: Series;
   duplicateCandidate: DuplicateCandidate;
+  userPreference: UserPreference;
+  workProgressPreference: WorkProgressPreference;
 }
 
 export const BATCH1_DOMAIN_MODEL_NAMES = [
@@ -52,4 +60,6 @@ export const BATCH1_DOMAIN_MODEL_NAMES = [
   "Contributor",
   "Series",
   "DuplicateCandidate",
+  "UserPreference",
+  "WorkProgressPreference",
 ] as const;

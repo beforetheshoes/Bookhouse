@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  DetectDuplicatesJobPayload,
   HashFileAssetJobPayload,
   LIBRARY_JOB_NAMES,
   MatchFileAssetToEditionJobPayload,
@@ -20,6 +21,7 @@ describe("shared queue helpers", () => {
     expect(LIBRARY_JOB_NAMES.HASH_FILE_ASSET).toBe("hash-file-asset");
     expect(LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA).toBe("parse-file-asset-metadata");
     expect(LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION).toBe("match-file-asset-to-edition");
+    expect(LIBRARY_JOB_NAMES.DETECT_DUPLICATES).toBe("detect-duplicates");
   });
 
   it("parses redis connection details", () => {
@@ -74,6 +76,10 @@ describe("shared queue helpers", () => {
     const matchPayload: MatchFileAssetToEditionJobPayload = {
       fileAssetId: "file-1",
     };
+    const detectPayload: DetectDuplicatesJobPayload = {
+      editionId: "edition-1",
+      fileAssetId: "file-1",
+    };
 
     expect(scanPayload).toEqual({ libraryRootId: "root-1" });
     expect(hashPayload).toEqual({
@@ -82,5 +88,9 @@ describe("shared queue helpers", () => {
     });
     expect(parsePayload).toEqual({ fileAssetId: "file-1" });
     expect(matchPayload).toEqual({ fileAssetId: "file-1" });
+    expect(detectPayload).toEqual({
+      editionId: "edition-1",
+      fileAssetId: "file-1",
+    });
   });
 });

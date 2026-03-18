@@ -6,6 +6,7 @@ import { Queue } from "bullmq";
 import {
   AvailabilityStatus,
   ContributorRole,
+  DuplicateReason,
   EditionFileRole,
   FormatFamily,
   type Contributor,
@@ -14,10 +15,12 @@ import {
   type FileAsset,
   MediaKind,
   type LibraryRoot,
+  ReviewStatus,
   type Work,
 } from "@bookhouse/domain";
 import { db, type EditionContributor } from "@bookhouse/db";
 import {
+  type DetectDuplicatesJobPayload,
   LIBRARY_JOB_NAMES,
   type HashFileAssetJobPayload,
   type LibraryJobName,
@@ -276,6 +279,76 @@ export interface MatchFileAssetToEditionResult {
   workId?: string;
 }
 
+export type DetectDuplicatesInput = DetectDuplicatesJobPayload;
+
+export interface DetectDuplicatesResult {
+  createdCandidateIds: string[];
+  ignoredCandidateIds: string[];
+  scannedEditionIds: string[];
+  scannedFileAssetIds: string[];
+  updatedCandidateIds: string[];
+}
+
+type DuplicateCandidateRecord = {
+  confidence: number | null;
+  id: string;
+  leftEditionId: string | null;
+  leftFileAssetId: string | null;
+  reason: DuplicateReason;
+  rightEditionId: string | null;
+  rightFileAssetId: string | null;
+  status: ReviewStatus;
+};
+
+type DuplicateDetectionFileAssetRecord = FileAssetRecord & {
+  libraryRootId: string;
+  relativePath: string;
+};
+
+type DuplicateDetectionEditionRecord = EditionRecord & {
+  contributors: Array<
+    EditionContributorRecord & {
+      contributor: ContributorRecord;
+    }
+  >;
+  editionFiles: Array<
+    EditionFileRecord & {
+      fileAsset: DuplicateDetectionFileAssetRecord;
+    }
+  >;
+  work: WorkRecord;
+};
+
+type DuplicateDetectionDb = IngestDb & {
+  duplicateCandidate: {
+    create(args: {
+      data: {
+        confidence?: number | null;
+        leftEditionId?: string | null;
+        leftFileAssetId?: string | null;
+        reason: DuplicateReason;
+        rightEditionId?: string | null;
+        rightFileAssetId?: string | null;
+        status?: ReviewStatus;
+      };
+    }): Promise<DuplicateCandidateRecord>;
+    findMany(args: Record<string, unknown>): Promise<DuplicateCandidateRecord[]>;
+    update(args: {
+      where: { id: string };
+      data: Partial<Pick<DuplicateCandidateRecord, "confidence" | "status">>;
+    }): Promise<DuplicateCandidateRecord>;
+  };
+  edition: IngestDb["edition"] & {
+    findMany(args: Record<string, unknown>): Promise<DuplicateDetectionEditionRecord[]>;
+  };
+  editionFile: IngestDb["editionFile"] & {
+    findMany(args: Record<string, unknown>): Promise<EditionFileRecord[]>;
+  };
+  fileAsset: IngestDb["fileAsset"] & {
+    findMany(args: Record<string, unknown>): Promise<DuplicateDetectionFileAssetRecord[]>;
+  };
+};
+
 const EPUB_PARSER_VERSION = 1;
 
 let queueSingleton:
@@ -379,6 +452,86 @@ function extractNormalizedMetadataForMatching(fileAsset: FileAssetRecord): {
     title,
     titleCanonical,
   };
+}
+
+function getAuthorCanonicalsForEdition(edition: DuplicateDetectionEditionRecord): string[] {
+  return canonicalizeContributorNames(
+    edition.contributors
+      .filter((contributor) => contributor.role === ContributorRole.AUTHOR)
+      .map((contributor) => contributor.contributor.nameCanonical),
+  );
+}
+
+function createDuplicateCandidateKey(candidate: {
+  leftEditionId?: string | null;
+  leftFileAssetId?: string | null;
+  reason: DuplicateReason;
+  rightEditionId?: string | null;
+  rightFileAssetId?: string | null;
+}): string {
+  if (candidate.leftEditionId && candidate.rightEditionId) {
+    return `edition:${candidate.reason}:${candidate.leftEditionId}:${candidate.rightEditionId}`;
+  }
+
+  if (candidate.leftFileAssetId && candidate.rightFileAssetId) {
+    return `file:${candidate.reason}:${candidate.leftFileAssetId}:${candidate.rightFileAssetId}`;
+  }
+
+  throw new Error("Duplicate candidate key requires a complete edition or file pair");
+}
+
+function orderPair<TId extends string>(leftId: TId, rightId: TId): [TId, TId] {
+  return leftId.localeCompare(rightId) <= 0 ? [leftId, rightId] : [rightId, leftId];
+}
+
+function shouldPreserveCandidateStatus(status: ReviewStatus): boolean {
+  return status !== ReviewStatus.PENDING;
+}
+
+function buildFuzzyDuplicateConfidence(
+  leftEdition: DuplicateDetectionEditionRecord,
+  rightEdition: DuplicateDetectionEditionRecord,
+): number {
+  const sharedFileHash = leftEdition.editionFiles.some((editionFile) =>
+    editionFile.fileAsset.fullHash !== null &&
+    rightEdition.editionFiles.some((candidateFile) => candidateFile.fileAsset.fullHash === editionFile.fileAsset.fullHash)
+  );
+
+  return sharedFileHash ? 0.99 : 0.9;
+}
+
+function canBeSameEditionDuplicate(
+  leftEdition: DuplicateDetectionEditionRecord,
+  rightEdition: DuplicateDetectionEditionRecord,
+): boolean {
+  if (
+    leftEdition.formatFamily !== FormatFamily.EBOOK ||
+    rightEdition.formatFamily !== FormatFamily.EBOOK
+  ) {
+    return false;
+  }
+
+  const leftAuthors = getAuthorCanonicalsForEdition(leftEdition);
+  const rightAuthors = getAuthorCanonicalsForEdition(rightEdition);
+
+  if (
+    leftEdition.work.titleCanonical !== rightEdition.work.titleCanonical ||
+    leftAuthors.length === 0 ||
+    leftAuthors.length !== rightAuthors.length ||
+    leftAuthors.some((author, index) => author !== rightAuthors[index])
+  ) {
+    return false;
+  }
+
+  const conflictingIsbn =
+    (leftEdition.isbn13 !== null &&
+      rightEdition.isbn13 !== null &&
+      leftEdition.isbn13 !== rightEdition.isbn13) ||
+    (leftEdition.isbn10 !== null &&
+      rightEdition.isbn10 !== null &&
+      leftEdition.isbn10 !== rightEdition.isbn10);
+
+  return !conflictingIsbn;
 }
 
 async function ensureEditionFileLink(
@@ -530,6 +683,7 @@ export function createIngestServices(
   dependencies: Partial<IngestDependencies> = {},
 ) {
   const ingestDb = dependencies.db ?? (db as unknown as IngestDb);
+  const duplicateDetectionDb = ingestDb as unknown as DuplicateDetectionDb;
   const listDirectory = dependencies.listDirectory ?? readdir;
   const readStats = dependencies.readStats ?? lstat;
   const hashFile = dependencies.hashFile ?? hashFileContents;
@@ -859,6 +1013,10 @@ export function createIngestServices(
 
     if (editionMatch !== null) {
       const createdEditionFile = await ensureEditionFileLink(ingestDb, editionMatch.id, fileAsset.id);
+      await enqueueJob(LIBRARY_JOB_NAMES.DETECT_DUPLICATES, {
+        editionId: editionMatch.id,
+        fileAssetId: fileAsset.id,
+      });
 
       return {
         createdEdition: false,
@@ -924,6 +1082,11 @@ export function createIngestServices(
     await ensureAuthorContributors(ingestDb, createdEdition.id, matchableMetadata.authors);
     const createdEditionFile = await ensureEditionFileLink(ingestDb, createdEdition.id, fileAsset.id);
 
+    await enqueueJob(LIBRARY_JOB_NAMES.DETECT_DUPLICATES, {
+      editionId: createdEdition.id,
+      fileAssetId: fileAsset.id,
+    });
+
     return {
       createdEdition: true,
       createdEditionFile,
@@ -935,7 +1098,303 @@ export function createIngestServices(
     };
   }
 
+  async function detectDuplicates(
+    input: DetectDuplicatesInput,
+  ): Promise<DetectDuplicatesResult> {
+    let scopedFileAssets: DuplicateDetectionFileAssetRecord[] = [];
+
+    if (input.libraryRootId) {
+      scopedFileAssets = await duplicateDetectionDb.fileAsset.findMany({
+        where: { libraryRootId: input.libraryRootId },
+      }) as DuplicateDetectionFileAssetRecord[];
+    } else if (input.fileAssetId) {
+      const fileAsset = await duplicateDetectionDb.fileAsset.findUnique({
+        where: { id: input.fileAssetId },
+      });
+
+      scopedFileAssets = fileAsset === null
+        ? []
+        : await duplicateDetectionDb.fileAsset.findMany({
+          where: { libraryRootId: (fileAsset as DuplicateDetectionFileAssetRecord).libraryRootId },
+        }) as DuplicateDetectionFileAssetRecord[];
+    }
+
+    const scopedFileAssetIds = new Set(scopedFileAssets.map((fileAsset) => fileAsset.id));
+    const targetFileAssetIds = new Set<string>(input.fileAssetId ? [input.fileAssetId] : []);
+
+    const editionFiles = scopedFileAssetIds.size === 0
+      ? []
+      : await duplicateDetectionDb.editionFile.findMany({
+        where: {
+          fileAssetId: {
+            in: [...scopedFileAssetIds],
+          },
+        },
+      });
+    const scopedEditionIds = new Set(editionFiles.map((editionFile) => editionFile.editionId));
+
+    if (input.editionId) {
+      scopedEditionIds.add(input.editionId);
+    }
+
+    const targetEditionIds = new Set<string>(input.editionId ? [input.editionId] : []);
+    for (const editionFile of editionFiles) {
+      if (targetFileAssetIds.has(editionFile.fileAssetId)) {
+        targetEditionIds.add(editionFile.editionId);
+      }
+    }
+
+    const scopedEditions = scopedEditionIds.size === 0
+      ? []
+      : await duplicateDetectionDb.edition.findMany({
+        where: {
+          id: {
+            in: [...scopedEditionIds],
+          },
+        },
+        include: {
+          contributors: {
+            include: {
+              contributor: true,
+            },
+          },
+          editionFiles: {
+            include: {
+              fileAsset: true,
+            },
+          },
+          work: true,
+        },
+      });
+    const candidateMap = new Map<
+      string,
+      {
+        confidence: number;
+        leftEditionId?: string;
+        leftFileAssetId?: string;
+        reason: DuplicateReason;
+        rightEditionId?: string;
+        rightFileAssetId?: string;
+      }
+    >();
+
+    const isFullRecompute = input.libraryRootId !== undefined;
+    const shouldConsiderFilePair = (leftFileId: string, rightFileId: string) =>
+      isFullRecompute || targetFileAssetIds.has(leftFileId) || targetFileAssetIds.has(rightFileId);
+    const shouldConsiderEditionPair = (leftEditionId: string, rightEditionId: string) =>
+      isFullRecompute || targetEditionIds.has(leftEditionId) || targetEditionIds.has(rightEditionId);
+
+    const presentFileAssets = scopedFileAssets.filter((fileAsset) =>
+      fileAsset.availabilityStatus === AvailabilityStatus.PRESENT &&
+      fileAsset.fullHash !== null,
+    );
+    const fileAssetsByHash = new Map<string, DuplicateDetectionFileAssetRecord[]>();
+
+    for (const fileAsset of presentFileAssets) {
+      const filesWithSameHash = fileAssetsByHash.get(fileAsset.fullHash as string) ?? [];
+      filesWithSameHash.push(fileAsset);
+      fileAssetsByHash.set(fileAsset.fullHash as string, filesWithSameHash);
+    }
+
+    for (const filesWithSameHash of fileAssetsByHash.values()) {
+      for (let index = 0; index < filesWithSameHash.length; index += 1) {
+        for (let innerIndex = index + 1; innerIndex < filesWithSameHash.length; innerIndex += 1) {
+          const [leftFileId, rightFileId] = orderPair(
+            filesWithSameHash[index]!.id,
+            filesWithSameHash[innerIndex]!.id,
+          );
+
+          if (!shouldConsiderFilePair(leftFileId, rightFileId)) {
+            continue;
+          }
+
+          const candidate = {
+            confidence: 1,
+            leftFileAssetId: leftFileId,
+            reason: DuplicateReason.SAME_HASH,
+            rightFileAssetId: rightFileId,
+          };
+          candidateMap.set(createDuplicateCandidateKey(candidate), candidate);
+        }
+      }
+    }
+
+    const ebookEditions = scopedEditions.filter((edition) => edition.formatFamily === FormatFamily.EBOOK);
+    const isbnBuckets = new Map<string, DuplicateDetectionEditionRecord[]>();
+
+    for (const edition of ebookEditions) {
+      for (const isbn of [edition.isbn13, edition.isbn10]) {
+        if (isbn === null) {
+          continue;
+        }
+
+        const bucketKey = `${isbn.length}:${isbn}`;
+        const editionsWithSameIsbn = isbnBuckets.get(bucketKey) ?? [];
+        editionsWithSameIsbn.push(edition);
+        isbnBuckets.set(bucketKey, editionsWithSameIsbn);
+      }
+    }
+
+    for (const editionsWithSameIsbn of isbnBuckets.values()) {
+      for (let index = 0; index < editionsWithSameIsbn.length; index += 1) {
+        for (let innerIndex = index + 1; innerIndex < editionsWithSameIsbn.length; innerIndex += 1) {
+          const leftEdition = editionsWithSameIsbn[index]!;
+          const rightEdition = editionsWithSameIsbn[innerIndex]!;
+          const [leftEditionId, rightEditionId] = orderPair(leftEdition.id, rightEdition.id);
+
+          if (!shouldConsiderEditionPair(leftEditionId, rightEditionId)) {
+            continue;
+          }
+
+          const candidate = {
+            confidence: 1,
+            leftEditionId,
+            reason: DuplicateReason.SAME_ISBN,
+            rightEditionId,
+          };
+          candidateMap.set(createDuplicateCandidateKey(candidate), candidate);
+        }
+      }
+    }
+
+    for (let index = 0; index < ebookEditions.length; index += 1) {
+      for (let innerIndex = index + 1; innerIndex < ebookEditions.length; innerIndex += 1) {
+        const leftEdition = ebookEditions[index]!;
+        const rightEdition = ebookEditions[innerIndex]!;
+        const [leftEditionId, rightEditionId] = orderPair(leftEdition.id, rightEdition.id);
+
+        if (
+          !shouldConsiderEditionPair(leftEditionId, rightEditionId) ||
+          !canBeSameEditionDuplicate(leftEdition, rightEdition)
+        ) {
+          continue;
+        }
+
+        const candidate = {
+          confidence: buildFuzzyDuplicateConfidence(leftEdition, rightEdition),
+          leftEditionId,
+          reason: DuplicateReason.SIMILAR_TITLE_AUTHOR,
+          rightEditionId,
+        };
+        candidateMap.set(createDuplicateCandidateKey(candidate), candidate);
+      }
+    }
+
+    const existingCandidates = await duplicateDetectionDb.duplicateCandidate.findMany({
+      where: {
+        OR: [
+          targetEditionIds.size > 0 ? {
+            leftEditionId: {
+              in: [...targetEditionIds],
+            },
+          } : undefined,
+          targetEditionIds.size > 0 ? {
+            rightEditionId: {
+              in: [...targetEditionIds],
+            },
+          } : undefined,
+          targetFileAssetIds.size > 0 ? {
+            leftFileAssetId: {
+              in: [...targetFileAssetIds],
+            },
+          } : undefined,
+          targetFileAssetIds.size > 0 ? {
+            rightFileAssetId: {
+              in: [...targetFileAssetIds],
+            },
+          } : undefined,
+          input.libraryRootId ? {
+            OR: [
+              {
+                leftFileAssetId: {
+                  in: [...scopedFileAssetIds],
+                },
+              },
+              {
+                rightFileAssetId: {
+                  in: [...scopedFileAssetIds],
+                },
+              },
+              {
+                leftEditionId: {
+                  in: [...scopedEditionIds],
+                },
+              },
+              {
+                rightEditionId: {
+                  in: [...scopedEditionIds],
+                },
+              },
+            ],
+          } : undefined,
+        ].filter(Boolean),
+      },
+    });
+    const existingByKey = new Map(
+      existingCandidates.map((candidate) => [createDuplicateCandidateKey(candidate), candidate]),
+    );
+    const createdCandidateIds: string[] = [];
+    const updatedCandidateIds: string[] = [];
+    const ignoredCandidateIds: string[] = [];
+
+    for (const [candidateKey, candidate] of candidateMap.entries()) {
+      const existing = existingByKey.get(candidateKey);
+
+      if (existing === undefined) {
+        const created = await duplicateDetectionDb.duplicateCandidate.create({
+          data: {
+            confidence: candidate.confidence,
+            leftEditionId: candidate.leftEditionId ?? null,
+            leftFileAssetId: candidate.leftFileAssetId ?? null,
+            reason: candidate.reason,
+            rightEditionId: candidate.rightEditionId ?? null,
+            rightFileAssetId: candidate.rightFileAssetId ?? null,
+            status: ReviewStatus.PENDING,
+          },
+        });
+        createdCandidateIds.push(created.id);
+        continue;
+      }
+
+      const nextStatus = shouldPreserveCandidateStatus(existing.status)
+        ? existing.status
+        : ReviewStatus.PENDING;
+      const updated = await duplicateDetectionDb.duplicateCandidate.update({
+        where: { id: existing.id },
+        data: {
+          confidence: candidate.confidence,
+          status: nextStatus,
+        },
+      });
+      updatedCandidateIds.push(updated.id);
+      existingByKey.delete(candidateKey);
+    }
+
+    for (const staleCandidate of existingByKey.values()) {
+      if (staleCandidate.status !== ReviewStatus.PENDING) {
+        continue;
+      }
+
+      const updated = await duplicateDetectionDb.duplicateCandidate.update({
+        where: { id: staleCandidate.id },
+        data: {
+          status: ReviewStatus.IGNORED,
+        },
+      });
+      ignoredCandidateIds.push(updated.id);
+    }
+
+    return {
+      createdCandidateIds,
+      ignoredCandidateIds,
+      scannedEditionIds: [...scopedEditionIds],
+      scannedFileAssetIds: [...scopedFileAssetIds],
+      updatedCandidateIds,
+    };
+  }
+
   return {
+    detectDuplicates,
     hashFileAsset,
     matchFileAssetToEdition,
     parseFileAssetMetadata,
@@ -949,6 +1408,13 @@ export const scanLibraryRoot = services.scanLibraryRoot;
 export const hashFileAsset = services.hashFileAsset;
 export const matchFileAssetToEdition = services.matchFileAssetToEdition;
 export const parseFileAssetMetadata = services.parseFileAssetMetadata;
+export const detectDuplicates = services.detectDuplicates;
+
+export const DUPLICATE_INTERNALS = {
+  buildFuzzyDuplicateConfidence,
+  canBeSameEditionDuplicate,
+  createDuplicateCandidateKey,
+};
 export { classifyMediaKind, getFileExtension, hashFileContents, isFileChanged, normalizeRelativePath, normalizeRootPath, walkRegularFiles };
 export { parseEpubMetadata } from "./epub";
 export {

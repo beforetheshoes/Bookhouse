@@ -1,8 +1,15 @@
 import { pathToFileURL } from "node:url";
 import IORedis from "ioredis";
 import { Job, Worker } from "bullmq";
-import { hashFileAsset, matchFileAssetToEdition, parseFileAssetMetadata, scanLibraryRoot } from "@bookhouse/ingest";
 import {
+  detectDuplicates,
+  hashFileAsset,
+  matchFileAssetToEdition,
+  parseFileAssetMetadata,
+  scanLibraryRoot,
+} from "@bookhouse/ingest";
+import {
+  type DetectDuplicatesJobPayload,
   LIBRARY_JOB_NAMES,
   type HashFileAssetJobPayload,
   type LibraryJobName,
@@ -15,6 +22,7 @@ import {
 } from "@bookhouse/shared";
 
 export interface LibraryWorkerHandlers {
+  detectDuplicates: typeof detectDuplicates;
   hashFileAsset: typeof hashFileAsset;
   matchFileAssetToEdition: typeof matchFileAssetToEdition;
   parseFileAssetMetadata: typeof parseFileAssetMetadata;
@@ -23,6 +31,7 @@ export interface LibraryWorkerHandlers {
 
 export function createLibraryWorkerProcessor(
   handlers: LibraryWorkerHandlers = {
+    detectDuplicates,
     hashFileAsset,
     matchFileAssetToEdition,
     parseFileAssetMetadata,
@@ -37,6 +46,8 @@ export function createLibraryWorkerProcessor(
         return handlers.scanLibraryRoot(job.data as ScanLibraryRootJobPayload);
       case LIBRARY_JOB_NAMES.HASH_FILE_ASSET:
         return handlers.hashFileAsset(job.data as HashFileAssetJobPayload);
+      case LIBRARY_JOB_NAMES.DETECT_DUPLICATES:
+        return handlers.detectDuplicates(job.data as DetectDuplicatesJobPayload);
       case LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION:
         return handlers.matchFileAssetToEdition(job.data as MatchFileAssetToEditionJobPayload);
       case LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA:
@@ -49,6 +60,7 @@ export function createLibraryWorkerProcessor(
 
 export function createLibraryWorker(
   handlers: LibraryWorkerHandlers = {
+    detectDuplicates,
     hashFileAsset,
     matchFileAssetToEdition,
     parseFileAssetMetadata,
