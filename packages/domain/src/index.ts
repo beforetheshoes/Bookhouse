@@ -1,15 +1,18 @@
 export {
   AvailabilityStatus,
   ContributorRole,
+  DuplicateReason,
   EditionFileRole,
   FormatFamily,
   LibraryRootKind,
   MediaKind,
+  ReviewStatus,
   ScanMode,
 } from "@bookhouse/db";
 
 export type {
   Contributor,
+  DuplicateCandidate,
   Edition,
   EditionFile,
   FileAsset,
@@ -20,6 +23,7 @@ export type {
 
 import type {
   Contributor,
+  DuplicateCandidate,
   Edition,
   EditionFile,
   FileAsset,
@@ -36,6 +40,7 @@ export interface Batch1DomainModels {
   editionFile: EditionFile;
   contributor: Contributor;
   series: Series;
+  duplicateCandidate: DuplicateCandidate;
 }
 
 export const BATCH1_DOMAIN_MODEL_NAMES = [
@@ -46,4 +51,5 @@ export const BATCH1_DOMAIN_MODEL_NAMES = [
   "EditionFile",
   "Contributor",
   "Series",
+  "DuplicateCandidate",
 ] as const;

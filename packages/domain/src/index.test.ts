@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   AvailabilityStatus,
   BATCH1_DOMAIN_MODEL_NAMES,
+  DuplicateReason,
   EditionFileRole,
   FormatFamily,
   LibraryRootKind,
   MediaKind,
+  ReviewStatus,
   ScanMode,
 } from "./index";
+import type { Batch1DomainModels, DuplicateCandidate } from "./index";
 
 describe("domain package", () => {
   it("re-exports the batch 1 model enums", () => {
@@ -17,6 +20,8 @@ describe("domain package", () => {
     expect(AvailabilityStatus.MISSING).toBe("MISSING");
     expect(FormatFamily.EBOOK).toBe("EBOOK");
     expect(EditionFileRole.PRIMARY).toBe("PRIMARY");
+    expect(DuplicateReason.SAME_HASH).toBe("SAME_HASH");
+    expect(ReviewStatus.PENDING).toBe("PENDING");
     expect(BATCH1_DOMAIN_MODEL_NAMES).toEqual([
       "LibraryRoot",
       "FileAsset",
@@ -25,6 +30,15 @@ describe("domain package", () => {
       "EditionFile",
       "Contributor",
       "Series",
+      "DuplicateCandidate",
     ]);
+  });
+
+  it("includes duplicate candidates in the batch 1 domain model map", () => {
+    const duplicateCandidate = null as DuplicateCandidate | null;
+    const batchModelDuplicateCandidate = null as Batch1DomainModels["duplicateCandidate"] | null;
+
+    expect(duplicateCandidate).toBeNull();
+    expect(batchModelDuplicateCandidate).toBeNull();
   });
 });
