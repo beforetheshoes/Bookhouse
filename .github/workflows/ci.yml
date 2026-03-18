@@ -13,6 +13,9 @@ concurrency:
 env:
   NODE_VERSION: "24"
   PNPM_VERSION: "10.12.1"
+  # Prisma 7's config loader resolves DATABASE_URL at import time (even for
+  # `prisma generate`). A placeholder is sufficient — no real DB is needed.
+  DATABASE_URL: postgresql://placeholder/placeholder
 
 jobs:
   lint:
