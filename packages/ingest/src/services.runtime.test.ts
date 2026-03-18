@@ -17,6 +17,7 @@ vi.mock("@bookhouse/db", () => ({
       })),
     },
     fileAsset: {
+      findByDirectory: vi.fn(async () => []),
       findMany: vi.fn(async () => []),
       upsert: vi.fn(async () => ({
         absolutePath: "/tmp/runtime-root/book.epub",
@@ -44,6 +45,9 @@ vi.mock("@bookhouse/db", () => ({
       }),
       findFirst: vi.fn(async () => null),
       findUnique: vi.fn(async () => null),
+      update: vi.fn(async () => {
+        throw new Error("not used");
+      }),
     },
     editionContributor: {
       create: vi.fn(async () => {
@@ -62,6 +66,14 @@ vi.mock("@bookhouse/db", () => ({
         throw new Error("not used");
       }),
       findMany: vi.fn(async () => []),
+      findUnique: vi.fn(async () => null),
+      update: vi.fn(async () => {
+        throw new Error("not used");
+      }),
+    },
+    series: {
+      findFirst: vi.fn(async () => null),
+      create: vi.fn(async () => ({ id: "series-1", name: "test" })),
     },
   },
 }));

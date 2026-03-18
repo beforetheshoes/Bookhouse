@@ -55,7 +55,10 @@ interface TestState {
 }
 
 interface TestWork {
+  description: string | null;
   id: string;
+  language: string | null;
+  seriesId: string | null;
   sortTitle: string | null;
   titleCanonical: string;
   titleDisplay: string;
@@ -150,6 +153,11 @@ function createTestDb(state: TestState): IngestDb {
       },
     },
     fileAsset: {
+      async findByDirectory({ directoryPath, mediaKinds }) {
+        return [...state.fileAssets.values()].filter(
+          (fa) => fa.absolutePath.startsWith(directoryPath + "/") && mediaKinds.includes(fa.mediaKind),
+        );
+      },
       async findMany({ where }) {
         return [...state.fileAssets.values()].filter(
           (fileAsset) => fileAsset.libraryRootId === where.libraryRootId,
@@ -197,11 +205,24 @@ function createTestDb(state: TestState): IngestDb {
       async create({ data }) {
         workSequence += 1;
         const created: TestWork = {
+          description: null,
           id: `work-${workSequence}`,
+          language: null,
+          seriesId: null,
           ...data,
         };
         state.works.set(created.id, created);
         return created;
+      },
+      async findUnique({ where }) {
+        return state.works.get(where.id) ?? null;
+      },
+      async update({ data, where }) {
+        const existing = state.works.get(where.id);
+        if (!existing) throw new Error(`Unknown work: ${where.id}`);
+        const updated = { ...existing, ...data };
+        state.works.set(updated.id, updated);
+        return updated;
       },
       async findMany({ where }) {
         return [...state.works.values()]
@@ -239,6 +260,18 @@ function createTestDb(state: TestState): IngestDb {
       },
       async findUnique({ where }) {
         return state.editions.get(where.id) ?? null;
+      },
+      async update({ data, where }) {
+        const existing = state.editions.get(where.id);
+        if (!existing) throw new Error(`Unknown edition: ${where.id}`);
+        const updated = { ...existing, ...data };
+        state.editions.set(updated.id, updated);
+        return updated;
+      },
+    },
+    series: {
+      async upsert({ name }) {
+        return { id: `series-${name}`, name };
       },
     },
     editionFile: {
@@ -323,7 +356,10 @@ function addFileAsset(state: TestState, overrides: Partial<TestFileAsset> = {}):
 
 function addWork(state: TestState, overrides: Partial<TestWork> = {}): TestWork {
   const work: TestWork = {
+    description: null,
     id: "work-1",
+    language: null,
+    seriesId: null,
     sortTitle: null,
     titleCanonical: "the fifth season",
     titleDisplay: "The Fifth Season",
@@ -1439,7 +1475,10 @@ describe("ingest services", () => {
       workId: "work-1",
     });
     expect(state.works.get("work-1")).toEqual({
+      description: null,
       id: "work-1",
+      language: null,
+      seriesId: null,
       sortTitle: null,
       titleCanonical: "the fifth season",
       titleDisplay: "The Fifth Season",
