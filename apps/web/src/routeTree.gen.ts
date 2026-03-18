@@ -11,10 +11,10 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as LoggedOutRouteImport } from './routes/logged-out'
+import { Route as LibraryRouteImport } from './routes/library'
 import { Route as DuplicatesRouteImport } from './routes/duplicates'
 import { Route as CollectionsRouteImport } from './routes/collections'
 import { Route as AudioLinksRouteImport } from './routes/audio-links'
-import { Route as LibraryRouteImport } from './routes/library'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WorksWorkIdRouteImport } from './routes/works.$workId'
 import { Route as DuplicatesCandidateIdRouteImport } from './routes/duplicates.$candidateId'
@@ -38,6 +38,11 @@ const LoggedOutRoute = LoggedOutRouteImport.update({
   path: '/logged-out',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LibraryRoute = LibraryRouteImport.update({
+  id: '/library',
+  path: '/library',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DuplicatesRoute = DuplicatesRouteImport.update({
   id: '/duplicates',
   path: '/duplicates',
@@ -51,11 +56,6 @@ const CollectionsRoute = CollectionsRouteImport.update({
 const AudioLinksRoute = AudioLinksRouteImport.update({
   id: '/audio-links',
   path: '/audio-links',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LibraryRoute = LibraryRouteImport.update({
-  id: '/library',
-  path: '/library',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -275,6 +275,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoggedOutRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/library': {
+      id: '/library'
+      path: '/library'
+      fullPath: '/library'
+      preLoaderRoute: typeof LibraryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/duplicates': {
       id: '/duplicates'
       path: '/duplicates'
@@ -294,13 +301,6 @@ declare module '@tanstack/react-router' {
       path: '/audio-links'
       fullPath: '/audio-links'
       preLoaderRoute: typeof AudioLinksRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/library': {
-      id: '/library'
-      path: '/library'
-      fullPath: '/library'
-      preLoaderRoute: typeof LibraryRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {

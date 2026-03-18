@@ -1,40 +1,9 @@
-import { db } from "@bookhouse/db";
 import {
   DuplicateReason,
   ProgressTrackingMode,
   ReviewStatus,
 } from "@bookhouse/domain";
 import { createServerFn } from "@tanstack/react-start";
-import { getCurrentUser } from "./auth-server";
-import {
-  addWorkToCollection,
-  createCollection,
-  createExternalLink,
-  deleteReadingProgress,
-  deleteCollection,
-  deleteExternalLink,
-  getCollectionDetail,
-  getReadingProgress,
-  getAudioLinkDetail,
-  getDuplicateCandidateDetail,
-  getWorkCollectionMembership,
-  getUserProgressTrackingMode,
-  getWorkProgressView,
-  listLibraryWorks,
-  listExternalLinksForWork,
-  listCollections,
-  listAudioLinks,
-  listDuplicateCandidates,
-  mergeDuplicateCandidate,
-  removeWorkFromCollection,
-  renameCollection,
-  upsertReadingProgress,
-  updateExternalLink,
-  updateAudioLinkStatus,
-  updateDuplicateCandidateStatus,
-  updateUserProgressTrackingMode,
-  updateWorkProgressTrackingMode,
-} from "./library-service";
 import {
   addWorkToCollectionSchema,
   createCollectionSchema,
@@ -55,9 +24,25 @@ import {
   upsertReadingProgressSchema,
 } from "./progress-validation";
 
-const libraryDb = db as unknown as import("./library-service").LibraryServiceDb;
+type LibraryServiceModule = typeof import("./library-service");
+
+async function loadLibraryDeps(): Promise<{
+  db: import("./library-service").LibraryServiceDb;
+  service: LibraryServiceModule;
+}> {
+  const [{ db }, service] = await Promise.all([
+    import("@bookhouse/db"),
+    import("./library-service"),
+  ]);
+
+  return {
+    db: db as unknown as import("./library-service").LibraryServiceDb,
+    service,
+  };
+}
 
 export async function requireCurrentUserId(): Promise<string> {
+  const { getCurrentUser } = await import("./auth-server");
   const user = await getCurrentUser();
 
   if (!user) {
@@ -71,18 +56,21 @@ export async function listDuplicateCandidatesAction(data: {
   reason?: DuplicateReason | "ALL";
   status?: ReviewStatus | "ALL";
 } | undefined) {
-  return listDuplicateCandidates(libraryDb, data ?? {});
+  const { db, service } = await loadLibraryDeps();
+  return service.listDuplicateCandidates(db, data ?? {});
 }
 
 export async function listAudioLinksAction(data: {
   status?: ReviewStatus | "ALL";
 } | undefined) {
-  return listAudioLinks(libraryDb, data ?? {});
+  const { db, service } = await loadLibraryDeps();
+  return service.listAudioLinks(db, data ?? {});
 }
 
 export async function listCollectionsAction() {
   const userId = await requireCurrentUserId();
-  return listCollections(libraryDb, userId);
+  const { db, service } = await loadLibraryDeps();
+  return service.listCollections(db, userId);
 }
 
 export async function listLibraryWorksAction(data: {
@@ -90,22 +78,26 @@ export async function listLibraryWorksAction(data: {
   sort?: "title-asc" | "title-desc" | "recent-progress";
 } | undefined) {
   const userId = await requireCurrentUserId();
-  return listLibraryWorks(libraryDb, userId, data ?? {});
+  const { db, service } = await loadLibraryDeps();
+  return service.listLibraryWorks(db, userId, data ?? {});
 }
 
 export async function listExternalLinksForWorkAction(data: { workId: string }) {
   await requireCurrentUserId();
-  return listExternalLinksForWork(libraryDb, data.workId);
+  const { db, service } = await loadLibraryDeps();
+  return service.listExternalLinksForWork(db, data.workId);
 }
 
 export async function getCollectionDetailAction(data: { collectionId: string }) {
   const userId = await requireCurrentUserId();
-  return getCollectionDetail(libraryDb, userId, data.collectionId);
+  const { db, service } = await loadLibraryDeps();
+  return service.getCollectionDetail(db, userId, data.collectionId);
 }
 
 export async function createCollectionAction(data: { name: string }) {
   const userId = await requireCurrentUserId();
-  return createCollection(libraryDb, userId, data.name);
+  const { db, service } = await loadLibraryDeps();
+  return service.createCollection(db, userId, data.name);
 }
 
 export async function createExternalLinkAction(data: {
@@ -116,8 +108,9 @@ export async function createExternalLinkAction(data: {
   provider: string;
 }) {
   await requireCurrentUserId();
-  return createExternalLink(
-    libraryDb,
+  const { db, service } = await loadLibraryDeps();
+  return service.createExternalLink(
+    db,
     data.editionId,
     data.provider,
     data.externalId,
@@ -128,12 +121,14 @@ export async function createExternalLinkAction(data: {
 
 export async function renameCollectionAction(data: { collectionId: string; name: string }) {
   const userId = await requireCurrentUserId();
-  return renameCollection(libraryDb, userId, data.collectionId, data.name);
+  const { db, service } = await loadLibraryDeps();
+  return service.renameCollection(db, userId, data.collectionId, data.name);
 }
 
 export async function deleteCollectionAction(data: { collectionId: string }) {
   const userId = await requireCurrentUserId();
-  await deleteCollection(libraryDb, userId, data.collectionId);
+  const { db, service } = await loadLibraryDeps();
+  await service.deleteCollection(db, userId, data.collectionId);
 }
 
 export async function updateExternalLinkAction(data: {
@@ -144,8 +139,9 @@ export async function updateExternalLinkAction(data: {
   provider: string;
 }) {
   await requireCurrentUserId();
-  return updateExternalLink(
-    libraryDb,
+  const { db, service } = await loadLibraryDeps();
+  return service.updateExternalLink(
+    db,
     data.linkId,
     data.provider,
     data.externalId,
@@ -156,30 +152,36 @@ export async function updateExternalLinkAction(data: {
 
 export async function addWorkToCollectionAction(data: { collectionId: string; workId: string }) {
   const userId = await requireCurrentUserId();
-  await addWorkToCollection(libraryDb, userId, data.collectionId, data.workId);
+  const { db, service } = await loadLibraryDeps();
+  await service.addWorkToCollection(db, userId, data.collectionId, data.workId);
 }
 
 export async function removeWorkFromCollectionAction(data: { collectionId: string; workId: string }) {
   const userId = await requireCurrentUserId();
-  await removeWorkFromCollection(libraryDb, userId, data.collectionId, data.workId);
+  const { db, service } = await loadLibraryDeps();
+  await service.removeWorkFromCollection(db, userId, data.collectionId, data.workId);
 }
 
 export async function deleteExternalLinkAction(data: { linkId: string }) {
   await requireCurrentUserId();
-  await deleteExternalLink(libraryDb, data.linkId);
+  const { db, service } = await loadLibraryDeps();
+  await service.deleteExternalLink(db, data.linkId);
 }
 
 export async function getWorkCollectionMembershipAction(data: { workId: string }) {
   const userId = await requireCurrentUserId();
-  return getWorkCollectionMembership(libraryDb, userId, data.workId);
+  const { db, service } = await loadLibraryDeps();
+  return service.getWorkCollectionMembership(db, userId, data.workId);
 }
 
 export async function getDuplicateCandidateDetailAction(data: { candidateId: string }) {
-  return getDuplicateCandidateDetail(libraryDb, data.candidateId);
+  const { db, service } = await loadLibraryDeps();
+  return service.getDuplicateCandidateDetail(db, data.candidateId);
 }
 
 export async function getAudioLinkDetailAction(data: { linkId: string }) {
-  return getAudioLinkDetail(libraryDb, data.linkId);
+  const { db, service } = await loadLibraryDeps();
+  return service.getAudioLinkDetail(db, data.linkId);
 }
 
 export async function updateDuplicateCandidateStatusAction(data: {
@@ -187,7 +189,8 @@ export async function updateDuplicateCandidateStatusAction(data: {
   status: ReviewStatus;
 }) {
   await requireCurrentUserId();
-  return updateDuplicateCandidateStatus(libraryDb, data.candidateId, data.status);
+  const { db, service } = await loadLibraryDeps();
+  return service.updateDuplicateCandidateStatus(db, data.candidateId, data.status);
 }
 
 export async function updateAudioLinkStatusAction(data: {
@@ -195,7 +198,8 @@ export async function updateAudioLinkStatusAction(data: {
   status: ReviewStatus;
 }) {
   await requireCurrentUserId();
-  return updateAudioLinkStatus(libraryDb, data.linkId, data.status);
+  const { db, service } = await loadLibraryDeps();
+  return service.updateAudioLinkStatus(db, data.linkId, data.status);
 }
 
 export async function mergeDuplicateCandidateAction(data: {
@@ -203,12 +207,14 @@ export async function mergeDuplicateCandidateAction(data: {
   survivorSide: "left" | "right";
 }) {
   await requireCurrentUserId();
-  return mergeDuplicateCandidate(libraryDb, data.candidateId, data.survivorSide);
+  const { db, service } = await loadLibraryDeps();
+  return service.mergeDuplicateCandidate(db, data.candidateId, data.survivorSide);
 }
 
 export async function getUserProgressTrackingModeAction() {
   const userId = await requireCurrentUserId();
-  return getUserProgressTrackingMode(libraryDb, userId);
+  const { db, service } = await loadLibraryDeps();
+  return service.getUserProgressTrackingMode(db, userId);
 }
 
 export async function getReadingProgressAction(data: {
@@ -217,7 +223,8 @@ export async function getReadingProgressAction(data: {
   source: string | null;
 }) {
   const userId = await requireCurrentUserId();
-  return getReadingProgress(libraryDb, userId, data);
+  const { db, service } = await loadLibraryDeps();
+  return service.getReadingProgress(db, userId, data);
 }
 
 export async function upsertReadingProgressAction(data: {
@@ -228,7 +235,8 @@ export async function upsertReadingProgressAction(data: {
   source: string | null;
 }) {
   const userId = await requireCurrentUserId();
-  return upsertReadingProgress(libraryDb, userId, data);
+  const { db, service } = await loadLibraryDeps();
+  return service.upsertReadingProgress(db, userId, data);
 }
 
 export async function deleteReadingProgressAction(data: {
@@ -237,19 +245,22 @@ export async function deleteReadingProgressAction(data: {
   source: string | null;
 }) {
   const userId = await requireCurrentUserId();
-  await deleteReadingProgress(libraryDb, userId, data);
+  const { db, service } = await loadLibraryDeps();
+  await service.deleteReadingProgress(db, userId, data);
 }
 
 export async function updateUserProgressTrackingModeAction(data: {
   progressTrackingMode: ProgressTrackingMode;
 }) {
   const userId = await requireCurrentUserId();
-  return updateUserProgressTrackingMode(libraryDb, userId, data.progressTrackingMode);
+  const { db, service } = await loadLibraryDeps();
+  return service.updateUserProgressTrackingMode(db, userId, data.progressTrackingMode);
 }
 
 export async function getWorkProgressViewAction(data: { workId: string }) {
   const userId = await requireCurrentUserId();
-  return getWorkProgressView(libraryDb, userId, data.workId);
+  const { db, service } = await loadLibraryDeps();
+  return service.getWorkProgressView(db, userId, data.workId);
 }
 
 export async function updateWorkProgressTrackingModeAction(data: {
@@ -257,7 +268,8 @@ export async function updateWorkProgressTrackingModeAction(data: {
   workId: string;
 }) {
   const userId = await requireCurrentUserId();
-  return updateWorkProgressTrackingMode(libraryDb, userId, data.workId, data.progressTrackingMode);
+  const { db, service } = await loadLibraryDeps();
+  return service.updateWorkProgressTrackingMode(db, userId, data.workId, data.progressTrackingMode);
 }
 
 export const validateListDuplicateCandidatesInput = (

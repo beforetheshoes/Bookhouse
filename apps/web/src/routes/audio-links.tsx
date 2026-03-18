@@ -9,6 +9,29 @@ import {
   updateAudioLinkStatusServerFn,
 } from "../lib/library-server";
 
+function getSearchParam(
+  location: {
+    search?: unknown;
+    searchStr?: string;
+  },
+  key: string,
+): string | null {
+  if (typeof location.searchStr === "string") {
+    return new URLSearchParams(location.searchStr).get(key);
+  }
+
+  if (typeof location.search === "string") {
+    return new URLSearchParams(location.search).get(key);
+  }
+
+  if (location.search && typeof location.search === "object") {
+    const value = (location.search as Record<string, unknown>)[key];
+    return typeof value === "string" ? value : null;
+  }
+
+  return null;
+}
+
 export const Route = createFileRoute("/audio-links")({
   loader: async ({ location, serverContext }) => {
     const authContext = serverContext as
@@ -26,8 +49,7 @@ export const Route = createFileRoute("/audio-links")({
       });
     }
 
-    const url = new URL(`https://bookhouse.example${location.pathname}${location.search}`);
-    const status = (url.searchParams.get("status") as ReviewStatus | "ALL" | null) ?? ReviewStatus.PENDING;
+    const status = (getSearchParam(location, "status") as ReviewStatus | "ALL" | null) ?? ReviewStatus.PENDING;
     const audioLinks = await listAudioLinksServerFn({
       data: {
         status,

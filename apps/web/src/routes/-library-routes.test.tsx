@@ -181,8 +181,120 @@ describe("library routes", () => {
     expect(html).not.toContain("confidence");
   });
 
+  it("loads audio link filters from parsed location search objects", async () => {
+    const { Route } = await import("./audio-links");
+    getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
+    listAudioLinksServerFnMock.mockResolvedValueOnce([]);
+
+    const loader = Route.options.loader as unknown as (input: {
+      location: {
+        pathname: string;
+        search: Record<string, unknown>;
+        searchStr?: string;
+      };
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+
+    await loader({
+      location: {
+        pathname: "/audio-links",
+        search: { status: "ALL" },
+        searchStr: "?status=ALL",
+      },
+      serverContext: {},
+    });
+
+    expect(listAudioLinksServerFnMock).toHaveBeenLastCalledWith({
+      data: {
+        status: "ALL",
+      },
+    });
+  });
+
+  it("loads audio link filters from parsed search objects without searchStr", async () => {
+    const { Route } = await import("./audio-links");
+    getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
+    listAudioLinksServerFnMock.mockResolvedValueOnce([]);
+
+    const loader = Route.options.loader as unknown as (input: {
+      location: {
+        pathname: string;
+        search: Record<string, unknown>;
+      };
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+
+    await loader({
+      location: {
+        pathname: "/audio-links",
+        search: { status: "ALL" },
+      },
+      serverContext: {},
+    });
+
+    expect(listAudioLinksServerFnMock).toHaveBeenLastCalledWith({
+      data: {
+        status: "ALL",
+      },
+    });
+  });
+
+  it("defaults audio link filters when parsed location search values are not strings", async () => {
+    const { Route } = await import("./audio-links");
+    getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
+    listAudioLinksServerFnMock.mockResolvedValueOnce([]);
+
+    const loader = Route.options.loader as unknown as (input: {
+      location: {
+        pathname: string;
+        search: Record<string, unknown>;
+      };
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+
+    await loader({
+      location: {
+        pathname: "/audio-links",
+        search: { status: 123 },
+      },
+      serverContext: {},
+    });
+
+    expect(listAudioLinksServerFnMock).toHaveBeenLastCalledWith({
+      data: {
+        status: "PENDING",
+      },
+    });
+  });
+
+  it("defaults audio link filters when location search is missing", async () => {
+    const { Route } = await import("./audio-links");
+    getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
+    listAudioLinksServerFnMock.mockResolvedValueOnce([]);
+
+    const loader = Route.options.loader as unknown as (input: {
+      location: {
+        pathname: string;
+      };
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+
+    await loader({
+      location: {
+        pathname: "/audio-links",
+      },
+      serverContext: {},
+    });
+
+    expect(listAudioLinksServerFnMock).toHaveBeenLastCalledWith({
+      data: {
+        status: "PENDING",
+      },
+    });
+  });
+
   it("loads audio link detail data and renders the detail page", async () => {
-    const { AudioLinkDetailRoute, Route } = await import("./audio-links.$linkId");
+    const { Route } = await import("./audio-links.$linkId");
     getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
     getAudioLinkDetailServerFnMock.mockResolvedValueOnce({
       audioAuthors: ["Author"],
@@ -214,14 +326,15 @@ describe("library routes", () => {
     });
 
     vi.spyOn(Route, "useLoaderData").mockReturnValue(loaderData as never);
-    const html = renderToStaticMarkup(<AudioLinkDetailRoute />);
+    const DetailComponent = Route.options.component as () => React.ReactElement;
+    const html = renderToStaticMarkup(<DetailComponent />);
 
     expect(html).toContain("Audio Link audio-link-1");
     expect(html.match(/Open work/g)).toHaveLength(2);
   });
 
   it("renders empty audio link detail metadata as None", async () => {
-    const { AudioLinkDetailRoute, Route } = await import("./audio-links.$linkId");
+    const { Route } = await import("./audio-links.$linkId");
     getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
     getAudioLinkDetailServerFnMock.mockResolvedValueOnce({
       audioAuthors: [],
@@ -253,7 +366,8 @@ describe("library routes", () => {
     });
 
     vi.spyOn(Route, "useLoaderData").mockReturnValue(loaderData as never);
-    const html = renderToStaticMarkup(<AudioLinkDetailRoute />);
+    const DetailComponent = Route.options.component as () => React.ReactElement;
+    const html = renderToStaticMarkup(<DetailComponent />);
 
     expect(html.match(/None/g)).toHaveLength(6);
   });
@@ -393,8 +507,133 @@ describe("library routes", () => {
     expect(html).not.toContain("confidence");
   });
 
+  it("loads duplicate filters from parsed location search objects", async () => {
+    const { Route } = await import("./duplicates");
+    getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
+    listDuplicateCandidatesServerFnMock.mockResolvedValueOnce([]);
+
+    const loader = Route.options.loader as unknown as (input: {
+      location: {
+        pathname: string;
+        search: Record<string, unknown>;
+        searchStr?: string;
+      };
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+
+    await loader({
+      location: {
+        pathname: "/duplicates",
+        search: {
+          reason: "SAME_HASH",
+          status: "ALL",
+        },
+        searchStr: "?status=ALL&reason=SAME_HASH",
+      },
+      serverContext: {},
+    });
+
+    expect(listDuplicateCandidatesServerFnMock).toHaveBeenLastCalledWith({
+      data: {
+        reason: "SAME_HASH",
+        status: "ALL",
+      },
+    });
+  });
+
+  it("loads duplicate filters from parsed search objects without searchStr", async () => {
+    const { Route } = await import("./duplicates");
+    getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
+    listDuplicateCandidatesServerFnMock.mockResolvedValueOnce([]);
+
+    const loader = Route.options.loader as unknown as (input: {
+      location: {
+        pathname: string;
+        search: Record<string, unknown>;
+      };
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+
+    await loader({
+      location: {
+        pathname: "/duplicates",
+        search: {
+          reason: "SAME_HASH",
+          status: "ALL",
+        },
+      },
+      serverContext: {},
+    });
+
+    expect(listDuplicateCandidatesServerFnMock).toHaveBeenLastCalledWith({
+      data: {
+        reason: "SAME_HASH",
+        status: "ALL",
+      },
+    });
+  });
+
+  it("defaults duplicate filters when parsed location search values are not strings", async () => {
+    const { Route } = await import("./duplicates");
+    getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
+    listDuplicateCandidatesServerFnMock.mockResolvedValueOnce([]);
+
+    const loader = Route.options.loader as unknown as (input: {
+      location: {
+        pathname: string;
+        search: Record<string, unknown>;
+      };
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+
+    await loader({
+      location: {
+        pathname: "/duplicates",
+        search: {
+          reason: null,
+          status: 123,
+        },
+      },
+      serverContext: {},
+    });
+
+    expect(listDuplicateCandidatesServerFnMock).toHaveBeenLastCalledWith({
+      data: {
+        reason: "ALL",
+        status: "PENDING",
+      },
+    });
+  });
+
+  it("defaults duplicate filters when location search is missing", async () => {
+    const { Route } = await import("./duplicates");
+    getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
+    listDuplicateCandidatesServerFnMock.mockResolvedValueOnce([]);
+
+    const loader = Route.options.loader as unknown as (input: {
+      location: {
+        pathname: string;
+      };
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+
+    await loader({
+      location: {
+        pathname: "/duplicates",
+      },
+      serverContext: {},
+    });
+
+    expect(listDuplicateCandidatesServerFnMock).toHaveBeenLastCalledWith({
+      data: {
+        reason: "ALL",
+        status: "PENDING",
+      },
+    });
+  });
+
   it("loads duplicate detail data and renders the detail page", async () => {
-    const { DuplicateDetailRoute, Route } = await import("./duplicates.$candidateId");
+    const { Route } = await import("./duplicates.$candidateId");
     getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
     getDuplicateCandidateDetailServerFnMock.mockResolvedValueOnce({
       id: "candidate-1",
@@ -424,13 +663,14 @@ describe("library routes", () => {
     });
 
     vi.spyOn(Route, "useLoaderData").mockReturnValue(loaderData as never);
-    const html = renderToStaticMarkup(<DuplicateDetailRoute />);
+    const DetailComponent = Route.options.component as () => React.ReactElement;
+    const html = renderToStaticMarkup(<DetailComponent />);
 
     expect(html).toContain("Candidate candidate-1");
   });
 
   it("renders duplicate detail links when both works are present", async () => {
-    const { DuplicateDetailRoute, Route } = await import("./duplicates.$candidateId");
+    const { Route } = await import("./duplicates.$candidateId");
     getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
     getDuplicateCandidateDetailServerFnMock.mockResolvedValueOnce({
       id: "candidate-4",
@@ -462,7 +702,8 @@ describe("library routes", () => {
     });
 
     vi.spyOn(Route, "useLoaderData").mockReturnValue(loaderData as never);
-    const html = renderToStaticMarkup(<DuplicateDetailRoute />);
+    const DetailComponent = Route.options.component as () => React.ReactElement;
+    const html = renderToStaticMarkup(<DetailComponent />);
 
     expect(html.match(/Open work/g)).toHaveLength(2);
   });
@@ -517,7 +758,8 @@ describe("library routes", () => {
     expect(renderToStaticMarkup(<duplicatesModule.DuplicatesRoute />)).toContain(
       "No duplicate candidates match the current filter.",
     );
-    const detailHtml = renderToStaticMarkup(<detailModule.DuplicateDetailRoute />);
+    const DetailComponent = detailModule.Route.options.component as () => React.ReactElement;
+    const detailHtml = renderToStaticMarkup(<DetailComponent />);
     expect(detailHtml).not.toContain("Keep left");
     expect(detailHtml).not.toContain("Open work");
   });
@@ -1082,6 +1324,144 @@ describe("library routes", () => {
     expect(html).not.toContain("via ");
   });
 
+  it("loads library filters from parsed location search objects", async () => {
+    const libraryModule = await import("./library");
+    getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
+    listLibraryWorksServerFnMock.mockResolvedValueOnce([]);
+
+    const loader = libraryModule.Route.options.loader as unknown as (input: {
+      location: {
+        pathname: string;
+        search: Record<string, unknown>;
+        searchStr?: string;
+      };
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+
+    await loader({
+      location: {
+        pathname: "/library",
+        search: {
+          filter: "with-progress",
+          sort: "recent-progress",
+        },
+        searchStr: "?sort=recent-progress&filter=with-progress",
+      },
+      serverContext: {},
+    });
+
+    expect(listLibraryWorksServerFnMock).toHaveBeenLastCalledWith({
+      data: {
+        filter: "with-progress",
+        sort: "recent-progress",
+      },
+    });
+  });
+
+  it("loads library filters from parsed search objects without searchStr", async () => {
+    const libraryModule = await import("./library");
+    getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
+    listLibraryWorksServerFnMock.mockResolvedValueOnce([]);
+
+    const loader = libraryModule.Route.options.loader as unknown as (input: {
+      location: {
+        pathname: string;
+        search: Record<string, unknown>;
+      };
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+
+    await loader({
+      location: {
+        pathname: "/library",
+        search: {
+          filter: "with-progress",
+          sort: "recent-progress",
+        },
+      },
+      serverContext: {},
+    });
+
+    expect(listLibraryWorksServerFnMock).toHaveBeenLastCalledWith({
+      data: {
+        filter: "with-progress",
+        sort: "recent-progress",
+      },
+    });
+  });
+
+  it("defaults library filters when parsed location search values are not strings", async () => {
+    const libraryModule = await import("./library");
+    getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
+    listLibraryWorksServerFnMock.mockResolvedValueOnce([]);
+
+    const loader = libraryModule.Route.options.loader as unknown as (input: {
+      location: {
+        pathname: string;
+        search: Record<string, unknown>;
+      };
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+
+    await loader({
+      location: {
+        pathname: "/library",
+        search: {
+          filter: false,
+          sort: 99,
+        },
+      },
+      serverContext: {},
+    });
+
+    expect(listLibraryWorksServerFnMock).toHaveBeenLastCalledWith({
+      data: {
+        filter: "all",
+        sort: "title-asc",
+      },
+    });
+  });
+
+  it("defaults library filters when location search is missing", async () => {
+    const libraryModule = await import("./library");
+    getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
+    listLibraryWorksServerFnMock.mockResolvedValueOnce([]);
+
+    const loader = libraryModule.Route.options.loader as unknown as (input: {
+      location: {
+        pathname: string;
+      };
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+
+    await loader({
+      location: {
+        pathname: "/library",
+      },
+      serverContext: {},
+    });
+
+    expect(listLibraryWorksServerFnMock).toHaveBeenLastCalledWith({
+      data: {
+        filter: "all",
+        sort: "title-asc",
+      },
+    });
+  });
+
+  it("renders library route defaults when loader data is malformed", async () => {
+    const libraryModule = await import("./library");
+    vi.spyOn(libraryModule.Route, "useLoaderData").mockReturnValue({
+      filter: 7,
+      sort: false,
+      works: null,
+    } as never);
+
+    const html = renderToStaticMarkup(<libraryModule.LibraryRoute />);
+
+    expect(html).toContain("No works in your library yet.");
+  });
+
   it("executes collection route helper actions", async () => {
     const collectionsModule = await import("./collections");
     const detailModule = await import("./collections.$collectionId");
@@ -1269,5 +1649,21 @@ describe("library routes", () => {
         href: "/auth/login",
       },
     });
+  });
+
+  it("renders root not-found and error boundaries", async () => {
+    const rootModule = await import("./__root");
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const NotFoundComponent = rootModule.Route.options.notFoundComponent as () => React.ReactElement;
+    const ErrorBoundaryComponent = rootModule.Route.options.errorComponent as React.ComponentType<{ error: Error }>;
+
+    const notFoundHtml = renderToStaticMarkup(<NotFoundComponent />);
+    const errorHtml = renderToStaticMarkup(<ErrorBoundaryComponent error={new Error("boom")} />);
+
+    expect(notFoundHtml).toContain("Page not found.");
+    expect(errorHtml).toContain("Application error");
+    expect(consoleErrorSpy).toHaveBeenCalledWith("Root route error", expect.any(Error));
+
+    consoleErrorSpy.mockRestore();
   });
 });

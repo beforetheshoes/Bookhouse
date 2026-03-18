@@ -16,5 +16,45 @@ if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = db;
 }
 
-export { PrismaClient } from "@prisma/client";
-export * from "@prisma/client";
+export {
+  AudioLinkMatchType,
+  AvailabilityStatus,
+  CollectionKind,
+  ContributorRole,
+  DuplicateReason,
+  EditionFileRole,
+  FormatFamily,
+  ImportJobKind,
+  ImportJobStatus,
+  LibraryRootKind,
+  MediaKind,
+  ProgressKind,
+  ProgressTrackingMode,
+  ReviewStatus,
+  ScanMode,
+  PrismaClient,
+} from "@prisma/client";
+
+export type {
+  AudioLink,
+  Collection,
+  CollectionItem,
+  Contributor,
+  DuplicateCandidate,
+  Edition,
+  EditionContributor,
+  EditionFile,
+  ExternalLink,
+  FileAsset,
+  ImportJob,
+  LibraryRoot,
+  Prisma,
+  ReadingProgress,
+  Series,
+  User,
+  UserIdentity,
+  UserPreference,
+  UserRole,
+  Work,
+  WorkProgressPreference,
+} from "@prisma/client";

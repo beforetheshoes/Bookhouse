@@ -42,7 +42,7 @@ export const Route = createFileRoute("/audio-links/$linkId")({
   notFoundComponent: () => <div>Audio link not found.</div>,
 });
 
-export function AudioLinkDetailRoute() {
+function AudioLinkDetailRoute() {
   const { audioLink } = Route.useLoaderData();
   const router = useRouter();
   const updateStatus = useServerFn(updateAudioLinkStatusServerFn);

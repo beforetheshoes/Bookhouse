@@ -5,6 +5,13 @@ import { RootComponent, Route } from "./__root";
 describe("root route", () => {
   it("defines document metadata and renders the shell", () => {
     expect(Route.options.head?.({} as never)).toEqual({
+      links: [
+        {
+          href: "/favicon.svg",
+          rel: "icon",
+          type: "image/svg+xml",
+        },
+      ],
       meta: [
         { charSet: "utf-8" },
         { name: "viewport", content: "width=device-width, initial-scale=1" },

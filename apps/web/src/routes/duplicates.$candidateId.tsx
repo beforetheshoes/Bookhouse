@@ -46,7 +46,7 @@ export const Route = createFileRoute("/duplicates/$candidateId")({
   notFoundComponent: () => <div>Duplicate candidate not found.</div>,
 });
 
-export function DuplicateDetailRoute() {
+function DuplicateDetailRoute() {
   const { candidate } = Route.useLoaderData();
   const router = useRouter();
   const mergeCandidate = useServerFn(mergeDuplicateCandidateServerFn);

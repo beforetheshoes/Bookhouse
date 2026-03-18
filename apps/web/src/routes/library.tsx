@@ -7,6 +7,29 @@ import type { LibraryWorkSummary } from "../lib/library-service";
 const DEFAULT_SORT = "title-asc";
 const DEFAULT_FILTER = "all";
 
+function getSearchParam(
+  location: {
+    search?: unknown;
+    searchStr?: string;
+  },
+  key: string,
+): string | null {
+  if (typeof location.searchStr === "string") {
+    return new URLSearchParams(location.searchStr).get(key);
+  }
+
+  if (typeof location.search === "string") {
+    return new URLSearchParams(location.search).get(key);
+  }
+
+  if (location.search && typeof location.search === "object") {
+    const value = (location.search as Record<string, unknown>)[key];
+    return typeof value === "string" ? value : null;
+  }
+
+  return null;
+}
+
 function normalizeSort(value: string | null): "title-asc" | "title-desc" | "recent-progress" {
   if (value === "title-desc" || value === "recent-progress") {
     return value;
@@ -60,9 +83,8 @@ export const Route = createFileRoute("/library")({
       });
     }
 
-    const url = new URL(`https://bookhouse.example${location.pathname}${location.search}`);
-    const sort = normalizeSort(url.searchParams.get("sort"));
-    const filter = normalizeFilter(url.searchParams.get("filter"));
+    const sort = normalizeSort(getSearchParam(location, "sort"));
+    const filter = normalizeFilter(getSearchParam(location, "filter"));
     const works = await listLibraryWorksServerFn({
       data: {
         filter,
@@ -70,13 +92,24 @@ export const Route = createFileRoute("/library")({
       },
     });
 
-    return { filter, sort, user, works };
+    return { filter, sort, works };
   },
   component: LibraryRoute,
 });
 
 export function LibraryRoute() {
-  const { filter, sort, works } = Route.useLoaderData();
+  const loaderData = Route.useLoaderData() as {
+    filter?: unknown;
+    sort?: unknown;
+    works?: unknown;
+  };
+  const filter = typeof loaderData.filter === "string"
+    ? normalizeFilter(loaderData.filter)
+    : DEFAULT_FILTER;
+  const sort = typeof loaderData.sort === "string"
+    ? normalizeSort(loaderData.sort)
+    : DEFAULT_SORT;
+  const works = Array.isArray(loaderData.works) ? loaderData.works as LibraryWorkSummary[] : [];
   const hasActiveFilter = filter !== DEFAULT_FILTER;
 
   return (
