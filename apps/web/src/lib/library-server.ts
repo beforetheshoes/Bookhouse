@@ -23,6 +23,11 @@ import {
   updateWorkProgressTrackingModeSchema,
   upsertReadingProgressSchema,
 } from "./progress-validation";
+import {
+  getE2eWorkProgressView,
+  isE2eFixtureMode,
+  listE2eLibraryWorks,
+} from "./e2e-fixtures";
 
 type LibraryServiceModule = typeof import("./library-service");
 
@@ -77,6 +82,10 @@ export async function listLibraryWorksAction(data: {
   filter?: "all" | "with-progress" | "without-progress";
   sort?: "title-asc" | "title-desc" | "recent-progress";
 } | undefined) {
+  if (isE2eFixtureMode()) {
+    return listE2eLibraryWorks();
+  }
+
   const userId = await requireCurrentUserId();
   const { db, service } = await loadLibraryDeps();
   return service.listLibraryWorks(db, userId, data ?? {});
@@ -258,6 +267,10 @@ export async function updateUserProgressTrackingModeAction(data: {
 }
 
 export async function getWorkProgressViewAction(data: { workId: string }) {
+  if (isE2eFixtureMode()) {
+    return getE2eWorkProgressView(data.workId);
+  }
+
   const userId = await requireCurrentUserId();
   const { db, service } = await loadLibraryDeps();
   return service.getWorkProgressView(db, userId, data.workId);

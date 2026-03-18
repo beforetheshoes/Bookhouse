@@ -17,6 +17,7 @@ import {
   getRequestUrl,
   useSession,
 } from "@tanstack/react-start/server";
+import { getE2eFixtureUser, isE2eFixtureMode } from "./e2e-fixtures";
 
 const authConfig = loadAuthConfig();
 
@@ -57,6 +58,10 @@ export async function getAuthSession(): Promise<AuthSessionManager> {
 }
 
 export async function getCurrentUser(): Promise<AuthenticatedUser | null> {
+  if (isE2eFixtureMode()) {
+    return getE2eFixtureUser();
+  }
+
   const session = await getAuthSession();
 
   return resolveAuthenticatedUser({

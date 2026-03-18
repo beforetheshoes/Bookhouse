@@ -2,7 +2,9 @@ import path from "node:path";
 import {
   AudioLinkMatchType,
   DuplicateReason,
+  EditionFileRole,
   FormatFamily,
+  MediaKind,
   ProgressTrackingMode,
   ReviewStatus,
   type ContributorRole,
@@ -21,15 +23,22 @@ type EditionWithDetails = {
   contributors: EditionContributorWithContributor[];
   createdAt?: Date;
   editionFiles: Array<{
+    role: EditionFileRole;
     fileAsset: {
       absolutePath: string;
+      basename?: string;
       createdAt?: Date;
+      extension?: string | null;
       fullHash: string | null;
       id: string;
+      mediaKind?: MediaKind;
       relativePath: string;
+      sizeBytes?: bigint | number | null;
+      mtime?: Date | null;
       updatedAt?: Date;
     };
   }>;
+  externalLinks?: ExternalLinkRecord[];
   formatFamily: FormatFamily;
   id: string;
   isbn10: string | null;
@@ -45,10 +54,15 @@ type EditionWithDetails = {
 
 type FileAssetWithDetails = {
   absolutePath: string;
+  basename?: string;
   createdAt?: Date;
+  extension?: string | null;
   fullHash: string | null;
   id: string;
+  mediaKind?: MediaKind;
   relativePath: string;
+  sizeBytes?: bigint | number | null;
+  mtime?: Date | null;
   updatedAt?: Date;
 };
 
@@ -127,6 +141,9 @@ type CollectionWithItems = CollectionRecord & {
 
 type WorkEditionRecord = {
   asin: string | null;
+  contributors?: EditionContributorWithContributor[];
+  editionFiles?: EditionWithDetails["editionFiles"];
+  externalLinks?: ExternalLinkRecord[];
   formatFamily: FormatFamily;
   id: string;
   isbn10: string | null;
@@ -140,6 +157,23 @@ type WorkWithLibraryData = {
     contributors: EditionContributorWithContributor[];
   }>;
   id: string;
+  titleDisplay: string;
+};
+
+type WorkDetailRecord = {
+  description: string | null;
+  editions: Array<WorkEditionRecord & {
+    contributors: EditionContributorWithContributor[];
+    editionFiles: EditionWithDetails["editionFiles"];
+    externalLinks: ExternalLinkRecord[];
+  }>;
+  id: string;
+  language: string | null;
+  series: {
+    id: string;
+    name: string;
+  } | null;
+  sortTitle: string | null;
   titleDisplay: string;
 };
 
@@ -225,7 +259,7 @@ export interface LibraryServiceDb {
   work: {
     delete(args: { where: { id: string } }): Promise<unknown>;
     findMany(args: Record<string, unknown>): Promise<WorkWithLibraryData[]>;
-    findUnique(args: Record<string, unknown>): Promise<{ id: string; titleDisplay: string; editions?: WorkEditionRecord[] } | null>;
+    findUnique(args: Record<string, unknown>): Promise<WorkDetailRecord | null>;
   };
   workProgressPreference: {
     deleteMany(args: Record<string, unknown>): Promise<{ count: number }>;
@@ -311,7 +345,22 @@ export interface ExternalLinkEntry {
 
 export interface WorkEditionView {
   asin: string | null;
+  contributors: Array<{
+    name: string;
+    role: ContributorRole;
+  }>;
   externalLinks: ExternalLinkEntry[];
+  files: Array<{
+    basename: string;
+    createdAt: string | null;
+    extension: string | null;
+    id: string;
+    mediaKind: MediaKind;
+    modifiedAt: string | null;
+    relativePath: string;
+    role: EditionFileRole;
+    sizeBytes: string | null;
+  }>;
   formatFamily: FormatFamily;
   id: string;
   isbn10: string | null;
@@ -322,10 +371,17 @@ export interface WorkEditionView {
 
 export interface WorkProgressView {
   collections: CollectionMembershipState[];
+  contributorGroups: Array<{
+    names: string[];
+    role: ContributorRole;
+  }>;
   currentSourceEditionId?: string;
+  description: string | null;
   editions: WorkEditionView[];
   effectiveMode: ProgressTrackingMode;
+  formatFamilies: FormatFamily[];
   globalMode: ProgressTrackingMode;
+  language: string | null;
   overrideMode: ProgressTrackingMode | null;
   progressRows: Array<{
     editionId: string;
@@ -337,6 +393,11 @@ export interface WorkProgressView {
     source: string | null;
     updatedAt: string;
   }>;
+  series: {
+    id: string;
+    name: string;
+  } | null;
+  sortTitle: string | null;
   summary: {
     percent: number | null;
     progressKind: ProgressKind;
@@ -562,13 +623,48 @@ function toExternalLinkEntry(externalLink: ExternalLinkRecord): ExternalLinkEntr
   };
 }
 
+function normalizeSizeBytes(value: bigint | number | null | undefined): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  return value.toString();
+}
+
+function toWorkEditionFileView(file: NonNullable<WorkEditionRecord["editionFiles"]>[number]) {
+  return {
+    basename: file.fileAsset.basename ?? path.basename(file.fileAsset.relativePath),
+    createdAt: file.fileAsset.createdAt?.toISOString() ?? null,
+    extension: file.fileAsset.extension ?? null,
+    id: file.fileAsset.id,
+    mediaKind: file.fileAsset.mediaKind ?? MediaKind.OTHER,
+    modifiedAt: file.fileAsset.mtime?.toISOString() ?? file.fileAsset.updatedAt?.toISOString() ?? null,
+    relativePath: file.fileAsset.relativePath,
+    role: file.role,
+    sizeBytes: normalizeSizeBytes(file.fileAsset.sizeBytes),
+  };
+}
+
+function toWorkEditionContributorView(contributor: EditionContributorWithContributor) {
+  return {
+    name: contributor.contributor.nameDisplay,
+    role: contributor.role,
+  };
+}
+
 function toWorkEditionView(
   edition: WorkEditionRecord,
   externalLinks: ExternalLinkRecord[],
 ): WorkEditionView {
   return {
     asin: edition.asin,
+    contributors: (edition.contributors ?? [])
+      .map(toWorkEditionContributorView)
+      .sort((left, right) => left.role.localeCompare(right.role) || left.name.localeCompare(right.name)),
     externalLinks: externalLinks.map(toExternalLinkEntry),
+    files: [...(edition.editionFiles ?? [])]
+      .map(toWorkEditionFileView)
+      .sort((left, right) => left.role.localeCompare(right.role) || left.relativePath.localeCompare(right.relativePath)),
     formatFamily: edition.formatFamily,
     id: edition.id,
     isbn10: edition.isbn10,
@@ -607,6 +703,29 @@ function toCollectionDetail(collection: CollectionWithItems): CollectionDetail {
       }))
       .sort((left, right) => left.titleDisplay.localeCompare(right.titleDisplay)),
   };
+}
+
+function toContributorGroups(
+  editions: Array<{
+    contributors: EditionContributorWithContributor[];
+  }>,
+): WorkProgressView["contributorGroups"] {
+  const namesByRole = new Map<ContributorRole, Set<string>>();
+
+  for (const edition of editions) {
+    for (const contributor of edition.contributors) {
+      const names = namesByRole.get(contributor.role) ?? new Set<string>();
+      names.add(contributor.contributor.nameDisplay);
+      namesByRole.set(contributor.role, names);
+    }
+  }
+
+  return [...namesByRole.entries()]
+    .map(([role, names]) => ({
+      names: [...names].sort((left, right) => left.localeCompare(right)),
+      role,
+    }))
+    .sort((left, right) => left.role.localeCompare(right.role));
 }
 
 function compareLibraryWorksByTitle(
@@ -1776,15 +1895,32 @@ export async function getWorkProgressView(
 ): Promise<WorkProgressView | null> {
   const work = await db.work.findUnique({
     where: { id: workId },
+    include: {
+      series: true,
+      editions: {
+        include: {
+          contributors: {
+            include: {
+              contributor: true,
+            },
+          },
+          editionFiles: {
+            include: {
+              fileAsset: true,
+            },
+          },
+          externalLinks: true,
+        },
+      },
+    },
   });
 
   if (work === null) {
     return null;
   }
 
-  const [collections, editions, globalMode, override, progressRows] = await Promise.all([
+  const [collections, globalMode, override, progressRows] = await Promise.all([
     getWorkCollectionMembership(db, userId, workId),
-    listExternalLinksForWork(db, workId),
     getUserProgressTrackingMode(db, userId),
     db.workProgressPreference.findUnique({
       where: {
@@ -1813,15 +1949,24 @@ export async function getWorkProgressView(
       },
     }),
   ]);
+  const editions = [...work.editions]
+    .sort((left, right) => left.formatFamily.localeCompare(right.formatFamily) || left.id.localeCompare(right.id))
+    .map((edition) => toWorkEditionView(edition, edition.externalLinks));
   const effectiveMode = override?.progressTrackingMode ?? globalMode;
   const summaryRow = progressRows[0] ?? null;
+  const formatFamilies = [...new Set(work.editions.map((edition) => edition.formatFamily))]
+    .sort((left, right) => left.localeCompare(right));
 
   return {
     collections,
+    contributorGroups: toContributorGroups(work.editions),
     currentSourceEditionId: summaryRow?.editionId,
+    description: work.description,
     editions,
     effectiveMode,
+    formatFamilies,
     globalMode,
+    language: work.language,
     overrideMode: override?.progressTrackingMode ?? null,
     progressRows: progressRows.map((row) => ({
       editionId: row.editionId,
@@ -1833,6 +1978,8 @@ export async function getWorkProgressView(
       source: row.source,
       updatedAt: row.updatedAt.toISOString(),
     })),
+    series: work.series,
+    sortTitle: work.sortTitle,
     summary: summaryRow === null
       ? null
       : {

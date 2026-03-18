@@ -786,9 +786,26 @@ describe("library routes", () => {
           name: "Queued",
         },
       ],
+      contributorGroups: [
+        {
+          names: ["N. K. Jemisin"],
+          role: "AUTHOR",
+        },
+        {
+          names: ["Robin Miles"],
+          role: "NARRATOR",
+        },
+      ],
+      description: "The end of the world is already here.",
       editions: [
         {
           asin: "B123",
+          contributors: [
+            {
+              name: "N. K. Jemisin",
+              role: "AUTHOR",
+            },
+          ],
           externalLinks: [
             {
               editionId: "edition-1",
@@ -807,6 +824,19 @@ describe("library routes", () => {
               provider: "goodreads",
             },
           ],
+          files: [
+            {
+              basename: "fifth-season.epub",
+              createdAt: "2025-01-01T00:00:00.000Z",
+              extension: "epub",
+              id: "file-1",
+              mediaKind: "EPUB",
+              modifiedAt: "2025-01-03T00:00:00.000Z",
+              relativePath: "ebooks/fifth-season.epub",
+              role: "PRIMARY",
+              sizeBytes: "2048",
+            },
+          ],
           formatFamily: "EBOOK",
           id: "edition-1",
           isbn10: "0316498840",
@@ -816,7 +846,14 @@ describe("library routes", () => {
         },
         {
           asin: null,
+          contributors: [
+            {
+              name: "Robin Miles",
+              role: "NARRATOR",
+            },
+          ],
           externalLinks: [],
+          files: [],
           formatFamily: "AUDIOBOOK",
           id: "edition-2",
           isbn10: null,
@@ -826,7 +863,9 @@ describe("library routes", () => {
         },
       ],
       effectiveMode: ProgressTrackingMode.BY_WORK,
+      formatFamilies: ["AUDIOBOOK", "EBOOK"],
       globalMode: ProgressTrackingMode.BY_WORK,
+      language: "en",
       overrideMode: ProgressTrackingMode.BY_EDITION,
       progressRows: [
         {
@@ -846,6 +885,11 @@ describe("library routes", () => {
         source: "kobo",
         updatedAt: "2025-01-01T00:00:00.000Z",
       },
+      series: {
+        id: "series-1",
+        name: "The Broken Earth",
+      },
+      sortTitle: "Fifth Season, The",
       workId: "work-1",
       workTitle: "The Fifth Season",
     });
@@ -868,13 +912,17 @@ describe("library routes", () => {
     expect(renderToStaticMarkup(<settingsModule.SettingsRoute />)).toContain("Settings");
     const workHtml = renderToStaticMarkup(<workModule.WorkDetailRoute />);
     expect(workHtml).toContain("The Fifth Season");
-    expect(workHtml).toContain("Override: BY_EDITION");
-    expect(workHtml).toContain("Edition edition-1");
+    expect(workHtml).toContain("The Broken Earth");
+    expect(workHtml).toContain("N. K. Jemisin");
+    expect(workHtml).toContain("Robin Miles");
+    expect(workHtml).toContain("By edition");
+    expect(workHtml).toContain("Ebook edition edition-1");
     expect(workHtml).toContain("External links");
     expect(workHtml).toContain("openlibrary");
     expect(workHtml).toContain("goodreads");
     expect(workHtml).toContain("Current metadata: None");
     expect(workHtml).toContain("Add external link");
+    expect(workHtml).toContain("ebooks/fifth-season.epub");
     expect(workHtml).toContain("Favorites");
     expect(workHtml).toContain("On this shelf");
     expect(workHtml).toContain("Queued");
@@ -887,10 +935,14 @@ describe("library routes", () => {
     getCurrentUserServerFnMock.mockResolvedValue({ id: "user-1" });
     getWorkProgressViewServerFnMock.mockResolvedValueOnce({
       collections: [],
+      contributorGroups: [],
+      description: null,
       editions: [
         {
           asin: null,
+          contributors: [],
           externalLinks: [],
+          files: [],
           formatFamily: "EBOOK",
           id: "edition-empty",
           isbn10: null,
@@ -900,9 +952,13 @@ describe("library routes", () => {
         },
       ],
       effectiveMode: ProgressTrackingMode.BY_WORK,
+      formatFamilies: ["EBOOK"],
       globalMode: ProgressTrackingMode.BY_WORK,
+      language: null,
       overrideMode: null,
       progressRows: [],
+      series: null,
+      sortTitle: null,
       summary: null,
       workId: "work-2",
       workTitle: "No Progress Yet",
@@ -920,8 +976,9 @@ describe("library routes", () => {
 
     const workHtml = renderToStaticMarkup(<workModule.WorkDetailRoute />);
     expect(workHtml).toContain("No progress recorded for this work.");
+    expect(workHtml).toContain("No contributor credits captured yet.");
     expect(workHtml).toContain("No external links for this edition.");
-    expect(workHtml).not.toContain("Override:");
+    expect(workHtml).toContain("This work uses the global progress tracking default.");
 
     getWorkProgressViewServerFnMock.mockResolvedValueOnce(null);
     await expect(
@@ -951,9 +1008,13 @@ describe("library routes", () => {
     getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
     getWorkProgressViewServerFnMock.mockResolvedValueOnce({
       collections: [],
+      contributorGroups: [],
+      description: null,
       editions: [],
       effectiveMode: ProgressTrackingMode.BY_WORK,
+      formatFamilies: [],
       globalMode: ProgressTrackingMode.BY_EDITION,
+      language: null,
       overrideMode: null,
       progressRows: [
         {
@@ -967,6 +1028,8 @@ describe("library routes", () => {
           updatedAt: "2025-01-04T00:00:00.000Z",
         },
       ],
+      series: null,
+      sortTitle: null,
       summary: {
         percent: null,
         progressKind: "EBOOK",
@@ -988,9 +1051,156 @@ describe("library routes", () => {
     vi.spyOn(workModule.Route, "useLoaderData").mockReturnValue(workData as never);
 
     const workHtml = renderToStaticMarkup(<workModule.WorkDetailRoute />);
-    expect(workHtml).toContain("EBOOK");
+    expect(workHtml).toContain("ebook");
     expect(workHtml).toContain("0%");
-    expect(workHtml).toContain("Percent: 0");
+    expect(workHtml).toContain("Updated 2025-01-04 00:00");
+  });
+
+  it("renders work detail formatting fallbacks and file size variants", async () => {
+    const workModule = await import("./works.$workId");
+    getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
+    getWorkProgressViewServerFnMock.mockResolvedValueOnce({
+      collections: [],
+      contributorGroups: [],
+      description: null,
+      editions: [
+        {
+          asin: null,
+          contributors: [],
+          externalLinks: [
+            {
+              editionId: "edition-formatting",
+              externalId: "EXT1",
+              id: "external-link-formatting",
+              lastSyncedAt: "bad-date",
+              metadata: "",
+              provider: "openlibrary",
+            },
+          ],
+          files: [
+            {
+              basename: "bad.bin",
+              createdAt: "bad-date",
+              extension: null,
+              id: "file-bad",
+              mediaKind: "OTHER",
+              modifiedAt: "bad-date",
+              relativePath: "files/bad.bin",
+              role: "PRIMARY",
+              sizeBytes: "abc",
+            },
+            {
+              basename: "tiny.bin",
+              createdAt: null,
+              extension: "bin",
+              id: "file-tiny",
+              mediaKind: "OTHER",
+              modifiedAt: null,
+              relativePath: "files/tiny.bin",
+              role: "SUPPLEMENT",
+              sizeBytes: "12",
+            },
+            {
+              basename: "small.epub",
+              createdAt: null,
+              extension: "epub",
+              id: "file-small",
+              mediaKind: "EPUB",
+              modifiedAt: null,
+              relativePath: "files/small.epub",
+              role: "SUPPLEMENT",
+              sizeBytes: "2048",
+            },
+            {
+              basename: "medium.m4b",
+              createdAt: null,
+              extension: "m4b",
+              id: "file-medium",
+              mediaKind: "AUDIO",
+              modifiedAt: null,
+              relativePath: "files/medium.m4b",
+              role: "AUDIO_TRACK",
+              sizeBytes: "10485760",
+            },
+            {
+              basename: "large.cbz",
+              createdAt: null,
+              extension: "cbz",
+              id: "file-large",
+              mediaKind: "CBZ",
+              modifiedAt: null,
+              relativePath: "files/large.cbz",
+              role: "AUDIO_TRACK",
+              sizeBytes: "1073741824",
+            },
+            {
+              basename: "unknown.dat",
+              createdAt: null,
+              extension: "dat",
+              id: "file-unknown",
+              mediaKind: "OTHER",
+              modifiedAt: null,
+              relativePath: "files/unknown.dat",
+              role: "SUPPLEMENT",
+              sizeBytes: null,
+            },
+          ],
+          formatFamily: "EBOOK",
+          id: "edition-formatting",
+          isbn10: null,
+          isbn13: null,
+          publishedAt: "bad-date",
+          publisher: null,
+        },
+      ],
+      effectiveMode: ProgressTrackingMode.BY_WORK,
+      formatFamilies: ["EBOOK"],
+      globalMode: ProgressTrackingMode.BY_WORK,
+      language: null,
+      overrideMode: null,
+      progressRows: [
+        {
+          editionId: "edition-formatting",
+          formatFamily: "EBOOK",
+          id: "progress-formatting",
+          locator: {},
+          percent: 0.2,
+          progressKind: "READALOUD",
+          source: null,
+          updatedAt: "bad-date",
+        },
+      ],
+      series: null,
+      sortTitle: null,
+      summary: {
+        percent: 0.2,
+        progressKind: "READALOUD",
+        source: null,
+        updatedAt: "bad-date",
+      },
+      workId: "work-formatting",
+      workTitle: "Formatting Work",
+    });
+
+    const workLoader = workModule.Route.options.loader as unknown as (input: {
+      params: { workId: string };
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+    const workData = await workLoader({
+      params: { workId: "work-formatting" },
+      serverContext: {},
+    });
+    vi.spyOn(workModule.Route, "useLoaderData").mockReturnValue(workData as never);
+
+    const workHtml = renderToStaticMarkup(<workModule.WorkDetailRoute />);
+    expect(workHtml).toContain("read aloud");
+    expect(workHtml).toContain("bad-date");
+    expect(workHtml).toContain("abc B");
+    expect(workHtml).toContain("12 B");
+    expect(workHtml).toContain("2.0 KB");
+    expect(workHtml).toContain("10.0 MB");
+    expect(workHtml).toContain("1.0 GB");
+    expect(workHtml).toContain("Unknown size");
   });
 
   it("submits create, update, and delete external-link actions from work helpers", async () => {

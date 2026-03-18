@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   AudioLinkMatchType,
+  ContributorRole,
   DuplicateReason,
+  EditionFileRole,
   FormatFamily,
+  MediaKind,
   ProgressTrackingMode,
   ReviewStatus,
 } from "@bookhouse/domain";
@@ -55,8 +58,8 @@ type TestState = {
     rightFileAssetId: string | null;
     status: ReviewStatus;
   }>;
-  editionContributors: Map<string, { contributorId: string; editionId: string; id: string; role: "AUTHOR" }>;
-  editionFiles: Map<string, { editionId: string; fileAssetId: string; id: string; role: string }>;
+  editionContributors: Map<string, { contributorId: string; editionId: string; id: string; role: ContributorRole }>;
+  editionFiles: Map<string, { editionId: string; fileAssetId: string; id: string; role: EditionFileRole }>;
   editions: Map<string, {
     asin: string | null;
     createdAt: Date;
@@ -70,7 +73,19 @@ type TestState = {
     workId: string;
   }>;
   externalLinks: Map<string, { editionId: string; externalId: string; id: string; lastSyncedAt: Date | null; metadata: Record<string, unknown> | null; provider: string }>;
-  fileAssets: Map<string, { absolutePath: string; createdAt: Date; fullHash: string | null; id: string; relativePath: string; updatedAt: Date }>;
+  fileAssets: Map<string, {
+    absolutePath: string;
+    basename: string;
+    createdAt: Date;
+    extension: string | null;
+    fullHash: string | null;
+    id: string;
+    mediaKind: MediaKind;
+    mtime: Date;
+    relativePath: string;
+    sizeBytes: bigint | null;
+    updatedAt: Date;
+  }>;
   readingProgress: Map<string, {
     editionId: string;
     id: string;
@@ -83,7 +98,15 @@ type TestState = {
   }>;
   userPreferences: Map<string, { progressTrackingMode: ProgressTrackingMode; userId: string }>;
   workProgressPreferences: Map<string, { progressTrackingMode: ProgressTrackingMode; userId: string; workId: string }>;
-  works: Map<string, { id: string; titleDisplay: string }>;
+  series: Map<string, { id: string; name: string }>;
+  works: Map<string, {
+    description: string | null;
+    id: string;
+    language: string | null;
+    seriesId: string | null;
+    sortTitle: string | null;
+    titleDisplay: string;
+  }>;
 };
 
 function contributorKey(editionId: string, contributorId: string): string {
@@ -103,14 +126,32 @@ function createState(): TestState {
     externalLinks: new Map(),
     fileAssets: new Map(),
     readingProgress: new Map(),
+    series: new Map(),
     userPreferences: new Map(),
     workProgressPreferences: new Map(),
     works: new Map(),
   };
 }
 
-function addWork(state: TestState, id: string, titleDisplay: string): void {
-  state.works.set(id, { id, titleDisplay });
+function addSeries(state: TestState, id: string, name: string): void {
+  state.series.set(id, { id, name });
+}
+
+function addWork(
+  state: TestState,
+  id: string,
+  titleDisplay: string,
+  overrides: Partial<TestState["works"] extends Map<string, infer TValue> ? TValue : never> = {},
+): void {
+  state.works.set(id, {
+    description: null,
+    id,
+    language: null,
+    seriesId: null,
+    sortTitle: null,
+    titleDisplay,
+    ...overrides,
+  });
 }
 
 function addCollection(
@@ -125,10 +166,15 @@ function addCollection(
 function addFileAsset(state: TestState, id: string, relativePath: string, fullHash: string | null): void {
   state.fileAssets.set(id, {
     absolutePath: `/library/${relativePath}`,
+    basename: relativePath.split("/").at(-1) ?? relativePath,
     createdAt: new Date("2025-01-01T00:00:00.000Z"),
+    extension: relativePath.includes(".") ? relativePath.split(".").at(-1) ?? null : null,
     fullHash,
     id,
+    mediaKind: relativePath.endsWith(".m4b") ? MediaKind.AUDIO : MediaKind.EPUB,
+    mtime: new Date("2025-01-03T00:00:00.000Z"),
     relativePath,
+    sizeBytes: 2048n,
     updatedAt: new Date("2025-01-02T00:00:00.000Z"),
   });
 }
@@ -153,17 +199,29 @@ function addContributor(state: TestState, id: string, nameDisplay: string): void
   state.contributors.set(id, { id, nameDisplay });
 }
 
-function addEditionContributor(state: TestState, id: string, editionId: string, contributorId: string): void {
+function addEditionContributor(
+  state: TestState,
+  id: string,
+  editionId: string,
+  contributorId: string,
+  role: ContributorRole = ContributorRole.AUTHOR,
+): void {
   state.editionContributors.set(contributorKey(editionId, contributorId), {
     contributorId,
     editionId,
     id,
-    role: "AUTHOR",
+    role,
   });
 }
 
-function addEditionFile(state: TestState, id: string, editionId: string, fileAssetId: string): void {
-  state.editionFiles.set(id, { editionId, fileAssetId, id, role: "PRIMARY" });
+function addEditionFile(
+  state: TestState,
+  id: string,
+  editionId: string,
+  fileAssetId: string,
+  role: EditionFileRole = EditionFileRole.PRIMARY,
+): void {
+  state.editionFiles.set(id, { editionId, fileAssetId, id, role });
 }
 
 function createDb(state: TestState): LibraryServiceDb {
@@ -196,6 +254,9 @@ function createDb(state: TestState): LibraryServiceDb {
           ...row,
           fileAsset: state.fileAssets.get(row.fileAssetId)!,
         })),
+      externalLinks: [...state.externalLinks.values()]
+        .filter((row) => row.editionId === editionId)
+        .sort((left, right) => left.provider.localeCompare(right.provider) || left.externalId.localeCompare(right.externalId)),
       work: state.works.get(edition.workId)!,
     };
   };
@@ -450,7 +511,7 @@ function createDb(state: TestState): LibraryServiceDb {
         return {};
       },
       async findFirst(args) {
-        const where = args.where as { contributorId?: string; editionId?: string; role?: "AUTHOR" };
+        const where = args.where as { contributorId?: string; editionId?: string; role?: ContributorRole };
         return [...state.editionContributors.values()].find((row) =>
           (where.contributorId === undefined || row.contributorId === where.contributorId) &&
           (where.editionId === undefined || row.editionId === where.editionId) &&
@@ -688,9 +749,14 @@ function createDb(state: TestState): LibraryServiceDb {
         if (!work) {
           return null;
         }
+        const editions = [...state.editions.values()]
+          .filter((edition) => edition.workId === work.id)
+          .sort((left, right) => left.formatFamily.localeCompare(right.formatFamily) || left.id.localeCompare(right.id))
+          .map((edition) => buildEdition(edition.id)!);
         return {
           ...work,
-          editions: [...state.editions.values()].filter((edition) => edition.workId === work.id),
+          editions,
+          series: work.seriesId ? state.series.get(work.seriesId) ?? null : null,
         };
       },
     },
@@ -998,6 +1064,7 @@ describe("library service", () => {
         ],
         editionFiles: [
           {
+            role: EditionFileRole.PRIMARY,
             fileAsset: state.fileAssets.get("file-2")!,
           },
         ],
@@ -1015,6 +1082,7 @@ describe("library service", () => {
         ],
         editionFiles: [
           {
+            role: EditionFileRole.PRIMARY,
             fileAsset: state.fileAssets.get("file-1")!,
           },
         ],
@@ -1138,17 +1206,19 @@ describe("library service", () => {
     const grouped = await listExternalLinksForWork(db, "work-1");
 
     expect(grouped).toEqual([
-      {
+      expect.objectContaining({
         asin: null,
+        contributors: [],
         externalLinks: [],
+        files: [],
         formatFamily: FormatFamily.AUDIOBOOK,
         id: "edition-2",
         isbn10: null,
         isbn13: null,
         publishedAt: null,
         publisher: null,
-      },
-      {
+      }),
+      expect.objectContaining({
         asin: "B123",
         externalLinks: [updated],
         formatFamily: FormatFamily.EBOOK,
@@ -1157,7 +1227,7 @@ describe("library service", () => {
         isbn13: "9780316498834",
         publishedAt: "2015-08-04T00:00:00.000Z",
         publisher: "Orbit",
-      },
+      }),
     ]);
 
     await deleteExternalLink(db, "external-link-created-1");
@@ -1248,9 +1318,13 @@ describe("library service", () => {
 
     const workWithoutEditionsDb = createDb(state);
     workWithoutEditionsDb.work.findUnique = async () => ({
+      description: null,
       id: "work-1",
+      language: null,
+      series: null,
+      sortTitle: null,
       titleDisplay: "The Fifth Season",
-    });
+    } as never);
     await expect(listExternalLinksForWork(workWithoutEditionsDb, "work-1")).resolves.toEqual([]);
 
     const fallbackDb = createDb(state);
@@ -1263,6 +1337,81 @@ describe("library service", () => {
       expect.objectContaining({
         externalLinks: [],
         id: "edition-b",
+      }),
+    ]);
+  });
+
+  it("maps edition fallback fields for external-link grouping", async () => {
+    const state = createState();
+    const db = createDb(state);
+
+    db.work.findUnique = async () => ({
+      description: null,
+      editions: [
+        {
+          asin: null,
+          formatFamily: FormatFamily.EBOOK,
+          id: "edition-fallback-empty",
+          isbn10: null,
+          isbn13: null,
+          publishedAt: null,
+          publisher: null,
+        },
+        {
+          asin: null,
+          editionFiles: [
+            {
+              fileAsset: {
+                absolutePath: "/library/fallback.epub",
+                fullHash: null,
+                id: "file-fallback",
+                relativePath: "fallback.epub",
+              },
+              role: EditionFileRole.PRIMARY,
+            },
+          ],
+          externalLinks: [],
+          formatFamily: FormatFamily.AUDIOBOOK,
+          id: "edition-fallback-file",
+          isbn10: null,
+          isbn13: null,
+          publishedAt: null,
+          publisher: null,
+        },
+      ],
+      id: "work-fallback",
+      language: null,
+      series: null,
+      sortTitle: null,
+      titleDisplay: "Fallback Work",
+    } as never);
+
+    await expect(listExternalLinksForWork(db, "work-fallback")).resolves.toEqual([
+      expect.objectContaining({
+        contributors: [],
+        externalLinks: [],
+        files: [
+          {
+            basename: "fallback.epub",
+            createdAt: null,
+            extension: null,
+            id: "file-fallback",
+            mediaKind: MediaKind.OTHER,
+            modifiedAt: null,
+            relativePath: "fallback.epub",
+            role: EditionFileRole.PRIMARY,
+            sizeBytes: null,
+          },
+        ],
+        formatFamily: FormatFamily.AUDIOBOOK,
+        id: "edition-fallback-file",
+      }),
+      expect.objectContaining({
+        contributors: [],
+        externalLinks: [],
+        files: [],
+        formatFamily: FormatFamily.EBOOK,
+        id: "edition-fallback-empty",
       }),
     ]);
   });
@@ -1578,6 +1727,7 @@ describe("library service", () => {
     addContributor(state, "contributor-3", "Other User Author");
     addEdition(state, "edition-1", "work-1", { formatFamily: FormatFamily.EBOOK });
     addEdition(state, "edition-2", "work-1", { formatFamily: FormatFamily.AUDIOBOOK });
+    addEdition(state, "edition-3", "work-1", { formatFamily: FormatFamily.EBOOK });
     addEdition(state, "edition-3", "work-2", { formatFamily: FormatFamily.EBOOK });
     addEditionContributor(state, "edition-contributor-1", "edition-1", "contributor-1");
     addEditionContributor(state, "edition-contributor-2", "edition-2", "contributor-2");
@@ -1850,9 +2000,37 @@ describe("library service", () => {
 
   it("rejects file-only merges and resolves global plus per-work progress preferences", async () => {
     const state = createState();
-    addWork(state, "work-1", "The Fifth Season");
+    addSeries(state, "series-1", "The Broken Earth");
+    addWork(state, "work-1", "The Fifth Season", {
+      description: "The end of the world is already here.",
+      language: "en",
+      seriesId: "series-1",
+      sortTitle: "Fifth Season, The",
+    });
     addEdition(state, "edition-1", "work-1", { formatFamily: FormatFamily.EBOOK });
     addEdition(state, "edition-2", "work-1", { formatFamily: FormatFamily.AUDIOBOOK });
+    addEdition(state, "edition-3", "work-1", { formatFamily: FormatFamily.EBOOK });
+    addCollection(state, "collection-1", "Favorites");
+    state.collectionItems.set("collection-item-1", {
+      collectionId: "collection-1",
+      id: "collection-item-1",
+      workId: "work-1",
+    });
+    addContributor(state, "contributor-1", "N. K. Jemisin");
+    addContributor(state, "contributor-3", "A. Author");
+    addContributor(state, "contributor-2", "Robin Miles");
+    addEditionContributor(state, "edition-contributor-1", "edition-1", "contributor-1");
+    addEditionContributor(state, "edition-contributor-3", "edition-1", "contributor-3");
+    addEditionContributor(state, "edition-contributor-2", "edition-2", "contributor-2", ContributorRole.NARRATOR);
+    addFileAsset(state, "file-1", "ebooks/book.epub", "hash-1");
+    addFileAsset(state, "file-2", "audio/book.m4b", "hash-2");
+    addFileAsset(state, "file-3", "ebooks/alt-book.epub", "hash-3");
+    addFileAsset(state, "file-4", "ebooks/z-last.epub", "hash-4");
+    state.fileAssets.get("file-2")!.sizeBytes = null;
+    addEditionFile(state, "edition-file-1", "edition-1", "file-1");
+    addEditionFile(state, "edition-file-3", "edition-1", "file-3", EditionFileRole.SUPPLEMENT);
+    addEditionFile(state, "edition-file-4", "edition-1", "file-4", EditionFileRole.SUPPLEMENT);
+    addEditionFile(state, "edition-file-2", "edition-2", "file-2");
     state.duplicateCandidates.set("candidate-1", {
       confidence: 1,
       id: "candidate-1",
@@ -1901,9 +2079,27 @@ describe("library service", () => {
     const view = await getWorkProgressView(db, "user-1", "work-1");
 
     expect(view).toMatchObject({
-      collections: [],
+      collections: [
+        expect.objectContaining({
+          containsWork: true,
+          name: "Favorites",
+        }),
+      ],
+      contributorGroups: [
+        {
+          names: ["A. Author", "N. K. Jemisin"],
+          role: ContributorRole.AUTHOR,
+        },
+        {
+          names: ["Robin Miles"],
+          role: ContributorRole.NARRATOR,
+        },
+      ],
+      description: "The end of the world is already here.",
       effectiveMode: ProgressTrackingMode.BY_EDITION,
+      formatFamilies: [FormatFamily.AUDIOBOOK, FormatFamily.EBOOK],
       globalMode: ProgressTrackingMode.BY_WORK,
+      language: "en",
       overrideMode: ProgressTrackingMode.BY_EDITION,
       progressRows: [
         expect.objectContaining({
@@ -1913,14 +2109,67 @@ describe("library service", () => {
           locator: { cfi: {} },
         }),
       ],
+      series: {
+        id: "series-1",
+        name: "The Broken Earth",
+      },
+      sortTitle: "Fifth Season, The",
       summary: {
         progressKind: "AUDIO",
       },
       workTitle: "The Fifth Season",
     });
     expect(view?.editions).toEqual([
-      expect.objectContaining({ id: "edition-2" }),
-      expect.objectContaining({ id: "edition-1" }),
+      expect.objectContaining({
+        contributors: [
+          {
+            name: "Robin Miles",
+            role: ContributorRole.NARRATOR,
+          },
+        ],
+        files: [
+          expect.objectContaining({
+            mediaKind: MediaKind.AUDIO,
+            relativePath: "audio/book.m4b",
+            sizeBytes: null,
+          }),
+        ],
+        id: "edition-2",
+      }),
+      expect.objectContaining({
+        contributors: [
+          {
+            name: "A. Author",
+            role: ContributorRole.AUTHOR,
+          },
+          {
+            name: "N. K. Jemisin",
+            role: ContributorRole.AUTHOR,
+          },
+        ],
+        files: [
+          expect.objectContaining({
+            mediaKind: MediaKind.EPUB,
+            relativePath: "ebooks/book.epub",
+          }),
+          expect.objectContaining({
+            mediaKind: MediaKind.EPUB,
+            relativePath: "ebooks/alt-book.epub",
+            sizeBytes: "2048",
+          }),
+          expect.objectContaining({
+            mediaKind: MediaKind.EPUB,
+            relativePath: "ebooks/z-last.epub",
+            sizeBytes: "2048",
+          }),
+        ],
+        id: "edition-1",
+      }),
+      expect.objectContaining({
+        contributors: [],
+        files: [],
+        id: "edition-3",
+      }),
     ]);
 
     expect(await updateWorkProgressTrackingMode(db, "user-1", "work-1", null)).toBeNull();
@@ -2126,12 +2375,18 @@ describe("library service", () => {
     const view = await getWorkProgressView(createDb(state), "user-9", "work-9");
 
     expect(view).toMatchObject({
+      contributorGroups: [],
       currentSourceEditionId: undefined,
+      description: null,
       editions: [],
       effectiveMode: ProgressTrackingMode.BY_EDITION,
+      formatFamilies: [],
       globalMode: ProgressTrackingMode.BY_EDITION,
+      language: null,
       overrideMode: null,
       progressRows: [],
+      series: null,
+      sortTitle: null,
       summary: null,
       workId: "work-9",
       workTitle: "Empty Work",

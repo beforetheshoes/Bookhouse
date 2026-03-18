@@ -29,6 +29,9 @@ const updateAudioLinkStatusMock = vi.fn();
 const updateDuplicateCandidateStatusMock = vi.fn();
 const updateUserProgressTrackingModeMock = vi.fn();
 const updateWorkProgressTrackingModeMock = vi.fn();
+const getE2eWorkProgressViewMock = vi.fn();
+const isE2eFixtureModeMock = vi.fn(() => false);
+const listE2eLibraryWorksMock = vi.fn();
 
 vi.mock("./auth-server", () => ({
   getCurrentUser: getCurrentUserMock,
@@ -62,6 +65,12 @@ vi.mock("./library-service", () => ({
   updateDuplicateCandidateStatus: updateDuplicateCandidateStatusMock,
   updateUserProgressTrackingMode: updateUserProgressTrackingModeMock,
   updateWorkProgressTrackingMode: updateWorkProgressTrackingModeMock,
+}));
+
+vi.mock("./e2e-fixtures", () => ({
+  getE2eWorkProgressView: getE2eWorkProgressViewMock,
+  isE2eFixtureMode: isE2eFixtureModeMock,
+  listE2eLibraryWorks: listE2eLibraryWorksMock,
 }));
 
 vi.mock("@tanstack/react-start", () => ({
@@ -104,6 +113,10 @@ beforeEach(() => {
   updateDuplicateCandidateStatusMock.mockReset();
   updateUserProgressTrackingModeMock.mockReset();
   updateWorkProgressTrackingModeMock.mockReset();
+  getE2eWorkProgressViewMock.mockReset();
+  isE2eFixtureModeMock.mockReset();
+  isE2eFixtureModeMock.mockReturnValue(false);
+  listE2eLibraryWorksMock.mockReset();
 });
 
 describe("library server functions", () => {
@@ -145,6 +158,23 @@ describe("library server functions", () => {
     await expect(
       server.getWorkCollectionMembershipServerFn({ data: { workId: "work-1" } }),
     ).resolves.toEqual([{ id: "collection-1", containsWork: true }]);
+  });
+
+  it("serves e2e fixture data without hitting auth or db-backed services", async () => {
+    const server = await import("./library-server");
+    isE2eFixtureModeMock.mockReturnValue(true);
+    listE2eLibraryWorksMock.mockReturnValue([{ workId: "work-e2e-1" }]);
+    getE2eWorkProgressViewMock.mockReturnValue({ workId: "work-e2e-1" });
+
+    await expect(
+      server.listLibraryWorksServerFn({ data: { filter: "all", sort: "title-asc" } }),
+    ).resolves.toEqual([{ workId: "work-e2e-1" }]);
+    await expect(
+      server.getWorkProgressViewServerFn({ data: { workId: "work-e2e-1" } }),
+    ).resolves.toEqual({ workId: "work-e2e-1" });
+    expect(getCurrentUserMock).not.toHaveBeenCalled();
+    expect(listLibraryWorksMock).not.toHaveBeenCalled();
+    expect(getWorkProgressViewMock).not.toHaveBeenCalled();
   });
 
   it("requires authentication for mutations", async () => {

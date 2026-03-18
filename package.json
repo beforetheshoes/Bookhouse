@@ -12,6 +12,7 @@
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "test": "vitest run --coverage",
+    "test:e2e": "playwright test",
     "typecheck": "pnpm -r typecheck",
     "db:generate": "pnpm --filter @bookhouse/db generate",
     "db:migrate": "pnpm --filter @bookhouse/db migrate",

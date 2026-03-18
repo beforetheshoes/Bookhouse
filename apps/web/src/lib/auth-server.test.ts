@@ -10,6 +10,8 @@ const upsertOidcUserMock = vi.fn();
 const clearStartSessionMock = vi.fn();
 const getRequestMock = vi.fn();
 const getRequestUrlMock = vi.fn();
+const getE2eFixtureUserMock = vi.fn();
+const isE2eFixtureModeMock = vi.fn(() => false);
 const useSessionMock = vi.fn();
 
 vi.mock("@bookhouse/auth", () => ({
@@ -42,10 +44,16 @@ vi.mock("@tanstack/react-start/server", () => ({
   useSession: useSessionMock,
 }));
 
+vi.mock("./e2e-fixtures", () => ({
+  getE2eFixtureUser: getE2eFixtureUserMock,
+  isE2eFixtureMode: isE2eFixtureModeMock,
+}));
+
 describe("auth server helpers", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    isE2eFixtureModeMock.mockReturnValue(false);
     loadAuthConfigMock.mockReturnValue({
       secret: "a".repeat(32),
       issuer: "https://issuer.example.com",
@@ -94,6 +102,30 @@ describe("auth server helpers", () => {
     expect(response.headers.get("location")).toBe(
       "https://issuer.example.com/authorize",
     );
+  });
+
+  it("returns the fixture user in e2e mode", async () => {
+    isE2eFixtureModeMock.mockReturnValue(true);
+    getE2eFixtureUserMock.mockReturnValue({
+      email: "e2e@example.com",
+      id: "e2e-user-1",
+      image: null,
+      issuer: "https://example.com",
+      name: "E2E User",
+      subject: "e2e-subject-1",
+    });
+
+    const { getCurrentUser } = await import("./auth-server");
+
+    await expect(getCurrentUser()).resolves.toEqual({
+      email: "e2e@example.com",
+      id: "e2e-user-1",
+      image: null,
+      issuer: "https://example.com",
+      name: "E2E User",
+      subject: "e2e-subject-1",
+    });
+    expect(useSessionMock).not.toHaveBeenCalled();
   });
 
   it("normalizes missing and external return targets", async () => {
