@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
-import { DataTable, DataTableColumnHeader } from "~/components/data-table";
+import { VirtualizedDataTable, DataTableColumnHeader } from "~/components/data-table";
 import { Badge } from "~/components/ui/badge";
 import { TablePageSkeleton } from "~/components/skeletons/table-page-skeleton";
 import {
@@ -91,7 +91,7 @@ function DuplicatesPage() {
       <p className="mb-6 mt-2 text-muted-foreground">
         Review and resolve duplicate candidates.
       </p>
-      <DataTable
+      <VirtualizedDataTable
         columns={columns}
         data={duplicates}
         filterColumn="leftItem"

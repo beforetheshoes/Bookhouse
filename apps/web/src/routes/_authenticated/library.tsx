@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
-import { DataTable, DataTableColumnHeader } from "~/components/data-table";
+import { VirtualizedDataTable, DataTableColumnHeader } from "~/components/data-table";
 import { Badge } from "~/components/ui/badge";
 import { TablePageSkeleton } from "~/components/skeletons/table-page-skeleton";
 import {
@@ -77,7 +77,7 @@ function LibraryPage() {
       <p className="mb-6 mt-2 text-muted-foreground">
         Browse and manage your works.
       </p>
-      <DataTable
+      <VirtualizedDataTable
         columns={columns}
         data={works}
         filterColumn="titleDisplay"
