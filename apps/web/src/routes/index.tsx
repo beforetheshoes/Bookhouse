@@ -32,6 +32,8 @@ export function Home() {
       <p>Signed in as {user.name ?? user.email ?? user.subject}.</p>
       <p>{user.email ?? "No email available from your provider."}</p>
       <nav>
+        <Link to="/library">Library</Link>
+        {" · "}
         <Link to="/collections">Collections</Link>
         {" · "}
         <Link to="/audio-links">Audio Link Review</Link>

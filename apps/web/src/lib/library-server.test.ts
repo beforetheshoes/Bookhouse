@@ -13,6 +13,7 @@ const getAudioLinkDetailMock = vi.fn();
 const getCurrentUserMock = vi.fn();
 const getDuplicateCandidateDetailMock = vi.fn();
 const listExternalLinksForWorkMock = vi.fn();
+const listLibraryWorksMock = vi.fn();
 const getWorkCollectionMembershipMock = vi.fn();
 const getUserProgressTrackingModeMock = vi.fn();
 const getWorkProgressViewMock = vi.fn();
@@ -47,6 +48,7 @@ vi.mock("./library-service", () => ({
   getWorkCollectionMembership: getWorkCollectionMembershipMock,
   getUserProgressTrackingMode: getUserProgressTrackingModeMock,
   getWorkProgressView: getWorkProgressViewMock,
+  listLibraryWorks: listLibraryWorksMock,
   listExternalLinksForWork: listExternalLinksForWorkMock,
   listCollections: listCollectionsMock,
   listAudioLinks: listAudioLinksMock,
@@ -86,6 +88,7 @@ beforeEach(() => {
   getCurrentUserMock.mockReset();
   getDuplicateCandidateDetailMock.mockReset();
   listExternalLinksForWorkMock.mockReset();
+  listLibraryWorksMock.mockReset();
   getWorkCollectionMembershipMock.mockReset();
   getUserProgressTrackingModeMock.mockReset();
   getWorkProgressViewMock.mockReset();
@@ -108,6 +111,7 @@ describe("library server functions", () => {
     const server = await import("./library-server");
     getCurrentUserMock.mockResolvedValue({ id: "user-1" });
     listCollectionsMock.mockResolvedValueOnce([{ id: "collection-1" }]);
+    listLibraryWorksMock.mockResolvedValueOnce([{ workId: "work-1" }]);
     listExternalLinksForWorkMock.mockResolvedValueOnce([{ id: "external-link-1" }]);
     getCollectionDetailMock.mockResolvedValueOnce({ id: "collection-1" });
     listAudioLinksMock.mockResolvedValueOnce([{ id: "audio-link-1" }]);
@@ -117,6 +121,9 @@ describe("library server functions", () => {
     getWorkCollectionMembershipMock.mockResolvedValueOnce([{ id: "collection-1", containsWork: true }]);
 
     await expect(server.listCollectionsServerFn()).resolves.toEqual([{ id: "collection-1" }]);
+    await expect(
+      server.listLibraryWorksServerFn({ data: { filter: "with-progress", sort: "recent-progress" } }),
+    ).resolves.toEqual([{ workId: "work-1" }]);
     await expect(
       server.listExternalLinksForWorkServerFn({ data: { workId: "work-1" } }),
     ).resolves.toEqual([{ id: "external-link-1" }]);
@@ -144,6 +151,9 @@ describe("library server functions", () => {
     const server = await import("./library-server");
     getCurrentUserMock.mockResolvedValue(null);
 
+    await expect(
+      server.listLibraryWorksServerFn({ data: { filter: "with-progress", sort: "recent-progress" } }),
+    ).rejects.toThrow("Authentication required");
     await expect(
       server.createCollectionServerFn({
         data: {
@@ -470,6 +480,7 @@ describe("library server functions", () => {
   it("covers the direct server actions", async () => {
     const server = await import("./library-server");
     getCurrentUserMock.mockResolvedValue({ id: "user-1" });
+    listLibraryWorksMock.mockResolvedValueOnce([{ workId: "work-9" }]);
     listAudioLinksMock.mockResolvedValueOnce([{ id: "audio-link-9" }]);
     getAudioLinkDetailMock.mockResolvedValueOnce({ id: "audio-link-9" });
     updateAudioLinkStatusMock.mockResolvedValueOnce({ reviewStatus: ReviewStatus.IGNORED });
@@ -485,6 +496,7 @@ describe("library server functions", () => {
     getWorkProgressViewMock.mockResolvedValueOnce({ workId: "work-9" });
     updateWorkProgressTrackingModeMock.mockResolvedValueOnce(null);
 
+    await expect(server.listLibraryWorksAction(undefined)).resolves.toEqual([{ workId: "work-9" }]);
     await expect(server.listAudioLinksAction(undefined)).resolves.toEqual([{ id: "audio-link-9" }]);
     await expect(
       server.getAudioLinkDetailAction({ linkId: "audio-link-9" }),
@@ -774,6 +786,21 @@ describe("library server functions", () => {
       progressTrackingMode: ProgressTrackingMode.BY_WORK,
     });
     expect(
+      server.validateListLibraryWorksInput(undefined),
+    ).toEqual({
+      filter: "all",
+      sort: "title-asc",
+    });
+    expect(
+      server.validateListLibraryWorksInput({
+        filter: "with-progress",
+        sort: "recent-progress",
+      }),
+    ).toEqual({
+      filter: "with-progress",
+      sort: "recent-progress",
+    });
+    expect(
       server.validateGetWorkProgressViewInput({ workId: "work-1" }),
     ).toEqual({ workId: "work-1" });
     expect(
@@ -829,6 +856,10 @@ describe("library server functions", () => {
     expect(() => server.validateUpdateWorkProgressTrackingModeInput({
       progressTrackingMode: "BAD_MODE" as never,
       workId: "work-1",
+    })).toThrow();
+    expect(() => server.validateListLibraryWorksInput({
+      filter: "bad-filter" as "all",
+      sort: "title-asc",
     })).toThrow();
   });
 });

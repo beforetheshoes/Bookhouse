@@ -55,6 +55,7 @@ export function AudioLinksRoute() {
           </p>
         </div>
         <nav className="flex gap-3 text-sm">
+          <Link to="/library">Library</Link>
           <Link to="/">Home</Link>
           <Link to="/duplicates">Duplicate Review</Link>
           <Link to="/settings">Settings</Link>

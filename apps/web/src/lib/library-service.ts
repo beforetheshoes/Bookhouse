@@ -135,6 +135,14 @@ type WorkEditionRecord = {
   publisher: string | null;
 };
 
+type WorkWithLibraryData = {
+  editions: Array<WorkEditionRecord & {
+    contributors: EditionContributorWithContributor[];
+  }>;
+  id: string;
+  titleDisplay: string;
+};
+
 export interface ReadingProgressPayload {
   editionId: string;
   locator: Record<string, object>;
@@ -216,6 +224,7 @@ export interface LibraryServiceDb {
   };
   work: {
     delete(args: { where: { id: string } }): Promise<unknown>;
+    findMany(args: Record<string, unknown>): Promise<WorkWithLibraryData[]>;
     findUnique(args: Record<string, unknown>): Promise<{ id: string; titleDisplay: string; editions?: WorkEditionRecord[] } | null>;
   };
   workProgressPreference: {
@@ -354,6 +363,26 @@ export interface CollectionDetail extends CollectionSummary {
     id: string;
     titleDisplay: string;
   }>;
+}
+
+export interface ListLibraryWorksInput {
+  filter?: "all" | "with-progress" | "without-progress";
+  sort?: "title-asc" | "title-desc" | "recent-progress";
+}
+
+export interface LibraryWorkSummary {
+  authors: string[];
+  editionCount: number;
+  formatFamilies: FormatFamily[];
+  latestProgress: {
+    percent: number | null;
+    progressKind: ProgressKind;
+    source: string | null;
+    updatedAt: string;
+  } | null;
+  shelves: string[];
+  titleDisplay: string;
+  workId: string;
 }
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
@@ -578,6 +607,19 @@ function toCollectionDetail(collection: CollectionWithItems): CollectionDetail {
       }))
       .sort((left, right) => left.titleDisplay.localeCompare(right.titleDisplay)),
   };
+}
+
+function compareLibraryWorksByTitle(
+  left: Pick<LibraryWorkSummary, "titleDisplay" | "workId">,
+  right: Pick<LibraryWorkSummary, "titleDisplay" | "workId">,
+): number {
+  return left.titleDisplay.localeCompare(right.titleDisplay) || left.workId.localeCompare(right.workId);
+}
+
+export function getLibraryWorkProgressTimestamp(
+  work: Pick<LibraryWorkSummary, "latestProgress">,
+): number {
+  return work.latestProgress === null ? 0 : Date.parse(work.latestProgress.updatedAt);
 }
 
 export function toAudioLinkDetail(audioLink: AudioLinkRecord): AudioLinkDetail {
@@ -870,6 +912,119 @@ export async function listCollections(
   });
 
   return collections.map(toCollectionSummary);
+}
+
+export async function listLibraryWorks(
+  db: LibraryServiceDb,
+  userId: string,
+  input: ListLibraryWorksInput = {},
+): Promise<LibraryWorkSummary[]> {
+  const [works, collections] = await Promise.all([
+    db.work.findMany({
+      include: {
+        editions: {
+          include: {
+            contributors: {
+              include: {
+                contributor: true,
+              },
+            },
+          },
+        },
+      },
+    }),
+    db.collection.findMany({
+      include: {
+        items: {
+          include: {
+            work: true,
+          },
+        },
+      },
+      where: {
+        ownerUserId: userId,
+      },
+    }),
+  ]);
+  const editionIds = works.flatMap((work) => work.editions.map((edition) => edition.id));
+  const progressRows = editionIds.length === 0
+    ? []
+    : await db.readingProgress.findMany({
+      include: {
+        edition: {
+          include: {
+            work: true,
+          },
+        },
+      },
+      orderBy: {
+        updatedAt: "desc",
+      },
+      where: {
+        editionId: { in: editionIds },
+        userId,
+      },
+    });
+  const shelvesByWorkId = new Map<string, string[]>();
+
+  for (const collection of collections) {
+    for (const item of collection.items) {
+      const shelves = shelvesByWorkId.get(item.work.id) ?? [];
+      shelves.push(collection.name);
+      shelvesByWorkId.set(item.work.id, shelves);
+    }
+  }
+
+  const latestProgressByWorkId = new Map<string, LibraryWorkSummary["latestProgress"]>();
+
+  for (const row of progressRows) {
+    if (latestProgressByWorkId.has(row.edition.work.id)) {
+      continue;
+    }
+
+    latestProgressByWorkId.set(row.edition.work.id, {
+      percent: row.percent,
+      progressKind: row.progressKind,
+      source: row.source,
+      updatedAt: row.updatedAt.toISOString(),
+    });
+  }
+
+  let libraryWorks = works.map((work) => ({
+    authors: [...new Set(
+      work.editions.flatMap((edition) =>
+        edition.contributors.map((contributor) => contributor.contributor.nameDisplay)
+      ),
+    )].sort((left, right) => left.localeCompare(right)),
+    editionCount: work.editions.length,
+    formatFamilies: [...new Set(work.editions.map((edition) => edition.formatFamily))]
+      .sort((left, right) => left.localeCompare(right)),
+    latestProgress: latestProgressByWorkId.get(work.id) ?? null,
+    shelves: [...new Set(shelvesByWorkId.get(work.id) ?? [])]
+      .sort((left, right) => left.localeCompare(right)),
+    titleDisplay: work.titleDisplay,
+    workId: work.id,
+  }));
+
+  if (input.filter === "with-progress") {
+    libraryWorks = libraryWorks.filter((work) => work.latestProgress !== null);
+  } else if (input.filter === "without-progress") {
+    libraryWorks = libraryWorks.filter((work) => work.latestProgress === null);
+  }
+
+  if (input.sort === "title-desc") {
+    libraryWorks.sort((left, right) => compareLibraryWorksByTitle(right, left));
+  } else if (input.sort === "recent-progress") {
+    libraryWorks.sort((left, right) => {
+      const leftTimestamp = getLibraryWorkProgressTimestamp(left);
+      const rightTimestamp = getLibraryWorkProgressTimestamp(right);
+      return rightTimestamp - leftTimestamp || compareLibraryWorksByTitle(left, right);
+    });
+  } else {
+    libraryWorks.sort(compareLibraryWorksByTitle);
+  }
+
+  return libraryWorks;
 }
 
 export async function getCollectionDetail(

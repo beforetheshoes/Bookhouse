@@ -15,6 +15,7 @@ const getDuplicateCandidateDetailServerFnMock = vi.fn();
 const getUserProgressTrackingModeServerFnMock = vi.fn();
 const getWorkProgressViewServerFnMock = vi.fn();
 const listExternalLinksForWorkServerFnMock = vi.fn();
+const listLibraryWorksServerFnMock = vi.fn();
 const listCollectionsServerFnMock = vi.fn();
 const listAudioLinksServerFnMock = vi.fn();
 const listDuplicateCandidatesServerFnMock = vi.fn();
@@ -44,6 +45,7 @@ vi.mock("../lib/library-server", () => ({
   getUserProgressTrackingModeServerFn: getUserProgressTrackingModeServerFnMock,
   getWorkProgressViewServerFn: getWorkProgressViewServerFnMock,
   listExternalLinksForWorkServerFn: listExternalLinksForWorkServerFnMock,
+  listLibraryWorksServerFn: listLibraryWorksServerFnMock,
   listCollectionsServerFn: listCollectionsServerFnMock,
   listAudioLinksServerFn: listAudioLinksServerFnMock,
   listDuplicateCandidatesServerFn: listDuplicateCandidatesServerFnMock,
@@ -93,6 +95,7 @@ describe("library routes", () => {
     getUserProgressTrackingModeServerFnMock.mockReset();
     getWorkProgressViewServerFnMock.mockReset();
     listExternalLinksForWorkServerFnMock.mockReset();
+    listLibraryWorksServerFnMock.mockReset();
     listCollectionsServerFnMock.mockReset();
     listAudioLinksServerFnMock.mockReset();
     listDuplicateCandidatesServerFnMock.mockReset();
@@ -945,6 +948,140 @@ describe("library routes", () => {
     expect(emptyDetailHtml).toContain("This shelf is empty.");
   });
 
+  it("loads the library route and renders populated and filtered empty states", async () => {
+    const libraryModule = await import("./library");
+    getCurrentUserServerFnMock.mockResolvedValue({ id: "user-1" });
+    listLibraryWorksServerFnMock.mockResolvedValueOnce([
+      {
+        authors: ["N. K. Jemisin"],
+        editionCount: 2,
+        formatFamilies: ["AUDIOBOOK", "EBOOK"],
+        latestProgress: {
+          percent: 0.5,
+          progressKind: "EBOOK",
+          source: "kobo",
+          updatedAt: "2025-01-01T00:00:00.000Z",
+        },
+        shelves: ["Favorites", "Queued"],
+        titleDisplay: "The Fifth Season",
+        workId: "work-1",
+      },
+    ]);
+
+    const loader = libraryModule.Route.options.loader as unknown as (input: {
+      location: { pathname: string; search: string };
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+    const loaderData = await loader({
+      location: {
+        pathname: "/library",
+        search: "?sort=recent-progress&filter=with-progress",
+      },
+      serverContext: {},
+    });
+    vi.spyOn(libraryModule.Route, "useLoaderData").mockReturnValue(loaderData as never);
+
+    const html = renderToStaticMarkup(<libraryModule.LibraryRoute />);
+    expect(listLibraryWorksServerFnMock).toHaveBeenLastCalledWith({
+      data: {
+        filter: "with-progress",
+        sort: "recent-progress",
+      },
+    });
+    expect(html).toContain("Library");
+    expect(html).toContain("The Fifth Season");
+    expect(html).toContain("N. K. Jemisin");
+    expect(html).toContain("audiobook, ebook");
+    expect(html).toContain("Favorites, Queued");
+    expect(html).toContain("50% ebook via kobo");
+    expect(html).toContain("Open work");
+
+    listLibraryWorksServerFnMock.mockResolvedValueOnce([]);
+    const emptyData = await loader({
+      location: {
+        pathname: "/library",
+        search: "?filter=without-progress",
+      },
+      serverContext: {},
+    });
+    vi.spyOn(libraryModule.Route, "useLoaderData").mockReturnValue(emptyData as never);
+    const emptyHtml = renderToStaticMarkup(<libraryModule.LibraryRoute />);
+    expect(emptyHtml).toContain("No works match the current filters.");
+  });
+
+  it("renders library works without progress", async () => {
+    const libraryModule = await import("./library");
+    getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
+    listLibraryWorksServerFnMock.mockResolvedValueOnce([
+      {
+        authors: [],
+        editionCount: 1,
+        formatFamilies: ["EBOOK"],
+        latestProgress: null,
+        shelves: [],
+        titleDisplay: "No Progress Yet",
+        workId: "work-2",
+      },
+    ]);
+
+    const loader = libraryModule.Route.options.loader as unknown as (input: {
+      location: { pathname: string; search: string };
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+    const loaderData = await loader({
+      location: {
+        pathname: "/library",
+        search: "",
+      },
+      serverContext: {},
+    });
+    vi.spyOn(libraryModule.Route, "useLoaderData").mockReturnValue(loaderData as never);
+
+    const html = renderToStaticMarkup(<libraryModule.LibraryRoute />);
+    expect(html).toContain("Unknown author");
+    expect(html).toContain("No shelves");
+    expect(html).toContain("No progress yet");
+  });
+
+  it("renders library works with empty formats and null percent progress", async () => {
+    const libraryModule = await import("./library");
+    getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
+    listLibraryWorksServerFnMock.mockResolvedValueOnce([
+      {
+        authors: ["Author"],
+        editionCount: 0,
+        formatFamilies: [],
+        latestProgress: {
+          percent: null,
+          progressKind: "EBOOK",
+          source: null,
+          updatedAt: "2025-01-05T00:00:00.000Z",
+        },
+        shelves: ["Shelf One"],
+        titleDisplay: "Null Percent Work",
+        workId: "work-3",
+      },
+    ]);
+
+    const loader = libraryModule.Route.options.loader as unknown as (input: {
+      location: { pathname: string; search: string };
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+    const loaderData = await loader({
+      location: {
+        pathname: "/library",
+        search: "",
+      },
+      serverContext: {},
+    });
+    vi.spyOn(libraryModule.Route, "useLoaderData").mockReturnValue(loaderData as never);
+
+    const html = renderToStaticMarkup(<libraryModule.LibraryRoute />);
+    expect(html).toContain("Formats: None");
+    expect(html).toContain("0% ebook");
+    expect(html).not.toContain("via ");
+  });
+
   it("executes collection route helper actions", async () => {
     const collectionsModule = await import("./collections");
     const detailModule = await import("./collections.$collectionId");
@@ -1012,6 +1149,44 @@ describe("library routes", () => {
         href: "/auth/login",
       },
     });
+  });
+
+  it("redirects unauthenticated library requests and renders the base empty state", async () => {
+    const libraryModule = await import("./library");
+    const loader = libraryModule.Route.options.loader as unknown as (input: {
+      location: { pathname: string; search: string };
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+
+    getCurrentUserServerFnMock.mockResolvedValueOnce(null);
+    await expect(
+      loader({
+        location: {
+          pathname: "/library",
+          search: "",
+        },
+        serverContext: {},
+      }),
+    ).rejects.toMatchObject({
+      options: {
+        href: "/auth/login",
+      },
+    });
+
+    getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
+    listLibraryWorksServerFnMock.mockResolvedValueOnce([]);
+    const loaderData = await loader({
+      location: {
+        pathname: "/library",
+        search: "",
+      },
+      serverContext: {},
+    });
+    vi.spyOn(libraryModule.Route, "useLoaderData").mockReturnValue(loaderData as never);
+
+    expect(renderToStaticMarkup(<libraryModule.LibraryRoute />)).toContain(
+      "No works in your library yet.",
+    );
   });
 
   it("redirects unauthenticated library routes to login", async () => {

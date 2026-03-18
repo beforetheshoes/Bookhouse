@@ -184,6 +184,7 @@ export function WorkDetailRoute() {
           </p>
         </div>
         <nav className="flex gap-3 text-sm">
+          <Link to="/library">Library</Link>
           <Link to="/collections">Collections</Link>
           <Link to="/settings">Settings</Link>
         </nav>

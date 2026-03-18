@@ -108,6 +108,7 @@ export function CollectionDetailRoute() {
           </p>
         </div>
         <nav className="flex gap-3 text-sm">
+          <Link to="/library">Library</Link>
           <Link to="/collections">Collections</Link>
           <Link to="/">Home</Link>
         </nav>

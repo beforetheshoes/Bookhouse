@@ -20,6 +20,7 @@ import {
   getWorkCollectionMembership,
   getUserProgressTrackingMode,
   getWorkProgressView,
+  listLibraryWorks,
   listExternalLinksForWork,
   listCollections,
   listAudioLinks,
@@ -41,6 +42,7 @@ import {
   deleteCollectionSchema,
   deleteExternalLinkSchema,
   getCollectionDetailSchema,
+  listLibraryWorksSchema,
   getWorkCollectionMembershipSchema,
   getWorkProgressViewSchema,
   listExternalLinksForWorkSchema,
@@ -81,6 +83,14 @@ export async function listAudioLinksAction(data: {
 export async function listCollectionsAction() {
   const userId = await requireCurrentUserId();
   return listCollections(libraryDb, userId);
+}
+
+export async function listLibraryWorksAction(data: {
+  filter?: "all" | "with-progress" | "without-progress";
+  sort?: "title-asc" | "title-desc" | "recent-progress";
+} | undefined) {
+  const userId = await requireCurrentUserId();
+  return listLibraryWorks(libraryDb, userId, data ?? {});
 }
 
 export async function listExternalLinksForWorkAction(data: { workId: string }) {
@@ -260,6 +270,11 @@ export const validateListAudioLinksInput = (
 
 export const validateListCollectionsInput = () => undefined;
 
+export const validateListLibraryWorksInput = (data: {
+  filter?: "all" | "with-progress" | "without-progress";
+  sort?: "title-asc" | "title-desc" | "recent-progress";
+} | undefined) => listLibraryWorksSchema.parse(data ?? {});
+
 export const validateListExternalLinksForWorkInput = (data: { workId: string }) =>
   listExternalLinksForWorkSchema.parse(data);
 
@@ -373,6 +388,10 @@ export const listAudioLinksServerFn = createServerFn({ method: "GET" })
 export const listCollectionsServerFn = createServerFn({ method: "GET" })
   .inputValidator(validateListCollectionsInput)
   .handler(async () => listCollectionsAction());
+
+export const listLibraryWorksServerFn = createServerFn({ method: "GET" })
+  .inputValidator(validateListLibraryWorksInput)
+  .handler(async ({ data }) => listLibraryWorksAction(data));
 
 export const listExternalLinksForWorkServerFn = createServerFn({ method: "GET" })
   .inputValidator(validateListExternalLinksForWorkInput)

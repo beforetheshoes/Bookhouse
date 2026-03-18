@@ -1,4 +1,5 @@
 import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 const getCurrentUserServerFnMock = vi.fn();
@@ -6,6 +7,16 @@ const getCurrentUserServerFnMock = vi.fn();
 vi.mock("../lib/auth-client", () => ({
   getCurrentUserServerFn: getCurrentUserServerFnMock,
 }));
+
+vi.mock("@tanstack/react-router", async () => {
+  const actual = await vi.importActual<typeof import("@tanstack/react-router")>("@tanstack/react-router");
+  return {
+    ...actual,
+    Link: ({ children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
+      <a {...props}>{children}</a>
+    ),
+  };
+});
 
 describe("index route", () => {
   it("redirects unauthenticated requests to login", async () => {
@@ -65,6 +76,7 @@ describe("index route", () => {
 
     expect(React.isValidElement(element)).toBe(true);
     expect(loaderData).toEqual({ user });
+    expect(renderToStaticMarkup(element)).toContain("Library");
   });
 
   it("loads the current user from the server helper when server context is empty", async () => {
@@ -97,5 +109,6 @@ describe("index route", () => {
 
     expect(React.isValidElement(element)).toBe(true);
     expect(loaderData).toEqual({ user });
+    expect(renderToStaticMarkup(element)).toContain("Library");
   });
 });

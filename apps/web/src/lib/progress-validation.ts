@@ -40,6 +40,23 @@ export const workIdSchema = z.object({
   workId: z.string().trim().min(1),
 });
 
+export const librarySortSchema = z.enum([
+  "title-asc",
+  "title-desc",
+  "recent-progress",
+]);
+
+export const libraryFilterSchema = z.enum([
+  "all",
+  "with-progress",
+  "without-progress",
+]);
+
+export const listLibraryWorksSchema = z.object({
+  filter: libraryFilterSchema.optional().default("all"),
+  sort: librarySortSchema.optional().default("title-asc"),
+});
+
 export const createCollectionSchema = z.object({
   name: z.string().trim().min(1),
 });

@@ -75,6 +75,7 @@ export function CollectionsRoute() {
           <p className="text-sm text-gray-600">Manual shelves for works in your library.</p>
         </div>
         <nav className="flex gap-3 text-sm">
+          <Link to="/library">Library</Link>
           <Link to="/">Home</Link>
           <Link to="/settings">Settings</Link>
         </nav>

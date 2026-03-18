@@ -15,11 +15,13 @@ import {
   deleteExternalLink,
   getCollectionDetail,
   getAudioLinkDetail,
+  getLibraryWorkProgressTimestamp,
   getDuplicateCandidateDetail,
   getReadingProgress,
   getWorkCollectionMembership,
   getUserProgressTrackingMode,
   getWorkProgressView,
+  listLibraryWorks,
   listExternalLinksForWork,
   listCollections,
   listAudioLinks,
@@ -660,6 +662,25 @@ function createDb(state: TestState): LibraryServiceDb {
       async delete({ where }) {
         state.works.delete(where.id);
         return {};
+      },
+      async findMany() {
+        return [...state.works.values()]
+          .sort((left, right) => left.titleDisplay.localeCompare(right.titleDisplay) || left.id.localeCompare(right.id))
+          .map((work) => ({
+            ...work,
+            editions: [...state.editions.values()]
+              .filter((edition) => edition.workId === work.id)
+              .sort((left, right) => left.id.localeCompare(right.id))
+              .map((edition) => ({
+                ...edition,
+                contributors: [...state.editionContributors.values()]
+                  .filter((row) => row.editionId === edition.id)
+                  .map((row) => ({
+                    ...row,
+                    contributor: state.contributors.get(row.contributorId)!,
+                  })),
+              })),
+          }));
       },
       async findUnique(args) {
         const where = args.where as { id: string };
@@ -1545,6 +1566,229 @@ describe("library service", () => {
     await expect(deleteCollection(db, "user-1", "collection-1")).resolves.toBeUndefined();
     expect(state.collections.has("collection-1")).toBe(false);
     expect(state.collectionItems.has("collection-item-1")).toBe(false);
+  });
+
+  it("lists library works with aggregated metadata, filters, and sorts", async () => {
+    const state = createState();
+    addWork(state, "work-1", "Beta Work");
+    addWork(state, "work-2", "Alpha Work");
+    addWork(state, "work-3", "Gamma Work");
+    addContributor(state, "contributor-1", "Author B");
+    addContributor(state, "contributor-2", "Author A");
+    addContributor(state, "contributor-3", "Other User Author");
+    addEdition(state, "edition-1", "work-1", { formatFamily: FormatFamily.EBOOK });
+    addEdition(state, "edition-2", "work-1", { formatFamily: FormatFamily.AUDIOBOOK });
+    addEdition(state, "edition-3", "work-2", { formatFamily: FormatFamily.EBOOK });
+    addEditionContributor(state, "edition-contributor-1", "edition-1", "contributor-1");
+    addEditionContributor(state, "edition-contributor-2", "edition-2", "contributor-2");
+    addEditionContributor(state, "edition-contributor-3", "edition-2", "contributor-1");
+    addCollection(state, "collection-1", "Archive", "user-1");
+    addCollection(state, "collection-2", "Favorites", "user-1");
+    addCollection(state, "collection-3", "Other User Shelf", "user-2");
+    state.collectionItems.set("collection-item-1", {
+      collectionId: "collection-1",
+      id: "collection-item-1",
+      workId: "work-1",
+    });
+    state.collectionItems.set("collection-item-2", {
+      collectionId: "collection-2",
+      id: "collection-item-2",
+      workId: "work-1",
+    });
+    state.collectionItems.set("collection-item-3", {
+      collectionId: "collection-3",
+      id: "collection-item-3",
+      workId: "work-1",
+    });
+    state.readingProgress.set("progress-1", {
+      editionId: "edition-1",
+      id: "progress-1",
+      locator: { cfi: {} },
+      percent: 0.2,
+      progressKind: "EBOOK",
+      source: "kindle",
+      updatedAt: new Date("2025-01-01T00:00:00.000Z"),
+      userId: "user-1",
+    });
+    state.readingProgress.set("progress-2", {
+      editionId: "edition-2",
+      id: "progress-2",
+      locator: { chapter: {} },
+      percent: 0.7,
+      progressKind: "AUDIO",
+      source: "audiobookshelf",
+      updatedAt: new Date("2025-01-03T00:00:00.000Z"),
+      userId: "user-1",
+    });
+    state.readingProgress.set("progress-3", {
+      editionId: "edition-3",
+      id: "progress-3",
+      locator: { cfi: {} },
+      percent: 0.4,
+      progressKind: "EBOOK",
+      source: "kobo",
+      updatedAt: new Date("2025-01-02T00:00:00.000Z"),
+      userId: "user-2",
+    });
+
+    const db = createDb(state);
+
+    await expect(listLibraryWorks(db, "user-1")).resolves.toEqual([
+      {
+        authors: [],
+        editionCount: 1,
+        formatFamilies: [FormatFamily.EBOOK],
+        latestProgress: null,
+        shelves: [],
+        titleDisplay: "Alpha Work",
+        workId: "work-2",
+      },
+      {
+        authors: ["Author A", "Author B"],
+        editionCount: 2,
+        formatFamilies: [FormatFamily.AUDIOBOOK, FormatFamily.EBOOK],
+        latestProgress: {
+          percent: 0.7,
+          progressKind: "AUDIO",
+          source: "audiobookshelf",
+          updatedAt: "2025-01-03T00:00:00.000Z",
+        },
+        shelves: ["Archive", "Favorites"],
+        titleDisplay: "Beta Work",
+        workId: "work-1",
+      },
+      {
+        authors: [],
+        editionCount: 0,
+        formatFamilies: [],
+        latestProgress: null,
+        shelves: [],
+        titleDisplay: "Gamma Work",
+        workId: "work-3",
+      },
+    ]);
+
+    await expect(
+      listLibraryWorks(db, "user-1", { filter: "with-progress", sort: "recent-progress" }),
+    ).resolves.toEqual([
+      {
+        authors: ["Author A", "Author B"],
+        editionCount: 2,
+        formatFamilies: [FormatFamily.AUDIOBOOK, FormatFamily.EBOOK],
+        latestProgress: {
+          percent: 0.7,
+          progressKind: "AUDIO",
+          source: "audiobookshelf",
+          updatedAt: "2025-01-03T00:00:00.000Z",
+        },
+        shelves: ["Archive", "Favorites"],
+        titleDisplay: "Beta Work",
+        workId: "work-1",
+      },
+    ]);
+
+    await expect(
+      listLibraryWorks(db, "user-1", { filter: "without-progress", sort: "title-desc" }),
+    ).resolves.toEqual([
+      {
+        authors: [],
+        editionCount: 0,
+        formatFamilies: [],
+        latestProgress: null,
+        shelves: [],
+        titleDisplay: "Gamma Work",
+        workId: "work-3",
+      },
+      {
+        authors: [],
+        editionCount: 1,
+        formatFamilies: [FormatFamily.EBOOK],
+        latestProgress: null,
+        shelves: [],
+        titleDisplay: "Alpha Work",
+        workId: "work-2",
+      },
+    ]);
+
+    await expect(
+      listLibraryWorks(db, "user-1", { sort: "recent-progress" }),
+    ).resolves.toEqual([
+      {
+        authors: ["Author A", "Author B"],
+        editionCount: 2,
+        formatFamilies: [FormatFamily.AUDIOBOOK, FormatFamily.EBOOK],
+        latestProgress: {
+          percent: 0.7,
+          progressKind: "AUDIO",
+          source: "audiobookshelf",
+          updatedAt: "2025-01-03T00:00:00.000Z",
+        },
+        shelves: ["Archive", "Favorites"],
+        titleDisplay: "Beta Work",
+        workId: "work-1",
+      },
+      {
+        authors: [],
+        editionCount: 1,
+        formatFamilies: [FormatFamily.EBOOK],
+        latestProgress: null,
+        shelves: [],
+        titleDisplay: "Alpha Work",
+        workId: "work-2",
+      },
+      {
+        authors: [],
+        editionCount: 0,
+        formatFamilies: [],
+        latestProgress: null,
+        shelves: [],
+        titleDisplay: "Gamma Work",
+        workId: "work-3",
+      },
+    ]);
+  });
+
+  it("lists library works without editions and uses work id as the tie breaker", async () => {
+    const state = createState();
+    addWork(state, "work-1", "Same Title");
+    addWork(state, "work-2", "Same Title");
+
+    const db = createDb(state);
+
+    await expect(
+      listLibraryWorks(db, "user-1", { sort: "recent-progress" }),
+    ).resolves.toEqual([
+      {
+        authors: [],
+        editionCount: 0,
+        formatFamilies: [],
+        latestProgress: null,
+        shelves: [],
+        titleDisplay: "Same Title",
+        workId: "work-1",
+      },
+      {
+        authors: [],
+        editionCount: 0,
+        formatFamilies: [],
+        latestProgress: null,
+        shelves: [],
+        titleDisplay: "Same Title",
+        workId: "work-2",
+      },
+    ]);
+  });
+
+  it("returns zero and ISO timestamps for library work progress sorting", () => {
+    expect(getLibraryWorkProgressTimestamp({ latestProgress: null })).toBe(0);
+    expect(getLibraryWorkProgressTimestamp({
+      latestProgress: {
+        percent: 0.5,
+        progressKind: "EBOOK",
+        source: "kobo",
+        updatedAt: "2025-01-03T00:00:00.000Z",
+      },
+    })).toBe(Date.parse("2025-01-03T00:00:00.000Z"));
   });
 
   it("adds, removes, and reports work collection membership with ownership checks", async () => {
