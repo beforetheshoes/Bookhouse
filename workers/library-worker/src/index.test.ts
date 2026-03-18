@@ -8,6 +8,7 @@ const queueConnectionConfigMock = vi.fn(() => ({ host: "localhost", port: 6379 }
 const quitMock = vi.fn(async () => "OK");
 const redisConstructorMock = vi.fn();
 const hashFileAssetMock = vi.fn();
+const matchFileAssetToEditionMock = vi.fn();
 const parseFileAssetMetadataMock = vi.fn();
 const scanLibraryRootMock = vi.fn();
 
@@ -38,6 +39,7 @@ vi.mock("bullmq", () => ({
 
 vi.mock("@bookhouse/ingest", () => ({
   hashFileAsset: hashFileAssetMock,
+  matchFileAssetToEdition: matchFileAssetToEditionMock,
   parseFileAssetMetadata: parseFileAssetMetadataMock,
   scanLibraryRoot: scanLibraryRootMock,
 }));
@@ -56,6 +58,7 @@ vi.mock("@bookhouse/shared", async () => {
 beforeEach(() => {
   addMock.mockReset();
   hashFileAssetMock.mockReset();
+  matchFileAssetToEditionMock.mockReset();
   onMock.mockReset();
   parseFileAssetMetadataMock.mockReset();
   quitMock.mockReset();
@@ -71,12 +74,14 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       scanLibraryRoot: scanLibraryRootMock,
     });
 
     scanLibraryRootMock.mockResolvedValueOnce("scan-result");
     hashFileAssetMock.mockResolvedValueOnce("hash-result");
+    matchFileAssetToEditionMock.mockResolvedValueOnce("match-result");
     parseFileAssetMetadataMock.mockResolvedValueOnce("parse-result");
 
     await expect(
@@ -94,12 +99,19 @@ describe("library worker", () => {
     await expect(
       processor({
         data: { fileAssetId: "file-1" },
+        name: "match-file-asset-to-edition",
+      } as never),
+    ).resolves.toBe("match-result");
+    await expect(
+      processor({
+        data: { fileAssetId: "file-1" },
         name: "parse-file-asset-metadata",
       } as never),
     ).resolves.toBe("parse-result");
 
     expect(scanLibraryRootMock).toHaveBeenCalledWith({ libraryRootId: "root-1" });
     expect(hashFileAssetMock).toHaveBeenCalledWith({ fileAssetId: "file-1" });
+    expect(matchFileAssetToEditionMock).toHaveBeenCalledWith({ fileAssetId: "file-1" });
     expect(parseFileAssetMetadataMock).toHaveBeenCalledWith({ fileAssetId: "file-1" });
   });
 
@@ -107,6 +119,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       scanLibraryRoot: scanLibraryRootMock,
     });

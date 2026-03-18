@@ -13,6 +13,22 @@ export interface NormalizedBookMetadata {
   title?: string;
 }
 
+function canonicalizeForMatching(value: string | undefined): string | undefined {
+  const normalized = normalizeWhitespace(value);
+
+  if (normalized === undefined) {
+    return undefined;
+  }
+
+  const canonical = normalized
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return canonical.length > 0 ? canonical : undefined;
+}
+
 function normalizeWhitespace(value: string | undefined): string | undefined {
   if (value === undefined) {
     return undefined;
@@ -119,11 +135,31 @@ export function normalizeBookMetadata(raw: ParsedEpubMetadataRaw): NormalizedBoo
   };
 }
 
+export function canonicalizeBookTitle(value: string | undefined): string | undefined {
+  return canonicalizeForMatching(value);
+}
+
+export function canonicalizeContributorName(value: string | undefined): string | undefined {
+  return canonicalizeForMatching(value);
+}
+
+export function canonicalizeContributorNames(values: string[]): string[] {
+  return [...new Set(
+    values
+      .map((value) => canonicalizeContributorName(value))
+      .filter((value): value is string => value !== undefined),
+  )].sort();
+}
+
 export const METADATA_INTERNALS = {
+  canonicalizeBookTitle,
+  canonicalizeContributorName,
+  canonicalizeContributorNames,
   classifyIdentifier,
   isAsin,
   isIsbn10,
   isIsbn13,
+  canonicalizeForMatching,
   normalizeIdentifierValue,
   normalizeScheme,
   normalizeWhitespace,

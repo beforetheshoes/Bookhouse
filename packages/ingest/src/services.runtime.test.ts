@@ -52,6 +52,37 @@ vi.mock("@bookhouse/db", () => ({
         throw new Error("not used");
       }),
     },
+    contributor: {
+      create: vi.fn(async () => {
+        throw new Error("not used");
+      }),
+      findMany: vi.fn(async () => []),
+    },
+    edition: {
+      create: vi.fn(async () => {
+        throw new Error("not used");
+      }),
+      findFirst: vi.fn(async () => null),
+      findUnique: vi.fn(async () => null),
+    },
+    editionContributor: {
+      create: vi.fn(async () => {
+        throw new Error("not used");
+      }),
+      findFirst: vi.fn(async () => null),
+    },
+    editionFile: {
+      create: vi.fn(async () => {
+        throw new Error("not used");
+      }),
+      findFirst: vi.fn(async () => null),
+    },
+    work: {
+      create: vi.fn(async () => {
+        throw new Error("not used");
+      }),
+      findMany: vi.fn(async () => []),
+    },
   },
 }));
 
@@ -59,6 +90,15 @@ vi.mock("@bookhouse/domain", () => ({
   AvailabilityStatus: {
     MISSING: "MISSING",
     PRESENT: "PRESENT",
+  },
+  ContributorRole: {
+    AUTHOR: "AUTHOR",
+  },
+  EditionFileRole: {
+    PRIMARY: "PRIMARY",
+  },
+  FormatFamily: {
+    EBOOK: "EBOOK",
   },
   MediaKind: {
     AUDIO: "AUDIO",

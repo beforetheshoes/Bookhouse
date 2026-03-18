@@ -2,9 +2,18 @@ import { mkdir, mkdtemp, rm, symlink, utimes, writeFile } from "node:fs/promises
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AvailabilityStatus, type FileAsset, MediaKind } from "@bookhouse/domain";
+import {
+  AvailabilityStatus,
+  ContributorRole,
+  EditionFileRole,
+  FormatFamily,
+  type FileAsset,
+  MediaKind,
+} from "@bookhouse/domain";
 import { LIBRARY_JOB_NAMES } from "@bookhouse/shared";
 import {
+  canonicalizeBookTitle,
+  canonicalizeContributorNames,
   createIngestServices,
   isFileChanged,
   type IngestDb,
@@ -33,14 +42,86 @@ interface TestFileAsset {
 }
 
 interface TestState {
+  contributors: Map<string, TestContributor>;
+  contributorsByCanonical: Map<string, TestContributor>;
+  editionContributors: Map<string, TestEditionContributor>;
+  editionFiles: Map<string, TestEditionFile>;
+  editions: Map<string, TestEdition>;
   fileAssets: Map<string, TestFileAsset>;
   fileAssetsById: Map<string, TestFileAsset>;
   lastScannedAt: Date | null;
   rootPath: string;
+  works: Map<string, TestWork>;
+}
+
+interface TestWork {
+  id: string;
+  sortTitle: string | null;
+  titleCanonical: string;
+  titleDisplay: string;
+}
+
+interface TestEdition {
+  asin: string | null;
+  formatFamily: FormatFamily;
+  id: string;
+  isbn10: string | null;
+  isbn13: string | null;
+  publishedAt: Date | null;
+  publisher: string | null;
+  workId: string;
+}
+
+interface TestContributor {
+  id: string;
+  nameCanonical: string;
+  nameDisplay: string;
+}
+
+interface TestEditionFile {
+  editionId: string;
+  fileAssetId: string;
+  id: string;
+  role: EditionFileRole;
+}
+
+interface TestEditionContributor {
+  contributorId: string;
+  editionId: string;
+  id: string;
+  role: ContributorRole;
+}
+
+function createEmptyState(rootPath = "/tmp/root"): TestState {
+  return {
+    contributors: new Map(),
+    contributorsByCanonical: new Map(),
+    editionContributors: new Map(),
+    editionFiles: new Map(),
+    editions: new Map(),
+    fileAssets: new Map(),
+    fileAssetsById: new Map(),
+    lastScannedAt: null,
+    rootPath,
+    works: new Map(),
+  };
+}
+
+function getEditionFileKey(editionId: string, fileAssetId: string): string {
+  return `${editionId}:${fileAssetId}`;
+}
+
+function getEditionContributorKey(editionId: string, contributorId: string, role: ContributorRole): string {
+  return `${editionId}:${contributorId}:${role}`;
 }
 
 function createTestDb(state: TestState): IngestDb {
-  let sequence = 0;
+  let contributorSequence = state.contributors.size;
+  let editionContributorSequence = state.editionContributors.size;
+  let editionFileSequence = state.editionFiles.size;
+  let editionSequence = state.editions.size;
+  let fileAssetSequence = state.fileAssetsById.size;
+  let workSequence = state.works.size;
 
   return {
     libraryRoot: {
@@ -93,11 +174,11 @@ function createTestDb(state: TestState): IngestDb {
         const existing = state.fileAssets.get(where.absolutePath);
 
         if (existing === undefined) {
-          sequence += 1;
+          fileAssetSequence += 1;
           const created: TestFileAsset = {
             ...create,
             fullHash: null,
-            id: `file-${sequence}`,
+            id: `file-${fileAssetSequence}`,
             metadata: create.metadata ?? null,
             partialHash: null,
           };
@@ -112,7 +193,206 @@ function createTestDb(state: TestState): IngestDb {
         return updated;
       },
     },
+    work: {
+      async create({ data }) {
+        workSequence += 1;
+        const created: TestWork = {
+          id: `work-${workSequence}`,
+          ...data,
+        };
+        state.works.set(created.id, created);
+        return created;
+      },
+      async findMany({ where }) {
+        return [...state.works.values()]
+          .filter((work) => work.titleCanonical === where.titleCanonical)
+          .map((work) => ({
+            ...work,
+            editions: [...state.editions.values()]
+              .filter((edition) => edition.workId === work.id)
+              .map((edition) => ({
+                ...edition,
+                contributors: [...state.editionContributors.values()]
+                  .filter((link) => link.editionId === edition.id)
+                  .map((link) => ({
+                    ...link,
+                    contributor: state.contributors.get(link.contributorId)!,
+                  })),
+              })),
+          }));
+      },
+    },
+    edition: {
+      async create({ data }) {
+        editionSequence += 1;
+        const created: TestEdition = {
+          id: `edition-${editionSequence}`,
+          ...data,
+        };
+        state.editions.set(created.id, created);
+        return created;
+      },
+      async findFirst({ where }) {
+        return [...state.editions.values()].find((edition) =>
+          Object.entries(where).every(([key, value]) => edition[key as keyof TestEdition] === value),
+        ) ?? null;
+      },
+      async findUnique({ where }) {
+        return state.editions.get(where.id) ?? null;
+      },
+    },
+    editionFile: {
+      async create({ data }) {
+        editionFileSequence += 1;
+        const created: TestEditionFile = {
+          id: `edition-file-${editionFileSequence}`,
+          ...data,
+        };
+        state.editionFiles.set(getEditionFileKey(created.editionId, created.fileAssetId), created);
+        return created;
+      },
+      async findFirst({ where }) {
+        return [...state.editionFiles.values()].find((editionFile) =>
+          (where.editionId === undefined || editionFile.editionId === where.editionId) &&
+          (where.fileAssetId === undefined || editionFile.fileAssetId === where.fileAssetId),
+        ) ?? null;
+      },
+    },
+    contributor: {
+      async create({ data }) {
+        contributorSequence += 1;
+        const created: TestContributor = {
+          id: `contributor-${contributorSequence}`,
+          ...data,
+        };
+        state.contributors.set(created.id, created);
+        state.contributorsByCanonical.set(created.nameCanonical, created);
+        return created;
+      },
+      async findMany({ where }) {
+        return where.nameCanonical.in
+          .map((nameCanonical) => state.contributorsByCanonical.get(nameCanonical))
+          .filter((contributor): contributor is TestContributor => contributor !== undefined);
+      },
+    },
+    editionContributor: {
+      async create({ data }) {
+        editionContributorSequence += 1;
+        const created: TestEditionContributor = {
+          id: `edition-contributor-${editionContributorSequence}`,
+          ...data,
+        };
+        state.editionContributors.set(
+          getEditionContributorKey(created.editionId, created.contributorId, created.role),
+          created,
+        );
+        return created;
+      },
+      async findFirst({ where }) {
+        return state.editionContributors.get(
+          getEditionContributorKey(where.editionId, where.contributorId, where.role),
+        ) ?? null;
+      },
+    },
   };
+}
+
+function addFileAsset(state: TestState, overrides: Partial<TestFileAsset> = {}): TestFileAsset {
+  const fileAsset: TestFileAsset = {
+    absolutePath: "/tmp/root/book.epub",
+    availabilityStatus: AvailabilityStatus.PRESENT,
+    basename: "book.epub",
+    ctime: new Date("2024-01-01T00:00:00.000Z"),
+    extension: "epub",
+    fullHash: "full",
+    id: "file-1",
+    lastSeenAt: null,
+    libraryRootId: "root-1",
+    mediaKind: MediaKind.EPUB,
+    metadata: null,
+    mtime: new Date("2024-01-01T00:00:00.000Z"),
+    partialHash: "partial",
+    relativePath: "book.epub",
+    sizeBytes: 4n,
+    ...overrides,
+  };
+  state.fileAssets.set(fileAsset.absolutePath, fileAsset);
+  state.fileAssetsById.set(fileAsset.id, fileAsset);
+  return fileAsset;
+}
+
+function addWork(state: TestState, overrides: Partial<TestWork> = {}): TestWork {
+  const work: TestWork = {
+    id: "work-1",
+    sortTitle: null,
+    titleCanonical: "the fifth season",
+    titleDisplay: "The Fifth Season",
+    ...overrides,
+  };
+  state.works.set(work.id, work);
+  return work;
+}
+
+function addEdition(state: TestState, overrides: Partial<TestEdition> = {}): TestEdition {
+  const edition: TestEdition = {
+    asin: null,
+    formatFamily: FormatFamily.EBOOK,
+    id: "edition-1",
+    isbn10: null,
+    isbn13: null,
+    publishedAt: null,
+    publisher: null,
+    workId: "work-1",
+    ...overrides,
+  };
+  state.editions.set(edition.id, edition);
+  return edition;
+}
+
+function addContributor(state: TestState, overrides: Partial<TestContributor> = {}): TestContributor {
+  const contributor: TestContributor = {
+    id: "contributor-1",
+    nameCanonical: "n k jemisin",
+    nameDisplay: "N. K. Jemisin",
+    ...overrides,
+  };
+  state.contributors.set(contributor.id, contributor);
+  state.contributorsByCanonical.set(contributor.nameCanonical, contributor);
+  return contributor;
+}
+
+function addEditionContributor(
+  state: TestState,
+  overrides: Partial<TestEditionContributor> = {},
+): TestEditionContributor {
+  const editionContributor: TestEditionContributor = {
+    contributorId: "contributor-1",
+    editionId: "edition-1",
+    id: "edition-contributor-1",
+    role: ContributorRole.AUTHOR,
+    ...overrides,
+  };
+  state.editionContributors.set(
+    getEditionContributorKey(
+      editionContributor.editionId,
+      editionContributor.contributorId,
+      editionContributor.role,
+    ),
+    editionContributor,
+  );
+  return editionContributor;
+}
+
+function addEditionFile(state: TestState, overrides: Partial<TestEditionFile> = {}): TestEditionFile {
+  const editionFile: TestEditionFile = {
+    editionId: "edition-1",
+    fileAssetId: "file-1",
+    id: "edition-file-1",
+    role: EditionFileRole.PRIMARY,
+    ...overrides,
+  };
+  state.editionFiles.set(getEditionFileKey(editionFile.editionId, editionFile.fileAssetId), editionFile);
+  return editionFile;
 }
 
 const tempDirectories: string[] = [];
@@ -304,12 +584,7 @@ describe("ingest services", () => {
     await writeFile(path.join(directory, "author", "book.epub"), "first");
     await writeFile(path.join(directory, "author", "cover.jpg"), "cover");
 
-    const state: TestState = {
-      fileAssets: new Map(),
-      fileAssetsById: new Map(),
-      lastScannedAt: null,
-      rootPath: directory,
-    };
+    const state = createEmptyState(directory);
     const enqueuedJobs: Array<{ jobName: string; payload: { fileAssetId: string } }> = [];
     const services = createIngestServices({
       db: createTestDb(state),
@@ -422,12 +697,7 @@ describe("ingest services", () => {
       throw error;
     });
     const services = createIngestServices({
-      db: createTestDb({
-        fileAssets: new Map(),
-        fileAssetsById: new Map(),
-        lastScannedAt: null,
-        rootPath: "/tmp/root",
-      }),
+      db: createTestDb(createEmptyState("/tmp/root")),
       enqueueLibraryJob: vi.fn(async () => undefined),
       listDirectory: listDirectory as never,
       readStats: readStats as never,
@@ -441,12 +711,7 @@ describe("ingest services", () => {
 
   it("throws when the library root does not exist", async () => {
     const services = createIngestServices({
-      db: createTestDb({
-        fileAssets: new Map(),
-        fileAssetsById: new Map(),
-        lastScannedAt: null,
-        rootPath: "/tmp/root",
-      }),
+      db: createTestDb(createEmptyState("/tmp/root")),
     });
 
     await expect(
@@ -459,6 +724,7 @@ describe("ingest services", () => {
 
     expect(services).toMatchObject({
       hashFileAsset: expect.any(Function),
+      matchFileAssetToEdition: expect.any(Function),
       parseFileAssetMetadata: expect.any(Function),
       scanLibraryRoot: expect.any(Function),
     });
@@ -466,12 +732,7 @@ describe("ingest services", () => {
 
   it("skips paths that are no longer regular files during the scan upsert pass", async () => {
     const services = createIngestServices({
-      db: createTestDb({
-        fileAssets: new Map(),
-        fileAssetsById: new Map(),
-        lastScannedAt: null,
-        rootPath: "/tmp/root",
-      }),
+      db: createTestDb(createEmptyState("/tmp/root")),
       enqueueLibraryJob: vi.fn(async () => undefined),
       listDirectory: (async () =>
         [
@@ -496,12 +757,7 @@ describe("ingest services", () => {
   });
 
   it("hashes file assets and marks missing files without clearing prior hashes", async () => {
-    const state: TestState = {
-      fileAssets: new Map(),
-      fileAssetsById: new Map(),
-      lastScannedAt: null,
-      rootPath: "/tmp/root",
-    };
+    const state = createEmptyState("/tmp/root");
     const existing: TestFileAsset = {
       absolutePath: "/tmp/root/book.epub",
       availabilityStatus: AvailabilityStatus.PRESENT,
@@ -578,12 +834,7 @@ describe("ingest services", () => {
   });
 
   it("throws for unknown file assets and non-ENOENT hash errors", async () => {
-    const state: TestState = {
-      fileAssets: new Map(),
-      fileAssetsById: new Map(),
-      lastScannedAt: null,
-      rootPath: "/tmp/root",
-    };
+    const state = createEmptyState("/tmp/root");
     const services = createIngestServices({
       db: createTestDb(state),
       enqueueLibraryJob: vi.fn(async () => undefined),
@@ -628,12 +879,7 @@ describe("ingest services", () => {
   });
 
   it("enqueues metadata parsing after hashing EPUB assets", async () => {
-    const state: TestState = {
-      fileAssets: new Map(),
-      fileAssetsById: new Map(),
-      lastScannedAt: null,
-      rootPath: "/tmp/root",
-    };
+    const state = createEmptyState("/tmp/root");
     const existing: TestFileAsset = {
       absolutePath: "/tmp/root/book.epub",
       availabilityStatus: AvailabilityStatus.PRESENT,
@@ -674,12 +920,7 @@ describe("ingest services", () => {
   });
 
   it("does not enqueue metadata parsing after hashing non-EPUB assets", async () => {
-    const state: TestState = {
-      fileAssets: new Map(),
-      fileAssetsById: new Map(),
-      lastScannedAt: null,
-      rootPath: "/tmp/root",
-    };
+    const state = createEmptyState("/tmp/root");
     const existing: TestFileAsset = {
       absolutePath: "/tmp/root/cover.jpg",
       availabilityStatus: AvailabilityStatus.PRESENT,
@@ -720,35 +961,13 @@ describe("ingest services", () => {
   });
 
   it("parses EPUB metadata and persists normalized results", async () => {
-    const state: TestState = {
-      fileAssets: new Map(),
-      fileAssetsById: new Map(),
-      lastScannedAt: null,
-      rootPath: "/tmp/root",
-    };
-    const existing: TestFileAsset = {
-      absolutePath: "/tmp/root/book.epub",
-      availabilityStatus: AvailabilityStatus.PRESENT,
-      basename: "book.epub",
-      ctime: new Date("2024-01-01T00:00:00.000Z"),
-      extension: "epub",
-      fullHash: "full",
-      id: "file-1",
-      lastSeenAt: null,
-      libraryRootId: "root-1",
-      mediaKind: MediaKind.EPUB,
-      metadata: null,
-      mtime: new Date("2024-01-01T00:00:00.000Z"),
-      partialHash: "partial",
-      relativePath: "book.epub",
-      sizeBytes: 4n,
-    };
-    state.fileAssets.set(existing.absolutePath, existing);
-    state.fileAssetsById.set(existing.id, existing);
+    const state = createEmptyState("/tmp/root");
+    addFileAsset(state);
+    const enqueueLibraryJob = vi.fn(async () => undefined);
 
     const services = createIngestServices({
       db: createTestDb(state),
-      enqueueLibraryJob: vi.fn(async () => undefined),
+      enqueueLibraryJob,
       parseEpub: vi.fn(async () => ({
         authors: ["  N. K. Jemisin  ", "N. K. Jemisin"],
         identifiers: [
@@ -786,15 +1005,14 @@ describe("ingest services", () => {
       status: "parsed",
       warnings: [],
     });
+    expect(enqueueLibraryJob).toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION,
+      { fileAssetId: "file-1" },
+    );
   });
 
   it("skips metadata parsing for non-EPUB assets", async () => {
-    const state: TestState = {
-      fileAssets: new Map(),
-      fileAssetsById: new Map(),
-      lastScannedAt: null,
-      rootPath: "/tmp/root",
-    };
+    const state = createEmptyState("/tmp/root");
     const existing: TestFileAsset = {
       absolutePath: "/tmp/root/cover.jpg",
       availabilityStatus: AvailabilityStatus.PRESENT,
@@ -832,12 +1050,7 @@ describe("ingest services", () => {
   });
 
   it("marks EPUB metadata as unparseable without failing the job", async () => {
-    const state: TestState = {
-      fileAssets: new Map(),
-      fileAssetsById: new Map(),
-      lastScannedAt: null,
-      rootPath: "/tmp/root",
-    };
+    const state = createEmptyState("/tmp/root");
     const existing: TestFileAsset = {
       absolutePath: "/tmp/root/book.epub",
       availabilityStatus: AvailabilityStatus.PRESENT,
@@ -880,12 +1093,7 @@ describe("ingest services", () => {
   });
 
   it("uses a fallback warning for non-Error EPUB parse failures", async () => {
-    const state: TestState = {
-      fileAssets: new Map(),
-      fileAssetsById: new Map(),
-      lastScannedAt: null,
-      rootPath: "/tmp/root",
-    };
+    const state = createEmptyState("/tmp/root");
     const existing: TestFileAsset = {
       absolutePath: "/tmp/root/book.epub",
       availabilityStatus: AvailabilityStatus.PRESENT,
@@ -921,31 +1129,8 @@ describe("ingest services", () => {
   });
 
   it("marks missing EPUBs during metadata parsing when the file disappears", async () => {
-    const state: TestState = {
-      fileAssets: new Map(),
-      fileAssetsById: new Map(),
-      lastScannedAt: null,
-      rootPath: "/tmp/root",
-    };
-    const existing: TestFileAsset = {
-      absolutePath: "/tmp/root/book.epub",
-      availabilityStatus: AvailabilityStatus.PRESENT,
-      basename: "book.epub",
-      ctime: new Date("2024-01-01T00:00:00.000Z"),
-      extension: "epub",
-      fullHash: "full",
-      id: "file-1",
-      lastSeenAt: null,
-      libraryRootId: "root-1",
-      mediaKind: MediaKind.EPUB,
-      metadata: null,
-      mtime: new Date("2024-01-01T00:00:00.000Z"),
-      partialHash: "partial",
-      relativePath: "book.epub",
-      sizeBytes: 4n,
-    };
-    state.fileAssets.set(existing.absolutePath, existing);
-    state.fileAssetsById.set(existing.id, existing);
+    const state = createEmptyState("/tmp/root");
+    addFileAsset(state);
     const services = createIngestServices({
       db: createTestDb(state),
       enqueueLibraryJob: vi.fn(async () => undefined),
@@ -968,14 +1153,391 @@ describe("ingest services", () => {
     );
   });
 
+  it("skips matching for unknown assets, non-EPUB assets, and unusable metadata", async () => {
+    const unknownServices = createIngestServices({
+      db: createTestDb(createEmptyState("/tmp/root")),
+      enqueueLibraryJob: vi.fn(async () => undefined),
+    });
+
+    await expect(
+      unknownServices.matchFileAssetToEdition({ fileAssetId: "missing-file" }),
+    ).resolves.toEqual({
+      createdEdition: false,
+      createdEditionFile: false,
+      createdWork: false,
+      fileAssetId: "missing-file",
+      skipped: true,
+    });
+
+    const nonEpubState = createEmptyState("/tmp/root");
+    addFileAsset(nonEpubState, {
+      absolutePath: "/tmp/root/cover.jpg",
+      basename: "cover.jpg",
+      extension: "jpg",
+      mediaKind: MediaKind.COVER,
+      relativePath: "cover.jpg",
+    });
+    const nonEpubServices = createIngestServices({
+      db: createTestDb(nonEpubState),
+      enqueueLibraryJob: vi.fn(async () => undefined),
+    });
+
+    await expect(
+      nonEpubServices.matchFileAssetToEdition({ fileAssetId: "file-1" }),
+    ).resolves.toMatchObject({
+      fileAssetId: "file-1",
+      skipped: true,
+    });
+
+    const invalidSourceState = createEmptyState("/tmp/root");
+    addFileAsset(invalidSourceState, {
+      metadata: {
+        source: "pdf",
+        status: "parsed",
+      } as never,
+    });
+    const unparseableState = createEmptyState("/tmp/root");
+    addFileAsset(unparseableState, {
+      metadata: {
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "unparseable",
+        warnings: ["bad epub"],
+      },
+    });
+    const nullMetadataState = createEmptyState("/tmp/root");
+    addFileAsset(nullMetadataState, {
+      metadata: null,
+    });
+    const primitiveMetadataState = createEmptyState("/tmp/root");
+    addFileAsset(primitiveMetadataState, {
+      metadata: "bad-metadata" as never,
+    });
+    const missingTitleState = createEmptyState("/tmp/root");
+    addFileAsset(missingTitleState, {
+      metadata: {
+        normalized: {
+          authors: ["N. K. Jemisin"],
+          identifiers: { unknown: [] },
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      },
+    });
+    const missingAuthorsState = createEmptyState("/tmp/root");
+    addFileAsset(missingAuthorsState, {
+      metadata: {
+        normalized: {
+          authors: [],
+          identifiers: { unknown: [] },
+          title: "The Fifth Season",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      },
+    });
+    const unmatchableCanonicalState = createEmptyState("/tmp/root");
+    addFileAsset(unmatchableCanonicalState, {
+      metadata: {
+        normalized: {
+          authors: ["!!!"],
+          identifiers: { unknown: [] },
+          title: "!!!",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      },
+    });
+
+    for (const state of [
+      invalidSourceState,
+      nullMetadataState,
+      primitiveMetadataState,
+      unparseableState,
+      missingTitleState,
+      missingAuthorsState,
+      unmatchableCanonicalState,
+    ]) {
+      const services = createIngestServices({
+        db: createTestDb(state),
+        enqueueLibraryJob: vi.fn(async () => undefined),
+      });
+
+      await expect(
+        services.matchFileAssetToEdition({ fileAssetId: "file-1" }),
+      ).resolves.toMatchObject({
+        createdEdition: false,
+        createdEditionFile: false,
+        createdWork: false,
+        fileAssetId: "file-1",
+        skipped: true,
+      });
+    }
+  });
+
+  it("matches existing editions by exact identifiers and remains idempotent", async () => {
+    const cases: Array<{
+      field: "asin" | "isbn10" | "isbn13";
+      value: string;
+    }> = [
+      { field: "isbn13", value: "9780316498834" },
+      { field: "isbn10", value: "0316499015" },
+      { field: "asin", value: "B012345678" },
+    ];
+
+    for (const testCase of cases) {
+      const state = createEmptyState("/tmp/root");
+      addFileAsset(state, {
+        metadata: {
+          normalized: {
+            authors: ["N.K. Jemisin"],
+            identifiers: {
+              [testCase.field]: testCase.value,
+              unknown: [],
+            },
+            title: "The Fifth Season",
+          },
+          parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+          parserVersion: 1,
+          source: "epub",
+          status: "parsed",
+          warnings: [],
+        } as FileAsset["metadata"],
+      });
+      addWork(state);
+      addEdition(state, { [testCase.field]: testCase.value });
+      const services = createIngestServices({
+        db: createTestDb(state),
+        enqueueLibraryJob: vi.fn(async () => undefined),
+      });
+
+      const firstResult = await services.matchFileAssetToEdition({ fileAssetId: "file-1" });
+      const secondResult = await services.matchFileAssetToEdition({ fileAssetId: "file-1" });
+
+      expect(firstResult).toEqual({
+        createdEdition: false,
+        createdEditionFile: true,
+        createdWork: false,
+        editionId: "edition-1",
+        fileAssetId: "file-1",
+        skipped: false,
+        workId: "work-1",
+      });
+      expect(secondResult).toEqual({
+        createdEdition: false,
+        createdEditionFile: false,
+        createdWork: false,
+        editionId: "edition-1",
+        fileAssetId: "file-1",
+        skipped: false,
+        workId: "work-1",
+      });
+      expect([...state.editionFiles.values()]).toHaveLength(1);
+    }
+  });
+
+  it("creates a new edition under an existing work when title and authors match but identifiers differ", async () => {
+    const state = createEmptyState("/tmp/root");
+    addFileAsset(state, {
+      metadata: {
+        normalized: {
+          authors: ["N.K. Jemisin"],
+          identifiers: {
+            isbn13: "9780316498841",
+            unknown: [],
+          },
+          title: " The, Fifth-Season! ",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      },
+    });
+    addWork(state, {
+      titleCanonical: canonicalizeBookTitle("The Fifth Season")!,
+    });
+    addEdition(state, {
+      isbn13: "9780316498834",
+    });
+    addContributor(state, {
+      nameCanonical: canonicalizeContributorNames(["N. K. Jemisin"])[0]!,
+    });
+    addEditionContributor(state);
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(async () => undefined),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-1" });
+
+    expect(result).toEqual({
+      createdEdition: true,
+      createdEditionFile: true,
+      createdWork: false,
+      editionId: "edition-2",
+      fileAssetId: "file-1",
+      skipped: false,
+      workId: "work-1",
+    });
+    expect([...state.editions.values()]).toHaveLength(2);
+    expect(state.editions.get("edition-2")).toMatchObject({
+      formatFamily: FormatFamily.EBOOK,
+      isbn13: "9780316498841",
+      workId: "work-1",
+    });
+    expect([...state.contributors.values()]).toHaveLength(1);
+    expect([...state.editionContributors.values()]).toHaveLength(2);
+  });
+
+  it("creates a new work, edition, contributors, and file link when no match exists", async () => {
+    const state = createEmptyState("/tmp/root");
+    addFileAsset(state, {
+      metadata: {
+        normalized: {
+          authors: ["N. K. Jemisin", "N.K. Jemisin"],
+          identifiers: {
+            asin: "B012345678",
+            isbn13: "9780316498834",
+            unknown: [],
+          },
+          title: "The Fifth Season",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      },
+    });
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(async () => undefined),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-1" });
+
+    expect(result).toEqual({
+      createdEdition: true,
+      createdEditionFile: true,
+      createdWork: true,
+      editionId: "edition-1",
+      fileAssetId: "file-1",
+      skipped: false,
+      workId: "work-1",
+    });
+    expect(state.works.get("work-1")).toEqual({
+      id: "work-1",
+      sortTitle: null,
+      titleCanonical: "the fifth season",
+      titleDisplay: "The Fifth Season",
+    });
+    expect(state.editions.get("edition-1")).toMatchObject({
+      asin: "B012345678",
+      formatFamily: FormatFamily.EBOOK,
+      isbn13: "9780316498834",
+      workId: "work-1",
+    });
+    expect([...state.contributors.values()]).toEqual([
+      {
+        id: "contributor-1",
+        nameCanonical: "n k jemisin",
+        nameDisplay: "N. K. Jemisin",
+      },
+    ]);
+    expect([...state.editionFiles.values()]).toHaveLength(1);
+  });
+
+  it("creates a work and edition from title and author when strong identifiers are missing", async () => {
+    const state = createEmptyState("/tmp/root");
+    addFileAsset(state, {
+      metadata: {
+        normalized: {
+          authors: ["N. K. Jemisin"],
+          identifiers: { unknown: ["urn:uuid:test"] },
+          title: "The Fifth Season",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      },
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(async () => undefined),
+    });
+
+    await expect(
+      services.matchFileAssetToEdition({ fileAssetId: "file-1" }),
+    ).resolves.toMatchObject({
+      createdEdition: true,
+      createdWork: true,
+      fileAssetId: "file-1",
+      skipped: false,
+    });
+    expect(state.editions.get("edition-1")).toMatchObject({
+      asin: null,
+      isbn10: null,
+      isbn13: null,
+    });
+  });
+
+  it("returns the existing edition mapping when the file is already linked", async () => {
+    const state = createEmptyState("/tmp/root");
+    addFileAsset(state, {
+      metadata: {
+        normalized: {
+          authors: ["N. K. Jemisin"],
+          identifiers: { isbn13: "9780316498834", unknown: [] },
+          title: "The Fifth Season",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      },
+    });
+    addWork(state);
+    addEdition(state, { isbn13: "9780316498834" });
+    addEditionFile(state);
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(async () => undefined),
+    });
+
+    await expect(
+      services.matchFileAssetToEdition({ fileAssetId: "file-1" }),
+    ).resolves.toEqual({
+      createdEdition: false,
+      createdEditionFile: false,
+      createdWork: false,
+      editionId: "edition-1",
+      fileAssetId: "file-1",
+      skipped: false,
+      workId: "work-1",
+    });
+  });
+
   it("throws when metadata parsing is requested for an unknown file asset", async () => {
     const services = createIngestServices({
-      db: createTestDb({
-        fileAssets: new Map(),
-        fileAssetsById: new Map(),
-        lastScannedAt: null,
-        rootPath: "/tmp/root",
-      }),
+      db: createTestDb(createEmptyState("/tmp/root")),
       enqueueLibraryJob: vi.fn(async () => undefined),
     });
 

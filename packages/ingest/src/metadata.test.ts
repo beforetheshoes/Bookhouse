@@ -68,4 +68,18 @@ describe("metadata normalization", () => {
     });
     expect(METADATA_INTERNALS.normalizeScheme(undefined)).toBeUndefined();
   });
+
+  it("canonicalizes titles and contributors for exact work matching", () => {
+    expect(METADATA_INTERNALS.canonicalizeBookTitle(" The, Fifth-Season! ")).toBe("the fifth season");
+    expect(METADATA_INTERNALS.canonicalizeContributorName(" N. K. Jemisin ")).toBe("n k jemisin");
+    expect(METADATA_INTERNALS.canonicalizeBookTitle(undefined)).toBeUndefined();
+    expect(
+      METADATA_INTERNALS.canonicalizeContributorNames([
+        " N. K. Jemisin ",
+        "n k jemisin",
+        "N.K.  Jemisin",
+        "!!!",
+      ]),
+    ).toEqual(["n k jemisin"]);
+  });
 });

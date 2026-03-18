@@ -5,16 +5,24 @@ import IORedis from "ioredis";
 import { Queue } from "bullmq";
 import {
   AvailabilityStatus,
+  ContributorRole,
+  EditionFileRole,
+  FormatFamily,
+  type Contributor,
+  type Edition,
+  type EditionFile,
   type FileAsset,
   MediaKind,
   type LibraryRoot,
+  type Work,
 } from "@bookhouse/domain";
-import { db } from "@bookhouse/db";
+import { db, type EditionContributor } from "@bookhouse/db";
 import {
   LIBRARY_JOB_NAMES,
   type HashFileAssetJobPayload,
   type LibraryJobName,
   type LibraryJobPayload,
+  type MatchFileAssetToEditionJobPayload,
   type ParseFileAssetMetadataJobPayload,
   QUEUES,
   getQueueConnectionConfig,
@@ -22,7 +30,13 @@ import {
 import { classifyMediaKind, getFileExtension, normalizeRelativePath, normalizeRootPath } from "./classification";
 import { parseEpubMetadata, type ParsedEpubMetadataRaw } from "./epub";
 import { hashFileContents } from "./hashing";
-import { normalizeBookMetadata, type NormalizedBookMetadata } from "./metadata";
+import {
+  canonicalizeBookTitle,
+  canonicalizeContributorName,
+  canonicalizeContributorNames,
+  normalizeBookMetadata,
+  type NormalizedBookMetadata,
+} from "./metadata";
 
 export interface ParsedFileAssetMetadata {
   normalized?: NormalizedBookMetadata;
@@ -48,6 +62,25 @@ type FileAssetRecord = Pick<
 >;
 
 type LibraryRootRecord = Pick<LibraryRoot, "id" | "lastScannedAt" | "path">;
+type WorkRecord = Pick<Work, "id" | "sortTitle" | "titleCanonical" | "titleDisplay">;
+type EditionRecord = Pick<
+  Edition,
+  "asin" | "formatFamily" | "id" | "isbn10" | "isbn13" | "publishedAt" | "publisher" | "workId"
+>;
+type ContributorRecord = Pick<Contributor, "id" | "nameCanonical" | "nameDisplay">;
+type EditionFileRecord = Pick<EditionFile, "editionId" | "fileAssetId" | "id" | "role">;
+type EditionContributorRecord = Pick<EditionContributor, "contributorId" | "editionId" | "id" | "role">;
+type WorkMatchRecord = WorkRecord & {
+  editions: Array<
+    EditionRecord & {
+      contributors: Array<
+        EditionContributorRecord & {
+          contributor: ContributorRecord;
+        }
+      >;
+    }
+  >;
+};
 
 interface FileAssetCreateInput {
   absolutePath: string;
@@ -88,6 +121,62 @@ interface FileAssetUpdateArgs {
   data: Partial<FileAssetUpdateInput>;
 }
 
+interface WorkFindManyArgs {
+  where: { titleCanonical: string };
+  include: {
+    editions: {
+      include: {
+        contributors: {
+          include: {
+            contributor: true;
+          };
+        };
+      };
+    };
+  };
+}
+
+interface WorkCreateArgs {
+  data: Pick<WorkRecord, "sortTitle" | "titleCanonical" | "titleDisplay">;
+}
+
+interface EditionFindFirstArgs {
+  where: Partial<Pick<EditionRecord, "asin" | "id" | "isbn10" | "isbn13">>;
+}
+
+interface EditionCreateArgs {
+  data: Pick<
+    EditionRecord,
+    "asin" | "formatFamily" | "isbn10" | "isbn13" | "publishedAt" | "publisher" | "workId"
+  >;
+}
+
+interface EditionFileFindFirstArgs {
+  where:
+    | { editionId: string; fileAssetId?: string }
+    | { editionId?: string; fileAssetId: string };
+}
+
+interface EditionFileCreateArgs {
+  data: Pick<EditionFileRecord, "editionId" | "fileAssetId" | "role">;
+}
+
+interface ContributorFindManyArgs {
+  where: { nameCanonical: { in: string[] } };
+}
+
+interface ContributorCreateArgs {
+  data: Pick<ContributorRecord, "nameCanonical" | "nameDisplay">;
+}
+
+interface EditionContributorFindFirstArgs {
+  where: Pick<EditionContributorRecord, "contributorId" | "editionId" | "role">;
+}
+
+interface EditionContributorCreateArgs {
+  data: Pick<EditionContributorRecord, "contributorId" | "editionId" | "role">;
+}
+
 interface LibraryRootUpdateArgs {
   where: { id: string };
   data: { lastScannedAt: Date };
@@ -103,6 +192,27 @@ export interface IngestDb {
     findUnique(args: { where: { id: string } }): Promise<FileAssetRecord | null>;
     update(args: FileAssetUpdateArgs): Promise<FileAssetRecord>;
     upsert(args: FileAssetUpsertArgs): Promise<FileAssetRecord>;
+  };
+  work: {
+    create(args: WorkCreateArgs): Promise<WorkRecord>;
+    findMany(args: WorkFindManyArgs): Promise<WorkMatchRecord[]>;
+  };
+  edition: {
+    create(args: EditionCreateArgs): Promise<EditionRecord>;
+    findFirst(args: EditionFindFirstArgs): Promise<EditionRecord | null>;
+    findUnique(args: { where: { id: string } }): Promise<EditionRecord | null>;
+  };
+  editionFile: {
+    create(args: EditionFileCreateArgs): Promise<EditionFileRecord>;
+    findFirst(args: EditionFileFindFirstArgs): Promise<EditionFileRecord | null>;
+  };
+  contributor: {
+    create(args: ContributorCreateArgs): Promise<ContributorRecord>;
+    findMany(args: ContributorFindManyArgs): Promise<ContributorRecord[]>;
+  };
+  editionContributor: {
+    create(args: EditionContributorCreateArgs): Promise<EditionContributorRecord>;
+    findFirst(args: EditionContributorFindFirstArgs): Promise<EditionContributorRecord | null>;
   };
 }
 
@@ -152,6 +262,20 @@ export interface ParseFileAssetMetadataResult {
   skipped: boolean;
 }
 
+export interface MatchFileAssetToEditionInput extends MatchFileAssetToEditionJobPayload {
+  now?: Date;
+}
+
+export interface MatchFileAssetToEditionResult {
+  createdEdition: boolean;
+  createdEditionFile: boolean;
+  createdWork: boolean;
+  editionId?: string;
+  fileAssetId: string;
+  skipped: boolean;
+  workId?: string;
+}
+
 const EPUB_PARSER_VERSION = 1;
 
 let queueSingleton:
@@ -188,6 +312,146 @@ function isFileChanged(existingFileAsset: FileAssetRecord | undefined, nextFileS
   }
 
   return existingFileAsset.partialHash === null || existingFileAsset.fullHash === null;
+}
+
+function getErrorCode(error: unknown): string | undefined {
+  return typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof error.code === "string"
+    ? error.code
+    : undefined;
+}
+
+function parseStoredMetadata(metadata: FileAsset["metadata"]): ParsedFileAssetMetadata | undefined {
+  if (metadata === null || typeof metadata !== "object") {
+    return undefined;
+  }
+
+  const candidate = metadata as unknown as ParsedFileAssetMetadata;
+
+  if (candidate.source !== "epub" || (candidate.status !== "parsed" && candidate.status !== "unparseable")) {
+    return undefined;
+  }
+
+  return candidate;
+}
+
+function getAuthorCanonicalsForWork(work: WorkMatchRecord): string[] {
+  return canonicalizeContributorNames(
+    work.editions.flatMap((edition) =>
+      edition.contributors
+        .filter((contributor) => contributor.role === ContributorRole.AUTHOR)
+        .map((contributor) => contributor.contributor.nameCanonical),
+    ),
+  );
+}
+
+function extractNormalizedMetadataForMatching(fileAsset: FileAssetRecord): {
+  authorCanonicals: string[];
+  authors: string[];
+  title: string;
+  titleCanonical: string;
+} | undefined {
+  const metadata = parseStoredMetadata(fileAsset.metadata);
+
+  if (metadata?.status !== "parsed" || metadata.normalized === undefined) {
+    return undefined;
+  }
+
+  const title = metadata.normalized.title;
+  const authors = metadata.normalized.authors;
+
+  if (title === undefined || authors.length === 0) {
+    return undefined;
+  }
+
+  const titleCanonical = canonicalizeBookTitle(title);
+  const authorCanonicals = canonicalizeContributorNames(authors);
+
+  if (titleCanonical === undefined || authorCanonicals.length === 0) {
+    return undefined;
+  }
+
+  return {
+    authorCanonicals,
+    authors,
+    title,
+    titleCanonical,
+  };
+}
+
+async function ensureEditionFileLink(
+  ingestDb: IngestDb,
+  editionId: string,
+  fileAssetId: string,
+): Promise<boolean> {
+  await ingestDb.editionFile.create({
+    data: {
+      editionId,
+      fileAssetId,
+      role: EditionFileRole.PRIMARY,
+    },
+  });
+
+  return true;
+}
+
+async function ensureAuthorContributors(
+  ingestDb: IngestDb,
+  editionId: string,
+  authors: string[],
+): Promise<void> {
+  const normalizedAuthors = authors
+    .map((nameDisplay) => ({
+      nameCanonical: canonicalizeContributorName(nameDisplay),
+      nameDisplay,
+    }))
+    .filter(
+      (author): author is { nameCanonical: string; nameDisplay: string } =>
+        author.nameCanonical !== undefined,
+    );
+
+  const contributorsByCanonical = new Map(
+    (
+      await ingestDb.contributor.findMany({
+        where: {
+          nameCanonical: {
+            in: [...new Set(normalizedAuthors.map((author) => author.nameCanonical))],
+          },
+        },
+      })
+    ).map((contributor) => [contributor.nameCanonical, contributor]),
+  );
+
+  for (const author of normalizedAuthors) {
+    let contributor = contributorsByCanonical.get(author.nameCanonical);
+
+    if (contributor === undefined) {
+      contributor = await ingestDb.contributor.create({
+        data: author,
+      });
+      contributorsByCanonical.set(contributor.nameCanonical, contributor);
+    }
+
+    const existingLink = await ingestDb.editionContributor.findFirst({
+      where: {
+        contributorId: contributor.id,
+        editionId,
+        role: ContributorRole.AUTHOR,
+      },
+    });
+
+    if (existingLink === null) {
+      await ingestDb.editionContributor.create({
+        data: {
+          contributorId: contributor.id,
+          editionId,
+          role: ContributorRole.AUTHOR,
+        },
+      });
+    }
+  }
 }
 
 async function walkRegularFiles(
@@ -413,13 +677,7 @@ export function createIngestServices(
         partialHash: hashes.partialHash,
       };
     } catch (error) {
-      const errorCode =
-        typeof error === "object" &&
-        error !== null &&
-        "code" in error &&
-        typeof error.code === "string"
-          ? error.code
-          : undefined;
+      const errorCode = getErrorCode(error);
 
       if (errorCode === "ENOENT") {
         await ingestDb.fileAsset.update({
@@ -481,6 +739,10 @@ export function createIngestServices(
         },
       });
 
+      await enqueueJob(LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, {
+        fileAssetId: fileAsset.id,
+      });
+
       return {
         availabilityStatus: AvailabilityStatus.PRESENT,
         fileAssetId: fileAsset.id,
@@ -488,13 +750,7 @@ export function createIngestServices(
         skipped: false,
       };
     } catch (error) {
-      const errorCode =
-        typeof error === "object" &&
-        error !== null &&
-        "code" in error &&
-        typeof error.code === "string"
-          ? error.code
-          : undefined;
+      const errorCode = getErrorCode(error);
 
       if (errorCode === "ENOENT") {
         await ingestDb.fileAsset.update({
@@ -539,8 +795,149 @@ export function createIngestServices(
     }
   }
 
+  async function matchFileAssetToEdition(
+    input: MatchFileAssetToEditionInput,
+  ): Promise<MatchFileAssetToEditionResult> {
+    const fileAsset = await ingestDb.fileAsset.findUnique({
+      where: { id: input.fileAssetId },
+    });
+
+    if (fileAsset === null || fileAsset.mediaKind !== MediaKind.EPUB) {
+      return {
+        createdEdition: false,
+        createdEditionFile: false,
+        createdWork: false,
+        fileAssetId: input.fileAssetId,
+        skipped: true,
+      };
+    }
+
+    const existingEditionFile = await ingestDb.editionFile.findFirst({
+      where: { fileAssetId: fileAsset.id },
+    });
+
+    if (existingEditionFile !== null) {
+      const existingEdition = await ingestDb.edition.findUnique({
+        where: { id: existingEditionFile.editionId },
+      });
+
+      return {
+        createdEdition: false,
+        createdEditionFile: false,
+        createdWork: false,
+        editionId: existingEdition?.id,
+        fileAssetId: fileAsset.id,
+        skipped: false,
+        workId: existingEdition?.workId,
+      };
+    }
+
+    const storedMetadata = parseStoredMetadata(fileAsset.metadata);
+    const matchableMetadata = extractNormalizedMetadataForMatching(fileAsset);
+
+    if (storedMetadata?.status !== "parsed" || matchableMetadata === undefined) {
+      return {
+        createdEdition: false,
+        createdEditionFile: false,
+        createdWork: false,
+        fileAssetId: fileAsset.id,
+        skipped: true,
+      };
+    }
+
+    const identifiers = storedMetadata.normalized?.identifiers;
+    const editionMatch =
+      (identifiers?.isbn13
+        ? await ingestDb.edition.findFirst({ where: { isbn13: identifiers.isbn13 } })
+        : null) ??
+      (identifiers?.isbn10
+        ? await ingestDb.edition.findFirst({ where: { isbn10: identifiers.isbn10 } })
+        : null) ??
+      (identifiers?.asin
+        ? await ingestDb.edition.findFirst({ where: { asin: identifiers.asin } })
+        : null);
+
+    if (editionMatch !== null) {
+      const createdEditionFile = await ensureEditionFileLink(ingestDb, editionMatch.id, fileAsset.id);
+
+      return {
+        createdEdition: false,
+        createdEditionFile,
+        createdWork: false,
+        editionId: editionMatch.id,
+        fileAssetId: fileAsset.id,
+        skipped: false,
+        workId: editionMatch.workId,
+      };
+    }
+
+    const matchingWorks = await ingestDb.work.findMany({
+      include: {
+        editions: {
+          include: {
+            contributors: {
+              include: {
+                contributor: true,
+              },
+            },
+          },
+        },
+      },
+      where: { titleCanonical: matchableMetadata.titleCanonical },
+    });
+    const matchingWork = matchingWorks.find((work) => {
+      const existingAuthors = getAuthorCanonicalsForWork(work);
+      return existingAuthors.length > 0 &&
+        existingAuthors.length === matchableMetadata.authorCanonicals.length &&
+        existingAuthors.every((author, index) => author === matchableMetadata.authorCanonicals[index]);
+    });
+
+    let workId: string;
+    let createdWork = false;
+
+    if (matchingWork === undefined) {
+      const createdWorkRecord = await ingestDb.work.create({
+        data: {
+          sortTitle: null,
+          titleCanonical: matchableMetadata.titleCanonical,
+          titleDisplay: matchableMetadata.title,
+        },
+      });
+      workId = createdWorkRecord.id;
+      createdWork = true;
+    } else {
+      workId = matchingWork.id;
+    }
+
+    const createdEdition = await ingestDb.edition.create({
+      data: {
+        asin: identifiers?.asin ?? null,
+        formatFamily: FormatFamily.EBOOK,
+        isbn10: identifiers?.isbn10 ?? null,
+        isbn13: identifiers?.isbn13 ?? null,
+        publishedAt: null,
+        publisher: null,
+        workId,
+      },
+    });
+
+    await ensureAuthorContributors(ingestDb, createdEdition.id, matchableMetadata.authors);
+    const createdEditionFile = await ensureEditionFileLink(ingestDb, createdEdition.id, fileAsset.id);
+
+    return {
+      createdEdition: true,
+      createdEditionFile,
+      createdWork,
+      editionId: createdEdition.id,
+      fileAssetId: fileAsset.id,
+      skipped: false,
+      workId,
+    };
+  }
+
   return {
     hashFileAsset,
+    matchFileAssetToEdition,
     parseFileAssetMetadata,
     scanLibraryRoot,
   };
@@ -550,8 +947,15 @@ const services = createIngestServices();
 
 export const scanLibraryRoot = services.scanLibraryRoot;
 export const hashFileAsset = services.hashFileAsset;
+export const matchFileAssetToEdition = services.matchFileAssetToEdition;
 export const parseFileAssetMetadata = services.parseFileAssetMetadata;
 export { classifyMediaKind, getFileExtension, hashFileContents, isFileChanged, normalizeRelativePath, normalizeRootPath, walkRegularFiles };
 export { parseEpubMetadata } from "./epub";
-export { createIdentifierMap, normalizeBookMetadata } from "./metadata";
+export {
+  canonicalizeBookTitle,
+  canonicalizeContributorName,
+  canonicalizeContributorNames,
+  createIdentifierMap,
+  normalizeBookMetadata,
+} from "./metadata";
 export type { NormalizedBookMetadata, ParsedEpubMetadataRaw };

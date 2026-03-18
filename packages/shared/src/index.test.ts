@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   HashFileAssetJobPayload,
   LIBRARY_JOB_NAMES,
+  MatchFileAssetToEditionJobPayload,
   ParseFileAssetMetadataJobPayload,
   QUEUES,
   ScanLibraryRootJobPayload,
@@ -18,6 +19,7 @@ describe("shared queue helpers", () => {
     expect(LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT).toBe("scan-library-root");
     expect(LIBRARY_JOB_NAMES.HASH_FILE_ASSET).toBe("hash-file-asset");
     expect(LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA).toBe("parse-file-asset-metadata");
+    expect(LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION).toBe("match-file-asset-to-edition");
   });
 
   it("parses redis connection details", () => {
@@ -69,6 +71,9 @@ describe("shared queue helpers", () => {
     const parsePayload: ParseFileAssetMetadataJobPayload = {
       fileAssetId: "file-1",
     };
+    const matchPayload: MatchFileAssetToEditionJobPayload = {
+      fileAssetId: "file-1",
+    };
 
     expect(scanPayload).toEqual({ libraryRootId: "root-1" });
     expect(hashPayload).toEqual({
@@ -76,5 +81,6 @@ describe("shared queue helpers", () => {
       forceFullHash: true,
     });
     expect(parsePayload).toEqual({ fileAssetId: "file-1" });
+    expect(matchPayload).toEqual({ fileAssetId: "file-1" });
   });
 });

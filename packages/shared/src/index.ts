@@ -6,6 +6,7 @@ export const LIBRARY_JOB_NAMES = {
   SCAN_LIBRARY_ROOT: "scan-library-root",
   HASH_FILE_ASSET: "hash-file-asset",
   PARSE_FILE_ASSET_METADATA: "parse-file-asset-metadata",
+  MATCH_FILE_ASSET_TO_EDITION: "match-file-asset-to-edition",
 } as const;
 
 export interface ScanLibraryRootJobPayload {
@@ -21,10 +22,15 @@ export interface ParseFileAssetMetadataJobPayload {
   fileAssetId: string;
 }
 
+export interface MatchFileAssetToEditionJobPayload {
+  fileAssetId: string;
+}
+
 export interface LibraryJobPayloads {
   [LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT]: ScanLibraryRootJobPayload;
   [LIBRARY_JOB_NAMES.HASH_FILE_ASSET]: HashFileAssetJobPayload;
   [LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA]: ParseFileAssetMetadataJobPayload;
+  [LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION]: MatchFileAssetToEditionJobPayload;
 }
 
 export type LibraryJobName = keyof LibraryJobPayloads;

@@ -1,12 +1,13 @@
 import { pathToFileURL } from "node:url";
 import IORedis from "ioredis";
 import { Job, Worker } from "bullmq";
-import { hashFileAsset, parseFileAssetMetadata, scanLibraryRoot } from "@bookhouse/ingest";
+import { hashFileAsset, matchFileAssetToEdition, parseFileAssetMetadata, scanLibraryRoot } from "@bookhouse/ingest";
 import {
   LIBRARY_JOB_NAMES,
   type HashFileAssetJobPayload,
   type LibraryJobName,
   type LibraryJobPayload,
+  type MatchFileAssetToEditionJobPayload,
   type ParseFileAssetMetadataJobPayload,
   QUEUES,
   type ScanLibraryRootJobPayload,
@@ -15,6 +16,7 @@ import {
 
 export interface LibraryWorkerHandlers {
   hashFileAsset: typeof hashFileAsset;
+  matchFileAssetToEdition: typeof matchFileAssetToEdition;
   parseFileAssetMetadata: typeof parseFileAssetMetadata;
   scanLibraryRoot: typeof scanLibraryRoot;
 }
@@ -22,6 +24,7 @@ export interface LibraryWorkerHandlers {
 export function createLibraryWorkerProcessor(
   handlers: LibraryWorkerHandlers = {
     hashFileAsset,
+    matchFileAssetToEdition,
     parseFileAssetMetadata,
     scanLibraryRoot,
   },
@@ -34,6 +37,8 @@ export function createLibraryWorkerProcessor(
         return handlers.scanLibraryRoot(job.data as ScanLibraryRootJobPayload);
       case LIBRARY_JOB_NAMES.HASH_FILE_ASSET:
         return handlers.hashFileAsset(job.data as HashFileAssetJobPayload);
+      case LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION:
+        return handlers.matchFileAssetToEdition(job.data as MatchFileAssetToEditionJobPayload);
       case LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA:
         return handlers.parseFileAssetMetadata(job.data as ParseFileAssetMetadataJobPayload);
       default:
@@ -45,6 +50,7 @@ export function createLibraryWorkerProcessor(
 export function createLibraryWorker(
   handlers: LibraryWorkerHandlers = {
     hashFileAsset,
+    matchFileAssetToEdition,
     parseFileAssetMetadata,
     scanLibraryRoot,
   },
