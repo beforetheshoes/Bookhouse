@@ -46,6 +46,7 @@ export function SettingsRoute() {
           <p className="text-sm text-gray-600">Choose how reading progress is tracked across formats.</p>
         </div>
         <nav className="flex gap-3 text-sm">
+          <Link to="/collections">Collections</Link>
           <Link to="/audio-links">Audio Link Review</Link>
           <Link to="/duplicates">Duplicate Review</Link>
         </nav>

@@ -4,13 +4,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ProgressTrackingMode } from "@bookhouse/domain";
 
 const getCurrentUserServerFnMock = vi.fn();
+const addWorkToCollectionServerFnMock = vi.fn();
+const createCollectionServerFnMock = vi.fn();
+const deleteCollectionServerFnMock = vi.fn();
+const getCollectionDetailServerFnMock = vi.fn();
 const getAudioLinkDetailServerFnMock = vi.fn();
 const getDuplicateCandidateDetailServerFnMock = vi.fn();
 const getUserProgressTrackingModeServerFnMock = vi.fn();
 const getWorkProgressViewServerFnMock = vi.fn();
+const listCollectionsServerFnMock = vi.fn();
 const listAudioLinksServerFnMock = vi.fn();
 const listDuplicateCandidatesServerFnMock = vi.fn();
 const mergeDuplicateCandidateServerFnMock = vi.fn();
+const removeWorkFromCollectionServerFnMock = vi.fn();
+const renameCollectionServerFnMock = vi.fn();
 const updateAudioLinkStatusServerFnMock = vi.fn();
 const updateDuplicateCandidateStatusServerFnMock = vi.fn();
 const updateUserProgressTrackingModeServerFnMock = vi.fn();
@@ -22,13 +29,20 @@ vi.mock("../lib/auth-client", () => ({
 }));
 
 vi.mock("../lib/library-server", () => ({
+  addWorkToCollectionServerFn: addWorkToCollectionServerFnMock,
+  createCollectionServerFn: createCollectionServerFnMock,
+  deleteCollectionServerFn: deleteCollectionServerFnMock,
+  getCollectionDetailServerFn: getCollectionDetailServerFnMock,
   getAudioLinkDetailServerFn: getAudioLinkDetailServerFnMock,
   getDuplicateCandidateDetailServerFn: getDuplicateCandidateDetailServerFnMock,
   getUserProgressTrackingModeServerFn: getUserProgressTrackingModeServerFnMock,
   getWorkProgressViewServerFn: getWorkProgressViewServerFnMock,
+  listCollectionsServerFn: listCollectionsServerFnMock,
   listAudioLinksServerFn: listAudioLinksServerFnMock,
   listDuplicateCandidatesServerFn: listDuplicateCandidatesServerFnMock,
   mergeDuplicateCandidateServerFn: mergeDuplicateCandidateServerFnMock,
+  removeWorkFromCollectionServerFn: removeWorkFromCollectionServerFnMock,
+  renameCollectionServerFn: renameCollectionServerFnMock,
   updateAudioLinkStatusServerFn: updateAudioLinkStatusServerFnMock,
   updateDuplicateCandidateStatusServerFn: updateDuplicateCandidateStatusServerFnMock,
   updateUserProgressTrackingModeServerFn: updateUserProgressTrackingModeServerFnMock,
@@ -60,13 +74,20 @@ vi.mock("@tanstack/react-router", async () => {
 describe("library routes", () => {
   beforeEach(() => {
     getCurrentUserServerFnMock.mockReset();
+    addWorkToCollectionServerFnMock.mockReset();
+    createCollectionServerFnMock.mockReset();
+    deleteCollectionServerFnMock.mockReset();
+    getCollectionDetailServerFnMock.mockReset();
     getAudioLinkDetailServerFnMock.mockReset();
     getDuplicateCandidateDetailServerFnMock.mockReset();
     getUserProgressTrackingModeServerFnMock.mockReset();
     getWorkProgressViewServerFnMock.mockReset();
+    listCollectionsServerFnMock.mockReset();
     listAudioLinksServerFnMock.mockReset();
     listDuplicateCandidatesServerFnMock.mockReset();
     mergeDuplicateCandidateServerFnMock.mockReset();
+    removeWorkFromCollectionServerFnMock.mockReset();
+    renameCollectionServerFnMock.mockReset();
     updateAudioLinkStatusServerFnMock.mockReset();
     updateDuplicateCandidateStatusServerFnMock.mockReset();
     updateUserProgressTrackingModeServerFnMock.mockReset();
@@ -492,6 +513,22 @@ describe("library routes", () => {
     getCurrentUserServerFnMock.mockResolvedValue({ id: "user-1" });
     getUserProgressTrackingModeServerFnMock.mockResolvedValueOnce(ProgressTrackingMode.BY_WORK);
     getWorkProgressViewServerFnMock.mockResolvedValueOnce({
+      collections: [
+        {
+          containsWork: true,
+          id: "collection-1",
+          itemCount: 1,
+          kind: "MANUAL",
+          name: "Favorites",
+        },
+        {
+          containsWork: false,
+          id: "collection-2",
+          itemCount: 4,
+          kind: "MANUAL",
+          name: "Queued",
+        },
+      ],
       effectiveMode: ProgressTrackingMode.BY_WORK,
       globalMode: ProgressTrackingMode.BY_WORK,
       overrideMode: ProgressTrackingMode.BY_EDITION,
@@ -537,6 +574,10 @@ describe("library routes", () => {
     expect(workHtml).toContain("The Fifth Season");
     expect(workHtml).toContain("Override: BY_EDITION");
     expect(workHtml).toContain("Edition edition-1");
+    expect(workHtml).toContain("Favorites");
+    expect(workHtml).toContain("On this shelf");
+    expect(workHtml).toContain("Queued");
+    expect(workHtml).toContain("Add");
   });
 
   it("renders work pages without override or summary and throws when entities are missing", async () => {
@@ -544,6 +585,7 @@ describe("library routes", () => {
     const detailModule = await import("./duplicates.$candidateId");
     getCurrentUserServerFnMock.mockResolvedValue({ id: "user-1" });
     getWorkProgressViewServerFnMock.mockResolvedValueOnce({
+      collections: [],
       effectiveMode: ProgressTrackingMode.BY_WORK,
       globalMode: ProgressTrackingMode.BY_WORK,
       overrideMode: null,
@@ -594,6 +636,7 @@ describe("library routes", () => {
     const workModule = await import("./works.$workId");
     getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
     getWorkProgressViewServerFnMock.mockResolvedValueOnce({
+      collections: [],
       effectiveMode: ProgressTrackingMode.BY_WORK,
       globalMode: ProgressTrackingMode.BY_EDITION,
       overrideMode: null,
@@ -635,6 +678,155 @@ describe("library routes", () => {
     expect(workHtml).toContain("Percent: 0");
   });
 
+  it("loads collection routes and renders empty and populated shelf states", async () => {
+    const collectionsModule = await import("./collections");
+    const detailModule = await import("./collections.$collectionId");
+    getCurrentUserServerFnMock.mockResolvedValue({ id: "user-1" });
+    listCollectionsServerFnMock.mockResolvedValueOnce([
+      {
+        id: "collection-1",
+        itemCount: 2,
+        kind: "MANUAL",
+        name: "Favorites",
+      },
+    ]);
+    getCollectionDetailServerFnMock.mockResolvedValueOnce({
+      id: "collection-1",
+      itemCount: 2,
+      kind: "MANUAL",
+      name: "Favorites",
+      works: [
+        { id: "work-1", titleDisplay: "The Fifth Season" },
+        { id: "work-2", titleDisplay: "The Obelisk Gate" },
+      ],
+    });
+
+    const listLoader = collectionsModule.Route.options.loader as unknown as (input: {
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+    const listData = await listLoader({ serverContext: {} });
+    vi.spyOn(collectionsModule.Route, "useLoaderData").mockReturnValue(listData as never);
+    const listHtml = renderToStaticMarkup(<collectionsModule.CollectionsRoute />);
+    expect(listHtml).toContain("Collections");
+    expect(listHtml).toContain("Favorites");
+    expect(listHtml).toContain("Open shelf");
+
+    const detailLoader = detailModule.Route.options.loader as unknown as (input: {
+      params: { collectionId: string };
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+    const detailData = await detailLoader({
+      params: { collectionId: "collection-1" },
+      serverContext: {},
+    });
+    vi.spyOn(detailModule.Route, "useLoaderData").mockReturnValue(detailData as never);
+    const detailHtml = renderToStaticMarkup(<detailModule.CollectionDetailRoute />);
+    expect(detailHtml).toContain("Delete shelf");
+    expect(detailHtml).toContain("The Fifth Season");
+
+    listCollectionsServerFnMock.mockResolvedValueOnce([
+      {
+        id: "collection-2",
+        itemCount: 1,
+        kind: "MANUAL",
+        name: "Reading",
+      },
+    ]);
+    const singularData = await listLoader({ serverContext: {} });
+    vi.spyOn(collectionsModule.Route, "useLoaderData").mockReturnValue(singularData as never);
+    expect(renderToStaticMarkup(<collectionsModule.CollectionsRoute />)).toContain("1 item");
+
+    listCollectionsServerFnMock.mockResolvedValueOnce([]);
+    const emptyData = await listLoader({ serverContext: {} });
+    vi.spyOn(collectionsModule.Route, "useLoaderData").mockReturnValue(emptyData as never);
+    expect(renderToStaticMarkup(<collectionsModule.CollectionsRoute />)).toContain("No collections yet.");
+
+    getCollectionDetailServerFnMock.mockResolvedValueOnce({
+      id: "collection-2",
+      itemCount: 1,
+      kind: "MANUAL",
+      name: "Reading",
+      works: [],
+    });
+    const emptyDetailData = await detailLoader({
+      params: { collectionId: "collection-2" },
+      serverContext: {},
+    });
+    vi.spyOn(detailModule.Route, "useLoaderData").mockReturnValue(emptyDetailData as never);
+    const emptyDetailHtml = renderToStaticMarkup(<detailModule.CollectionDetailRoute />);
+    expect(emptyDetailHtml).toContain("1 item on this shelf.");
+    expect(emptyDetailHtml).toContain("This shelf is empty.");
+  });
+
+  it("executes collection route helper actions", async () => {
+    const collectionsModule = await import("./collections");
+    const detailModule = await import("./collections.$collectionId");
+    const createCollection = vi.fn(async () => undefined);
+    const resetName = vi.fn();
+    const renameCollection = vi.fn(async () => undefined);
+    const deleteCollection = vi.fn(async () => undefined);
+
+    await collectionsModule.createCollectionAndReset(createCollection, " Favorites ", resetName);
+    await detailModule.renameCollectionById(renameCollection, "collection-1", " Renamed ");
+    await detailModule.deleteCollectionById(deleteCollection, "collection-1");
+
+    expect(createCollection).toHaveBeenCalledWith({
+      data: {
+        name: "Favorites",
+      },
+    });
+    expect(resetName).toHaveBeenCalledTimes(1);
+    expect(renameCollection).toHaveBeenCalledWith({
+      data: {
+        collectionId: "collection-1",
+        name: "Renamed",
+      },
+    });
+    expect(deleteCollection).toHaveBeenCalledWith({
+      data: {
+        collectionId: "collection-1",
+      },
+    });
+  });
+
+  it("handles missing collections and redirects unauthenticated collection routes", async () => {
+    const collectionsModule = await import("./collections");
+    const detailModule = await import("./collections.$collectionId");
+    getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
+    getCollectionDetailServerFnMock.mockResolvedValueOnce(null);
+
+    const detailLoader = detailModule.Route.options.loader as unknown as (input: {
+      params: { collectionId: string };
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+    await expect(
+      detailLoader({
+        params: { collectionId: "missing-collection" },
+        serverContext: {},
+      }),
+    ).rejects.toThrow("Collection not found");
+
+    getCurrentUserServerFnMock.mockResolvedValue(null);
+    const listLoader = collectionsModule.Route.options.loader as unknown as (input: {
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+    await expect(listLoader({ serverContext: {} })).rejects.toMatchObject({
+      options: {
+        href: "/auth/login",
+      },
+    });
+    await expect(
+      detailLoader({
+        params: { collectionId: "collection-1" },
+        serverContext: {},
+      }),
+    ).rejects.toMatchObject({
+      options: {
+        href: "/auth/login",
+      },
+    });
+  });
+
   it("redirects unauthenticated library routes to login", async () => {
     const duplicatesModule = await import("./duplicates");
     const settingsModule = await import("./settings");
@@ -644,6 +836,13 @@ describe("library routes", () => {
 
     const duplicatesLoader = duplicatesModule.Route.options.loader as unknown as (input: {
       location: { pathname: string; search: string };
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+    const collectionsLoader = (await import("./collections")).Route.options.loader as unknown as (input: {
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+    const collectionDetailLoader = (await import("./collections.$collectionId")).Route.options.loader as unknown as (input: {
+      params: { collectionId: string };
       serverContext?: unknown;
     }) => Promise<unknown>;
     const settingsLoader = settingsModule.Route.options.loader as unknown as (input: {
@@ -673,9 +872,24 @@ describe("library routes", () => {
         href: "/auth/login",
       },
     });
+    await expect(collectionsLoader({ serverContext: {} })).rejects.toMatchObject({
+      options: {
+        href: "/auth/login",
+      },
+    });
     await expect(
       detailLoader({
         params: { candidateId: "candidate-1" },
+        serverContext: {},
+      }),
+    ).rejects.toMatchObject({
+      options: {
+        href: "/auth/login",
+      },
+    });
+    await expect(
+      collectionDetailLoader({
+        params: { collectionId: "collection-1" },
         serverContext: {},
       }),
     ).rejects.toMatchObject({

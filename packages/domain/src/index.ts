@@ -15,6 +15,8 @@ export {
 
 export type {
   AudioLink,
+  Collection,
+  CollectionItem,
   Contributor,
   DuplicateCandidate,
   Edition,
@@ -30,6 +32,8 @@ export type {
 
 import type {
   AudioLink,
+  Collection,
+  CollectionItem,
   Contributor,
   DuplicateCandidate,
   Edition,
@@ -52,6 +56,8 @@ export interface Batch1DomainModels {
   editionFile: EditionFile;
   contributor: Contributor;
   series: Series;
+  collection: Collection;
+  collectionItem: CollectionItem;
   duplicateCandidate: DuplicateCandidate;
   readingProgress: ReadingProgress;
   userPreference: UserPreference;
@@ -67,6 +73,8 @@ export const BATCH1_DOMAIN_MODEL_NAMES = [
   "EditionFile",
   "Contributor",
   "Series",
+  "Collection",
+  "CollectionItem",
   "DuplicateCandidate",
   "ReadingProgress",
   "UserPreference",

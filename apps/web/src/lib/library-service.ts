@@ -99,6 +99,23 @@ type ReadingProgressWithEdition = {
 
 type ReadingProgressRecord = Omit<ReadingProgressWithEdition, "edition">;
 
+type CollectionRecord = {
+  id: string;
+  kind: "MANUAL";
+  name: string;
+  ownerUserId: string | null;
+};
+
+type CollectionWithItems = CollectionRecord & {
+  items: Array<{
+    id: string;
+    work: {
+      id: string;
+      titleDisplay: string;
+    };
+  }>;
+};
+
 export interface ReadingProgressPayload {
   editionId: string;
   locator: Record<string, object>;
@@ -121,11 +138,18 @@ export interface LibraryServiceDb {
     findUnique(args: Record<string, unknown>): Promise<AudioLinkRecord | null>;
     update(args: Record<string, unknown>): Promise<AudioLinkRecord>;
   };
+  collection: {
+    create(args: Record<string, unknown>): Promise<CollectionRecord>;
+    deleteMany(args: Record<string, unknown>): Promise<{ count: number }>;
+    findMany(args: Record<string, unknown>): Promise<CollectionWithItems[]>;
+    findUnique(args: Record<string, unknown>): Promise<CollectionWithItems | null>;
+    update(args: Record<string, unknown>): Promise<CollectionRecord>;
+  };
   collectionItem: {
-    create(args: Record<string, unknown>): Promise<unknown>;
+    create(args: Record<string, unknown>): Promise<{ collectionId: string; id: string; workId: string }>;
     delete(args: { where: { id: string } }): Promise<unknown>;
     findFirst(args: Record<string, unknown>): Promise<{ id: string } | null>;
-    findMany(args: Record<string, unknown>): Promise<Array<{ collectionId: string; editionId: string; id: string }>>;
+    findMany(args: Record<string, unknown>): Promise<Array<{ collectionId: string; id: string; workId: string }>>;
     update(args: { where: { id: string }; data: Record<string, unknown> }): Promise<unknown>;
   };
   duplicateCandidate: {
@@ -248,6 +272,7 @@ export interface AudioLinkDetail extends AudioLinkSummary {
 }
 
 export interface WorkProgressView {
+  collections: CollectionMembershipState[];
   currentSourceEditionId?: string;
   effectiveMode: ProgressTrackingMode;
   globalMode: ProgressTrackingMode;
@@ -270,6 +295,24 @@ export interface WorkProgressView {
   } | null;
   workId: string;
   workTitle: string;
+}
+
+export interface CollectionSummary {
+  id: string;
+  itemCount: number;
+  kind: "MANUAL";
+  name: string;
+}
+
+export interface CollectionMembershipState extends CollectionSummary {
+  containsWork: boolean;
+}
+
+export interface CollectionDetail extends CollectionSummary {
+  works: Array<{
+    id: string;
+    titleDisplay: string;
+  }>;
 }
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
@@ -438,6 +481,37 @@ function toAudioLinkSummary(audioLink: AudioLinkRecord): AudioLinkSummary {
   };
 }
 
+function toCollectionSummary(collection: CollectionWithItems): CollectionSummary {
+  return {
+    id: collection.id,
+    itemCount: collection.items.length,
+    kind: collection.kind,
+    name: collection.name,
+  };
+}
+
+function toCollectionMembershipState(
+  collection: CollectionWithItems,
+  workId: string,
+): CollectionMembershipState {
+  return {
+    ...toCollectionSummary(collection),
+    containsWork: collection.items.some((item) => item.work.id === workId),
+  };
+}
+
+function toCollectionDetail(collection: CollectionWithItems): CollectionDetail {
+  return {
+    ...toCollectionSummary(collection),
+    works: [...collection.items]
+      .map((item) => ({
+        id: item.work.id,
+        titleDisplay: item.work.titleDisplay,
+      }))
+      .sort((left, right) => left.titleDisplay.localeCompare(right.titleDisplay)),
+  };
+}
+
 export function toAudioLinkDetail(audioLink: AudioLinkRecord): AudioLinkDetail {
   if (!audioLink.ebookEdition || !audioLink.audioEdition) {
     throw new Error(`Audio link "${audioLink.id}" is missing edition details`);
@@ -593,6 +667,249 @@ export async function updateAudioLinkStatus(
   });
 
   return toAudioLinkSummary(audioLink);
+}
+
+export async function listCollections(
+  db: LibraryServiceDb,
+  userId: string,
+): Promise<CollectionSummary[]> {
+  const collections = await db.collection.findMany({
+    include: {
+      items: {
+        include: {
+          work: true,
+        },
+      },
+    },
+    orderBy: [{ name: "asc" }, { id: "asc" }],
+    where: {
+      ownerUserId: userId,
+    },
+  });
+
+  return collections.map(toCollectionSummary);
+}
+
+export async function getCollectionDetail(
+  db: LibraryServiceDb,
+  userId: string,
+  collectionId: string,
+): Promise<CollectionDetail | null> {
+  const collection = await db.collection.findUnique({
+    where: {
+      id: collectionId,
+      ownerUserId: userId,
+    },
+    include: {
+      items: {
+        include: {
+          work: true,
+        },
+      },
+    },
+  });
+
+  return collection ? toCollectionDetail(collection) : null;
+}
+
+export async function createCollection(
+  db: LibraryServiceDb,
+  userId: string,
+  name: string,
+): Promise<CollectionSummary> {
+  const collection = await db.collection.create({
+    data: {
+      kind: "MANUAL",
+      name,
+      ownerUserId: userId,
+    },
+  });
+
+  return {
+    id: collection.id,
+    itemCount: 0,
+    kind: collection.kind,
+    name: collection.name,
+  };
+}
+
+export async function renameCollection(
+  db: LibraryServiceDb,
+  userId: string,
+  collectionId: string,
+  name: string,
+): Promise<CollectionSummary> {
+  const existing = await db.collection.findUnique({
+    where: {
+      id: collectionId,
+      ownerUserId: userId,
+    },
+    include: {
+      items: {
+        include: {
+          work: true,
+        },
+      },
+    },
+  });
+
+  if (existing === null) {
+    throw new Error("Collection not found");
+  }
+
+  const updated = await db.collection.update({
+    where: { id: collectionId },
+    data: { name },
+  });
+
+  return {
+    id: updated.id,
+    itemCount: existing.items.length,
+    kind: updated.kind,
+    name: updated.name,
+  };
+}
+
+export async function deleteCollection(
+  db: LibraryServiceDb,
+  userId: string,
+  collectionId: string,
+): Promise<void> {
+  const result = await db.collection.deleteMany({
+    where: {
+      id: collectionId,
+      ownerUserId: userId,
+    },
+  });
+
+  if (result.count === 0) {
+    throw new Error("Collection not found");
+  }
+}
+
+export async function addWorkToCollection(
+  db: LibraryServiceDb,
+  userId: string,
+  collectionId: string,
+  workId: string,
+): Promise<void> {
+  const collection = await db.collection.findUnique({
+    where: {
+      id: collectionId,
+      ownerUserId: userId,
+    },
+    include: {
+      items: {
+        include: {
+          work: true,
+        },
+      },
+    },
+  });
+
+  if (collection === null) {
+    throw new Error("Collection not found");
+  }
+
+  const work = await db.work.findUnique({
+    where: {
+      id: workId,
+    },
+  });
+
+  if (work === null) {
+    throw new Error("Work not found");
+  }
+
+  const existing = await db.collectionItem.findFirst({
+    where: {
+      collectionId,
+      workId,
+    },
+  });
+
+  if (existing !== null) {
+    return;
+  }
+
+  await db.collectionItem.create({
+    data: {
+      collectionId,
+      workId,
+    },
+  });
+}
+
+export async function removeWorkFromCollection(
+  db: LibraryServiceDb,
+  userId: string,
+  collectionId: string,
+  workId: string,
+): Promise<void> {
+  const collection = await db.collection.findUnique({
+    where: {
+      id: collectionId,
+      ownerUserId: userId,
+    },
+    include: {
+      items: {
+        include: {
+          work: true,
+        },
+      },
+    },
+  });
+
+  if (collection === null) {
+    throw new Error("Collection not found");
+  }
+
+  const existing = await db.collectionItem.findFirst({
+    where: {
+      collectionId,
+      workId,
+    },
+  });
+
+  if (existing === null) {
+    return;
+  }
+
+  await db.collectionItem.delete({
+    where: { id: existing.id },
+  });
+}
+
+export async function getWorkCollectionMembership(
+  db: LibraryServiceDb,
+  userId: string,
+  workId: string,
+): Promise<CollectionMembershipState[]> {
+  const work = await db.work.findUnique({
+    where: {
+      id: workId,
+    },
+  });
+
+  if (work === null) {
+    throw new Error("Work not found");
+  }
+
+  const collections = await db.collection.findMany({
+    include: {
+      items: {
+        include: {
+          work: true,
+        },
+      },
+    },
+    orderBy: [{ name: "asc" }, { id: "asc" }],
+    where: {
+      ownerUserId: userId,
+    },
+  });
+
+  return collections.map((collection) => toCollectionMembershipState(collection, workId));
 }
 
 async function moveUniqueRelations(
@@ -766,23 +1083,25 @@ export async function mergeDuplicateCandidate(
       loser.id,
     );
 
-    await moveUniqueRelations(
-      async (editionId) => tx.collectionItem.findMany({ where: { editionId } }),
-      async (survivorId, row) => tx.collectionItem.findFirst({
-        where: {
-          collectionId: row.collectionId,
-          editionId: survivorId,
+    if (survivor.work.id !== loser.work.id) {
+      await moveUniqueRelations(
+        async (workId) => tx.collectionItem.findMany({ where: { workId } }),
+        async (survivorId, row) => tx.collectionItem.findFirst({
+          where: {
+            collectionId: row.collectionId,
+            workId: survivorId,
+          },
+        }),
+        async (rowId, survivorId) => {
+          await tx.collectionItem.update({ where: { id: rowId }, data: { workId: survivorId } });
         },
-      }),
-      async (rowId, survivorId) => {
-        await tx.collectionItem.update({ where: { id: rowId }, data: { editionId: survivorId } });
-      },
-      async (rowId) => {
-        await tx.collectionItem.delete({ where: { id: rowId } });
-      },
-      survivor.id,
-      loser.id,
-    );
+        async (rowId) => {
+          await tx.collectionItem.delete({ where: { id: rowId } });
+        },
+        survivor.work.id,
+        loser.work.id,
+      );
+    }
 
     await mergeReadingProgress(tx, survivor.id, loser.id);
 
@@ -1126,7 +1445,8 @@ export async function getWorkProgressView(
     return null;
   }
 
-  const [globalMode, override, progressRows] = await Promise.all([
+  const [collections, globalMode, override, progressRows] = await Promise.all([
+    getWorkCollectionMembership(db, userId, workId),
     getUserProgressTrackingMode(db, userId),
     db.workProgressPreference.findUnique({
       where: {
@@ -1159,6 +1479,7 @@ export async function getWorkProgressView(
   const summaryRow = progressRows[0] ?? null;
 
   return {
+    collections,
     currentSourceEditionId: summaryRow?.editionId,
     effectiveMode,
     globalMode,

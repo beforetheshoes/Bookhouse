@@ -140,3 +140,50 @@ export function createWorkProgressModeHandler(input: {
     });
   };
 }
+
+export function createCollectionMutationHandler(input: {
+  action: () => Promise<unknown>;
+  onSuccess?: () => Promise<unknown>;
+  router: Pick<RouterLike, "invalidate" | "navigate">;
+  setPending: (value: boolean) => void;
+}) {
+  return () => {
+    input.setPending(true);
+    startTransition(async () => {
+      await input.action();
+      if (input.onSuccess) {
+        await input.onSuccess();
+      } else {
+        await input.router.invalidate();
+      }
+      input.setPending(false);
+    });
+  };
+}
+
+export function createCollectionMembershipHandler(input: {
+  action: (input: {
+    data: {
+      collectionId: string;
+      workId: string;
+    };
+  }) => Promise<unknown>;
+  collectionId: string;
+  router: Pick<RouterLike, "invalidate">;
+  setPending: (value: string | null) => void;
+  workId: string;
+}) {
+  return () => {
+    input.setPending(input.collectionId);
+    startTransition(async () => {
+      await input.action({
+        data: {
+          collectionId: input.collectionId,
+          workId: input.workId,
+        },
+      });
+      await input.router.invalidate();
+      input.setPending(null);
+    });
+  };
+}

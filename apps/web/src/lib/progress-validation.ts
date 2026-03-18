@@ -31,3 +31,31 @@ export const updateWorkProgressTrackingModeSchema = z.object({
   progressTrackingMode: z.nativeEnum(ProgressTrackingMode).nullable(),
   workId: z.string().min(1),
 });
+
+export const collectionIdSchema = z.object({
+  collectionId: z.string().trim().min(1),
+});
+
+export const workIdSchema = z.object({
+  workId: z.string().trim().min(1),
+});
+
+export const createCollectionSchema = z.object({
+  name: z.string().trim().min(1),
+});
+
+export const renameCollectionSchema = collectionIdSchema.extend({
+  name: z.string().trim().min(1),
+});
+
+export const deleteCollectionSchema = collectionIdSchema;
+
+export const getCollectionDetailSchema = collectionIdSchema;
+
+export const addWorkToCollectionSchema = collectionIdSchema.extend({
+  workId: z.string().trim().min(1),
+});
+
+export const removeWorkFromCollectionSchema = addWorkToCollectionSchema;
+
+export const getWorkCollectionMembershipSchema = workIdSchema;

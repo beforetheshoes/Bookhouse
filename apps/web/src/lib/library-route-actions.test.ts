@@ -1,6 +1,8 @@
 import { ProgressTrackingMode, ReviewStatus } from "@bookhouse/domain";
 import {
   createAudioLinkStatusHandler,
+  createCollectionMembershipHandler,
+  createCollectionMutationHandler,
   createDuplicateMergeHandler,
   createDuplicateStatusHandler,
   createGlobalProgressModeHandler,
@@ -123,5 +125,64 @@ describe("library route actions", () => {
       },
     });
     expect(invalidate).toHaveBeenCalledTimes(2);
+  });
+
+  it("runs collection mutations and collection membership updates", async () => {
+    const invalidate = vi.fn(async () => undefined);
+    const navigate = vi.fn(async () => undefined);
+    const setPendingFlag = vi.fn();
+    const setPendingId = vi.fn();
+    const mutation = vi.fn(async () => undefined);
+    const membershipAction = vi.fn(async () => undefined);
+    const onSuccess = vi.fn(async () => undefined);
+
+    createCollectionMutationHandler({
+      action: mutation,
+      onSuccess,
+      router: { invalidate, navigate },
+      setPending: setPendingFlag,
+    })();
+    createCollectionMembershipHandler({
+      action: membershipAction,
+      collectionId: "collection-1",
+      router: { invalidate },
+      setPending: setPendingId,
+      workId: "work-1",
+    })();
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(setPendingFlag).toHaveBeenNthCalledWith(1, true);
+    expect(mutation).toHaveBeenCalledTimes(1);
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+    expect(setPendingFlag).toHaveBeenLastCalledWith(false);
+    expect(setPendingId).toHaveBeenNthCalledWith(1, "collection-1");
+    expect(membershipAction).toHaveBeenCalledWith({
+      data: {
+        collectionId: "collection-1",
+        workId: "work-1",
+      },
+    });
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    expect(setPendingId).toHaveBeenLastCalledWith(null);
+  });
+
+  it("invalidates when a collection mutation has no explicit success handler", async () => {
+    const invalidate = vi.fn(async () => undefined);
+    const navigate = vi.fn(async () => undefined);
+    const setPending = vi.fn();
+    const mutation = vi.fn(async () => undefined);
+
+    createCollectionMutationHandler({
+      action: mutation,
+      router: { invalidate, navigate },
+      setPending,
+    })();
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mutation).toHaveBeenCalledTimes(1);
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    expect(setPending).toHaveBeenLastCalledWith(false);
   });
 });

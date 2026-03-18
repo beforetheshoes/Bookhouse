@@ -7,15 +7,23 @@ import {
   ReviewStatus,
 } from "@bookhouse/domain";
 import {
+  addWorkToCollection,
+  createCollection,
   deleteReadingProgress,
+  deleteCollection,
+  getCollectionDetail,
   getAudioLinkDetail,
   getDuplicateCandidateDetail,
   getReadingProgress,
+  getWorkCollectionMembership,
   getUserProgressTrackingMode,
   getWorkProgressView,
+  listCollections,
   listAudioLinks,
   listDuplicateCandidates,
   mergeDuplicateCandidate,
+  removeWorkFromCollection,
+  renameCollection,
   toAudioLinkDetail,
   toDuplicateCandidateDetail,
   upsertReadingProgress,
@@ -28,7 +36,8 @@ import {
 
 type TestState = {
   audioLinks: Map<string, { audioEditionId: string; confidence: number | null; ebookEditionId: string; id: string; matchType: AudioLinkMatchType; reviewStatus: ReviewStatus }>;
-  collectionItems: Map<string, { collectionId: string; editionId: string; id: string }>;
+  collectionItems: Map<string, { collectionId: string; id: string; workId: string }>;
+  collections: Map<string, { id: string; kind: "MANUAL"; name: string; ownerUserId: string | null }>;
   contributors: Map<string, { id: string; nameDisplay: string }>;
   duplicateCandidates: Map<string, {
     confidence: number | null;
@@ -79,6 +88,7 @@ function createState(): TestState {
   return {
     audioLinks: new Map(),
     collectionItems: new Map(),
+    collections: new Map(),
     contributors: new Map(),
     duplicateCandidates: new Map(),
     editionContributors: new Map(),
@@ -95,6 +105,15 @@ function createState(): TestState {
 
 function addWork(state: TestState, id: string, titleDisplay: string): void {
   state.works.set(id, { id, titleDisplay });
+}
+
+function addCollection(
+  state: TestState,
+  id: string,
+  name: string,
+  ownerUserId = "user-1",
+): void {
+  state.collections.set(id, { id, kind: "MANUAL", name, ownerUserId });
 }
 
 function addFileAsset(state: TestState, id: string, relativePath: string, fullHash: string | null): void {
@@ -205,6 +224,24 @@ function createDb(state: TestState): LibraryServiceDb {
     };
   };
 
+  const buildCollection = (collectionId: string) => {
+    const collection = state.collections.get(collectionId);
+
+    if (!collection) {
+      return null;
+    }
+
+    return {
+      ...collection,
+      items: [...state.collectionItems.values()]
+        .filter((row) => row.collectionId === collectionId)
+        .map((row) => ({
+          ...row,
+          work: state.works.get(row.workId)!,
+        })),
+    };
+  };
+
   const db: LibraryServiceDb = {
     audioLink: {
       async create() {
@@ -260,25 +297,86 @@ function createDb(state: TestState): LibraryServiceDb {
         return buildAudioLink(where.id)!;
       },
     },
+    collection: {
+      async create(args) {
+        const data = args.data as { kind: "MANUAL"; name: string; ownerUserId: string | null };
+        const created = {
+          id: `collection-created-${state.collections.size + 1}`,
+          ...data,
+        };
+        state.collections.set(created.id, created);
+        return created;
+      },
+      async deleteMany(args) {
+        const where = args.where as { id?: string; ownerUserId?: string | null };
+        let count = 0;
+        for (const [id, row] of state.collections.entries()) {
+          if (
+            (where.id === undefined || row.id === where.id) &&
+            (where.ownerUserId === undefined || row.ownerUserId === where.ownerUserId)
+          ) {
+            state.collections.delete(id);
+            for (const [itemId, item] of state.collectionItems.entries()) {
+              if (item.collectionId === id) {
+                state.collectionItems.delete(itemId);
+              }
+            }
+            count += 1;
+          }
+        }
+        return { count };
+      },
+      async findMany(args) {
+        const where = args.where as { ownerUserId?: string | null } | undefined;
+        return [...state.collections.values()]
+          .filter((row) => where?.ownerUserId === undefined || row.ownerUserId === where.ownerUserId)
+          .sort((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id))
+          .map((row) => buildCollection(row.id)!);
+      },
+      async findUnique(args) {
+        const where = args.where as { id?: string; ownerUserId?: string | null };
+        const row = [...state.collections.values()].find((collection) =>
+          (where.id === undefined || collection.id === where.id) &&
+          (where.ownerUserId === undefined || collection.ownerUserId === where.ownerUserId),
+        );
+        return row ? buildCollection(row.id) : null;
+      },
+      async update(args) {
+        const where = args.where as { id: string };
+        const data = args.data as Record<string, unknown>;
+        const existing = state.collections.get(where.id)!;
+        const updated = { ...existing, ...data } as typeof existing;
+        state.collections.set(where.id, updated);
+        return updated;
+      },
+    },
     collectionItem: {
-      async create() {
-        throw new Error("unused");
+      async create(args) {
+        const data = args.data as { collectionId: string; workId: string };
+        const created = {
+          collectionId: data.collectionId,
+          id: `collection-item-created-${state.collectionItems.size + 1}`,
+          workId: data.workId,
+        };
+        state.collectionItems.set(created.id, created);
+        return created;
       },
       async delete({ where }) {
         state.collectionItems.delete(where.id);
         return {};
       },
       async findFirst(args) {
-        const where = args.where as { collectionId?: string; editionId?: string };
+        const where = args.where as { collectionId?: string; workId?: string };
         return [...state.collectionItems.values()].find((row) =>
           (where.collectionId === undefined || row.collectionId === where.collectionId) &&
-          (where.editionId === undefined || row.editionId === where.editionId),
+          (where.workId === undefined || row.workId === where.workId),
         ) ?? null;
       },
       async findMany(args) {
-        const where = args.where as { editionId?: string };
+        const where = args.where as { collectionId?: string; workId?: string };
         return [...state.collectionItems.values()].filter((row) =>
-          where.editionId === undefined || row.editionId === where.editionId,
+          (where.collectionId === undefined || row.collectionId === where.collectionId) &&
+          (where.workId === undefined || row.workId === where.workId),
         );
       },
       async update({ data, where }) {
@@ -953,8 +1051,11 @@ describe("library service", () => {
     addEditionContributor(state, "edition-contributor-2", "edition-2", "contributor-1");
     addEditionFile(state, "edition-file-1", "edition-1", "file-1");
     addEditionFile(state, "edition-file-2", "edition-2", "file-2");
-    state.collectionItems.set("collection-item-1", { collectionId: "collection-1", editionId: "edition-2", id: "collection-item-1" });
-    state.collectionItems.set("collection-item-2", { collectionId: "collection-1", editionId: "edition-1", id: "collection-item-2" });
+    addCollection(state, "collection-1", "Favorites");
+    addCollection(state, "collection-2", "Queued");
+    state.collectionItems.set("collection-item-1", { collectionId: "collection-1", id: "collection-item-1", workId: "work-2" });
+    state.collectionItems.set("collection-item-2", { collectionId: "collection-1", id: "collection-item-2", workId: "work-1" });
+    state.collectionItems.set("collection-item-3", { collectionId: "collection-2", id: "collection-item-3", workId: "work-2" });
     state.externalLinks.set("external-link-1", { editionId: "edition-2", externalId: "abc", id: "external-link-1", metadata: null, provider: "openlibrary" });
     state.readingProgress.set("progress-1", {
       editionId: "edition-2",
@@ -1033,6 +1134,8 @@ describe("library service", () => {
     expect(state.works.has("work-2")).toBe(false);
     expect([...state.editionFiles.values()].some((row) => row.editionId === "edition-1" && row.fileAssetId === "file-2")).toBe(true);
     expect(state.editions.get("edition-1")?.publisher).toBe("Orbit");
+    expect(state.collectionItems.has("collection-item-1")).toBe(false);
+    expect(state.collectionItems.get("collection-item-3")?.workId).toBe("work-1");
     expect(state.readingProgress.has("progress-2")).toBe(false);
     expect(state.audioLinks.get("audio-link-1")?.ebookEditionId).toBe("edition-1");
     expect(state.duplicateCandidates.get("candidate-2")?.status).toBe(ReviewStatus.IGNORED);
@@ -1055,8 +1158,10 @@ describe("library service", () => {
     addEditionFile(state, "edition-file-1", "edition-1", "file-1");
     addEditionFile(state, "edition-file-2", "edition-2", "file-1");
     addEditionFile(state, "edition-file-3", "edition-2", "file-2");
-    state.collectionItems.set("collection-item-1", { collectionId: "collection-1", editionId: "edition-1", id: "collection-item-1" });
-    state.collectionItems.set("collection-item-2", { collectionId: "collection-2", editionId: "edition-2", id: "collection-item-2" });
+    addCollection(state, "collection-1", "Shelf One");
+    addCollection(state, "collection-2", "Shelf Two");
+    state.collectionItems.set("collection-item-1", { collectionId: "collection-1", id: "collection-item-1", workId: "work-1" });
+    state.collectionItems.set("collection-item-2", { collectionId: "collection-2", id: "collection-item-2", workId: "work-1" });
     state.externalLinks.set("external-link-1", { editionId: "edition-1", externalId: "dup", id: "external-link-1", metadata: null, provider: "openlibrary" });
     state.externalLinks.set("external-link-2", { editionId: "edition-2", externalId: "dup", id: "external-link-2", metadata: null, provider: "openlibrary" });
     state.externalLinks.set("external-link-3", { editionId: "edition-2", externalId: "unique", id: "external-link-3", metadata: null, provider: "goodreads" });
@@ -1076,7 +1181,7 @@ describe("library service", () => {
     expect([...state.editionFiles.values()].some((row) => row.id === "edition-file-2")).toBe(false);
     expect([...state.editionFiles.values()].some((row) => row.id === "edition-file-3" && row.editionId === "edition-1")).toBe(true);
     expect([...state.editionContributors.values()].some((row) => row.id === "edition-contributor-3" && row.editionId === "edition-1")).toBe(true);
-    expect(state.collectionItems.get("collection-item-2")?.editionId).toBe("edition-1");
+    expect(state.collectionItems.get("collection-item-2")?.workId).toBe("work-1");
     expect(state.externalLinks.has("external-link-2")).toBe(false);
     expect(state.externalLinks.get("external-link-3")?.editionId).toBe("edition-1");
   });
@@ -1163,6 +1268,134 @@ describe("library service", () => {
     );
   });
 
+  it("creates, renames, lists, loads, and deletes collections scoped to the user", async () => {
+    const state = createState();
+    addWork(state, "work-1", "The Fifth Season");
+    addWork(state, "work-2", "The Obelisk Gate");
+    addWork(state, "work-3", "The Stone Sky");
+    addCollection(state, "collection-1", "Favorites", "user-1");
+    addCollection(state, "collection-2", "Archive", "user-2");
+    state.collectionItems.set("collection-item-1", {
+      collectionId: "collection-1",
+      id: "collection-item-1",
+      workId: "work-1",
+    });
+    state.collectionItems.set("collection-item-3", {
+      collectionId: "collection-1",
+      id: "collection-item-3",
+      workId: "work-3",
+    });
+    state.collectionItems.set("collection-item-2", {
+      collectionId: "collection-2",
+      id: "collection-item-2",
+      workId: "work-2",
+    });
+
+    const db = createDb(state);
+
+    expect(await listCollections(db, "user-1")).toEqual([
+      {
+        id: "collection-1",
+        itemCount: 2,
+        kind: "MANUAL",
+        name: "Favorites",
+      },
+    ]);
+
+    expect(await getCollectionDetail(db, "user-1", "collection-1")).toEqual({
+      id: "collection-1",
+      itemCount: 2,
+      kind: "MANUAL",
+      name: "Favorites",
+      works: [
+        { id: "work-1", titleDisplay: "The Fifth Season" },
+        { id: "work-3", titleDisplay: "The Stone Sky" },
+      ],
+    });
+    expect(await getCollectionDetail(db, "user-1", "collection-2")).toBeNull();
+
+    const created = await createCollection(db, "user-1", "Wishlist");
+    expect(created).toMatchObject({
+      itemCount: 0,
+      kind: "MANUAL",
+      name: "Wishlist",
+    });
+
+    await expect(renameCollection(db, "user-1", "collection-2", "Nope")).rejects.toThrow(
+      "Collection not found",
+    );
+    expect(await renameCollection(db, "user-1", "collection-1", "Favorites Updated")).toEqual({
+      id: "collection-1",
+      itemCount: 2,
+      kind: "MANUAL",
+      name: "Favorites Updated",
+    });
+
+    await expect(deleteCollection(db, "user-1", "collection-2")).rejects.toThrow(
+      "Collection not found",
+    );
+    await expect(deleteCollection(db, "user-1", "collection-1")).resolves.toBeUndefined();
+    expect(state.collections.has("collection-1")).toBe(false);
+    expect(state.collectionItems.has("collection-item-1")).toBe(false);
+  });
+
+  it("adds, removes, and reports work collection membership with ownership checks", async () => {
+    const state = createState();
+    addWork(state, "work-1", "The Fifth Season");
+    addCollection(state, "collection-1", "Favorites", "user-1");
+    addCollection(state, "collection-2", "Reading", "user-1");
+    addCollection(state, "collection-3", "Other User", "user-2");
+    state.collectionItems.set("collection-item-1", {
+      collectionId: "collection-1",
+      id: "collection-item-1",
+      workId: "work-1",
+    });
+
+    const db = createDb(state);
+
+    await addWorkToCollection(db, "user-1", "collection-2", "work-1");
+    await addWorkToCollection(db, "user-1", "collection-2", "work-1");
+    expect(
+      [...state.collectionItems.values()].filter((row) => row.collectionId === "collection-2" && row.workId === "work-1"),
+    ).toHaveLength(1);
+
+    await expect(addWorkToCollection(db, "user-1", "collection-3", "work-1")).rejects.toThrow(
+      "Collection not found",
+    );
+    await expect(addWorkToCollection(db, "user-1", "collection-2", "missing-work")).rejects.toThrow(
+      "Work not found",
+    );
+
+    expect(await getWorkCollectionMembership(db, "user-1", "work-1")).toEqual([
+      {
+        containsWork: true,
+        id: "collection-1",
+        itemCount: 1,
+        kind: "MANUAL",
+        name: "Favorites",
+      },
+      {
+        containsWork: true,
+        id: "collection-2",
+        itemCount: 1,
+        kind: "MANUAL",
+        name: "Reading",
+      },
+    ]);
+
+    await removeWorkFromCollection(db, "user-1", "collection-1", "work-1");
+    await removeWorkFromCollection(db, "user-1", "collection-1", "work-1");
+    expect(
+      [...state.collectionItems.values()].some((row) => row.collectionId === "collection-1" && row.workId === "work-1"),
+    ).toBe(false);
+    await expect(removeWorkFromCollection(db, "user-1", "collection-3", "work-1")).rejects.toThrow(
+      "Collection not found",
+    );
+    await expect(getWorkCollectionMembership(db, "user-1", "missing-work")).rejects.toThrow(
+      "Work not found",
+    );
+  });
+
   it("rejects file-only merges and resolves global plus per-work progress preferences", async () => {
     const state = createState();
     addWork(state, "work-1", "The Fifth Season");
@@ -1216,6 +1449,7 @@ describe("library service", () => {
     const view = await getWorkProgressView(db, "user-1", "work-1");
 
     expect(view).toMatchObject({
+      collections: [],
       effectiveMode: ProgressTrackingMode.BY_EDITION,
       globalMode: ProgressTrackingMode.BY_WORK,
       overrideMode: ProgressTrackingMode.BY_EDITION,

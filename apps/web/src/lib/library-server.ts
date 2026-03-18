@@ -7,15 +7,23 @@ import {
 import { createServerFn } from "@tanstack/react-start";
 import { getCurrentUser } from "./auth-server";
 import {
+  addWorkToCollection,
+  createCollection,
   deleteReadingProgress,
+  deleteCollection,
+  getCollectionDetail,
   getReadingProgress,
   getAudioLinkDetail,
   getDuplicateCandidateDetail,
+  getWorkCollectionMembership,
   getUserProgressTrackingMode,
   getWorkProgressView,
+  listCollections,
   listAudioLinks,
   listDuplicateCandidates,
   mergeDuplicateCandidate,
+  removeWorkFromCollection,
+  renameCollection,
   upsertReadingProgress,
   updateAudioLinkStatus,
   updateDuplicateCandidateStatus,
@@ -23,8 +31,15 @@ import {
   updateWorkProgressTrackingMode,
 } from "./library-service";
 import {
+  addWorkToCollectionSchema,
+  createCollectionSchema,
+  deleteCollectionSchema,
+  getCollectionDetailSchema,
+  getWorkCollectionMembershipSchema,
   getWorkProgressViewSchema,
   readingProgressLookupSchema,
+  removeWorkFromCollectionSchema,
+  renameCollectionSchema,
   updateUserProgressTrackingModeSchema,
   updateWorkProgressTrackingModeSchema,
   upsertReadingProgressSchema,
@@ -53,6 +68,46 @@ export async function listAudioLinksAction(data: {
   status?: ReviewStatus | "ALL";
 } | undefined) {
   return listAudioLinks(libraryDb, data ?? {});
+}
+
+export async function listCollectionsAction() {
+  const userId = await requireCurrentUserId();
+  return listCollections(libraryDb, userId);
+}
+
+export async function getCollectionDetailAction(data: { collectionId: string }) {
+  const userId = await requireCurrentUserId();
+  return getCollectionDetail(libraryDb, userId, data.collectionId);
+}
+
+export async function createCollectionAction(data: { name: string }) {
+  const userId = await requireCurrentUserId();
+  return createCollection(libraryDb, userId, data.name);
+}
+
+export async function renameCollectionAction(data: { collectionId: string; name: string }) {
+  const userId = await requireCurrentUserId();
+  return renameCollection(libraryDb, userId, data.collectionId, data.name);
+}
+
+export async function deleteCollectionAction(data: { collectionId: string }) {
+  const userId = await requireCurrentUserId();
+  await deleteCollection(libraryDb, userId, data.collectionId);
+}
+
+export async function addWorkToCollectionAction(data: { collectionId: string; workId: string }) {
+  const userId = await requireCurrentUserId();
+  await addWorkToCollection(libraryDb, userId, data.collectionId, data.workId);
+}
+
+export async function removeWorkFromCollectionAction(data: { collectionId: string; workId: string }) {
+  const userId = await requireCurrentUserId();
+  await removeWorkFromCollection(libraryDb, userId, data.collectionId, data.workId);
+}
+
+export async function getWorkCollectionMembershipAction(data: { workId: string }) {
+  const userId = await requireCurrentUserId();
+  return getWorkCollectionMembership(libraryDb, userId, data.workId);
 }
 
 export async function getDuplicateCandidateDetailAction(data: { candidateId: string }) {
@@ -149,6 +204,29 @@ export const validateListAudioLinksInput = (
   data: { status?: ReviewStatus | "ALL" } | undefined,
 ) => data;
 
+export const validateListCollectionsInput = () => undefined;
+
+export const validateGetCollectionDetailInput = (data: { collectionId: string }) =>
+  getCollectionDetailSchema.parse(data);
+
+export const validateCreateCollectionInput = (data: { name: string }) =>
+  createCollectionSchema.parse(data);
+
+export const validateRenameCollectionInput = (data: { collectionId: string; name: string }) =>
+  renameCollectionSchema.parse(data);
+
+export const validateDeleteCollectionInput = (data: { collectionId: string }) =>
+  deleteCollectionSchema.parse(data);
+
+export const validateAddWorkToCollectionInput = (data: { collectionId: string; workId: string }) =>
+  addWorkToCollectionSchema.parse(data);
+
+export const validateRemoveWorkFromCollectionInput = (data: { collectionId: string; workId: string }) =>
+  removeWorkFromCollectionSchema.parse(data);
+
+export const validateGetWorkCollectionMembershipInput = (data: { workId: string }) =>
+  getWorkCollectionMembershipSchema.parse(data);
+
 export const validateGetDuplicateCandidateDetailInput = (data: { candidateId: string }) => data;
 
 export const validateGetAudioLinkDetailInput = (data: { linkId: string }) => data;
@@ -203,6 +281,38 @@ export const listDuplicateCandidatesServerFn = createServerFn({ method: "GET" })
 export const listAudioLinksServerFn = createServerFn({ method: "GET" })
   .inputValidator(validateListAudioLinksInput)
   .handler(async ({ data }) => listAudioLinksAction(data));
+
+export const listCollectionsServerFn = createServerFn({ method: "GET" })
+  .inputValidator(validateListCollectionsInput)
+  .handler(async () => listCollectionsAction());
+
+export const getCollectionDetailServerFn = createServerFn({ method: "GET" })
+  .inputValidator(validateGetCollectionDetailInput)
+  .handler(async ({ data }) => getCollectionDetailAction(data));
+
+export const createCollectionServerFn = createServerFn({ method: "POST" })
+  .inputValidator(validateCreateCollectionInput)
+  .handler(async ({ data }) => createCollectionAction(data));
+
+export const renameCollectionServerFn = createServerFn({ method: "POST" })
+  .inputValidator(validateRenameCollectionInput)
+  .handler(async ({ data }) => renameCollectionAction(data));
+
+export const deleteCollectionServerFn = createServerFn({ method: "POST" })
+  .inputValidator(validateDeleteCollectionInput)
+  .handler(async ({ data }) => deleteCollectionAction(data));
+
+export const addWorkToCollectionServerFn = createServerFn({ method: "POST" })
+  .inputValidator(validateAddWorkToCollectionInput)
+  .handler(async ({ data }) => addWorkToCollectionAction(data));
+
+export const removeWorkFromCollectionServerFn = createServerFn({ method: "POST" })
+  .inputValidator(validateRemoveWorkFromCollectionInput)
+  .handler(async ({ data }) => removeWorkFromCollectionAction(data));
+
+export const getWorkCollectionMembershipServerFn = createServerFn({ method: "GET" })
+  .inputValidator(validateGetWorkCollectionMembershipInput)
+  .handler(async ({ data }) => getWorkCollectionMembershipAction(data));
 
 export const getDuplicateCandidateDetailServerFn = createServerFn({ method: "GET" })
   .inputValidator(validateGetDuplicateCandidateDetailInput)

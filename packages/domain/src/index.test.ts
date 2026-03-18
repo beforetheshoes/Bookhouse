@@ -14,6 +14,8 @@ import {
 } from "./index";
 import type {
   AudioLink,
+  Collection,
+  CollectionItem,
   Batch1DomainModels,
   DuplicateCandidate,
   ReadingProgress,
@@ -42,6 +44,8 @@ describe("domain package", () => {
       "EditionFile",
       "Contributor",
       "Series",
+      "Collection",
+      "CollectionItem",
       "DuplicateCandidate",
       "ReadingProgress",
       "UserPreference",
@@ -54,6 +58,10 @@ describe("domain package", () => {
     const batchModelAudioLink = null as Batch1DomainModels["audioLink"] | null;
     const duplicateCandidate = null as DuplicateCandidate | null;
     const batchModelDuplicateCandidate = null as Batch1DomainModels["duplicateCandidate"] | null;
+    const collection = null as Collection | null;
+    const batchModelCollection = null as Batch1DomainModels["collection"] | null;
+    const collectionItem = null as CollectionItem | null;
+    const batchModelCollectionItem = null as Batch1DomainModels["collectionItem"] | null;
     const readingProgress = null as ReadingProgress | null;
     const batchModelReadingProgress = null as Batch1DomainModels["readingProgress"] | null;
     const userPreference = null as UserPreference | null;
@@ -65,6 +73,10 @@ describe("domain package", () => {
     expect(batchModelAudioLink).toBeNull();
     expect(duplicateCandidate).toBeNull();
     expect(batchModelDuplicateCandidate).toBeNull();
+    expect(collection).toBeNull();
+    expect(batchModelCollection).toBeNull();
+    expect(collectionItem).toBeNull();
+    expect(batchModelCollectionItem).toBeNull();
     expect(readingProgress).toBeNull();
     expect(batchModelReadingProgress).toBeNull();
     expect(userPreference).toBeNull();

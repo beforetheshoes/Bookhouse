@@ -2,15 +2,23 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ProgressKind, ProgressTrackingMode, ReviewStatus } from "@bookhouse/domain";
 
 const deleteReadingProgressMock = vi.fn();
+const addWorkToCollectionMock = vi.fn();
+const createCollectionMock = vi.fn();
+const deleteCollectionMock = vi.fn();
+const getCollectionDetailMock = vi.fn();
 const getReadingProgressMock = vi.fn();
 const getAudioLinkDetailMock = vi.fn();
 const getCurrentUserMock = vi.fn();
 const getDuplicateCandidateDetailMock = vi.fn();
+const getWorkCollectionMembershipMock = vi.fn();
 const getUserProgressTrackingModeMock = vi.fn();
 const getWorkProgressViewMock = vi.fn();
+const listCollectionsMock = vi.fn();
 const listAudioLinksMock = vi.fn();
 const listDuplicateCandidatesMock = vi.fn();
 const mergeDuplicateCandidateMock = vi.fn();
+const removeWorkFromCollectionMock = vi.fn();
+const renameCollectionMock = vi.fn();
 const upsertReadingProgressMock = vi.fn();
 const updateAudioLinkStatusMock = vi.fn();
 const updateDuplicateCandidateStatusMock = vi.fn();
@@ -22,15 +30,23 @@ vi.mock("./auth-server", () => ({
 }));
 
 vi.mock("./library-service", () => ({
+  addWorkToCollection: addWorkToCollectionMock,
+  createCollection: createCollectionMock,
   deleteReadingProgress: deleteReadingProgressMock,
+  deleteCollection: deleteCollectionMock,
+  getCollectionDetail: getCollectionDetailMock,
   getReadingProgress: getReadingProgressMock,
   getAudioLinkDetail: getAudioLinkDetailMock,
   getDuplicateCandidateDetail: getDuplicateCandidateDetailMock,
+  getWorkCollectionMembership: getWorkCollectionMembershipMock,
   getUserProgressTrackingMode: getUserProgressTrackingModeMock,
   getWorkProgressView: getWorkProgressViewMock,
+  listCollections: listCollectionsMock,
   listAudioLinks: listAudioLinksMock,
   listDuplicateCandidates: listDuplicateCandidatesMock,
   mergeDuplicateCandidate: mergeDuplicateCandidateMock,
+  removeWorkFromCollection: removeWorkFromCollectionMock,
+  renameCollection: renameCollectionMock,
   upsertReadingProgress: upsertReadingProgressMock,
   updateAudioLinkStatus: updateAudioLinkStatusMock,
   updateDuplicateCandidateStatus: updateDuplicateCandidateStatusMock,
@@ -51,15 +67,23 @@ vi.mock("@tanstack/react-start", () => ({
 
 beforeEach(() => {
   deleteReadingProgressMock.mockReset();
+  addWorkToCollectionMock.mockReset();
+  createCollectionMock.mockReset();
+  deleteCollectionMock.mockReset();
+  getCollectionDetailMock.mockReset();
   getReadingProgressMock.mockReset();
   getAudioLinkDetailMock.mockReset();
   getCurrentUserMock.mockReset();
   getDuplicateCandidateDetailMock.mockReset();
+  getWorkCollectionMembershipMock.mockReset();
   getUserProgressTrackingModeMock.mockReset();
   getWorkProgressViewMock.mockReset();
+  listCollectionsMock.mockReset();
   listAudioLinksMock.mockReset();
   listDuplicateCandidatesMock.mockReset();
   mergeDuplicateCandidateMock.mockReset();
+  removeWorkFromCollectionMock.mockReset();
+  renameCollectionMock.mockReset();
   upsertReadingProgressMock.mockReset();
   updateAudioLinkStatusMock.mockReset();
   updateDuplicateCandidateStatusMock.mockReset();
@@ -70,11 +94,19 @@ beforeEach(() => {
 describe("library server functions", () => {
   it("lists and loads duplicate candidates", async () => {
     const server = await import("./library-server");
+    getCurrentUserMock.mockResolvedValue({ id: "user-1" });
+    listCollectionsMock.mockResolvedValueOnce([{ id: "collection-1" }]);
+    getCollectionDetailMock.mockResolvedValueOnce({ id: "collection-1" });
     listAudioLinksMock.mockResolvedValueOnce([{ id: "audio-link-1" }]);
     getAudioLinkDetailMock.mockResolvedValueOnce({ id: "audio-link-1" });
     listDuplicateCandidatesMock.mockResolvedValueOnce([{ id: "candidate-1" }]);
     getDuplicateCandidateDetailMock.mockResolvedValueOnce({ id: "candidate-1" });
+    getWorkCollectionMembershipMock.mockResolvedValueOnce([{ id: "collection-1", containsWork: true }]);
 
+    await expect(server.listCollectionsServerFn()).resolves.toEqual([{ id: "collection-1" }]);
+    await expect(
+      server.getCollectionDetailServerFn({ data: { collectionId: "collection-1" } }),
+    ).resolves.toEqual({ id: "collection-1" });
     await expect(
       server.listAudioLinksServerFn({ data: { status: ReviewStatus.PENDING } }),
     ).resolves.toEqual([{ id: "audio-link-1" }]);
@@ -87,12 +119,53 @@ describe("library server functions", () => {
     await expect(
       server.getDuplicateCandidateDetailServerFn({ data: { candidateId: "candidate-1" } }),
     ).resolves.toEqual({ id: "candidate-1" });
+    await expect(
+      server.getWorkCollectionMembershipServerFn({ data: { workId: "work-1" } }),
+    ).resolves.toEqual([{ id: "collection-1", containsWork: true }]);
   });
 
   it("requires authentication for mutations", async () => {
     const server = await import("./library-server");
     getCurrentUserMock.mockResolvedValue(null);
 
+    await expect(
+      server.createCollectionServerFn({
+        data: {
+          name: "Favorites",
+        },
+      }),
+    ).rejects.toThrow("Authentication required");
+    await expect(
+      server.renameCollectionServerFn({
+        data: {
+          collectionId: "collection-1",
+          name: "Favorites",
+        },
+      }),
+    ).rejects.toThrow("Authentication required");
+    await expect(
+      server.deleteCollectionServerFn({
+        data: {
+          collectionId: "collection-1",
+        },
+      }),
+    ).rejects.toThrow("Authentication required");
+    await expect(
+      server.addWorkToCollectionServerFn({
+        data: {
+          collectionId: "collection-1",
+          workId: "work-1",
+        },
+      }),
+    ).rejects.toThrow("Authentication required");
+    await expect(
+      server.removeWorkFromCollectionServerFn({
+        data: {
+          collectionId: "collection-1",
+          workId: "work-1",
+        },
+      }),
+    ).rejects.toThrow("Authentication required");
     await expect(
       server.updateAudioLinkStatusServerFn({
         data: {
@@ -122,6 +195,11 @@ describe("library server functions", () => {
   it("updates duplicate status and progress preferences for an authenticated user", async () => {
     const server = await import("./library-server");
     getCurrentUserMock.mockResolvedValue({ id: "user-1" });
+    createCollectionMock.mockResolvedValueOnce({ id: "collection-1", name: "Favorites" });
+    renameCollectionMock.mockResolvedValueOnce({ id: "collection-1", name: "Favorites Updated" });
+    deleteCollectionMock.mockResolvedValueOnce(undefined);
+    addWorkToCollectionMock.mockResolvedValueOnce(undefined);
+    removeWorkFromCollectionMock.mockResolvedValueOnce(undefined);
     updateAudioLinkStatusMock.mockResolvedValueOnce({ reviewStatus: ReviewStatus.CONFIRMED });
     updateDuplicateCandidateStatusMock.mockResolvedValueOnce({ status: ReviewStatus.IGNORED });
     mergeDuplicateCandidateMock.mockResolvedValueOnce({ status: ReviewStatus.MERGED });
@@ -132,6 +210,45 @@ describe("library server functions", () => {
     updateUserProgressTrackingModeMock.mockResolvedValueOnce(ProgressTrackingMode.BY_WORK);
     getWorkProgressViewMock.mockResolvedValueOnce({ workId: "work-1" });
     updateWorkProgressTrackingModeMock.mockResolvedValueOnce(ProgressTrackingMode.BY_WORK);
+
+    await expect(
+      server.createCollectionServerFn({
+        data: {
+          name: "Favorites",
+        },
+      }),
+    ).resolves.toEqual({ id: "collection-1", name: "Favorites" });
+    await expect(
+      server.renameCollectionServerFn({
+        data: {
+          collectionId: "collection-1",
+          name: "Favorites Updated",
+        },
+      }),
+    ).resolves.toEqual({ id: "collection-1", name: "Favorites Updated" });
+    await expect(
+      server.deleteCollectionServerFn({
+        data: {
+          collectionId: "collection-1",
+        },
+      }),
+    ).resolves.toBeUndefined();
+    await expect(
+      server.addWorkToCollectionServerFn({
+        data: {
+          collectionId: "collection-1",
+          workId: "work-1",
+        },
+      }),
+    ).resolves.toBeUndefined();
+    await expect(
+      server.removeWorkFromCollectionServerFn({
+        data: {
+          collectionId: "collection-1",
+          workId: "work-1",
+        },
+      }),
+    ).resolves.toBeUndefined();
 
     await expect(
       server.updateAudioLinkStatusServerFn({
@@ -340,6 +457,30 @@ describe("library server functions", () => {
         source: null,
       }),
     ).resolves.toBeUndefined();
+    createCollectionMock.mockResolvedValueOnce({ id: "collection-9" });
+    renameCollectionMock.mockResolvedValueOnce({ id: "collection-9", name: "Renamed" });
+    deleteCollectionMock.mockResolvedValueOnce(undefined);
+    addWorkToCollectionMock.mockResolvedValueOnce(undefined);
+    removeWorkFromCollectionMock.mockResolvedValueOnce(undefined);
+    listCollectionsMock.mockResolvedValueOnce([{ id: "collection-9" }]);
+    getCollectionDetailMock.mockResolvedValueOnce({ id: "collection-9" });
+    getWorkCollectionMembershipMock.mockResolvedValueOnce([{ id: "collection-9", containsWork: true }]);
+    await expect(server.listCollectionsAction()).resolves.toEqual([{ id: "collection-9" }]);
+    await expect(server.getCollectionDetailAction({ collectionId: "collection-9" })).resolves.toEqual({ id: "collection-9" });
+    await expect(server.createCollectionAction({ name: "Favorites" })).resolves.toEqual({ id: "collection-9" });
+    await expect(
+      server.renameCollectionAction({ collectionId: "collection-9", name: "Renamed" }),
+    ).resolves.toEqual({ id: "collection-9", name: "Renamed" });
+    await expect(server.deleteCollectionAction({ collectionId: "collection-9" })).resolves.toBeUndefined();
+    await expect(
+      server.addWorkToCollectionAction({ collectionId: "collection-9", workId: "work-9" }),
+    ).resolves.toBeUndefined();
+    await expect(
+      server.removeWorkFromCollectionAction({ collectionId: "collection-9", workId: "work-9" }),
+    ).resolves.toBeUndefined();
+    await expect(
+      server.getWorkCollectionMembershipAction({ workId: "work-9" }),
+    ).resolves.toEqual([{ id: "collection-9", containsWork: true }]);
     await expect(server.getUserProgressTrackingModeAction()).resolves.toBe(ProgressTrackingMode.BY_WORK);
     await expect(
       server.updateUserProgressTrackingModeAction({
@@ -362,6 +503,37 @@ describe("library server functions", () => {
   it("returns validator inputs unchanged", async () => {
     const server = await import("./library-server");
 
+    expect(server.validateListCollectionsInput()).toBeUndefined();
+    expect(server.validateGetCollectionDetailInput({ collectionId: "collection-1" })).toEqual({
+      collectionId: "collection-1",
+    });
+    expect(server.validateCreateCollectionInput({ name: "Favorites" })).toEqual({
+      name: "Favorites",
+    });
+    expect(
+      server.validateRenameCollectionInput({ collectionId: "collection-1", name: "Favorites" }),
+    ).toEqual({
+      collectionId: "collection-1",
+      name: "Favorites",
+    });
+    expect(server.validateDeleteCollectionInput({ collectionId: "collection-1" })).toEqual({
+      collectionId: "collection-1",
+    });
+    expect(
+      server.validateAddWorkToCollectionInput({ collectionId: "collection-1", workId: "work-1" }),
+    ).toEqual({
+      collectionId: "collection-1",
+      workId: "work-1",
+    });
+    expect(
+      server.validateRemoveWorkFromCollectionInput({ collectionId: "collection-1", workId: "work-1" }),
+    ).toEqual({
+      collectionId: "collection-1",
+      workId: "work-1",
+    });
+    expect(server.validateGetWorkCollectionMembershipInput({ workId: "work-1" })).toEqual({
+      workId: "work-1",
+    });
     expect(
       server.validateListAudioLinksInput({ status: ReviewStatus.PENDING }),
     ).toEqual({ status: ReviewStatus.PENDING });
@@ -462,6 +634,9 @@ describe("library server functions", () => {
   it("rejects malformed progress validator payloads", async () => {
     const server = await import("./library-server");
 
+    expect(() => server.validateCreateCollectionInput({ name: "   " })).toThrow();
+    expect(() => server.validateRenameCollectionInput({ collectionId: "", name: "Favorites" })).toThrow();
+    expect(() => server.validateAddWorkToCollectionInput({ collectionId: "collection-1", workId: "" })).toThrow();
     expect(() => server.validateGetReadingProgressInput({
       editionId: "",
       progressKind: ProgressKind.EBOOK,

@@ -201,6 +201,7 @@ model Work {
 
   series   Series?   @relation(fields: [seriesId], references: [id])
   editions Edition[]
+  collections CollectionItem[]
   progressPreferences WorkProgressPreference[]
 
   @@index([titleCanonical])
@@ -221,7 +222,6 @@ model Edition {
   work            Work                 @relation(fields: [workId], references: [id], onDelete: Cascade)
   editionFiles    EditionFile[]
   contributors    EditionContributor[]
-  collections     CollectionItem[]
   readingProgress ReadingProgress[]
   externalLinks   ExternalLink[]
 
@@ -290,12 +290,12 @@ model Collection {
 model CollectionItem {
   id           String @id @default(cuid())
   collectionId String
-  editionId    String
+  workId       String
 
   collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
-  edition    Edition    @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  work       Work       @relation(fields: [workId], references: [id], onDelete: Cascade)
 
-  @@unique([collectionId, editionId])
+  @@unique([collectionId, workId])
 }
 
 model ReadingProgress {
