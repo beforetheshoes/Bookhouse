@@ -83,6 +83,11 @@ enum ReviewStatus {
   MERGED
 }
 
+enum AudioLinkMatchType {
+  SAME_WORK
+  EXACT_METADATA
+}
+
 enum ImportJobKind {
   SCAN_ROOT
   HASH_FILE
@@ -334,7 +339,7 @@ model AudioLink {
   id             String       @id @default(cuid())
   ebookEditionId String
   audioEditionId String
-  matchType      String
+  matchType      AudioLinkMatchType
   confidence     Float?
   reviewStatus   ReviewStatus @default(PENDING)
 

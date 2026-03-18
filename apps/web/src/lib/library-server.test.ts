@@ -1,12 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ProgressTrackingMode, ReviewStatus } from "@bookhouse/domain";
 
+const getAudioLinkDetailMock = vi.fn();
 const getCurrentUserMock = vi.fn();
 const getDuplicateCandidateDetailMock = vi.fn();
 const getUserProgressTrackingModeMock = vi.fn();
 const getWorkProgressViewMock = vi.fn();
+const listAudioLinksMock = vi.fn();
 const listDuplicateCandidatesMock = vi.fn();
 const mergeDuplicateCandidateMock = vi.fn();
+const updateAudioLinkStatusMock = vi.fn();
 const updateDuplicateCandidateStatusMock = vi.fn();
 const updateUserProgressTrackingModeMock = vi.fn();
 const updateWorkProgressTrackingModeMock = vi.fn();
@@ -16,11 +19,14 @@ vi.mock("./auth-server", () => ({
 }));
 
 vi.mock("./library-service", () => ({
+  getAudioLinkDetail: getAudioLinkDetailMock,
   getDuplicateCandidateDetail: getDuplicateCandidateDetailMock,
   getUserProgressTrackingMode: getUserProgressTrackingModeMock,
   getWorkProgressView: getWorkProgressViewMock,
+  listAudioLinks: listAudioLinksMock,
   listDuplicateCandidates: listDuplicateCandidatesMock,
   mergeDuplicateCandidate: mergeDuplicateCandidateMock,
+  updateAudioLinkStatus: updateAudioLinkStatusMock,
   updateDuplicateCandidateStatus: updateDuplicateCandidateStatusMock,
   updateUserProgressTrackingMode: updateUserProgressTrackingModeMock,
   updateWorkProgressTrackingMode: updateWorkProgressTrackingModeMock,
@@ -38,12 +44,15 @@ vi.mock("@tanstack/react-start", () => ({
 }));
 
 beforeEach(() => {
+  getAudioLinkDetailMock.mockReset();
   getCurrentUserMock.mockReset();
   getDuplicateCandidateDetailMock.mockReset();
   getUserProgressTrackingModeMock.mockReset();
   getWorkProgressViewMock.mockReset();
+  listAudioLinksMock.mockReset();
   listDuplicateCandidatesMock.mockReset();
   mergeDuplicateCandidateMock.mockReset();
+  updateAudioLinkStatusMock.mockReset();
   updateDuplicateCandidateStatusMock.mockReset();
   updateUserProgressTrackingModeMock.mockReset();
   updateWorkProgressTrackingModeMock.mockReset();
@@ -52,9 +61,17 @@ beforeEach(() => {
 describe("library server functions", () => {
   it("lists and loads duplicate candidates", async () => {
     const server = await import("./library-server");
+    listAudioLinksMock.mockResolvedValueOnce([{ id: "audio-link-1" }]);
+    getAudioLinkDetailMock.mockResolvedValueOnce({ id: "audio-link-1" });
     listDuplicateCandidatesMock.mockResolvedValueOnce([{ id: "candidate-1" }]);
     getDuplicateCandidateDetailMock.mockResolvedValueOnce({ id: "candidate-1" });
 
+    await expect(
+      server.listAudioLinksServerFn({ data: { status: ReviewStatus.PENDING } }),
+    ).resolves.toEqual([{ id: "audio-link-1" }]);
+    await expect(
+      server.getAudioLinkDetailServerFn({ data: { linkId: "audio-link-1" } }),
+    ).resolves.toEqual({ id: "audio-link-1" });
     await expect(
       server.listDuplicateCandidatesServerFn({ data: { status: ReviewStatus.PENDING } }),
     ).resolves.toEqual([{ id: "candidate-1" }]);
@@ -67,6 +84,14 @@ describe("library server functions", () => {
     const server = await import("./library-server");
     getCurrentUserMock.mockResolvedValue(null);
 
+    await expect(
+      server.updateAudioLinkStatusServerFn({
+        data: {
+          linkId: "audio-link-1",
+          status: ReviewStatus.CONFIRMED,
+        },
+      }),
+    ).rejects.toThrow("Authentication required");
     await expect(
       server.updateDuplicateCandidateStatusServerFn({
         data: {
@@ -88,6 +113,7 @@ describe("library server functions", () => {
   it("updates duplicate status and progress preferences for an authenticated user", async () => {
     const server = await import("./library-server");
     getCurrentUserMock.mockResolvedValue({ id: "user-1" });
+    updateAudioLinkStatusMock.mockResolvedValueOnce({ reviewStatus: ReviewStatus.CONFIRMED });
     updateDuplicateCandidateStatusMock.mockResolvedValueOnce({ status: ReviewStatus.IGNORED });
     mergeDuplicateCandidateMock.mockResolvedValueOnce({ status: ReviewStatus.MERGED });
     getUserProgressTrackingModeMock.mockResolvedValueOnce(ProgressTrackingMode.BY_EDITION);
@@ -95,6 +121,14 @@ describe("library server functions", () => {
     getWorkProgressViewMock.mockResolvedValueOnce({ workId: "work-1" });
     updateWorkProgressTrackingModeMock.mockResolvedValueOnce(ProgressTrackingMode.BY_WORK);
 
+    await expect(
+      server.updateAudioLinkStatusServerFn({
+        data: {
+          linkId: "audio-link-1",
+          status: ReviewStatus.CONFIRMED,
+        },
+      }),
+    ).resolves.toEqual({ reviewStatus: ReviewStatus.CONFIRMED });
     await expect(
       server.updateDuplicateCandidateStatusServerFn({
         data: {
@@ -172,6 +206,9 @@ describe("library server functions", () => {
   it("covers the direct server actions", async () => {
     const server = await import("./library-server");
     getCurrentUserMock.mockResolvedValue({ id: "user-1" });
+    listAudioLinksMock.mockResolvedValueOnce([{ id: "audio-link-9" }]);
+    getAudioLinkDetailMock.mockResolvedValueOnce({ id: "audio-link-9" });
+    updateAudioLinkStatusMock.mockResolvedValueOnce({ reviewStatus: ReviewStatus.IGNORED });
     listDuplicateCandidatesMock.mockResolvedValueOnce([{ id: "candidate-9" }]);
     getDuplicateCandidateDetailMock.mockResolvedValueOnce({ id: "candidate-9" });
     updateDuplicateCandidateStatusMock.mockResolvedValueOnce({ status: ReviewStatus.CONFIRMED });
@@ -181,6 +218,16 @@ describe("library server functions", () => {
     getWorkProgressViewMock.mockResolvedValueOnce({ workId: "work-9" });
     updateWorkProgressTrackingModeMock.mockResolvedValueOnce(null);
 
+    await expect(server.listAudioLinksAction(undefined)).resolves.toEqual([{ id: "audio-link-9" }]);
+    await expect(
+      server.getAudioLinkDetailAction({ linkId: "audio-link-9" }),
+    ).resolves.toEqual({ id: "audio-link-9" });
+    await expect(
+      server.updateAudioLinkStatusAction({
+        linkId: "audio-link-9",
+        status: ReviewStatus.IGNORED,
+      }),
+    ).resolves.toEqual({ reviewStatus: ReviewStatus.IGNORED });
     await expect(server.listDuplicateCandidatesAction(undefined)).resolves.toEqual([{ id: "candidate-9" }]);
     await expect(
       server.getDuplicateCandidateDetailAction({ candidateId: "candidate-9" }),
@@ -220,11 +267,26 @@ describe("library server functions", () => {
     const server = await import("./library-server");
 
     expect(
+      server.validateListAudioLinksInput({ status: ReviewStatus.PENDING }),
+    ).toEqual({ status: ReviewStatus.PENDING });
+    expect(
       server.validateListDuplicateCandidatesInput({ status: ReviewStatus.PENDING }),
     ).toEqual({ status: ReviewStatus.PENDING });
     expect(
+      server.validateGetAudioLinkDetailInput({ linkId: "audio-link-1" }),
+    ).toEqual({ linkId: "audio-link-1" });
+    expect(
       server.validateGetDuplicateCandidateDetailInput({ candidateId: "candidate-1" }),
     ).toEqual({ candidateId: "candidate-1" });
+    expect(
+      server.validateUpdateAudioLinkStatusInput({
+        linkId: "audio-link-1",
+        status: ReviewStatus.CONFIRMED,
+      }),
+    ).toEqual({
+      linkId: "audio-link-1",
+      status: ReviewStatus.CONFIRMED,
+    });
     expect(
       server.validateUpdateDuplicateCandidateStatusInput({
         candidateId: "candidate-1",

@@ -1,5 +1,6 @@
 import path from "node:path";
 import {
+  AudioLinkMatchType,
   DuplicateReason,
   FormatFamily,
   ProgressTrackingMode,
@@ -66,6 +67,17 @@ type DuplicateCandidateWithDetails = {
   status: ReviewStatus;
 };
 
+type AudioLinkRecord = {
+  audioEdition?: EditionWithDetails | null;
+  audioEditionId: string;
+  confidence: number | null;
+  ebookEdition?: EditionWithDetails | null;
+  ebookEditionId: string;
+  id: string;
+  matchType: AudioLinkMatchType;
+  reviewStatus: ReviewStatus;
+};
+
 type ReadingProgressWithEdition = {
   edition: {
     formatFamily: FormatFamily;
@@ -90,15 +102,9 @@ export interface LibraryServiceDb {
     create(args: Record<string, unknown>): Promise<unknown>;
     delete(args: { where: { id: string } }): Promise<unknown>;
     findFirst(args: Record<string, unknown>): Promise<{ id: string } | null>;
-    findMany(args: Record<string, unknown>): Promise<Array<{
-      audioEditionId: string;
-      ebookEditionId: string;
-      id: string;
-      matchType: string;
-      reviewStatus: ReviewStatus;
-      confidence: number | null;
-    }>>;
-    update(args: { where: { id: string }; data: Record<string, unknown> }): Promise<unknown>;
+    findMany(args: Record<string, unknown>): Promise<AudioLinkRecord[]>;
+    findUnique(args: Record<string, unknown>): Promise<AudioLinkRecord | null>;
+    update(args: Record<string, unknown>): Promise<AudioLinkRecord>;
   };
   collectionItem: {
     create(args: Record<string, unknown>): Promise<unknown>;
@@ -193,6 +199,38 @@ export interface DuplicateCandidateDetail extends DuplicateCandidateSummary {
   mergeable: boolean;
 }
 
+export interface ListAudioLinksInput {
+  status?: ReviewStatus | "ALL";
+}
+
+export interface AudioLinkSummary {
+  audioLabel: string;
+  audioWorkId: string;
+  confidence: number | null;
+  ebookLabel: string;
+  ebookWorkId: string;
+  id: string;
+  matchType: AudioLinkMatchType;
+  reviewStatus: ReviewStatus;
+}
+
+export interface AudioLinkDetail extends AudioLinkSummary {
+  audioAuthors: string[];
+  audioCreatedAt?: string;
+  audioFileCount: number;
+  audioHashes: string[];
+  audioIsbns: string[];
+  audioPaths: string[];
+  audioUpdatedAt?: string;
+  ebookAuthors: string[];
+  ebookCreatedAt?: string;
+  ebookFileCount: number;
+  ebookHashes: string[];
+  ebookIsbns: string[];
+  ebookPaths: string[];
+  ebookUpdatedAt?: string;
+}
+
 export interface WorkProgressView {
   currentSourceEditionId?: string;
   effectiveMode: ProgressTrackingMode;
@@ -217,6 +255,20 @@ export interface WorkProgressView {
   workId: string;
   workTitle: string;
 }
+
+const EDITION_DETAIL_INCLUDE = {
+  contributors: {
+    include: {
+      contributor: true,
+    },
+  },
+  editionFiles: {
+    include: {
+      fileAsset: true,
+    },
+  },
+  work: true,
+} as const;
 
 function getEditionAuthors(edition: EditionWithDetails | null): string[] {
   return (edition?.contributors ?? [])
@@ -294,6 +346,49 @@ export function toDuplicateCandidateDetail(candidate: DuplicateCandidateWithDeta
   };
 }
 
+function toAudioLinkSummary(audioLink: AudioLinkRecord): AudioLinkSummary {
+  if (!audioLink.ebookEdition || !audioLink.audioEdition) {
+    throw new Error(`Audio link "${audioLink.id}" is missing edition details`);
+  }
+
+  return {
+    audioLabel: formatSideLabel(audioLink.audioEdition),
+    audioWorkId: audioLink.audioEdition.work.id,
+    confidence: audioLink.confidence,
+    ebookLabel: formatSideLabel(audioLink.ebookEdition),
+    ebookWorkId: audioLink.ebookEdition.work.id,
+    id: audioLink.id,
+    matchType: audioLink.matchType,
+    reviewStatus: audioLink.reviewStatus,
+  };
+}
+
+export function toAudioLinkDetail(audioLink: AudioLinkRecord): AudioLinkDetail {
+  if (!audioLink.ebookEdition || !audioLink.audioEdition) {
+    throw new Error(`Audio link "${audioLink.id}" is missing edition details`);
+  }
+
+  const summary = toAudioLinkSummary(audioLink);
+
+  return {
+    ...summary,
+    audioAuthors: getEditionAuthors(audioLink.audioEdition),
+    audioCreatedAt: audioLink.audioEdition.createdAt?.toISOString(),
+    audioFileCount: audioLink.audioEdition.editionFiles.length,
+    audioHashes: getEditionHashes(audioLink.audioEdition),
+    audioIsbns: getEditionIsbns(audioLink.audioEdition),
+    audioPaths: getEditionPaths(audioLink.audioEdition),
+    audioUpdatedAt: audioLink.audioEdition.updatedAt?.toISOString(),
+    ebookAuthors: getEditionAuthors(audioLink.ebookEdition),
+    ebookCreatedAt: audioLink.ebookEdition.createdAt?.toISOString(),
+    ebookFileCount: audioLink.ebookEdition.editionFiles.length,
+    ebookHashes: getEditionHashes(audioLink.ebookEdition),
+    ebookIsbns: getEditionIsbns(audioLink.ebookEdition),
+    ebookPaths: getEditionPaths(audioLink.ebookEdition),
+    ebookUpdatedAt: audioLink.ebookEdition.updatedAt?.toISOString(),
+  };
+}
+
 export async function listDuplicateCandidates(
   db: LibraryServiceDb,
   input: ListDuplicateCandidatesInput = {},
@@ -301,35 +396,11 @@ export async function listDuplicateCandidates(
   const candidates = await db.duplicateCandidate.findMany({
     include: {
       leftEdition: {
-        include: {
-          contributors: {
-            include: {
-              contributor: true,
-            },
-          },
-          editionFiles: {
-            include: {
-              fileAsset: true,
-            },
-          },
-          work: true,
-        },
+        include: EDITION_DETAIL_INCLUDE,
       },
       leftFileAsset: true,
       rightEdition: {
-        include: {
-          contributors: {
-            include: {
-              contributor: true,
-            },
-          },
-          editionFiles: {
-            include: {
-              fileAsset: true,
-            },
-          },
-          work: true,
-        },
+        include: EDITION_DETAIL_INCLUDE,
       },
       rightFileAsset: true,
     },
@@ -351,35 +422,11 @@ export async function getDuplicateCandidateDetail(
     where: { id: candidateId },
     include: {
       leftEdition: {
-        include: {
-          contributors: {
-            include: {
-              contributor: true,
-            },
-          },
-          editionFiles: {
-            include: {
-              fileAsset: true,
-            },
-          },
-          work: true,
-        },
+        include: EDITION_DETAIL_INCLUDE,
       },
       leftFileAsset: true,
       rightEdition: {
-        include: {
-          contributors: {
-            include: {
-              contributor: true,
-            },
-          },
-          editionFiles: {
-            include: {
-              fileAsset: true,
-            },
-          },
-          work: true,
-        },
+        include: EDITION_DETAIL_INCLUDE,
       },
       rightFileAsset: true,
     },
@@ -398,41 +445,79 @@ export async function updateDuplicateCandidateStatus(
     data: { status },
     include: {
       leftEdition: {
-        include: {
-          contributors: {
-            include: {
-              contributor: true,
-            },
-          },
-          editionFiles: {
-            include: {
-              fileAsset: true,
-            },
-          },
-          work: true,
-        },
+        include: EDITION_DETAIL_INCLUDE,
       },
       leftFileAsset: true,
       rightEdition: {
-        include: {
-          contributors: {
-            include: {
-              contributor: true,
-            },
-          },
-          editionFiles: {
-            include: {
-              fileAsset: true,
-            },
-          },
-          work: true,
-        },
+        include: EDITION_DETAIL_INCLUDE,
       },
       rightFileAsset: true,
     },
   });
 
   return toDuplicateCandidateSummary(candidate);
+}
+
+export async function listAudioLinks(
+  db: LibraryServiceDb,
+  input: ListAudioLinksInput = {},
+): Promise<AudioLinkSummary[]> {
+  const audioLinks = await db.audioLink.findMany({
+    include: {
+      audioEdition: {
+        include: EDITION_DETAIL_INCLUDE,
+      },
+      ebookEdition: {
+        include: EDITION_DETAIL_INCLUDE,
+      },
+    },
+    orderBy: [{ reviewStatus: "asc" }, { matchType: "asc" }, { id: "asc" }],
+    where: {
+      ...(input.status && input.status !== "ALL" ? { reviewStatus: input.status } : {}),
+    },
+  });
+
+  return audioLinks.map(toAudioLinkSummary);
+}
+
+export async function getAudioLinkDetail(
+  db: LibraryServiceDb,
+  linkId: string,
+): Promise<AudioLinkDetail | null> {
+  const audioLink = await db.audioLink.findUnique({
+    where: { id: linkId },
+    include: {
+      audioEdition: {
+        include: EDITION_DETAIL_INCLUDE,
+      },
+      ebookEdition: {
+        include: EDITION_DETAIL_INCLUDE,
+      },
+    },
+  });
+
+  return audioLink === null ? null : toAudioLinkDetail(audioLink);
+}
+
+export async function updateAudioLinkStatus(
+  db: LibraryServiceDb,
+  linkId: string,
+  reviewStatus: ReviewStatus,
+): Promise<AudioLinkSummary> {
+  const audioLink = await db.audioLink.update({
+    where: { id: linkId },
+    data: { reviewStatus },
+    include: {
+      audioEdition: {
+        include: EDITION_DETAIL_INCLUDE,
+      },
+      ebookEdition: {
+        include: EDITION_DETAIL_INCLUDE,
+      },
+    },
+  });
+
+  return toAudioLinkSummary(audioLink);
 }
 
 async function moveUniqueRelations(

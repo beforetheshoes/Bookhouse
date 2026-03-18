@@ -1,5 +1,6 @@
 import { ProgressTrackingMode, ReviewStatus } from "@bookhouse/domain";
 import {
+  createAudioLinkStatusHandler,
   createDuplicateMergeHandler,
   createDuplicateStatusHandler,
   createGlobalProgressModeHandler,
@@ -8,6 +9,33 @@ import {
 import { describe, expect, it, vi } from "vitest";
 
 describe("library route actions", () => {
+  it("updates audio link status and invalidates the router", async () => {
+    const invalidate = vi.fn(async () => undefined);
+    const setPending = vi.fn();
+    const updateStatus = vi.fn(async () => undefined);
+
+    createAudioLinkStatusHandler({
+      linkId: "audio-link-1",
+      pendingValue: "audio-link-1",
+      router: { invalidate },
+      setPending,
+      status: ReviewStatus.IGNORED,
+      updateStatus,
+    })();
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(setPending).toHaveBeenNthCalledWith(1, "audio-link-1");
+    expect(updateStatus).toHaveBeenCalledWith({
+      data: {
+        linkId: "audio-link-1",
+        status: ReviewStatus.IGNORED,
+      },
+    });
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    expect(setPending).toHaveBeenLastCalledWith(null);
+  });
+
   it("updates duplicate status and invalidates the router", async () => {
     const invalidate = vi.fn(async () => undefined);
     const setPending = vi.fn();

@@ -34,6 +34,34 @@ export function createDuplicateStatusHandler(input: {
   };
 }
 
+export function createAudioLinkStatusHandler(input: {
+  linkId: string;
+  pendingValue: string;
+  router: Pick<RouterLike, "invalidate">;
+  setPending: (value: string | null) => void;
+  status: ReviewStatus;
+  updateStatus: (input: {
+    data: {
+      linkId: string;
+      status: ReviewStatus;
+    };
+  }) => Promise<unknown>;
+}) {
+  return () => {
+    input.setPending(input.pendingValue);
+    startTransition(async () => {
+      await input.updateStatus({
+        data: {
+          linkId: input.linkId,
+          status: input.status,
+        },
+      });
+      await input.router.invalidate();
+      input.setPending(null);
+    });
+  };
+}
+
 export function createDuplicateMergeHandler(input: {
   candidateId: string;
   pendingValue: string;

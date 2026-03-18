@@ -1,14 +1,17 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ProgressTrackingMode } from "@bookhouse/domain";
 
 const getCurrentUserServerFnMock = vi.fn();
+const getAudioLinkDetailServerFnMock = vi.fn();
 const getDuplicateCandidateDetailServerFnMock = vi.fn();
 const getUserProgressTrackingModeServerFnMock = vi.fn();
 const getWorkProgressViewServerFnMock = vi.fn();
+const listAudioLinksServerFnMock = vi.fn();
 const listDuplicateCandidatesServerFnMock = vi.fn();
 const mergeDuplicateCandidateServerFnMock = vi.fn();
+const updateAudioLinkStatusServerFnMock = vi.fn();
 const updateDuplicateCandidateStatusServerFnMock = vi.fn();
 const updateUserProgressTrackingModeServerFnMock = vi.fn();
 const updateWorkProgressTrackingModeServerFnMock = vi.fn();
@@ -19,11 +22,14 @@ vi.mock("../lib/auth-client", () => ({
 }));
 
 vi.mock("../lib/library-server", () => ({
+  getAudioLinkDetailServerFn: getAudioLinkDetailServerFnMock,
   getDuplicateCandidateDetailServerFn: getDuplicateCandidateDetailServerFnMock,
   getUserProgressTrackingModeServerFn: getUserProgressTrackingModeServerFnMock,
   getWorkProgressViewServerFn: getWorkProgressViewServerFnMock,
+  listAudioLinksServerFn: listAudioLinksServerFnMock,
   listDuplicateCandidatesServerFn: listDuplicateCandidatesServerFnMock,
   mergeDuplicateCandidateServerFn: mergeDuplicateCandidateServerFnMock,
+  updateAudioLinkStatusServerFn: updateAudioLinkStatusServerFnMock,
   updateDuplicateCandidateStatusServerFn: updateDuplicateCandidateStatusServerFnMock,
   updateUserProgressTrackingModeServerFn: updateUserProgressTrackingModeServerFnMock,
   updateWorkProgressTrackingModeServerFn: updateWorkProgressTrackingModeServerFnMock,
@@ -52,6 +58,236 @@ vi.mock("@tanstack/react-router", async () => {
 });
 
 describe("library routes", () => {
+  beforeEach(() => {
+    getCurrentUserServerFnMock.mockReset();
+    getAudioLinkDetailServerFnMock.mockReset();
+    getDuplicateCandidateDetailServerFnMock.mockReset();
+    getUserProgressTrackingModeServerFnMock.mockReset();
+    getWorkProgressViewServerFnMock.mockReset();
+    listAudioLinksServerFnMock.mockReset();
+    listDuplicateCandidatesServerFnMock.mockReset();
+    mergeDuplicateCandidateServerFnMock.mockReset();
+    updateAudioLinkStatusServerFnMock.mockReset();
+    updateDuplicateCandidateStatusServerFnMock.mockReset();
+    updateUserProgressTrackingModeServerFnMock.mockReset();
+    updateWorkProgressTrackingModeServerFnMock.mockReset();
+  });
+
+  it("loads audio link list data and renders the review page", async () => {
+    const { AudioLinksRoute, Route } = await import("./audio-links");
+    getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
+    listAudioLinksServerFnMock.mockResolvedValueOnce([
+      {
+        audioLabel: "Audio",
+        audioWorkId: "work-audio",
+        confidence: 1,
+        ebookLabel: "Ebook",
+        ebookWorkId: "work-ebook",
+        id: "audio-link-1",
+        matchType: "SAME_WORK",
+        reviewStatus: "PENDING",
+      },
+    ]);
+    const loader = Route.options.loader as unknown as (input: {
+      location: { pathname: string; search: string };
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+    const loaderData = await loader({
+      location: {
+        pathname: "/audio-links",
+        search: "?status=PENDING",
+      },
+      serverContext: {},
+    });
+
+    vi.spyOn(Route, "useLoaderData").mockReturnValue(loaderData as never);
+    const html = renderToStaticMarkup(<AudioLinksRoute />);
+
+    expect(html).toContain("Audio Link Review");
+  });
+
+  it("uses default audio link filters and hides confidence when it is missing", async () => {
+    const { AudioLinksRoute, Route } = await import("./audio-links");
+    getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
+    listAudioLinksServerFnMock.mockResolvedValueOnce([
+      {
+        audioLabel: "Audio",
+        audioWorkId: "work-audio",
+        confidence: null,
+        ebookLabel: "Ebook",
+        ebookWorkId: "work-ebook",
+        id: "audio-link-2",
+        matchType: "EXACT_METADATA",
+        reviewStatus: "PENDING",
+      },
+    ]);
+    const loader = Route.options.loader as unknown as (input: {
+      location: { pathname: string; search: string };
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+    const loaderData = await loader({
+      location: {
+        pathname: "/audio-links",
+        search: "",
+      },
+      serverContext: {},
+    });
+
+    vi.spyOn(Route, "useLoaderData").mockReturnValue(loaderData as never);
+    const html = renderToStaticMarkup(<AudioLinksRoute />);
+
+    expect(listAudioLinksServerFnMock).toHaveBeenLastCalledWith({
+      data: {
+        status: "PENDING",
+      },
+    });
+    expect(html).toContain("Reviewing pending audio link candidates.");
+    expect(html).not.toContain("confidence");
+  });
+
+  it("loads audio link detail data and renders the detail page", async () => {
+    const { AudioLinkDetailRoute, Route } = await import("./audio-links.$linkId");
+    getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
+    getAudioLinkDetailServerFnMock.mockResolvedValueOnce({
+      audioAuthors: ["Author"],
+      audioFileCount: 1,
+      audioHashes: ["hash-audio"],
+      audioIsbns: [],
+      audioLabel: "Audio",
+      audioPaths: ["audio/book.m4b"],
+      audioWorkId: "work-audio",
+      confidence: 1,
+      ebookAuthors: ["Author"],
+      ebookFileCount: 1,
+      ebookHashes: ["hash-ebook"],
+      ebookIsbns: ["isbn"],
+      ebookLabel: "Ebook",
+      ebookPaths: ["ebooks/book.epub"],
+      ebookWorkId: "work-ebook",
+      id: "audio-link-1",
+      matchType: "SAME_WORK",
+      reviewStatus: "PENDING",
+    });
+    const loader = Route.options.loader as unknown as (input: {
+      params: { linkId: string };
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+    const loaderData = await loader({
+      params: { linkId: "audio-link-1" },
+      serverContext: {},
+    });
+
+    vi.spyOn(Route, "useLoaderData").mockReturnValue(loaderData as never);
+    const html = renderToStaticMarkup(<AudioLinkDetailRoute />);
+
+    expect(html).toContain("Audio Link audio-link-1");
+    expect(html.match(/Open work/g)).toHaveLength(2);
+  });
+
+  it("renders empty audio link detail metadata as None", async () => {
+    const { AudioLinkDetailRoute, Route } = await import("./audio-links.$linkId");
+    getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
+    getAudioLinkDetailServerFnMock.mockResolvedValueOnce({
+      audioAuthors: [],
+      audioFileCount: 0,
+      audioHashes: [],
+      audioIsbns: [],
+      audioLabel: "Audio",
+      audioPaths: [],
+      audioWorkId: "work-audio",
+      confidence: null,
+      ebookAuthors: [],
+      ebookFileCount: 0,
+      ebookHashes: [],
+      ebookIsbns: [],
+      ebookLabel: "Ebook",
+      ebookPaths: [],
+      ebookWorkId: "work-ebook",
+      id: "audio-link-empty",
+      matchType: "EXACT_METADATA",
+      reviewStatus: "IGNORED",
+    });
+    const loader = Route.options.loader as unknown as (input: {
+      params: { linkId: string };
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+    const loaderData = await loader({
+      params: { linkId: "audio-link-empty" },
+      serverContext: {},
+    });
+
+    vi.spyOn(Route, "useLoaderData").mockReturnValue(loaderData as never);
+    const html = renderToStaticMarkup(<AudioLinkDetailRoute />);
+
+    expect(html.match(/None/g)).toHaveLength(6);
+  });
+
+  it("handles empty audio link lists", async () => {
+    const audioLinksModule = await import("./audio-links");
+    getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
+    listAudioLinksServerFnMock.mockResolvedValueOnce([]);
+
+    const loader = audioLinksModule.Route.options.loader as unknown as (input: {
+      location: { pathname: string; search: string };
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+    const loaderData = await loader({
+      location: {
+        pathname: "/audio-links",
+        search: "?status=ALL",
+      },
+      serverContext: {},
+    });
+
+    vi.spyOn(audioLinksModule.Route, "useLoaderData").mockReturnValue(loaderData as never);
+    expect(renderToStaticMarkup(<audioLinksModule.AudioLinksRoute />)).toContain(
+      "No audio links match the current filter.",
+    );
+  });
+
+  it("redirects unauthenticated audio review routes and renders the detail not-found component", async () => {
+    const audioLinksModule = await import("./audio-links");
+    const detailModule = await import("./audio-links.$linkId");
+    getCurrentUserServerFnMock.mockResolvedValue(null);
+
+    const listLoader = audioLinksModule.Route.options.loader as unknown as (input: {
+      location: { pathname: string; search: string };
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+    const detailLoader = detailModule.Route.options.loader as unknown as (input: {
+      params: { linkId: string };
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+
+    await expect(listLoader({
+      location: { pathname: "/audio-links", search: "" },
+      serverContext: {},
+    })).rejects.toMatchObject({ options: { href: "/auth/login" } });
+    await expect(detailLoader({
+      params: { linkId: "audio-link-1" },
+      serverContext: {},
+    })).rejects.toMatchObject({ options: { href: "/auth/login" } });
+
+    const NotFound = detailModule.Route.options.notFoundComponent as React.ComponentType;
+    expect(renderToStaticMarkup(<NotFound />)).toContain("Audio link not found.");
+  });
+
+  it("throws when an audio link detail loader cannot find the link", async () => {
+    const detailModule = await import("./audio-links.$linkId");
+    getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
+    getAudioLinkDetailServerFnMock.mockResolvedValueOnce(null);
+
+    const detailLoader = detailModule.Route.options.loader as unknown as (input: {
+      params: { linkId: string };
+      serverContext?: unknown;
+    }) => Promise<unknown>;
+
+    await expect(detailLoader({
+      params: { linkId: "missing-link" },
+      serverContext: {},
+    })).rejects.toThrow("Audio link not found");
+  });
+
   it("loads duplicate list data and renders the review page", async () => {
     const { DuplicatesRoute, Route } = await import("./duplicates");
     getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });

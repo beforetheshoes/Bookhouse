@@ -3,6 +3,7 @@ import {
   DetectDuplicatesJobPayload,
   HashFileAssetJobPayload,
   LIBRARY_JOB_NAMES,
+  MatchAudioLinksJobPayload,
   MatchFileAssetToEditionJobPayload,
   ParseFileAssetMetadataJobPayload,
   QUEUES,
@@ -22,6 +23,7 @@ describe("shared queue helpers", () => {
     expect(LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA).toBe("parse-file-asset-metadata");
     expect(LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION).toBe("match-file-asset-to-edition");
     expect(LIBRARY_JOB_NAMES.DETECT_DUPLICATES).toBe("detect-duplicates");
+    expect(LIBRARY_JOB_NAMES.MATCH_AUDIO_LINKS).toBe("match-audio-links");
   });
 
   it("parses redis connection details", () => {
@@ -80,6 +82,10 @@ describe("shared queue helpers", () => {
       editionId: "edition-1",
       fileAssetId: "file-1",
     };
+    const matchAudioPayload: MatchAudioLinksJobPayload = {
+      ebookEditionId: "edition-ebook-1",
+      libraryRootId: "root-1",
+    };
 
     expect(scanPayload).toEqual({ libraryRootId: "root-1" });
     expect(hashPayload).toEqual({
@@ -91,6 +97,10 @@ describe("shared queue helpers", () => {
     expect(detectPayload).toEqual({
       editionId: "edition-1",
       fileAssetId: "file-1",
+    });
+    expect(matchAudioPayload).toEqual({
+      ebookEditionId: "edition-ebook-1",
+      libraryRootId: "root-1",
     });
   });
 });

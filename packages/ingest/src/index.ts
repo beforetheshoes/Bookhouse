@@ -1,4 +1,5 @@
 export {
+  AUDIO_LINK_INTERNALS,
   canonicalizeBookTitle,
   canonicalizeContributorName,
   canonicalizeContributorNames,
@@ -10,6 +11,7 @@ export {
   hashFileContents,
   hashFileAsset,
   isFileChanged,
+  matchAudioLinks,
   matchFileAssetToEdition,
   normalizeBookMetadata,
   normalizeRelativePath,
@@ -22,6 +24,8 @@ export {
 } from "./services";
 
 export type {
+  AudioLinkMatchResult,
+  MatchAudioLinksInput,
   DetectDuplicatesInput,
   DetectDuplicatesResult,
   HashFileAssetInput,
@@ -53,6 +57,7 @@ export const INGEST_PUBLIC_API = [
   "hashFileAsset",
   "hashFileContents",
   "isFileChanged",
+  "matchAudioLinks",
   "matchFileAssetToEdition",
   "normalizeBookMetadata",
   "normalizeRelativePath",

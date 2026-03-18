@@ -45,7 +45,10 @@ export function SettingsRoute() {
           <h1 className="text-2xl font-semibold">Settings</h1>
           <p className="text-sm text-gray-600">Choose how reading progress is tracked across formats.</p>
         </div>
-        <Link to="/duplicates">Duplicate Review</Link>
+        <nav className="flex gap-3 text-sm">
+          <Link to="/audio-links">Audio Link Review</Link>
+          <Link to="/duplicates">Duplicate Review</Link>
+        </nav>
       </header>
 
       <section className="space-y-3 rounded border border-gray-200 p-4">

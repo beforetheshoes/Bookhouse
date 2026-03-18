@@ -4,6 +4,7 @@ import { lstat, readdir } from "node:fs/promises";
 import IORedis from "ioredis";
 import { Queue } from "bullmq";
 import {
+  AudioLinkMatchType,
   AvailabilityStatus,
   ContributorRole,
   DuplicateReason,
@@ -25,6 +26,7 @@ import {
   type HashFileAssetJobPayload,
   type LibraryJobName,
   type LibraryJobPayload,
+  type MatchAudioLinksJobPayload,
   type MatchFileAssetToEditionJobPayload,
   type ParseFileAssetMetadataJobPayload,
   QUEUES,
@@ -281,6 +283,16 @@ export interface MatchFileAssetToEditionResult {
 
 export type DetectDuplicatesInput = DetectDuplicatesJobPayload;
 
+export type MatchAudioLinksInput = MatchAudioLinksJobPayload;
+
+export interface AudioLinkMatchResult {
+  createdAudioLinkIds: string[];
+  ignoredAudioLinkIds: string[];
+  scannedAudioEditionIds: string[];
+  scannedEbookEditionIds: string[];
+  updatedAudioLinkIds: string[];
+}
+
 export interface DetectDuplicatesResult {
   createdCandidateIds: string[];
   ignoredCandidateIds: string[];
@@ -298,6 +310,15 @@ type DuplicateCandidateRecord = {
   rightEditionId: string | null;
   rightFileAssetId: string | null;
   status: ReviewStatus;
+};
+
+type AudioLinkRecord = {
+  audioEditionId: string;
+  confidence: number | null;
+  ebookEditionId: string;
+  id: string;
+  matchType: AudioLinkMatchType;
+  reviewStatus: ReviewStatus;
 };
 
 type DuplicateDetectionFileAssetRecord = FileAssetRecord & {
@@ -340,6 +361,36 @@ type DuplicateDetectionDb = IngestDb & {
   };
   edition: IngestDb["edition"] & {
     findMany(args: Record<string, unknown>): Promise<DuplicateDetectionEditionRecord[]>;
+  };
+  editionFile: IngestDb["editionFile"] & {
+    findMany(args: Record<string, unknown>): Promise<EditionFileRecord[]>;
+  };
+  fileAsset: IngestDb["fileAsset"] & {
+    findMany(args: Record<string, unknown>): Promise<DuplicateDetectionFileAssetRecord[]>;
+  };
+};
+
+type AudioMatchingEditionRecord = DuplicateDetectionEditionRecord;
+
+type AudioMatchingDb = IngestDb & {
+  audioLink: {
+    create(args: {
+      data: {
+        audioEditionId: string;
+        confidence?: number | null;
+        ebookEditionId: string;
+        matchType: AudioLinkMatchType;
+        reviewStatus?: ReviewStatus;
+      };
+    }): Promise<AudioLinkRecord>;
+    findMany(args: Record<string, unknown>): Promise<AudioLinkRecord[]>;
+    update(args: {
+      where: { id: string };
+      data: Partial<Pick<AudioLinkRecord, "confidence" | "matchType" | "reviewStatus">>;
+    }): Promise<AudioLinkRecord>;
+  };
+  edition: IngestDb["edition"] & {
+    findMany(args: Record<string, unknown>): Promise<AudioMatchingEditionRecord[]>;
   };
   editionFile: IngestDb["editionFile"] & {
     findMany(args: Record<string, unknown>): Promise<EditionFileRecord[]>;
@@ -480,12 +531,57 @@ function createDuplicateCandidateKey(candidate: {
   throw new Error("Duplicate candidate key requires a complete edition or file pair");
 }
 
+function createAudioLinkKey(link: {
+  audioEditionId: string;
+  ebookEditionId: string;
+}): string {
+  return `${link.ebookEditionId}:${link.audioEditionId}`;
+}
+
 function orderPair<TId extends string>(leftId: TId, rightId: TId): [TId, TId] {
   return leftId.localeCompare(rightId) <= 0 ? [leftId, rightId] : [rightId, leftId];
 }
 
 function shouldPreserveCandidateStatus(status: ReviewStatus): boolean {
   return status !== ReviewStatus.PENDING;
+}
+
+function buildAudioMatchConfidence(matchType: AudioLinkMatchType): number {
+  return matchType === AudioLinkMatchType.SAME_WORK ? 1 : 0.95;
+}
+
+function canLinkAudioEditions(
+  ebookEdition: AudioMatchingEditionRecord,
+  audioEdition: AudioMatchingEditionRecord,
+): AudioLinkMatchType | undefined {
+  if (
+    ebookEdition.formatFamily !== FormatFamily.EBOOK ||
+    audioEdition.formatFamily !== FormatFamily.AUDIOBOOK
+  ) {
+    return undefined;
+  }
+
+  if (ebookEdition.id === audioEdition.id) {
+    return undefined;
+  }
+
+  if (ebookEdition.workId === audioEdition.workId) {
+    return AudioLinkMatchType.SAME_WORK;
+  }
+
+  const ebookAuthors = getAuthorCanonicalsForEdition(ebookEdition);
+  const audioAuthors = getAuthorCanonicalsForEdition(audioEdition);
+
+  if (
+    ebookEdition.work.titleCanonical !== audioEdition.work.titleCanonical ||
+    ebookAuthors.length === 0 ||
+    ebookAuthors.length !== audioAuthors.length ||
+    ebookAuthors.some((author, index) => author !== audioAuthors[index])
+  ) {
+    return undefined;
+  }
+
+  return AudioLinkMatchType.EXACT_METADATA;
 }
 
 function buildFuzzyDuplicateConfidence(
@@ -684,6 +780,7 @@ export function createIngestServices(
 ) {
   const ingestDb = dependencies.db ?? (db as unknown as IngestDb);
   const duplicateDetectionDb = ingestDb as unknown as DuplicateDetectionDb;
+  const audioMatchingDb = ingestDb as unknown as AudioMatchingDb;
   const listDirectory = dependencies.listDirectory ?? readdir;
   const readStats = dependencies.readStats ?? lstat;
   const hashFile = dependencies.hashFile ?? hashFileContents;
@@ -1017,6 +1114,9 @@ export function createIngestServices(
         editionId: editionMatch.id,
         fileAssetId: fileAsset.id,
       });
+      await enqueueJob(LIBRARY_JOB_NAMES.MATCH_AUDIO_LINKS, {
+        ebookEditionId: editionMatch.id,
+      });
 
       return {
         createdEdition: false,
@@ -1085,6 +1185,9 @@ export function createIngestServices(
     await enqueueJob(LIBRARY_JOB_NAMES.DETECT_DUPLICATES, {
       editionId: createdEdition.id,
       fileAssetId: fileAsset.id,
+    });
+    await enqueueJob(LIBRARY_JOB_NAMES.MATCH_AUDIO_LINKS, {
+      ebookEditionId: createdEdition.id,
     });
 
     return {
@@ -1393,9 +1496,186 @@ export function createIngestServices(
     };
   }
 
+  async function matchAudioLinks(
+    input: MatchAudioLinksInput,
+  ): Promise<AudioLinkMatchResult> {
+    const scopedEditions: AudioMatchingEditionRecord[] = input.libraryRootId !== undefined
+      ? await (async () => {
+      const scopedFileAssets = await audioMatchingDb.fileAsset.findMany({
+        where: { libraryRootId: input.libraryRootId },
+      });
+      const scopedFileAssetIds = scopedFileAssets.map((fileAsset) => fileAsset.id);
+      const scopedEditionFiles = scopedFileAssetIds.length === 0
+        ? []
+        : await audioMatchingDb.editionFile.findMany({
+          where: {
+            fileAssetId: {
+              in: scopedFileAssetIds,
+            },
+          },
+        });
+      const scopedEditionIds = [...new Set(scopedEditionFiles.map((editionFile) => editionFile.editionId))];
+
+        return scopedEditionIds.length === 0
+        ? []
+        : await audioMatchingDb.edition.findMany({
+          where: {
+            id: {
+              in: scopedEditionIds,
+            },
+          },
+        });
+      })()
+      : await audioMatchingDb.edition.findMany({});
+
+    const targetEbookEditionIds = new Set<string>(
+      [input.ebookEditionId].filter((value): value is string => value !== undefined),
+    );
+    const targetAudioEditionIds = new Set<string>(
+      [input.audioEditionId].filter((value): value is string => value !== undefined),
+    );
+    const isFullRecompute =
+      input.libraryRootId !== undefined ||
+      (targetEbookEditionIds.size === 0 && targetAudioEditionIds.size === 0);
+    const shouldConsiderPair = (ebookEditionId: string, audioEditionId: string) =>
+      isFullRecompute ||
+      targetEbookEditionIds.has(ebookEditionId) ||
+      targetAudioEditionIds.has(audioEditionId);
+
+    const ebookEditions = scopedEditions.filter((edition) => edition.formatFamily === FormatFamily.EBOOK);
+    const audioEditions = scopedEditions.filter((edition) => edition.formatFamily === FormatFamily.AUDIOBOOK);
+    const linkMap = new Map<string, {
+      audioEditionId: string;
+      confidence: number;
+      ebookEditionId: string;
+      matchType: AudioLinkMatchType;
+    }>();
+
+    for (const ebookEdition of ebookEditions) {
+      for (const audioEdition of audioEditions) {
+        if (!shouldConsiderPair(ebookEdition.id, audioEdition.id)) {
+          continue;
+        }
+
+        const matchType = canLinkAudioEditions(ebookEdition, audioEdition);
+
+        if (matchType === undefined) {
+          continue;
+        }
+
+        const candidate = {
+          audioEditionId: audioEdition.id,
+          confidence: buildAudioMatchConfidence(matchType),
+          ebookEditionId: ebookEdition.id,
+          matchType,
+        };
+        linkMap.set(createAudioLinkKey(candidate), candidate);
+      }
+    }
+
+    const scopedEditionIds = new Set(scopedEditions.map((edition) => edition.id));
+    const existingAudioLinks = await audioMatchingDb.audioLink.findMany({
+      where: {
+        OR: [
+          targetEbookEditionIds.size > 0
+            ? {
+              ebookEditionId: {
+                in: [...targetEbookEditionIds],
+              },
+            }
+            : undefined,
+          targetAudioEditionIds.size > 0
+            ? {
+              audioEditionId: {
+                in: [...targetAudioEditionIds],
+              },
+            }
+            : undefined,
+          input.libraryRootId
+            ? {
+              OR: [
+                {
+                  ebookEditionId: {
+                    in: [...scopedEditionIds],
+                  },
+                },
+                {
+                  audioEditionId: {
+                    in: [...scopedEditionIds],
+                  },
+                },
+              ],
+            }
+            : undefined,
+        ].filter(Boolean),
+      },
+    });
+    const existingByKey = new Map(
+      existingAudioLinks.map((audioLink) => [createAudioLinkKey(audioLink), audioLink]),
+    );
+    const createdAudioLinkIds: string[] = [];
+    const updatedAudioLinkIds: string[] = [];
+    const ignoredAudioLinkIds: string[] = [];
+
+    for (const [audioLinkKey, audioLink] of linkMap.entries()) {
+      const existing = existingByKey.get(audioLinkKey);
+
+      if (existing === undefined) {
+        const created = await audioMatchingDb.audioLink.create({
+          data: {
+            audioEditionId: audioLink.audioEditionId,
+            confidence: audioLink.confidence,
+            ebookEditionId: audioLink.ebookEditionId,
+            matchType: audioLink.matchType,
+            reviewStatus: ReviewStatus.PENDING,
+          },
+        });
+        createdAudioLinkIds.push(created.id);
+        continue;
+      }
+
+      const nextStatus = shouldPreserveCandidateStatus(existing.reviewStatus)
+        ? existing.reviewStatus
+        : ReviewStatus.PENDING;
+      const updated = await audioMatchingDb.audioLink.update({
+        where: { id: existing.id },
+        data: {
+          confidence: audioLink.confidence,
+          matchType: audioLink.matchType,
+          reviewStatus: nextStatus,
+        },
+      });
+      updatedAudioLinkIds.push(updated.id);
+      existingByKey.delete(audioLinkKey);
+    }
+
+    for (const staleAudioLink of existingByKey.values()) {
+      if (staleAudioLink.reviewStatus !== ReviewStatus.PENDING) {
+        continue;
+      }
+
+      const updated = await audioMatchingDb.audioLink.update({
+        where: { id: staleAudioLink.id },
+        data: {
+          reviewStatus: ReviewStatus.IGNORED,
+        },
+      });
+      ignoredAudioLinkIds.push(updated.id);
+    }
+
+    return {
+      createdAudioLinkIds,
+      ignoredAudioLinkIds,
+      scannedAudioEditionIds: audioEditions.map((edition) => edition.id),
+      scannedEbookEditionIds: ebookEditions.map((edition) => edition.id),
+      updatedAudioLinkIds,
+    };
+  }
+
   return {
     detectDuplicates,
     hashFileAsset,
+    matchAudioLinks,
     matchFileAssetToEdition,
     parseFileAssetMetadata,
     scanLibraryRoot,
@@ -1406,6 +1686,7 @@ const services = createIngestServices();
 
 export const scanLibraryRoot = services.scanLibraryRoot;
 export const hashFileAsset = services.hashFileAsset;
+export const matchAudioLinks = services.matchAudioLinks;
 export const matchFileAssetToEdition = services.matchFileAssetToEdition;
 export const parseFileAssetMetadata = services.parseFileAssetMetadata;
 export const detectDuplicates = services.detectDuplicates;
@@ -1414,6 +1695,11 @@ export const DUPLICATE_INTERNALS = {
   buildFuzzyDuplicateConfidence,
   canBeSameEditionDuplicate,
   createDuplicateCandidateKey,
+};
+export const AUDIO_LINK_INTERNALS = {
+  buildAudioMatchConfidence,
+  canLinkAudioEditions,
+  createAudioLinkKey,
 };
 export { classifyMediaKind, getFileExtension, hashFileContents, isFileChanged, normalizeRelativePath, normalizeRootPath, walkRegularFiles };
 export { parseEpubMetadata } from "./epub";

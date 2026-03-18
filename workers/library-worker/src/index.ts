@@ -4,6 +4,7 @@ import { Job, Worker } from "bullmq";
 import {
   detectDuplicates,
   hashFileAsset,
+  matchAudioLinks,
   matchFileAssetToEdition,
   parseFileAssetMetadata,
   scanLibraryRoot,
@@ -14,6 +15,7 @@ import {
   type HashFileAssetJobPayload,
   type LibraryJobName,
   type LibraryJobPayload,
+  type MatchAudioLinksJobPayload,
   type MatchFileAssetToEditionJobPayload,
   type ParseFileAssetMetadataJobPayload,
   QUEUES,
@@ -24,6 +26,7 @@ import {
 export interface LibraryWorkerHandlers {
   detectDuplicates: typeof detectDuplicates;
   hashFileAsset: typeof hashFileAsset;
+  matchAudioLinks: typeof matchAudioLinks;
   matchFileAssetToEdition: typeof matchFileAssetToEdition;
   parseFileAssetMetadata: typeof parseFileAssetMetadata;
   scanLibraryRoot: typeof scanLibraryRoot;
@@ -33,6 +36,7 @@ export function createLibraryWorkerProcessor(
   handlers: LibraryWorkerHandlers = {
     detectDuplicates,
     hashFileAsset,
+    matchAudioLinks,
     matchFileAssetToEdition,
     parseFileAssetMetadata,
     scanLibraryRoot,
@@ -48,6 +52,8 @@ export function createLibraryWorkerProcessor(
         return handlers.hashFileAsset(job.data as HashFileAssetJobPayload);
       case LIBRARY_JOB_NAMES.DETECT_DUPLICATES:
         return handlers.detectDuplicates(job.data as DetectDuplicatesJobPayload);
+      case LIBRARY_JOB_NAMES.MATCH_AUDIO_LINKS:
+        return handlers.matchAudioLinks(job.data as MatchAudioLinksJobPayload);
       case LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION:
         return handlers.matchFileAssetToEdition(job.data as MatchFileAssetToEditionJobPayload);
       case LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA:
@@ -62,6 +68,7 @@ export function createLibraryWorker(
   handlers: LibraryWorkerHandlers = {
     detectDuplicates,
     hashFileAsset,
+    matchAudioLinks,
     matchFileAssetToEdition,
     parseFileAssetMetadata,
     scanLibraryRoot,

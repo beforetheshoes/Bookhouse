@@ -1,17 +1,22 @@
 import { describe, expect, it } from "vitest";
 import {
+  AudioLinkMatchType,
   DuplicateReason,
   FormatFamily,
   ProgressTrackingMode,
   ReviewStatus,
 } from "@bookhouse/domain";
 import {
+  getAudioLinkDetail,
   getDuplicateCandidateDetail,
   getUserProgressTrackingMode,
   getWorkProgressView,
+  listAudioLinks,
   listDuplicateCandidates,
   mergeDuplicateCandidate,
+  toAudioLinkDetail,
   toDuplicateCandidateDetail,
+  updateAudioLinkStatus,
   updateDuplicateCandidateStatus,
   updateUserProgressTrackingMode,
   updateWorkProgressTrackingMode,
@@ -19,7 +24,7 @@ import {
 } from "./library-service";
 
 type TestState = {
-  audioLinks: Map<string, { audioEditionId: string; confidence: number | null; ebookEditionId: string; id: string; matchType: string; reviewStatus: ReviewStatus }>;
+  audioLinks: Map<string, { audioEditionId: string; confidence: number | null; ebookEditionId: string; id: string; matchType: AudioLinkMatchType; reviewStatus: ReviewStatus }>;
   collectionItems: Map<string, { collectionId: string; editionId: string; id: string }>;
   contributors: Map<string, { id: string; nameDisplay: string }>;
   duplicateCandidates: Map<string, {
@@ -175,6 +180,20 @@ function createDb(state: TestState): LibraryServiceDb {
     };
   };
 
+  const buildAudioLink = (linkId: string) => {
+    const audioLink = state.audioLinks.get(linkId);
+
+    if (!audioLink) {
+      return null;
+    }
+
+    return {
+      ...audioLink,
+      audioEdition: buildEdition(audioLink.audioEditionId),
+      ebookEdition: buildEdition(audioLink.ebookEditionId),
+    };
+  };
+
   const db: LibraryServiceDb = {
     audioLink: {
       async create() {
@@ -192,21 +211,42 @@ function createDb(state: TestState): LibraryServiceDb {
         ) ?? null;
       },
       async findMany(args) {
-        const where = args.where as { OR?: Array<{ audioEditionId?: string; ebookEditionId?: string }> };
-        if (!where?.OR) {
-          return [...state.audioLinks.values()];
-        }
-        return [...state.audioLinks.values()].filter((row) =>
-          where.OR!.some((clause) =>
-            (clause.audioEditionId === undefined || row.audioEditionId === clause.audioEditionId) &&
-            (clause.ebookEditionId === undefined || row.ebookEditionId === clause.ebookEditionId),
-          ),
-        );
+        const where = args.where as
+          | {
+              OR?: Array<
+                | { audioEditionId?: string; ebookEditionId?: string; reviewStatus?: ReviewStatus }
+                | { audioEditionId?: { in?: string[] }; ebookEditionId?: { in?: string[] } }
+              >;
+              reviewStatus?: ReviewStatus;
+            }
+          | undefined;
+        const rows = [...state.audioLinks.values()].filter((row) => {
+          if (where?.reviewStatus && row.reviewStatus !== where.reviewStatus) {
+            return false;
+          }
+          if (!where?.OR) {
+            return true;
+          }
+          return where.OR.some((clause) =>
+            ("audioEditionId" in clause && typeof clause.audioEditionId === "object"
+              ? clause.audioEditionId?.in?.includes(row.audioEditionId) ?? true
+              : clause.audioEditionId === undefined || row.audioEditionId === clause.audioEditionId) &&
+            ("ebookEditionId" in clause && typeof clause.ebookEditionId === "object"
+              ? clause.ebookEditionId?.in?.includes(row.ebookEditionId) ?? true
+              : clause.ebookEditionId === undefined || row.ebookEditionId === clause.ebookEditionId) &&
+            (!("reviewStatus" in clause) || clause.reviewStatus === undefined || row.reviewStatus === clause.reviewStatus)
+          );
+        });
+        return rows.map((row) => buildAudioLink(row.id)!);
       },
-      async update({ data, where }) {
+      async findUnique(args) {
+        const where = args.where as { id: string };
+        return buildAudioLink(where.id);
+      },
+      async update({ data, where }: { data: Record<string, unknown>; where: { id: string } }) {
         const row = state.audioLinks.get(where.id)!;
         state.audioLinks.set(where.id, { ...row, ...data } as typeof row);
-        return {};
+        return buildAudioLink(where.id)!;
       },
     },
     collectionItem: {
@@ -624,6 +664,228 @@ describe("library service", () => {
     expect(detail).toBeNull();
   });
 
+  it("lists audio links, returns audio link details, and updates review status", async () => {
+    const state = createState();
+    addWork(state, "work-ebook", "The Fifth Season");
+    addWork(state, "work-audio", "The Fifth Season");
+    addContributor(state, "contributor-1", "N. K. Jemisin");
+    addFileAsset(state, "file-1", "ebooks/fifth-season.epub", "hash-ebook");
+    addFileAsset(state, "file-2", "audio/fifth-season.m4b", "hash-audio");
+    addEdition(state, "edition-ebook", "work-ebook", { isbn13: "9780316498834" });
+    addEdition(state, "edition-audio", "work-audio", { formatFamily: FormatFamily.AUDIOBOOK });
+    addEditionContributor(state, "edition-contributor-1", "edition-ebook", "contributor-1");
+    addEditionContributor(state, "edition-contributor-2", "edition-audio", "contributor-1");
+    addEditionFile(state, "edition-file-1", "edition-ebook", "file-1");
+    addEditionFile(state, "edition-file-2", "edition-audio", "file-2");
+    state.audioLinks.set("audio-link-1", {
+      audioEditionId: "edition-audio",
+      confidence: 0.95,
+      ebookEditionId: "edition-ebook",
+      id: "audio-link-1",
+      matchType: AudioLinkMatchType.EXACT_METADATA,
+      reviewStatus: ReviewStatus.PENDING,
+    });
+
+    const db = createDb(state);
+    const list = await listAudioLinks(db, { status: ReviewStatus.PENDING });
+    const detail = await getAudioLinkDetail(db, "audio-link-1");
+    const updated = await updateAudioLinkStatus(db, "audio-link-1", ReviewStatus.CONFIRMED);
+
+    expect(list).toEqual([
+      {
+        audioLabel: "The Fifth Season (edition-audio)",
+        audioWorkId: "work-audio",
+        confidence: 0.95,
+        ebookLabel: "The Fifth Season (edition-ebook)",
+        ebookWorkId: "work-ebook",
+        id: "audio-link-1",
+        matchType: AudioLinkMatchType.EXACT_METADATA,
+        reviewStatus: ReviewStatus.PENDING,
+      },
+    ]);
+    expect(detail).toEqual({
+      audioAuthors: ["N. K. Jemisin"],
+      audioCreatedAt: "2025-01-01T00:00:00.000Z",
+      audioFileCount: 1,
+      audioHashes: ["hash-audio"],
+      audioIsbns: [],
+      audioLabel: "The Fifth Season (edition-audio)",
+      audioPaths: ["audio/fifth-season.m4b"],
+      audioUpdatedAt: "2025-01-02T00:00:00.000Z",
+      audioWorkId: "work-audio",
+      confidence: 0.95,
+      ebookAuthors: ["N. K. Jemisin"],
+      ebookCreatedAt: "2025-01-01T00:00:00.000Z",
+      ebookFileCount: 1,
+      ebookHashes: ["hash-ebook"],
+      ebookIsbns: ["9780316498834"],
+      ebookLabel: "The Fifth Season (edition-ebook)",
+      ebookPaths: ["ebooks/fifth-season.epub"],
+      ebookUpdatedAt: "2025-01-02T00:00:00.000Z",
+      ebookWorkId: "work-ebook",
+      id: "audio-link-1",
+      matchType: AudioLinkMatchType.EXACT_METADATA,
+      reviewStatus: ReviewStatus.PENDING,
+    });
+    expect(updated).toEqual({
+      audioLabel: "The Fifth Season (edition-audio)",
+      audioWorkId: "work-audio",
+      confidence: 0.95,
+      ebookLabel: "The Fifth Season (edition-ebook)",
+      ebookWorkId: "work-ebook",
+      id: "audio-link-1",
+      matchType: AudioLinkMatchType.EXACT_METADATA,
+      reviewStatus: ReviewStatus.CONFIRMED,
+    });
+    expect(state.audioLinks.get("audio-link-1")?.reviewStatus).toBe(ReviewStatus.CONFIRMED);
+  });
+
+  it("lists audio links without a status filter when ALL is requested", async () => {
+    const state = createState();
+    addWork(state, "work-ebook", "The Fifth Season");
+    addWork(state, "work-audio", "The Fifth Season");
+    addContributor(state, "contributor-1", "N. K. Jemisin");
+    addFileAsset(state, "file-1", "ebooks/fifth-season.epub", "hash-ebook");
+    addFileAsset(state, "file-2", "audio/fifth-season.m4b", "hash-audio");
+    addEdition(state, "edition-ebook", "work-ebook");
+    addEdition(state, "edition-audio", "work-audio", { formatFamily: FormatFamily.AUDIOBOOK });
+    addEditionContributor(state, "edition-contributor-1", "edition-ebook", "contributor-1");
+    addEditionContributor(state, "edition-contributor-2", "edition-audio", "contributor-1");
+    addEditionFile(state, "edition-file-1", "edition-ebook", "file-1");
+    addEditionFile(state, "edition-file-2", "edition-audio", "file-2");
+    state.audioLinks.set("audio-link-1", {
+      audioEditionId: "edition-audio",
+      confidence: 1,
+      ebookEditionId: "edition-ebook",
+      id: "audio-link-1",
+      matchType: AudioLinkMatchType.SAME_WORK,
+      reviewStatus: ReviewStatus.IGNORED,
+    });
+
+    await expect(listAudioLinks(createDb(state), { status: "ALL" })).resolves.toEqual([
+      {
+        audioLabel: "The Fifth Season (edition-audio)",
+        audioWorkId: "work-audio",
+        confidence: 1,
+        ebookLabel: "The Fifth Season (edition-ebook)",
+        ebookWorkId: "work-ebook",
+        id: "audio-link-1",
+        matchType: AudioLinkMatchType.SAME_WORK,
+        reviewStatus: ReviewStatus.IGNORED,
+      },
+    ]);
+  });
+
+  it("returns null for missing audio links and formats audio details from hydrated rows", async () => {
+    const state = createState();
+    addWork(state, "work-ebook", "Ebook");
+    addWork(state, "work-audio", "Audio");
+    addContributor(state, "contributor-1", "Author");
+    addFileAsset(state, "file-1", "ebooks/book.epub", "hash-ebook");
+    addFileAsset(state, "file-2", "audio/book.m4b", "hash-audio");
+    addEdition(state, "edition-ebook", "work-ebook");
+    addEdition(state, "edition-audio", "work-audio", { formatFamily: FormatFamily.AUDIOBOOK });
+    addEditionContributor(state, "edition-contributor-1", "edition-ebook", "contributor-1");
+    addEditionContributor(state, "edition-contributor-2", "edition-audio", "contributor-1");
+    addEditionFile(state, "edition-file-1", "edition-ebook", "file-1");
+    addEditionFile(state, "edition-file-2", "edition-audio", "file-2");
+    const hydratedAudioLink = {
+      audioEdition: {
+        ...state.editions.get("edition-audio")!,
+        contributors: [
+          {
+            contributor: state.contributors.get("contributor-1")!,
+            role: "AUTHOR" as const,
+          },
+        ],
+        editionFiles: [
+          {
+            fileAsset: state.fileAssets.get("file-2")!,
+          },
+        ],
+        work: state.works.get("work-audio")!,
+      },
+      audioEditionId: "edition-audio",
+      confidence: 1,
+      ebookEdition: {
+        ...state.editions.get("edition-ebook")!,
+        contributors: [
+          {
+            contributor: state.contributors.get("contributor-1")!,
+            role: "AUTHOR" as const,
+          },
+        ],
+        editionFiles: [
+          {
+            fileAsset: state.fileAssets.get("file-1")!,
+          },
+        ],
+        work: state.works.get("work-ebook")!,
+      },
+      ebookEditionId: "edition-ebook",
+      id: "audio-link-hydrated",
+      matchType: AudioLinkMatchType.SAME_WORK,
+      reviewStatus: ReviewStatus.PENDING,
+    };
+
+    await expect(getAudioLinkDetail(createDb(state), "missing-link")).resolves.toBeNull();
+    expect(toAudioLinkDetail(hydratedAudioLink)).toEqual({
+      audioAuthors: ["Author"],
+      audioCreatedAt: "2025-01-01T00:00:00.000Z",
+      audioFileCount: 1,
+      audioHashes: ["hash-audio"],
+      audioIsbns: [],
+      audioLabel: "Audio (edition-audio)",
+      audioPaths: ["audio/book.m4b"],
+      audioUpdatedAt: "2025-01-02T00:00:00.000Z",
+      audioWorkId: "work-audio",
+      confidence: 1,
+      ebookAuthors: ["Author"],
+      ebookCreatedAt: "2025-01-01T00:00:00.000Z",
+      ebookFileCount: 1,
+      ebookHashes: ["hash-ebook"],
+      ebookIsbns: [],
+      ebookLabel: "Ebook (edition-ebook)",
+      ebookPaths: ["ebooks/book.epub"],
+      ebookUpdatedAt: "2025-01-02T00:00:00.000Z",
+      ebookWorkId: "work-ebook",
+      id: "audio-link-hydrated",
+      matchType: AudioLinkMatchType.SAME_WORK,
+      reviewStatus: ReviewStatus.PENDING,
+    });
+  });
+
+  it("throws when audio link summary or detail rows are missing hydrated editions", async () => {
+    expect(() =>
+      toAudioLinkDetail({
+        audioEdition: null,
+        audioEditionId: "edition-audio",
+        confidence: null,
+        ebookEdition: null,
+        ebookEditionId: "edition-ebook",
+        id: "broken-audio-link",
+        matchType: AudioLinkMatchType.SAME_WORK,
+        reviewStatus: ReviewStatus.PENDING,
+      }),
+    ).toThrow('Audio link "broken-audio-link" is missing edition details');
+
+    const brokenDb = createDb(createState());
+    brokenDb.audioLink.findMany = async () => [{
+      audioEdition: null,
+      audioEditionId: "edition-audio",
+      confidence: null,
+      ebookEdition: null,
+      ebookEditionId: "edition-ebook",
+      id: "broken-audio-link",
+      matchType: AudioLinkMatchType.SAME_WORK,
+      reviewStatus: ReviewStatus.PENDING,
+    }];
+
+    await expect(
+      listAudioLinks(brokenDb, { status: ReviewStatus.PENDING }),
+    ).rejects.toThrow('Audio link "broken-audio-link" is missing edition details');
+  });
+
   it("merges duplicate editions, dedupes relations, and removes an orphaned losing work", async () => {
     const state = createState();
     addWork(state, "work-1", "Keep Work");
@@ -665,7 +927,7 @@ describe("library service", () => {
       confidence: 0.8,
       ebookEditionId: "edition-2",
       id: "audio-link-1",
-      matchType: "manual",
+      matchType: AudioLinkMatchType.SAME_WORK,
       reviewStatus: ReviewStatus.PENDING,
     });
     state.duplicateCandidates.set("candidate-1", {
@@ -782,7 +1044,7 @@ describe("library service", () => {
       confidence: 0.8,
       ebookEditionId: "edition-2",
       id: "audio-link-1",
-      matchType: "manual",
+      matchType: AudioLinkMatchType.SAME_WORK,
       reviewStatus: ReviewStatus.PENDING,
     });
     state.audioLinks.set("audio-link-2", {
@@ -790,7 +1052,7 @@ describe("library service", () => {
       confidence: 0.8,
       ebookEditionId: "edition-1",
       id: "audio-link-2",
-      matchType: "manual",
+      matchType: AudioLinkMatchType.SAME_WORK,
       reviewStatus: ReviewStatus.PENDING,
     });
     state.duplicateCandidates.set("candidate-1", {
@@ -988,7 +1250,7 @@ describe("library service", () => {
       confidence: 0.6,
       ebookEditionId: "ebook-other",
       id: "audio-link-1",
-      matchType: "manual",
+      matchType: AudioLinkMatchType.SAME_WORK,
       reviewStatus: ReviewStatus.PENDING,
     });
     state.duplicateCandidates.set("candidate-1", {

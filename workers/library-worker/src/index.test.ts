@@ -8,6 +8,7 @@ const queueConnectionConfigMock = vi.fn(() => ({ host: "localhost", port: 6379 }
 const quitMock = vi.fn(async () => "OK");
 const redisConstructorMock = vi.fn();
 const hashFileAssetMock = vi.fn();
+const matchAudioLinksMock = vi.fn();
 const matchFileAssetToEditionMock = vi.fn();
 const parseFileAssetMetadataMock = vi.fn();
 const scanLibraryRootMock = vi.fn();
@@ -41,6 +42,7 @@ vi.mock("bullmq", () => ({
 vi.mock("@bookhouse/ingest", () => ({
   detectDuplicates: detectDuplicatesMock,
   hashFileAsset: hashFileAssetMock,
+  matchAudioLinks: matchAudioLinksMock,
   matchFileAssetToEdition: matchFileAssetToEditionMock,
   parseFileAssetMetadata: parseFileAssetMetadataMock,
   scanLibraryRoot: scanLibraryRootMock,
@@ -61,6 +63,7 @@ beforeEach(() => {
   addMock.mockReset();
   detectDuplicatesMock.mockReset();
   hashFileAssetMock.mockReset();
+  matchAudioLinksMock.mockReset();
   matchFileAssetToEditionMock.mockReset();
   onMock.mockReset();
   parseFileAssetMetadataMock.mockReset();
@@ -78,6 +81,7 @@ describe("library worker", () => {
     const processor = createLibraryWorkerProcessor({
       detectDuplicates: detectDuplicatesMock,
       hashFileAsset: hashFileAssetMock,
+      matchAudioLinks: matchAudioLinksMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       scanLibraryRoot: scanLibraryRootMock,
@@ -87,6 +91,7 @@ describe("library worker", () => {
     scanLibraryRootMock.mockResolvedValueOnce("scan-result");
     hashFileAssetMock.mockResolvedValueOnce("hash-result");
     matchFileAssetToEditionMock.mockResolvedValueOnce("match-result");
+    matchAudioLinksMock.mockResolvedValueOnce("audio-result");
     parseFileAssetMetadataMock.mockResolvedValueOnce("parse-result");
 
     await expect(
@@ -115,6 +120,12 @@ describe("library worker", () => {
     ).resolves.toBe("match-result");
     await expect(
       processor({
+        data: { ebookEditionId: "edition-1" },
+        name: "match-audio-links",
+      } as never),
+    ).resolves.toBe("audio-result");
+    await expect(
+      processor({
         data: { fileAssetId: "file-1" },
         name: "parse-file-asset-metadata",
       } as never),
@@ -123,6 +134,7 @@ describe("library worker", () => {
     expect(detectDuplicatesMock).toHaveBeenCalledWith({ fileAssetId: "file-1" });
     expect(scanLibraryRootMock).toHaveBeenCalledWith({ libraryRootId: "root-1" });
     expect(hashFileAssetMock).toHaveBeenCalledWith({ fileAssetId: "file-1" });
+    expect(matchAudioLinksMock).toHaveBeenCalledWith({ ebookEditionId: "edition-1" });
     expect(matchFileAssetToEditionMock).toHaveBeenCalledWith({ fileAssetId: "file-1" });
     expect(parseFileAssetMetadataMock).toHaveBeenCalledWith({ fileAssetId: "file-1" });
   });
@@ -132,6 +144,7 @@ describe("library worker", () => {
     const processor = createLibraryWorkerProcessor({
       detectDuplicates: detectDuplicatesMock,
       hashFileAsset: hashFileAssetMock,
+      matchAudioLinks: matchAudioLinksMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       scanLibraryRoot: scanLibraryRootMock,

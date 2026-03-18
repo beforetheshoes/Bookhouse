@@ -8,6 +8,7 @@ export const LIBRARY_JOB_NAMES = {
   PARSE_FILE_ASSET_METADATA: "parse-file-asset-metadata",
   MATCH_FILE_ASSET_TO_EDITION: "match-file-asset-to-edition",
   DETECT_DUPLICATES: "detect-duplicates",
+  MATCH_AUDIO_LINKS: "match-audio-links",
 } as const;
 
 export interface ScanLibraryRootJobPayload {
@@ -33,12 +34,19 @@ export interface DetectDuplicatesJobPayload {
   libraryRootId?: string;
 }
 
+export interface MatchAudioLinksJobPayload {
+  audioEditionId?: string;
+  ebookEditionId?: string;
+  libraryRootId?: string;
+}
+
 export interface LibraryJobPayloads {
   [LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT]: ScanLibraryRootJobPayload;
   [LIBRARY_JOB_NAMES.HASH_FILE_ASSET]: HashFileAssetJobPayload;
   [LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA]: ParseFileAssetMetadataJobPayload;
   [LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION]: MatchFileAssetToEditionJobPayload;
   [LIBRARY_JOB_NAMES.DETECT_DUPLICATES]: DetectDuplicatesJobPayload;
+  [LIBRARY_JOB_NAMES.MATCH_AUDIO_LINKS]: MatchAudioLinksJobPayload;
 }
 
 export type LibraryJobName = keyof LibraryJobPayloads;

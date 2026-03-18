@@ -1,4 +1,5 @@
 export {
+  AudioLinkMatchType,
   AvailabilityStatus,
   ContributorRole,
   DuplicateReason,
@@ -13,6 +14,7 @@ export {
 } from "@bookhouse/db";
 
 export type {
+  AudioLink,
   Contributor,
   DuplicateCandidate,
   Edition,
@@ -26,6 +28,7 @@ export type {
 } from "@bookhouse/db";
 
 import type {
+  AudioLink,
   Contributor,
   DuplicateCandidate,
   Edition,
@@ -39,6 +42,7 @@ import type {
 } from "@bookhouse/db";
 
 export interface Batch1DomainModels {
+  audioLink: AudioLink;
   libraryRoot: LibraryRoot;
   fileAsset: FileAsset;
   work: Work;
@@ -52,6 +56,7 @@ export interface Batch1DomainModels {
 }
 
 export const BATCH1_DOMAIN_MODEL_NAMES = [
+  "AudioLink",
   "LibraryRoot",
   "FileAsset",
   "Work",
