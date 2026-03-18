@@ -21,6 +21,7 @@ export type {
   EditionFile,
   FileAsset,
   LibraryRoot,
+  ReadingProgress,
   Series,
   UserPreference,
   Work,
@@ -35,6 +36,7 @@ import type {
   EditionFile,
   FileAsset,
   LibraryRoot,
+  ReadingProgress,
   Series,
   UserPreference,
   Work,
@@ -51,6 +53,7 @@ export interface Batch1DomainModels {
   contributor: Contributor;
   series: Series;
   duplicateCandidate: DuplicateCandidate;
+  readingProgress: ReadingProgress;
   userPreference: UserPreference;
   workProgressPreference: WorkProgressPreference;
 }
@@ -65,6 +68,7 @@ export const BATCH1_DOMAIN_MODEL_NAMES = [
   "Contributor",
   "Series",
   "DuplicateCandidate",
+  "ReadingProgress",
   "UserPreference",
   "WorkProgressPreference",
 ] as const;

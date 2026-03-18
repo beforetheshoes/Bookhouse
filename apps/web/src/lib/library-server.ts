@@ -7,6 +7,8 @@ import {
 import { createServerFn } from "@tanstack/react-start";
 import { getCurrentUser } from "./auth-server";
 import {
+  deleteReadingProgress,
+  getReadingProgress,
   getAudioLinkDetail,
   getDuplicateCandidateDetail,
   getUserProgressTrackingMode,
@@ -14,11 +16,19 @@ import {
   listAudioLinks,
   listDuplicateCandidates,
   mergeDuplicateCandidate,
+  upsertReadingProgress,
   updateAudioLinkStatus,
   updateDuplicateCandidateStatus,
   updateUserProgressTrackingMode,
   updateWorkProgressTrackingMode,
 } from "./library-service";
+import {
+  getWorkProgressViewSchema,
+  readingProgressLookupSchema,
+  updateUserProgressTrackingModeSchema,
+  updateWorkProgressTrackingModeSchema,
+  upsertReadingProgressSchema,
+} from "./progress-validation";
 
 const libraryDb = db as unknown as import("./library-service").LibraryServiceDb;
 
@@ -82,6 +92,35 @@ export async function getUserProgressTrackingModeAction() {
   return getUserProgressTrackingMode(libraryDb, userId);
 }
 
+export async function getReadingProgressAction(data: {
+  editionId: string;
+  progressKind: import("@bookhouse/domain").ProgressKind;
+  source: string | null;
+}) {
+  const userId = await requireCurrentUserId();
+  return getReadingProgress(libraryDb, userId, data);
+}
+
+export async function upsertReadingProgressAction(data: {
+  editionId: string;
+  locator: Record<string, object>;
+  percent: number | null;
+  progressKind: import("@bookhouse/domain").ProgressKind;
+  source: string | null;
+}) {
+  const userId = await requireCurrentUserId();
+  return upsertReadingProgress(libraryDb, userId, data);
+}
+
+export async function deleteReadingProgressAction(data: {
+  editionId: string;
+  progressKind: import("@bookhouse/domain").ProgressKind;
+  source: string | null;
+}) {
+  const userId = await requireCurrentUserId();
+  await deleteReadingProgress(libraryDb, userId, data);
+}
+
 export async function updateUserProgressTrackingModeAction(data: {
   progressTrackingMode: ProgressTrackingMode;
 }) {
@@ -128,13 +167,34 @@ export const validateMergeDuplicateCandidateInput = (
 
 export const validateUpdateUserProgressTrackingModeInput = (
   data: { progressTrackingMode: ProgressTrackingMode },
-) => data;
+) => updateUserProgressTrackingModeSchema.parse(data);
 
-export const validateGetWorkProgressViewInput = (data: { workId: string }) => data;
+export const validateGetReadingProgressInput = (data: {
+  editionId: string;
+  progressKind: import("@bookhouse/domain").ProgressKind;
+  source: string | null;
+}) => readingProgressLookupSchema.parse(data);
+
+export const validateUpsertReadingProgressInput = (data: {
+  editionId: string;
+  locator: Record<string, object>;
+  percent: number | null;
+  progressKind: import("@bookhouse/domain").ProgressKind;
+  source: string | null;
+}) => upsertReadingProgressSchema.parse(data);
+
+export const validateDeleteReadingProgressInput = (data: {
+  editionId: string;
+  progressKind: import("@bookhouse/domain").ProgressKind;
+  source: string | null;
+}) => readingProgressLookupSchema.parse(data);
+
+export const validateGetWorkProgressViewInput = (data: { workId: string }) =>
+  getWorkProgressViewSchema.parse(data);
 
 export const validateUpdateWorkProgressTrackingModeInput = (
   data: { progressTrackingMode: ProgressTrackingMode | null; workId: string },
-) => data;
+) => updateWorkProgressTrackingModeSchema.parse(data);
 
 export const listDuplicateCandidatesServerFn = createServerFn({ method: "GET" })
   .inputValidator(validateListDuplicateCandidatesInput)
@@ -167,6 +227,18 @@ export const mergeDuplicateCandidateServerFn = createServerFn({ method: "POST" }
 export const getUserProgressTrackingModeServerFn = createServerFn({ method: "GET" }).handler(
   async () => getUserProgressTrackingModeAction(),
 );
+
+export const getReadingProgressServerFn = createServerFn({ method: "GET" })
+  .inputValidator(validateGetReadingProgressInput)
+  .handler(async ({ data }) => getReadingProgressAction(data));
+
+export const upsertReadingProgressServerFn = createServerFn({ method: "POST" })
+  .inputValidator(validateUpsertReadingProgressInput)
+  .handler(async ({ data }) => upsertReadingProgressAction(data));
+
+export const deleteReadingProgressServerFn = createServerFn({ method: "POST" })
+  .inputValidator(validateDeleteReadingProgressInput)
+  .handler(async ({ data }) => deleteReadingProgressAction(data));
 
 export const updateUserProgressTrackingModeServerFn = createServerFn({ method: "POST" })
   .inputValidator(validateUpdateUserProgressTrackingModeInput)

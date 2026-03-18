@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ProgressTrackingMode, ReviewStatus } from "@bookhouse/domain";
+import { ProgressKind, ProgressTrackingMode, ReviewStatus } from "@bookhouse/domain";
 
+const deleteReadingProgressMock = vi.fn();
+const getReadingProgressMock = vi.fn();
 const getAudioLinkDetailMock = vi.fn();
 const getCurrentUserMock = vi.fn();
 const getDuplicateCandidateDetailMock = vi.fn();
@@ -9,6 +11,7 @@ const getWorkProgressViewMock = vi.fn();
 const listAudioLinksMock = vi.fn();
 const listDuplicateCandidatesMock = vi.fn();
 const mergeDuplicateCandidateMock = vi.fn();
+const upsertReadingProgressMock = vi.fn();
 const updateAudioLinkStatusMock = vi.fn();
 const updateDuplicateCandidateStatusMock = vi.fn();
 const updateUserProgressTrackingModeMock = vi.fn();
@@ -19,6 +22,8 @@ vi.mock("./auth-server", () => ({
 }));
 
 vi.mock("./library-service", () => ({
+  deleteReadingProgress: deleteReadingProgressMock,
+  getReadingProgress: getReadingProgressMock,
   getAudioLinkDetail: getAudioLinkDetailMock,
   getDuplicateCandidateDetail: getDuplicateCandidateDetailMock,
   getUserProgressTrackingMode: getUserProgressTrackingModeMock,
@@ -26,6 +31,7 @@ vi.mock("./library-service", () => ({
   listAudioLinks: listAudioLinksMock,
   listDuplicateCandidates: listDuplicateCandidatesMock,
   mergeDuplicateCandidate: mergeDuplicateCandidateMock,
+  upsertReadingProgress: upsertReadingProgressMock,
   updateAudioLinkStatus: updateAudioLinkStatusMock,
   updateDuplicateCandidateStatus: updateDuplicateCandidateStatusMock,
   updateUserProgressTrackingMode: updateUserProgressTrackingModeMock,
@@ -44,6 +50,8 @@ vi.mock("@tanstack/react-start", () => ({
 }));
 
 beforeEach(() => {
+  deleteReadingProgressMock.mockReset();
+  getReadingProgressMock.mockReset();
   getAudioLinkDetailMock.mockReset();
   getCurrentUserMock.mockReset();
   getDuplicateCandidateDetailMock.mockReset();
@@ -52,6 +60,7 @@ beforeEach(() => {
   listAudioLinksMock.mockReset();
   listDuplicateCandidatesMock.mockReset();
   mergeDuplicateCandidateMock.mockReset();
+  upsertReadingProgressMock.mockReset();
   updateAudioLinkStatusMock.mockReset();
   updateDuplicateCandidateStatusMock.mockReset();
   updateUserProgressTrackingModeMock.mockReset();
@@ -116,6 +125,9 @@ describe("library server functions", () => {
     updateAudioLinkStatusMock.mockResolvedValueOnce({ reviewStatus: ReviewStatus.CONFIRMED });
     updateDuplicateCandidateStatusMock.mockResolvedValueOnce({ status: ReviewStatus.IGNORED });
     mergeDuplicateCandidateMock.mockResolvedValueOnce({ status: ReviewStatus.MERGED });
+    getReadingProgressMock.mockResolvedValueOnce({ id: "progress-1" });
+    upsertReadingProgressMock.mockResolvedValueOnce({ id: "progress-1", percent: 0.4 });
+    deleteReadingProgressMock.mockResolvedValueOnce(undefined);
     getUserProgressTrackingModeMock.mockResolvedValueOnce(ProgressTrackingMode.BY_EDITION);
     updateUserProgressTrackingModeMock.mockResolvedValueOnce(ProgressTrackingMode.BY_WORK);
     getWorkProgressViewMock.mockResolvedValueOnce({ workId: "work-1" });
@@ -149,6 +161,35 @@ describe("library server functions", () => {
       ProgressTrackingMode.BY_EDITION,
     );
     await expect(
+      server.getReadingProgressServerFn({
+        data: {
+          editionId: "edition-1",
+          progressKind: ProgressKind.EBOOK,
+          source: "kobo",
+        },
+      }),
+    ).resolves.toEqual({ id: "progress-1" });
+    await expect(
+      server.upsertReadingProgressServerFn({
+        data: {
+          editionId: "edition-1",
+          locator: { cfi: {} },
+          percent: 0.4,
+          progressKind: ProgressKind.EBOOK,
+          source: "kobo",
+        },
+      }),
+    ).resolves.toEqual({ id: "progress-1", percent: 0.4 });
+    await expect(
+      server.deleteReadingProgressServerFn({
+        data: {
+          editionId: "edition-1",
+          progressKind: ProgressKind.EBOOK,
+          source: "kobo",
+        },
+      }),
+    ).resolves.toBeUndefined();
+    await expect(
       server.updateUserProgressTrackingModeServerFn({
         data: {
           progressTrackingMode: ProgressTrackingMode.BY_WORK,
@@ -179,6 +220,35 @@ describe("library server functions", () => {
     await expect(server.getUserProgressTrackingModeServerFn()).rejects.toThrow(
       "Authentication required",
     );
+    await expect(
+      server.getReadingProgressServerFn({
+        data: {
+          editionId: "edition-1",
+          progressKind: ProgressKind.EBOOK,
+          source: null,
+        },
+      }),
+    ).rejects.toThrow("Authentication required");
+    await expect(
+      server.upsertReadingProgressServerFn({
+        data: {
+          editionId: "edition-1",
+          locator: { cfi: {} },
+          percent: 0.3,
+          progressKind: ProgressKind.EBOOK,
+          source: null,
+        },
+      }),
+    ).rejects.toThrow("Authentication required");
+    await expect(
+      server.deleteReadingProgressServerFn({
+        data: {
+          editionId: "edition-1",
+          progressKind: ProgressKind.EBOOK,
+          source: null,
+        },
+      }),
+    ).rejects.toThrow("Authentication required");
     await expect(
       server.updateUserProgressTrackingModeServerFn({
         data: {
@@ -213,6 +283,9 @@ describe("library server functions", () => {
     getDuplicateCandidateDetailMock.mockResolvedValueOnce({ id: "candidate-9" });
     updateDuplicateCandidateStatusMock.mockResolvedValueOnce({ status: ReviewStatus.CONFIRMED });
     mergeDuplicateCandidateMock.mockResolvedValueOnce({ status: ReviewStatus.MERGED });
+    getReadingProgressMock.mockResolvedValueOnce({ id: "progress-9" });
+    upsertReadingProgressMock.mockResolvedValueOnce({ id: "progress-9", percent: 0.9 });
+    deleteReadingProgressMock.mockResolvedValueOnce(undefined);
     getUserProgressTrackingModeMock.mockResolvedValueOnce(ProgressTrackingMode.BY_WORK);
     updateUserProgressTrackingModeMock.mockResolvedValueOnce(ProgressTrackingMode.BY_EDITION);
     getWorkProgressViewMock.mockResolvedValueOnce({ workId: "work-9" });
@@ -244,6 +317,29 @@ describe("library server functions", () => {
         survivorSide: "left",
       }),
     ).resolves.toEqual({ status: ReviewStatus.MERGED });
+    await expect(
+      server.getReadingProgressAction({
+        editionId: "edition-9",
+        progressKind: ProgressKind.EBOOK,
+        source: null,
+      }),
+    ).resolves.toEqual({ id: "progress-9" });
+    await expect(
+      server.upsertReadingProgressAction({
+        editionId: "edition-9",
+        locator: { cfi: {} },
+        percent: 0.9,
+        progressKind: ProgressKind.EBOOK,
+        source: null,
+      }),
+    ).resolves.toEqual({ id: "progress-9", percent: 0.9 });
+    await expect(
+      server.deleteReadingProgressAction({
+        editionId: "edition-9",
+        progressKind: ProgressKind.EBOOK,
+        source: null,
+      }),
+    ).resolves.toBeUndefined();
     await expect(server.getUserProgressTrackingModeAction()).resolves.toBe(ProgressTrackingMode.BY_WORK);
     await expect(
       server.updateUserProgressTrackingModeAction({
@@ -306,6 +402,43 @@ describe("library server functions", () => {
       survivorSide: "left",
     });
     expect(
+      server.validateGetReadingProgressInput({
+        editionId: "edition-1",
+        progressKind: ProgressKind.EBOOK,
+        source: null,
+      }),
+    ).toEqual({
+      editionId: "edition-1",
+      progressKind: ProgressKind.EBOOK,
+      source: null,
+    });
+    expect(
+      server.validateUpsertReadingProgressInput({
+        editionId: "edition-1",
+        locator: { cfi: {} },
+        percent: 0.3,
+        progressKind: ProgressKind.EBOOK,
+        source: null,
+      }),
+    ).toEqual({
+      editionId: "edition-1",
+      locator: { cfi: {} },
+      percent: 0.3,
+      progressKind: ProgressKind.EBOOK,
+      source: null,
+    });
+    expect(
+      server.validateDeleteReadingProgressInput({
+        editionId: "edition-1",
+        progressKind: ProgressKind.EBOOK,
+        source: null,
+      }),
+    ).toEqual({
+      editionId: "edition-1",
+      progressKind: ProgressKind.EBOOK,
+      source: null,
+    });
+    expect(
       server.validateUpdateUserProgressTrackingModeInput({
         progressTrackingMode: ProgressTrackingMode.BY_WORK,
       }),
@@ -324,5 +457,26 @@ describe("library server functions", () => {
       progressTrackingMode: null,
       workId: "work-1",
     });
+  });
+
+  it("rejects malformed progress validator payloads", async () => {
+    const server = await import("./library-server");
+
+    expect(() => server.validateGetReadingProgressInput({
+      editionId: "",
+      progressKind: ProgressKind.EBOOK,
+      source: null,
+    })).toThrow();
+    expect(() => server.validateUpsertReadingProgressInput({
+      editionId: "edition-1",
+      locator: { cfi: "bad" as never },
+      percent: 2,
+      progressKind: ProgressKind.EBOOK,
+      source: null,
+    })).toThrow();
+    expect(() => server.validateUpdateWorkProgressTrackingModeInput({
+      progressTrackingMode: "BAD_MODE" as never,
+      workId: "work-1",
+    })).toThrow();
   });
 });

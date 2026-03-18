@@ -7,8 +7,10 @@ import {
   ReviewStatus,
 } from "@bookhouse/domain";
 import {
+  deleteReadingProgress,
   getAudioLinkDetail,
   getDuplicateCandidateDetail,
+  getReadingProgress,
   getUserProgressTrackingMode,
   getWorkProgressView,
   listAudioLinks,
@@ -16,6 +18,7 @@ import {
   mergeDuplicateCandidate,
   toAudioLinkDetail,
   toDuplicateCandidateDetail,
+  upsertReadingProgress,
   updateAudioLinkStatus,
   updateDuplicateCandidateStatus,
   updateUserProgressTrackingMode,
@@ -139,6 +142,14 @@ function addEditionFile(state: TestState, id: string, editionId: string, fileAss
 }
 
 function createDb(state: TestState): LibraryServiceDb {
+  let readingProgressIdCounter = 1;
+  let readingProgressTimestamp = Date.parse("2025-01-10T00:00:00.000Z");
+
+  const nextReadingProgressTimestamp = () => {
+    readingProgressTimestamp += 1;
+    return new Date(readingProgressTimestamp);
+  };
+
   const buildEdition = (editionId: string) => {
     const edition = state.editions.get(editionId);
 
@@ -416,17 +427,49 @@ function createDb(state: TestState): LibraryServiceDb {
       },
     },
     readingProgress: {
-      async create() {
-        throw new Error("unused");
+      async create(args) {
+        const data = args.data as TestState["readingProgress"] extends Map<string, infer TValue> ? TValue : never;
+        const created = {
+          ...data,
+          id: `progress-created-${readingProgressIdCounter++}`,
+          updatedAt: nextReadingProgressTimestamp(),
+        };
+        state.readingProgress.set(created.id, created);
+        return created;
       },
       async delete({ where }) {
         state.readingProgress.delete(where.id);
         return {};
       },
+      async deleteMany(args) {
+        const where = args.where as {
+          editionId?: string;
+          progressKind?: "EBOOK" | "AUDIO" | "READALOUD";
+          source?: string | null;
+          userId?: string;
+        };
+        let count = 0;
+
+        for (const [id, row] of state.readingProgress.entries()) {
+          if (
+            (where.userId === undefined || row.userId === where.userId) &&
+            (where.editionId === undefined || row.editionId === where.editionId) &&
+            (where.progressKind === undefined || row.progressKind === where.progressKind) &&
+            (where.source === undefined || row.source === where.source)
+          ) {
+            state.readingProgress.delete(id);
+            count += 1;
+          }
+        }
+
+        return { count };
+      },
       async findMany(args) {
         const where = args.where as {
           edition?: { workId?: string };
           editionId?: string | { in?: string[] };
+          progressKind?: "EBOOK" | "AUDIO" | "READALOUD";
+          source?: string | null;
           userId?: string;
         };
         return [...state.readingProgress.values()]
@@ -438,6 +481,12 @@ function createDb(state: TestState): LibraryServiceDb {
               return false;
             }
             if (typeof where.editionId === "object" && where.editionId?.in && !where.editionId.in.includes(row.editionId)) {
+              return false;
+            }
+            if (where.progressKind && row.progressKind !== where.progressKind) {
+              return false;
+            }
+            if (where.source !== undefined && row.source !== where.source) {
               return false;
             }
             if (where.edition?.workId) {
@@ -458,8 +507,13 @@ function createDb(state: TestState): LibraryServiceDb {
       },
       async update({ data, where }) {
         const existing = state.readingProgress.get(where.id)!;
-        state.readingProgress.set(where.id, { ...existing, ...data } as typeof existing);
-        return {};
+        const updated = {
+          ...existing,
+          ...data,
+          updatedAt: nextReadingProgressTimestamp(),
+        } as typeof existing;
+        state.readingProgress.set(where.id, updated);
+        return updated;
       },
     },
     userPreference: {
@@ -1181,6 +1235,166 @@ describe("library service", () => {
 
     expect(await updateWorkProgressTrackingMode(db, "user-1", "work-1", null)).toBeNull();
     expect((await getWorkProgressView(db, "user-1", "missing-work"))).toBeNull();
+  });
+
+  it("creates, updates, reads, and deletes reading progress rows by logical key", async () => {
+    const state = createState();
+    addWork(state, "work-1", "The Fifth Season");
+    addEdition(state, "edition-1", "work-1");
+    const db = createDb(state);
+
+    const created = await upsertReadingProgress(db, "user-1", {
+      editionId: "edition-1",
+      locator: { cfi: {} },
+      percent: 0.25,
+      progressKind: "EBOOK",
+      source: "kobo",
+    });
+
+    expect(created).toMatchObject({
+      editionId: "edition-1",
+      locator: { cfi: {} },
+      percent: 0.25,
+      progressKind: "EBOOK",
+      source: "kobo",
+    });
+    expect(state.readingProgress.size).toBe(1);
+
+    const updated = await upsertReadingProgress(db, "user-1", {
+      editionId: "edition-1",
+      locator: { cfi: {}, chapter: {} },
+      percent: 0.5,
+      progressKind: "EBOOK",
+      source: "kobo",
+    });
+
+    expect(updated.id).toBe(created.id);
+    expect(updated.locator).toEqual({ cfi: {}, chapter: {} });
+    expect(updated.percent).toBe(0.5);
+    expect(state.readingProgress.size).toBe(1);
+
+    await expect(
+      getReadingProgress(db, "user-1", {
+        editionId: "edition-1",
+        progressKind: "EBOOK",
+        source: "kobo",
+      }),
+    ).resolves.toEqual(updated);
+
+    await deleteReadingProgress(db, "user-1", {
+      editionId: "edition-1",
+      progressKind: "EBOOK",
+      source: "kobo",
+    });
+
+    expect(state.readingProgress.size).toBe(0);
+  });
+
+  it("collapses duplicate reading progress rows and keeps null source separate", async () => {
+    const state = createState();
+    addWork(state, "work-1", "The Fifth Season");
+    addEdition(state, "edition-1", "work-1");
+    state.readingProgress.set("progress-1", {
+      editionId: "edition-1",
+      id: "progress-1",
+      locator: { cfi: {} },
+      percent: 0.1,
+      progressKind: "EBOOK",
+      source: "kobo",
+      updatedAt: new Date("2025-01-02T00:00:00.000Z"),
+      userId: "user-1",
+    });
+    state.readingProgress.set("progress-2", {
+      editionId: "edition-1",
+      id: "progress-2",
+      locator: { cfi: {} },
+      percent: 0.2,
+      progressKind: "EBOOK",
+      source: "kobo",
+      updatedAt: new Date("2025-01-03T00:00:00.000Z"),
+      userId: "user-1",
+    });
+    state.readingProgress.set("progress-3", {
+      editionId: "edition-1",
+      id: "progress-3",
+      locator: { cfi: {} },
+      percent: 0.3,
+      progressKind: "EBOOK",
+      source: null,
+      updatedAt: new Date("2025-01-04T00:00:00.000Z"),
+      userId: "user-1",
+    });
+    const db = createDb(state);
+
+    const updated = await upsertReadingProgress(db, "user-1", {
+      editionId: "edition-1",
+      locator: { cfi: {}, page: {} },
+      percent: 0.6,
+      progressKind: "EBOOK",
+      source: "kobo",
+    });
+
+    expect(updated.id).toBe("progress-2");
+    expect(state.readingProgress.has("progress-1")).toBe(false);
+    expect(state.readingProgress.has("progress-2")).toBe(true);
+    expect(state.readingProgress.has("progress-3")).toBe(true);
+    expect(state.readingProgress.get("progress-2")?.percent).toBe(0.6);
+    expect(state.readingProgress.get("progress-3")?.percent).toBe(0.3);
+  });
+
+  it("rejects invalid reading progress payloads and normalizes legacy locators on read", async () => {
+    const state = createState();
+    addWork(state, "work-1", "The Fifth Season");
+    addEdition(state, "edition-1", "work-1");
+    state.readingProgress.set("progress-1", {
+      editionId: "edition-1",
+      id: "progress-1",
+      locator: null as unknown as Record<string, object>,
+      percent: 0.25,
+      progressKind: "EBOOK",
+      source: null,
+      updatedAt: new Date("2025-01-03T00:00:00.000Z"),
+      userId: "user-1",
+    });
+    const db = createDb(state);
+
+    await expect(
+      getReadingProgress(db, "user-1", {
+        editionId: "edition-1",
+        progressKind: "EBOOK",
+        source: null,
+      }),
+    ).resolves.toMatchObject({
+      locator: {},
+    });
+
+    await expect(
+      upsertReadingProgress(db, "user-1", {
+        editionId: "edition-1",
+        locator: { cfi: "bad" as unknown as object },
+        percent: 0.2,
+        progressKind: "EBOOK",
+        source: null,
+      }),
+    ).rejects.toThrow("Reading progress locator must be an object whose values are objects");
+
+    await expect(
+      upsertReadingProgress(db, "user-1", {
+        editionId: "edition-1",
+        locator: { cfi: {} },
+        percent: 1.5,
+        progressKind: "EBOOK",
+        source: null,
+      }),
+    ).rejects.toThrow("Reading progress percent must be between 0 and 1");
+
+    await expect(
+      getReadingProgress(db, "user-1", {
+        editionId: "missing-edition",
+        progressKind: "EBOOK",
+        source: null,
+      }),
+    ).resolves.toBeNull();
   });
 
   it("uses the non-transaction fallback when the db does not provide $transaction", async () => {

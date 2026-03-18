@@ -97,6 +97,21 @@ type ReadingProgressWithEdition = {
   userId: string;
 };
 
+type ReadingProgressRecord = Omit<ReadingProgressWithEdition, "edition">;
+
+export interface ReadingProgressPayload {
+  editionId: string;
+  locator: Record<string, object>;
+  percent: number | null;
+  progressKind: ProgressKind;
+  source: string | null;
+}
+
+export interface ReadingProgressEntry extends ReadingProgressPayload {
+  id: string;
+  updatedAt: string;
+}
+
 export interface LibraryServiceDb {
   audioLink: {
     create(args: Record<string, unknown>): Promise<unknown>;
@@ -145,10 +160,11 @@ export interface LibraryServiceDb {
     update(args: { where: { id: string }; data: Record<string, unknown> }): Promise<unknown>;
   };
   readingProgress: {
-    create(args: Record<string, unknown>): Promise<unknown>;
+    create(args: Record<string, unknown>): Promise<ReadingProgressRecord>;
     delete(args: { where: { id: string } }): Promise<unknown>;
+    deleteMany(args: Record<string, unknown>): Promise<{ count: number }>;
     findMany(args: Record<string, unknown>): Promise<ReadingProgressWithEdition[]>;
-    update(args: { where: { id: string }; data: Record<string, unknown> }): Promise<unknown>;
+    update(args: { where: { id: string }; data: Record<string, unknown> }): Promise<ReadingProgressRecord>;
   };
   userPreference: {
     findUnique(args: Record<string, unknown>): Promise<{ progressTrackingMode: ProgressTrackingMode; userId: string } | null>;
@@ -254,6 +270,65 @@ export interface WorkProgressView {
   } | null;
   workId: string;
   workTitle: string;
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isProgressLocator(value: unknown): value is Record<string, object> {
+  return isObjectRecord(value) && Object.values(value).every(
+    (entry) => typeof entry === "object" && entry !== null && !Array.isArray(entry),
+  );
+}
+
+function normalizeProgressLocator(locator: unknown): Record<string, object> {
+  if (!isObjectRecord(locator)) {
+    return {};
+  }
+
+  const normalizedEntries = Object.entries(locator).filter(([, value]) =>
+    typeof value === "object" && value !== null && !Array.isArray(value),
+  );
+
+  return Object.fromEntries(normalizedEntries) as Record<string, object>;
+}
+
+function assertValidProgressLocator(locator: unknown): asserts locator is Record<string, object> {
+  if (!isProgressLocator(locator)) {
+    throw new Error("Reading progress locator must be an object whose values are objects");
+  }
+}
+
+function assertValidProgressPercent(percent: number | null): void {
+  if (percent !== null && (percent < 0 || percent > 1)) {
+    throw new Error("Reading progress percent must be between 0 and 1");
+  }
+}
+
+function toReadingProgressEntry(row: ReadingProgressRecord): ReadingProgressEntry {
+  return {
+    editionId: row.editionId,
+    id: row.id,
+    locator: normalizeProgressLocator(row.locator),
+    percent: row.percent,
+    progressKind: row.progressKind,
+    source: row.source,
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function buildReadingProgressWhere(userId: string, input: {
+  editionId: string;
+  progressKind: ProgressKind;
+  source: string | null;
+}) {
+  return {
+    editionId: input.editionId,
+    progressKind: input.progressKind,
+    source: input.source,
+    userId,
+  };
 }
 
 const EDITION_DETAIL_INCLUDE = {
@@ -909,6 +984,92 @@ export async function getUserProgressTrackingMode(
   });
 
   return preference?.progressTrackingMode ?? ProgressTrackingMode.BY_EDITION;
+}
+
+export async function getReadingProgress(
+  db: LibraryServiceDb,
+  userId: string,
+  input: {
+    editionId: string;
+    progressKind: ProgressKind;
+    source: string | null;
+  },
+): Promise<ReadingProgressEntry | null> {
+  const rows = await db.readingProgress.findMany({
+    orderBy: {
+      updatedAt: "desc",
+    },
+    where: buildReadingProgressWhere(userId, input),
+  });
+  const newestRow = rows[0];
+
+  if (!newestRow) {
+    return null;
+  }
+
+  return toReadingProgressEntry(newestRow);
+}
+
+export async function upsertReadingProgress(
+  db: LibraryServiceDb,
+  userId: string,
+  input: ReadingProgressPayload,
+): Promise<ReadingProgressEntry> {
+  assertValidProgressLocator(input.locator);
+  assertValidProgressPercent(input.percent);
+
+  const rows = await db.readingProgress.findMany({
+    orderBy: {
+      updatedAt: "desc",
+    },
+    where: buildReadingProgressWhere(userId, input),
+  });
+  const newestRow = rows[0];
+
+  if (!newestRow) {
+    const created = await db.readingProgress.create({
+      data: {
+        editionId: input.editionId,
+        locator: input.locator,
+        percent: input.percent,
+        progressKind: input.progressKind,
+        source: input.source,
+        userId,
+      },
+    });
+
+    return toReadingProgressEntry(created);
+  }
+
+  const updated = await db.readingProgress.update({
+    where: { id: newestRow.id },
+    data: {
+      locator: input.locator,
+      percent: input.percent,
+    },
+  });
+
+  for (const duplicateRow of rows.slice(1)) {
+    await db.readingProgress.delete({
+      where: { id: duplicateRow.id },
+    });
+  }
+
+  return toReadingProgressEntry(updated);
+}
+
+export async function deleteReadingProgress(
+  db: LibraryServiceDb,
+  userId: string,
+  input: {
+    editionId: string;
+    progressKind: ProgressKind;
+    source: string | null;
+  },
+): Promise<void> {
+  await db.readingProgress.deleteMany({
+    where: buildReadingProgressWhere(userId, input),
+  });
 }
 
 export async function updateUserProgressTrackingMode(

@@ -3,7 +3,7 @@ import { ProgressTrackingMode, ReviewStatus } from "@bookhouse/domain";
 
 type RouterLike = {
   invalidate: () => Promise<unknown>;
-  navigate: (input: { to: string }) => Promise<unknown>;
+  navigate: (...args: any[]) => Promise<unknown>;
 };
 
 export function createDuplicateStatusHandler(input: {

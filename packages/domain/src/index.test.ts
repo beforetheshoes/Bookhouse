@@ -16,6 +16,7 @@ import type {
   AudioLink,
   Batch1DomainModels,
   DuplicateCandidate,
+  ReadingProgress,
   UserPreference,
   WorkProgressPreference,
 } from "./index";
@@ -42,6 +43,7 @@ describe("domain package", () => {
       "Contributor",
       "Series",
       "DuplicateCandidate",
+      "ReadingProgress",
       "UserPreference",
       "WorkProgressPreference",
     ]);
@@ -52,6 +54,8 @@ describe("domain package", () => {
     const batchModelAudioLink = null as Batch1DomainModels["audioLink"] | null;
     const duplicateCandidate = null as DuplicateCandidate | null;
     const batchModelDuplicateCandidate = null as Batch1DomainModels["duplicateCandidate"] | null;
+    const readingProgress = null as ReadingProgress | null;
+    const batchModelReadingProgress = null as Batch1DomainModels["readingProgress"] | null;
     const userPreference = null as UserPreference | null;
     const batchModelUserPreference = null as Batch1DomainModels["userPreference"] | null;
     const workProgressPreference = null as WorkProgressPreference | null;
@@ -61,6 +65,8 @@ describe("domain package", () => {
     expect(batchModelAudioLink).toBeNull();
     expect(duplicateCandidate).toBeNull();
     expect(batchModelDuplicateCandidate).toBeNull();
+    expect(readingProgress).toBeNull();
+    expect(batchModelReadingProgress).toBeNull();
     expect(userPreference).toBeNull();
     expect(batchModelUserPreference).toBeNull();
     expect(workProgressPreference).toBeNull();
