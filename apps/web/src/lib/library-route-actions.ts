@@ -187,3 +187,19 @@ export function createCollectionMembershipHandler(input: {
     });
   };
 }
+
+export function createExternalLinkMutationHandler(input: {
+  action: () => Promise<unknown>;
+  pendingValue: string;
+  router: Pick<RouterLike, "invalidate">;
+  setPending: (value: string | null) => void;
+}) {
+  return () => {
+    input.setPending(input.pendingValue);
+    startTransition(async () => {
+      await input.action();
+      await input.router.invalidate();
+      input.setPending(null);
+    });
+  };
+}

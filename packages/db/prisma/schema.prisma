@@ -350,11 +350,12 @@ model AudioLink {
 }
 
 model ExternalLink {
-  id         String @id @default(cuid())
-  editionId  String
-  provider   String
-  externalId String
-  metadata   Json?
+  id           String   @id @default(cuid())
+  editionId    String
+  provider     String
+  externalId   String
+  metadata     Json?
+  lastSyncedAt DateTime?
 
   edition Edition @relation(fields: [editionId], references: [id], onDelete: Cascade)
 

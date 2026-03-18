@@ -59,3 +59,72 @@ export const addWorkToCollectionSchema = collectionIdSchema.extend({
 export const removeWorkFromCollectionSchema = addWorkToCollectionSchema;
 
 export const getWorkCollectionMembershipSchema = workIdSchema;
+
+export const externalLinkIdSchema = z.object({
+  linkId: z.string().trim().min(1),
+});
+
+function parseExternalLinkMetadata(value: string, ctx: z.RefinementCtx): Record<string, unknown> | null {
+  if (value === "") {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Metadata must be a JSON object",
+      });
+      return z.NEVER;
+    }
+
+    return parsed as Record<string, unknown>;
+  } catch {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Metadata must be valid JSON",
+    });
+    return z.NEVER;
+  }
+}
+
+function parseOptionalDateTime(value: string | null | undefined, ctx: z.RefinementCtx): Date | null {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+
+  if (Number.isNaN(parsed.getTime())) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "lastSyncedAt must be a valid date-time",
+    });
+    return z.NEVER;
+  }
+
+  return parsed;
+}
+
+const externalLinkMutationFieldsSchema = z.object({
+  editionId: z.string().trim().min(1),
+  externalId: z.string().trim().min(1),
+  lastSyncedAt: z.string().trim().nullable().optional().transform((value, ctx) => parseOptionalDateTime(value, ctx)),
+  metadata: z.string().trim().transform((value, ctx) => parseExternalLinkMetadata(value, ctx)),
+  provider: z.string().trim().min(1),
+});
+
+export const listExternalLinksForWorkSchema = workIdSchema;
+
+export const createExternalLinkSchema = externalLinkMutationFieldsSchema;
+
+export const updateExternalLinkSchema = externalLinkIdSchema.extend({
+  externalId: z.string().trim().min(1),
+  lastSyncedAt: z.string().trim().nullable().optional().transform((value, ctx) => parseOptionalDateTime(value, ctx)),
+  metadata: z.string().trim().transform((value, ctx) => parseExternalLinkMetadata(value, ctx)),
+  provider: z.string().trim().min(1),
+});
+
+export const deleteExternalLinkSchema = externalLinkIdSchema;

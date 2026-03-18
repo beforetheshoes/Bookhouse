@@ -9,8 +9,10 @@ import {
 import {
   addWorkToCollection,
   createCollection,
+  createExternalLink,
   deleteReadingProgress,
   deleteCollection,
+  deleteExternalLink,
   getCollectionDetail,
   getAudioLinkDetail,
   getDuplicateCandidateDetail,
@@ -18,6 +20,7 @@ import {
   getWorkCollectionMembership,
   getUserProgressTrackingMode,
   getWorkProgressView,
+  listExternalLinksForWork,
   listCollections,
   listAudioLinks,
   listDuplicateCandidates,
@@ -27,6 +30,7 @@ import {
   toAudioLinkDetail,
   toDuplicateCandidateDetail,
   upsertReadingProgress,
+  updateExternalLink,
   updateAudioLinkStatus,
   updateDuplicateCandidateStatus,
   updateUserProgressTrackingMode,
@@ -63,7 +67,7 @@ type TestState = {
     updatedAt: Date;
     workId: string;
   }>;
-  externalLinks: Map<string, { editionId: string; externalId: string; id: string; metadata: unknown; provider: string }>;
+  externalLinks: Map<string, { editionId: string; externalId: string; id: string; lastSyncedAt: Date | null; metadata: Record<string, unknown> | null; provider: string }>;
   fileAssets: Map<string, { absolutePath: string; createdAt: Date; fullHash: string | null; id: string; relativePath: string; updatedAt: Date }>;
   readingProgress: Map<string, {
     editionId: string;
@@ -497,8 +501,24 @@ function createDb(state: TestState): LibraryServiceDb {
       },
     },
     externalLink: {
-      async create() {
-        throw new Error("unused");
+      async create(args) {
+        const data = args.data as {
+          editionId: string;
+          externalId: string;
+          lastSyncedAt: Date | null;
+          metadata: Record<string, unknown> | null;
+          provider: string;
+        };
+        const created = {
+          editionId: data.editionId,
+          externalId: data.externalId,
+          id: `external-link-created-${state.externalLinks.size + 1}`,
+          lastSyncedAt: data.lastSyncedAt,
+          metadata: data.metadata,
+          provider: data.provider,
+        };
+        state.externalLinks.set(created.id, created);
+        return created;
       },
       async delete({ where }) {
         state.externalLinks.delete(where.id);
@@ -518,10 +538,15 @@ function createDb(state: TestState): LibraryServiceDb {
           where.editionId === undefined || row.editionId === where.editionId,
         );
       },
+      async findUnique(args) {
+        const where = args.where as { id: string };
+        return state.externalLinks.get(where.id) ?? null;
+      },
       async update({ data, where }) {
         const existing = state.externalLinks.get(where.id)!;
-        state.externalLinks.set(where.id, { ...existing, ...data } as typeof existing);
-        return {};
+        const updated = { ...existing, ...data } as typeof existing;
+        state.externalLinks.set(where.id, updated);
+        return updated;
       },
     },
     readingProgress: {
@@ -1038,6 +1063,189 @@ describe("library service", () => {
     ).rejects.toThrow('Audio link "broken-audio-link" is missing edition details');
   });
 
+  it("creates, updates, lists, and deletes external links", async () => {
+    const state = createState();
+    addWork(state, "work-1", "The Fifth Season");
+    addEdition(state, "edition-1", "work-1", {
+      asin: "B123",
+      isbn10: "0316498840",
+      isbn13: "9780316498834",
+      publishedAt: new Date("2015-08-04T00:00:00.000Z"),
+      publisher: "Orbit",
+    });
+    addEdition(state, "edition-2", "work-1", {
+      formatFamily: FormatFamily.AUDIOBOOK,
+    });
+    const db = createDb(state);
+
+    const created = await createExternalLink(
+      db,
+      "edition-1",
+      "openlibrary",
+      "OL123",
+      { rating: 5 },
+      new Date("2025-01-05T12:00:00.000Z"),
+    );
+
+      expect(created).toEqual({
+      editionId: "edition-1",
+      externalId: "OL123",
+      id: "external-link-created-1",
+      lastSyncedAt: "2025-01-05T12:00:00.000Z",
+      metadata: "{\n  \"rating\": 5\n}",
+      provider: "openlibrary",
+    });
+
+    const updated = await updateExternalLink(
+      db,
+      "external-link-created-1",
+      "goodreads",
+      "GR456",
+      { shelf: "favorites" },
+      null,
+    );
+
+    expect(updated).toEqual({
+      editionId: "edition-1",
+      externalId: "GR456",
+      id: "external-link-created-1",
+      lastSyncedAt: null,
+      metadata: "{\n  \"shelf\": \"favorites\"\n}",
+      provider: "goodreads",
+    });
+
+    const grouped = await listExternalLinksForWork(db, "work-1");
+
+    expect(grouped).toEqual([
+      {
+        asin: null,
+        externalLinks: [],
+        formatFamily: FormatFamily.AUDIOBOOK,
+        id: "edition-2",
+        isbn10: null,
+        isbn13: null,
+        publishedAt: null,
+        publisher: null,
+      },
+      {
+        asin: "B123",
+        externalLinks: [updated],
+        formatFamily: FormatFamily.EBOOK,
+        id: "edition-1",
+        isbn10: "0316498840",
+        isbn13: "9780316498834",
+        publishedAt: "2015-08-04T00:00:00.000Z",
+        publisher: "Orbit",
+      },
+    ]);
+
+    await deleteExternalLink(db, "external-link-created-1");
+
+    expect(state.externalLinks.size).toBe(0);
+  });
+
+  it("rejects invalid external-link targets", async () => {
+    const state = createState();
+    addWork(state, "work-1", "The Fifth Season");
+    addEdition(state, "edition-1", "work-1");
+    state.externalLinks.set("external-link-1", {
+      editionId: "edition-1",
+      externalId: "OL1",
+      id: "external-link-1",
+      lastSyncedAt: null,
+      metadata: null,
+      provider: "openlibrary",
+    });
+    const db = createDb(state);
+
+    await expect(
+      createExternalLink(db, "missing-edition", "openlibrary", "OL2", null, null),
+    ).rejects.toThrow("Edition not found");
+    await expect(
+      updateExternalLink(db, "missing-link", "openlibrary", "OL3", null, null),
+    ).rejects.toThrow("External link not found");
+    await expect(
+      deleteExternalLink(db, "missing-link"),
+    ).rejects.toThrow("External link not found");
+    await expect(
+      listExternalLinksForWork(db, "missing-work"),
+    ).rejects.toThrow("Work not found");
+  });
+
+  it("rejects updating an external link whose edition no longer exists", async () => {
+    const state = createState();
+    state.externalLinks.set("external-link-1", {
+      editionId: "missing-edition",
+      externalId: "OL1",
+      id: "external-link-1",
+      lastSyncedAt: null,
+      metadata: null,
+      provider: "openlibrary",
+    });
+
+    await expect(
+      updateExternalLink(
+        createDb(state),
+        "external-link-1",
+        "openlibrary",
+        "OL2",
+        { source: "manual" },
+        null,
+      ),
+    ).rejects.toThrow("Edition not found");
+  });
+
+  it("handles null metadata, missing edition arrays, and fallback external-link maps", async () => {
+    const state = createState();
+    addWork(state, "work-1", "The Fifth Season");
+    addEdition(state, "edition-b", "work-1");
+    addEdition(state, "edition-a", "work-1");
+    state.externalLinks.set("external-link-1", {
+      editionId: "edition-a",
+      externalId: "OL1",
+      id: "external-link-1",
+      lastSyncedAt: null,
+      metadata: null,
+      provider: "openlibrary",
+    });
+
+    const db = createDb(state);
+    await expect(listExternalLinksForWork(db, "work-1")).resolves.toEqual([
+      expect.objectContaining({
+        externalLinks: [
+          expect.objectContaining({
+            metadata: "",
+          }),
+        ],
+        id: "edition-a",
+      }),
+      expect.objectContaining({
+        externalLinks: [],
+        id: "edition-b",
+      }),
+    ]);
+
+    const workWithoutEditionsDb = createDb(state);
+    workWithoutEditionsDb.work.findUnique = async () => ({
+      id: "work-1",
+      titleDisplay: "The Fifth Season",
+    });
+    await expect(listExternalLinksForWork(workWithoutEditionsDb, "work-1")).resolves.toEqual([]);
+
+    const fallbackDb = createDb(state);
+    fallbackDb.externalLink.findMany = async () => undefined as never;
+    await expect(listExternalLinksForWork(fallbackDb, "work-1")).resolves.toEqual([
+      expect.objectContaining({
+        externalLinks: [],
+        id: "edition-a",
+      }),
+      expect.objectContaining({
+        externalLinks: [],
+        id: "edition-b",
+      }),
+    ]);
+  });
+
   it("merges duplicate editions, dedupes relations, and removes an orphaned losing work", async () => {
     const state = createState();
     addWork(state, "work-1", "Keep Work");
@@ -1056,7 +1264,7 @@ describe("library service", () => {
     state.collectionItems.set("collection-item-1", { collectionId: "collection-1", id: "collection-item-1", workId: "work-2" });
     state.collectionItems.set("collection-item-2", { collectionId: "collection-1", id: "collection-item-2", workId: "work-1" });
     state.collectionItems.set("collection-item-3", { collectionId: "collection-2", id: "collection-item-3", workId: "work-2" });
-    state.externalLinks.set("external-link-1", { editionId: "edition-2", externalId: "abc", id: "external-link-1", metadata: null, provider: "openlibrary" });
+    state.externalLinks.set("external-link-1", { editionId: "edition-2", externalId: "abc", id: "external-link-1", lastSyncedAt: null, metadata: null, provider: "openlibrary" });
     state.readingProgress.set("progress-1", {
       editionId: "edition-2",
       id: "progress-1",
@@ -1162,9 +1370,9 @@ describe("library service", () => {
     addCollection(state, "collection-2", "Shelf Two");
     state.collectionItems.set("collection-item-1", { collectionId: "collection-1", id: "collection-item-1", workId: "work-1" });
     state.collectionItems.set("collection-item-2", { collectionId: "collection-2", id: "collection-item-2", workId: "work-1" });
-    state.externalLinks.set("external-link-1", { editionId: "edition-1", externalId: "dup", id: "external-link-1", metadata: null, provider: "openlibrary" });
-    state.externalLinks.set("external-link-2", { editionId: "edition-2", externalId: "dup", id: "external-link-2", metadata: null, provider: "openlibrary" });
-    state.externalLinks.set("external-link-3", { editionId: "edition-2", externalId: "unique", id: "external-link-3", metadata: null, provider: "goodreads" });
+    state.externalLinks.set("external-link-1", { editionId: "edition-1", externalId: "dup", id: "external-link-1", lastSyncedAt: null, metadata: null, provider: "openlibrary" });
+    state.externalLinks.set("external-link-2", { editionId: "edition-2", externalId: "dup", id: "external-link-2", lastSyncedAt: null, metadata: null, provider: "openlibrary" });
+    state.externalLinks.set("external-link-3", { editionId: "edition-2", externalId: "unique", id: "external-link-3", lastSyncedAt: null, metadata: null, provider: "goodreads" });
     state.duplicateCandidates.set("candidate-1", {
       confidence: 1,
       id: "candidate-1",
@@ -1466,6 +1674,10 @@ describe("library service", () => {
       },
       workTitle: "The Fifth Season",
     });
+    expect(view?.editions).toEqual([
+      expect.objectContaining({ id: "edition-2" }),
+      expect.objectContaining({ id: "edition-1" }),
+    ]);
 
     expect(await updateWorkProgressTrackingMode(db, "user-1", "work-1", null)).toBeNull();
     expect((await getWorkProgressView(db, "user-1", "missing-work"))).toBeNull();
@@ -1671,6 +1883,7 @@ describe("library service", () => {
 
     expect(view).toMatchObject({
       currentSourceEditionId: undefined,
+      editions: [],
       effectiveMode: ProgressTrackingMode.BY_EDITION,
       globalMode: ProgressTrackingMode.BY_EDITION,
       overrideMode: null,

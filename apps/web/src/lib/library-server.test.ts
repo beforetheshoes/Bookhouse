@@ -4,12 +4,15 @@ import { ProgressKind, ProgressTrackingMode, ReviewStatus } from "@bookhouse/dom
 const deleteReadingProgressMock = vi.fn();
 const addWorkToCollectionMock = vi.fn();
 const createCollectionMock = vi.fn();
+const createExternalLinkMock = vi.fn();
 const deleteCollectionMock = vi.fn();
+const deleteExternalLinkMock = vi.fn();
 const getCollectionDetailMock = vi.fn();
 const getReadingProgressMock = vi.fn();
 const getAudioLinkDetailMock = vi.fn();
 const getCurrentUserMock = vi.fn();
 const getDuplicateCandidateDetailMock = vi.fn();
+const listExternalLinksForWorkMock = vi.fn();
 const getWorkCollectionMembershipMock = vi.fn();
 const getUserProgressTrackingModeMock = vi.fn();
 const getWorkProgressViewMock = vi.fn();
@@ -20,6 +23,7 @@ const mergeDuplicateCandidateMock = vi.fn();
 const removeWorkFromCollectionMock = vi.fn();
 const renameCollectionMock = vi.fn();
 const upsertReadingProgressMock = vi.fn();
+const updateExternalLinkMock = vi.fn();
 const updateAudioLinkStatusMock = vi.fn();
 const updateDuplicateCandidateStatusMock = vi.fn();
 const updateUserProgressTrackingModeMock = vi.fn();
@@ -32,8 +36,10 @@ vi.mock("./auth-server", () => ({
 vi.mock("./library-service", () => ({
   addWorkToCollection: addWorkToCollectionMock,
   createCollection: createCollectionMock,
+  createExternalLink: createExternalLinkMock,
   deleteReadingProgress: deleteReadingProgressMock,
   deleteCollection: deleteCollectionMock,
+  deleteExternalLink: deleteExternalLinkMock,
   getCollectionDetail: getCollectionDetailMock,
   getReadingProgress: getReadingProgressMock,
   getAudioLinkDetail: getAudioLinkDetailMock,
@@ -41,6 +47,7 @@ vi.mock("./library-service", () => ({
   getWorkCollectionMembership: getWorkCollectionMembershipMock,
   getUserProgressTrackingMode: getUserProgressTrackingModeMock,
   getWorkProgressView: getWorkProgressViewMock,
+  listExternalLinksForWork: listExternalLinksForWorkMock,
   listCollections: listCollectionsMock,
   listAudioLinks: listAudioLinksMock,
   listDuplicateCandidates: listDuplicateCandidatesMock,
@@ -48,6 +55,7 @@ vi.mock("./library-service", () => ({
   removeWorkFromCollection: removeWorkFromCollectionMock,
   renameCollection: renameCollectionMock,
   upsertReadingProgress: upsertReadingProgressMock,
+  updateExternalLink: updateExternalLinkMock,
   updateAudioLinkStatus: updateAudioLinkStatusMock,
   updateDuplicateCandidateStatus: updateDuplicateCandidateStatusMock,
   updateUserProgressTrackingMode: updateUserProgressTrackingModeMock,
@@ -69,12 +77,15 @@ beforeEach(() => {
   deleteReadingProgressMock.mockReset();
   addWorkToCollectionMock.mockReset();
   createCollectionMock.mockReset();
+  createExternalLinkMock.mockReset();
   deleteCollectionMock.mockReset();
+  deleteExternalLinkMock.mockReset();
   getCollectionDetailMock.mockReset();
   getReadingProgressMock.mockReset();
   getAudioLinkDetailMock.mockReset();
   getCurrentUserMock.mockReset();
   getDuplicateCandidateDetailMock.mockReset();
+  listExternalLinksForWorkMock.mockReset();
   getWorkCollectionMembershipMock.mockReset();
   getUserProgressTrackingModeMock.mockReset();
   getWorkProgressViewMock.mockReset();
@@ -85,6 +96,7 @@ beforeEach(() => {
   removeWorkFromCollectionMock.mockReset();
   renameCollectionMock.mockReset();
   upsertReadingProgressMock.mockReset();
+  updateExternalLinkMock.mockReset();
   updateAudioLinkStatusMock.mockReset();
   updateDuplicateCandidateStatusMock.mockReset();
   updateUserProgressTrackingModeMock.mockReset();
@@ -96,6 +108,7 @@ describe("library server functions", () => {
     const server = await import("./library-server");
     getCurrentUserMock.mockResolvedValue({ id: "user-1" });
     listCollectionsMock.mockResolvedValueOnce([{ id: "collection-1" }]);
+    listExternalLinksForWorkMock.mockResolvedValueOnce([{ id: "external-link-1" }]);
     getCollectionDetailMock.mockResolvedValueOnce({ id: "collection-1" });
     listAudioLinksMock.mockResolvedValueOnce([{ id: "audio-link-1" }]);
     getAudioLinkDetailMock.mockResolvedValueOnce({ id: "audio-link-1" });
@@ -104,6 +117,9 @@ describe("library server functions", () => {
     getWorkCollectionMembershipMock.mockResolvedValueOnce([{ id: "collection-1", containsWork: true }]);
 
     await expect(server.listCollectionsServerFn()).resolves.toEqual([{ id: "collection-1" }]);
+    await expect(
+      server.listExternalLinksForWorkServerFn({ data: { workId: "work-1" } }),
+    ).resolves.toEqual([{ id: "external-link-1" }]);
     await expect(
       server.getCollectionDetailServerFn({ data: { collectionId: "collection-1" } }),
     ).resolves.toEqual({ id: "collection-1" });
@@ -136,6 +152,17 @@ describe("library server functions", () => {
       }),
     ).rejects.toThrow("Authentication required");
     await expect(
+      server.createExternalLinkServerFn({
+        data: {
+          editionId: "edition-1",
+          externalId: "OL1",
+          lastSyncedAt: null,
+          metadata: "{}",
+          provider: "openlibrary",
+        },
+      }),
+    ).rejects.toThrow("Authentication required");
+    await expect(
       server.renameCollectionServerFn({
         data: {
           collectionId: "collection-1",
@@ -147,6 +174,17 @@ describe("library server functions", () => {
       server.deleteCollectionServerFn({
         data: {
           collectionId: "collection-1",
+        },
+      }),
+    ).rejects.toThrow("Authentication required");
+    await expect(
+      server.updateExternalLinkServerFn({
+        data: {
+          externalId: "OL1",
+          lastSyncedAt: null,
+          linkId: "external-link-1",
+          metadata: "{}",
+          provider: "openlibrary",
         },
       }),
     ).rejects.toThrow("Authentication required");
@@ -163,6 +201,13 @@ describe("library server functions", () => {
         data: {
           collectionId: "collection-1",
           workId: "work-1",
+        },
+      }),
+    ).rejects.toThrow("Authentication required");
+    await expect(
+      server.deleteExternalLinkServerFn({
+        data: {
+          linkId: "external-link-1",
         },
       }),
     ).rejects.toThrow("Authentication required");
@@ -196,10 +241,13 @@ describe("library server functions", () => {
     const server = await import("./library-server");
     getCurrentUserMock.mockResolvedValue({ id: "user-1" });
     createCollectionMock.mockResolvedValueOnce({ id: "collection-1", name: "Favorites" });
+    createExternalLinkMock.mockResolvedValueOnce({ id: "external-link-1", provider: "openlibrary" });
     renameCollectionMock.mockResolvedValueOnce({ id: "collection-1", name: "Favorites Updated" });
     deleteCollectionMock.mockResolvedValueOnce(undefined);
+    updateExternalLinkMock.mockResolvedValueOnce({ id: "external-link-1", provider: "goodreads" });
     addWorkToCollectionMock.mockResolvedValueOnce(undefined);
     removeWorkFromCollectionMock.mockResolvedValueOnce(undefined);
+    deleteExternalLinkMock.mockResolvedValueOnce(undefined);
     updateAudioLinkStatusMock.mockResolvedValueOnce({ reviewStatus: ReviewStatus.CONFIRMED });
     updateDuplicateCandidateStatusMock.mockResolvedValueOnce({ status: ReviewStatus.IGNORED });
     mergeDuplicateCandidateMock.mockResolvedValueOnce({ status: ReviewStatus.MERGED });
@@ -219,6 +267,17 @@ describe("library server functions", () => {
       }),
     ).resolves.toEqual({ id: "collection-1", name: "Favorites" });
     await expect(
+      server.createExternalLinkServerFn({
+        data: {
+          editionId: "edition-1",
+          externalId: "OL1",
+          lastSyncedAt: "2025-01-01T10:00",
+          metadata: "{\"source\":\"manual\"}",
+          provider: "openlibrary",
+        },
+      }),
+    ).resolves.toEqual({ id: "external-link-1", provider: "openlibrary" });
+    await expect(
       server.renameCollectionServerFn({
         data: {
           collectionId: "collection-1",
@@ -234,6 +293,17 @@ describe("library server functions", () => {
       }),
     ).resolves.toBeUndefined();
     await expect(
+      server.updateExternalLinkServerFn({
+        data: {
+          externalId: "GR1",
+          lastSyncedAt: null,
+          linkId: "external-link-1",
+          metadata: "{\"shelf\":\"favorites\"}",
+          provider: "goodreads",
+        },
+      }),
+    ).resolves.toEqual({ id: "external-link-1", provider: "goodreads" });
+    await expect(
       server.addWorkToCollectionServerFn({
         data: {
           collectionId: "collection-1",
@@ -246,6 +316,13 @@ describe("library server functions", () => {
         data: {
           collectionId: "collection-1",
           workId: "work-1",
+        },
+      }),
+    ).resolves.toBeUndefined();
+    await expect(
+      server.deleteExternalLinkServerFn({
+        data: {
+          linkId: "external-link-1",
         },
       }),
     ).resolves.toBeUndefined();
@@ -458,25 +535,53 @@ describe("library server functions", () => {
       }),
     ).resolves.toBeUndefined();
     createCollectionMock.mockResolvedValueOnce({ id: "collection-9" });
+    createExternalLinkMock.mockResolvedValueOnce({ id: "external-link-9", metadata: "" });
     renameCollectionMock.mockResolvedValueOnce({ id: "collection-9", name: "Renamed" });
     deleteCollectionMock.mockResolvedValueOnce(undefined);
+    updateExternalLinkMock.mockResolvedValueOnce({ id: "external-link-9", metadata: "", provider: "goodreads" });
     addWorkToCollectionMock.mockResolvedValueOnce(undefined);
     removeWorkFromCollectionMock.mockResolvedValueOnce(undefined);
+    deleteExternalLinkMock.mockResolvedValueOnce(undefined);
     listCollectionsMock.mockResolvedValueOnce([{ id: "collection-9" }]);
+    listExternalLinksForWorkMock.mockResolvedValueOnce([{ id: "external-link-9" }]);
     getCollectionDetailMock.mockResolvedValueOnce({ id: "collection-9" });
     getWorkCollectionMembershipMock.mockResolvedValueOnce([{ id: "collection-9", containsWork: true }]);
     await expect(server.listCollectionsAction()).resolves.toEqual([{ id: "collection-9" }]);
+    await expect(
+      server.listExternalLinksForWorkAction({ workId: "work-9" }),
+    ).resolves.toEqual([{ id: "external-link-9" }]);
     await expect(server.getCollectionDetailAction({ collectionId: "collection-9" })).resolves.toEqual({ id: "collection-9" });
     await expect(server.createCollectionAction({ name: "Favorites" })).resolves.toEqual({ id: "collection-9" });
+    await expect(
+      server.createExternalLinkAction({
+        editionId: "edition-9",
+        externalId: "OL9",
+        lastSyncedAt: null,
+        metadata: null,
+        provider: "openlibrary",
+      }),
+    ).resolves.toEqual({ id: "external-link-9", metadata: "" });
     await expect(
       server.renameCollectionAction({ collectionId: "collection-9", name: "Renamed" }),
     ).resolves.toEqual({ id: "collection-9", name: "Renamed" });
     await expect(server.deleteCollectionAction({ collectionId: "collection-9" })).resolves.toBeUndefined();
     await expect(
+      server.updateExternalLinkAction({
+        externalId: "GR9",
+        lastSyncedAt: null,
+        linkId: "external-link-9",
+        metadata: null,
+        provider: "goodreads",
+      }),
+    ).resolves.toEqual({ id: "external-link-9", metadata: "", provider: "goodreads" });
+    await expect(
       server.addWorkToCollectionAction({ collectionId: "collection-9", workId: "work-9" }),
     ).resolves.toBeUndefined();
     await expect(
       server.removeWorkFromCollectionAction({ collectionId: "collection-9", workId: "work-9" }),
+    ).resolves.toBeUndefined();
+    await expect(
+      server.deleteExternalLinkAction({ linkId: "external-link-9" }),
     ).resolves.toBeUndefined();
     await expect(
       server.getWorkCollectionMembershipAction({ workId: "work-9" }),
@@ -504,11 +609,44 @@ describe("library server functions", () => {
     const server = await import("./library-server");
 
     expect(server.validateListCollectionsInput()).toBeUndefined();
+    expect(server.validateListExternalLinksForWorkInput({ workId: "work-1" })).toEqual({
+      workId: "work-1",
+    });
     expect(server.validateGetCollectionDetailInput({ collectionId: "collection-1" })).toEqual({
       collectionId: "collection-1",
     });
     expect(server.validateCreateCollectionInput({ name: "Favorites" })).toEqual({
       name: "Favorites",
+    });
+    expect(
+      server.validateCreateExternalLinkInput({
+        editionId: "edition-1",
+        externalId: "OL1",
+        lastSyncedAt: "2025-01-01T10:00",
+        metadata: "{\"source\":\"manual\"}",
+        provider: "openlibrary",
+      }),
+    ).toEqual({
+      editionId: "edition-1",
+      externalId: "OL1",
+      lastSyncedAt: new Date("2025-01-01T10:00"),
+      metadata: { source: "manual" },
+      provider: "openlibrary",
+    });
+    expect(
+      server.validateCreateExternalLinkInput({
+        editionId: "edition-1",
+        externalId: "OL-empty",
+        lastSyncedAt: null,
+        metadata: "",
+        provider: "openlibrary",
+      }),
+    ).toEqual({
+      editionId: "edition-1",
+      externalId: "OL-empty",
+      lastSyncedAt: null,
+      metadata: null,
+      provider: "openlibrary",
     });
     expect(
       server.validateRenameCollectionInput({ collectionId: "collection-1", name: "Favorites" }),
@@ -518,6 +656,21 @@ describe("library server functions", () => {
     });
     expect(server.validateDeleteCollectionInput({ collectionId: "collection-1" })).toEqual({
       collectionId: "collection-1",
+    });
+    expect(
+      server.validateUpdateExternalLinkInput({
+        externalId: "OL2",
+        lastSyncedAt: null,
+        linkId: "external-link-1",
+        metadata: "{\"shelf\":\"favorites\"}",
+        provider: "openlibrary",
+      }),
+    ).toEqual({
+      externalId: "OL2",
+      lastSyncedAt: null,
+      linkId: "external-link-1",
+      metadata: { shelf: "favorites" },
+      provider: "openlibrary",
     });
     expect(
       server.validateAddWorkToCollectionInput({ collectionId: "collection-1", workId: "work-1" }),
@@ -533,6 +686,9 @@ describe("library server functions", () => {
     });
     expect(server.validateGetWorkCollectionMembershipInput({ workId: "work-1" })).toEqual({
       workId: "work-1",
+    });
+    expect(server.validateDeleteExternalLinkInput({ linkId: "external-link-1" })).toEqual({
+      linkId: "external-link-1",
     });
     expect(
       server.validateListAudioLinksInput({ status: ReviewStatus.PENDING }),
@@ -635,6 +791,27 @@ describe("library server functions", () => {
     const server = await import("./library-server");
 
     expect(() => server.validateCreateCollectionInput({ name: "   " })).toThrow();
+    expect(() => server.validateCreateExternalLinkInput({
+      editionId: "edition-1",
+      externalId: "OL1",
+      lastSyncedAt: "bad-date",
+      metadata: "{}",
+      provider: "openlibrary",
+    })).toThrow();
+    expect(() => server.validateCreateExternalLinkInput({
+      editionId: "edition-1",
+      externalId: "OL-array",
+      lastSyncedAt: null,
+      metadata: "[]",
+      provider: "openlibrary",
+    })).toThrow();
+    expect(() => server.validateUpdateExternalLinkInput({
+      externalId: "OL1",
+      lastSyncedAt: null,
+      linkId: "",
+      metadata: "not json",
+      provider: "openlibrary",
+    })).toThrow();
     expect(() => server.validateRenameCollectionInput({ collectionId: "", name: "Favorites" })).toThrow();
     expect(() => server.validateAddWorkToCollectionInput({ collectionId: "collection-1", workId: "" })).toThrow();
     expect(() => server.validateGetReadingProgressInput({

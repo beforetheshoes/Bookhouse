@@ -9,8 +9,10 @@ import { getCurrentUser } from "./auth-server";
 import {
   addWorkToCollection,
   createCollection,
+  createExternalLink,
   deleteReadingProgress,
   deleteCollection,
+  deleteExternalLink,
   getCollectionDetail,
   getReadingProgress,
   getAudioLinkDetail,
@@ -18,6 +20,7 @@ import {
   getWorkCollectionMembership,
   getUserProgressTrackingMode,
   getWorkProgressView,
+  listExternalLinksForWork,
   listCollections,
   listAudioLinks,
   listDuplicateCandidates,
@@ -25,6 +28,7 @@ import {
   removeWorkFromCollection,
   renameCollection,
   upsertReadingProgress,
+  updateExternalLink,
   updateAudioLinkStatus,
   updateDuplicateCandidateStatus,
   updateUserProgressTrackingMode,
@@ -33,13 +37,17 @@ import {
 import {
   addWorkToCollectionSchema,
   createCollectionSchema,
+  createExternalLinkSchema,
   deleteCollectionSchema,
+  deleteExternalLinkSchema,
   getCollectionDetailSchema,
   getWorkCollectionMembershipSchema,
   getWorkProgressViewSchema,
+  listExternalLinksForWorkSchema,
   readingProgressLookupSchema,
   removeWorkFromCollectionSchema,
   renameCollectionSchema,
+  updateExternalLinkSchema,
   updateUserProgressTrackingModeSchema,
   updateWorkProgressTrackingModeSchema,
   upsertReadingProgressSchema,
@@ -75,6 +83,11 @@ export async function listCollectionsAction() {
   return listCollections(libraryDb, userId);
 }
 
+export async function listExternalLinksForWorkAction(data: { workId: string }) {
+  await requireCurrentUserId();
+  return listExternalLinksForWork(libraryDb, data.workId);
+}
+
 export async function getCollectionDetailAction(data: { collectionId: string }) {
   const userId = await requireCurrentUserId();
   return getCollectionDetail(libraryDb, userId, data.collectionId);
@@ -83,6 +96,24 @@ export async function getCollectionDetailAction(data: { collectionId: string }) 
 export async function createCollectionAction(data: { name: string }) {
   const userId = await requireCurrentUserId();
   return createCollection(libraryDb, userId, data.name);
+}
+
+export async function createExternalLinkAction(data: {
+  editionId: string;
+  externalId: string;
+  lastSyncedAt: Date | null;
+  metadata: Record<string, unknown> | null;
+  provider: string;
+}) {
+  await requireCurrentUserId();
+  return createExternalLink(
+    libraryDb,
+    data.editionId,
+    data.provider,
+    data.externalId,
+    data.metadata,
+    data.lastSyncedAt,
+  );
 }
 
 export async function renameCollectionAction(data: { collectionId: string; name: string }) {
@@ -95,6 +126,24 @@ export async function deleteCollectionAction(data: { collectionId: string }) {
   await deleteCollection(libraryDb, userId, data.collectionId);
 }
 
+export async function updateExternalLinkAction(data: {
+  externalId: string;
+  lastSyncedAt: Date | null;
+  linkId: string;
+  metadata: Record<string, unknown> | null;
+  provider: string;
+}) {
+  await requireCurrentUserId();
+  return updateExternalLink(
+    libraryDb,
+    data.linkId,
+    data.provider,
+    data.externalId,
+    data.metadata,
+    data.lastSyncedAt,
+  );
+}
+
 export async function addWorkToCollectionAction(data: { collectionId: string; workId: string }) {
   const userId = await requireCurrentUserId();
   await addWorkToCollection(libraryDb, userId, data.collectionId, data.workId);
@@ -103,6 +152,11 @@ export async function addWorkToCollectionAction(data: { collectionId: string; wo
 export async function removeWorkFromCollectionAction(data: { collectionId: string; workId: string }) {
   const userId = await requireCurrentUserId();
   await removeWorkFromCollection(libraryDb, userId, data.collectionId, data.workId);
+}
+
+export async function deleteExternalLinkAction(data: { linkId: string }) {
+  await requireCurrentUserId();
+  await deleteExternalLink(libraryDb, data.linkId);
 }
 
 export async function getWorkCollectionMembershipAction(data: { workId: string }) {
@@ -206,11 +260,28 @@ export const validateListAudioLinksInput = (
 
 export const validateListCollectionsInput = () => undefined;
 
+export const validateListExternalLinksForWorkInput = (data: { workId: string }) =>
+  listExternalLinksForWorkSchema.parse(data);
+
 export const validateGetCollectionDetailInput = (data: { collectionId: string }) =>
   getCollectionDetailSchema.parse(data);
 
 export const validateCreateCollectionInput = (data: { name: string }) =>
   createCollectionSchema.parse(data);
+
+export const validateCreateExternalLinkInput = (data: {
+  editionId: string;
+  externalId: string;
+  lastSyncedAt: string | null;
+  metadata: string;
+  provider: string;
+}): {
+  editionId: string;
+  externalId: string;
+  lastSyncedAt: Date | null;
+  metadata: Record<string, unknown> | null;
+  provider: string;
+} => createExternalLinkSchema.parse(data);
 
 export const validateRenameCollectionInput = (data: { collectionId: string; name: string }) =>
   renameCollectionSchema.parse(data);
@@ -218,11 +289,28 @@ export const validateRenameCollectionInput = (data: { collectionId: string; name
 export const validateDeleteCollectionInput = (data: { collectionId: string }) =>
   deleteCollectionSchema.parse(data);
 
+export const validateUpdateExternalLinkInput = (data: {
+  externalId: string;
+  lastSyncedAt: string | null;
+  linkId: string;
+  metadata: string;
+  provider: string;
+}): {
+  externalId: string;
+  lastSyncedAt: Date | null;
+  linkId: string;
+  metadata: Record<string, unknown> | null;
+  provider: string;
+} => updateExternalLinkSchema.parse(data);
+
 export const validateAddWorkToCollectionInput = (data: { collectionId: string; workId: string }) =>
   addWorkToCollectionSchema.parse(data);
 
 export const validateRemoveWorkFromCollectionInput = (data: { collectionId: string; workId: string }) =>
   removeWorkFromCollectionSchema.parse(data);
+
+export const validateDeleteExternalLinkInput = (data: { linkId: string }) =>
+  deleteExternalLinkSchema.parse(data);
 
 export const validateGetWorkCollectionMembershipInput = (data: { workId: string }) =>
   getWorkCollectionMembershipSchema.parse(data);
@@ -286,6 +374,10 @@ export const listCollectionsServerFn = createServerFn({ method: "GET" })
   .inputValidator(validateListCollectionsInput)
   .handler(async () => listCollectionsAction());
 
+export const listExternalLinksForWorkServerFn = createServerFn({ method: "GET" })
+  .inputValidator(validateListExternalLinksForWorkInput)
+  .handler(async ({ data }) => listExternalLinksForWorkAction(data));
+
 export const getCollectionDetailServerFn = createServerFn({ method: "GET" })
   .inputValidator(validateGetCollectionDetailInput)
   .handler(async ({ data }) => getCollectionDetailAction(data));
@@ -293,6 +385,10 @@ export const getCollectionDetailServerFn = createServerFn({ method: "GET" })
 export const createCollectionServerFn = createServerFn({ method: "POST" })
   .inputValidator(validateCreateCollectionInput)
   .handler(async ({ data }) => createCollectionAction(data));
+
+export const createExternalLinkServerFn = createServerFn({ method: "POST" })
+  .inputValidator(validateCreateExternalLinkInput)
+  .handler(async ({ data }) => createExternalLinkAction(data));
 
 export const renameCollectionServerFn = createServerFn({ method: "POST" })
   .inputValidator(validateRenameCollectionInput)
@@ -302,6 +398,10 @@ export const deleteCollectionServerFn = createServerFn({ method: "POST" })
   .inputValidator(validateDeleteCollectionInput)
   .handler(async ({ data }) => deleteCollectionAction(data));
 
+export const updateExternalLinkServerFn = createServerFn({ method: "POST" })
+  .inputValidator(validateUpdateExternalLinkInput)
+  .handler(async ({ data }) => updateExternalLinkAction(data));
+
 export const addWorkToCollectionServerFn = createServerFn({ method: "POST" })
   .inputValidator(validateAddWorkToCollectionInput)
   .handler(async ({ data }) => addWorkToCollectionAction(data));
@@ -309,6 +409,10 @@ export const addWorkToCollectionServerFn = createServerFn({ method: "POST" })
 export const removeWorkFromCollectionServerFn = createServerFn({ method: "POST" })
   .inputValidator(validateRemoveWorkFromCollectionInput)
   .handler(async ({ data }) => removeWorkFromCollectionAction(data));
+
+export const deleteExternalLinkServerFn = createServerFn({ method: "POST" })
+  .inputValidator(validateDeleteExternalLinkInput)
+  .handler(async ({ data }) => deleteExternalLinkAction(data));
 
 export const getWorkCollectionMembershipServerFn = createServerFn({ method: "GET" })
   .inputValidator(validateGetWorkCollectionMembershipInput)

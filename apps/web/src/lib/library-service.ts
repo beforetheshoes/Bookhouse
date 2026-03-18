@@ -78,6 +78,15 @@ type AudioLinkRecord = {
   reviewStatus: ReviewStatus;
 };
 
+type ExternalLinkRecord = {
+  editionId: string;
+  externalId: string;
+  id: string;
+  lastSyncedAt: Date | null;
+  metadata: Record<string, unknown> | null;
+  provider: string;
+};
+
 type ReadingProgressWithEdition = {
   edition: {
     formatFamily: FormatFamily;
@@ -114,6 +123,16 @@ type CollectionWithItems = CollectionRecord & {
       titleDisplay: string;
     };
   }>;
+};
+
+type WorkEditionRecord = {
+  asin: string | null;
+  formatFamily: FormatFamily;
+  id: string;
+  isbn10: string | null;
+  isbn13: string | null;
+  publishedAt: Date | null;
+  publisher: string | null;
 };
 
 export interface ReadingProgressPayload {
@@ -177,11 +196,12 @@ export interface LibraryServiceDb {
     update(args: { where: { id: string }; data: Record<string, unknown> }): Promise<unknown>;
   };
   externalLink: {
-    create(args: Record<string, unknown>): Promise<unknown>;
+    create(args: Record<string, unknown>): Promise<ExternalLinkRecord>;
     delete(args: { where: { id: string } }): Promise<unknown>;
     findFirst(args: Record<string, unknown>): Promise<{ id: string } | null>;
-    findMany(args: Record<string, unknown>): Promise<Array<{ editionId: string; externalId: string; id: string; metadata: unknown; provider: string }>>;
-    update(args: { where: { id: string }; data: Record<string, unknown> }): Promise<unknown>;
+    findMany(args: Record<string, unknown>): Promise<ExternalLinkRecord[]>;
+    findUnique(args: Record<string, unknown>): Promise<ExternalLinkRecord | null>;
+    update(args: { where: { id: string }; data: Record<string, unknown> }): Promise<ExternalLinkRecord>;
   };
   readingProgress: {
     create(args: Record<string, unknown>): Promise<ReadingProgressRecord>;
@@ -196,7 +216,7 @@ export interface LibraryServiceDb {
   };
   work: {
     delete(args: { where: { id: string } }): Promise<unknown>;
-    findUnique(args: Record<string, unknown>): Promise<{ id: string; titleDisplay: string; editions?: unknown[] } | null>;
+    findUnique(args: Record<string, unknown>): Promise<{ id: string; titleDisplay: string; editions?: WorkEditionRecord[] } | null>;
   };
   workProgressPreference: {
     deleteMany(args: Record<string, unknown>): Promise<{ count: number }>;
@@ -271,9 +291,30 @@ export interface AudioLinkDetail extends AudioLinkSummary {
   ebookUpdatedAt?: string;
 }
 
+export interface ExternalLinkEntry {
+  editionId: string;
+  externalId: string;
+  id: string;
+  lastSyncedAt: string | null;
+  metadata: string;
+  provider: string;
+}
+
+export interface WorkEditionView {
+  asin: string | null;
+  externalLinks: ExternalLinkEntry[];
+  formatFamily: FormatFamily;
+  id: string;
+  isbn10: string | null;
+  isbn13: string | null;
+  publishedAt: string | null;
+  publisher: string | null;
+}
+
 export interface WorkProgressView {
   collections: CollectionMembershipState[];
   currentSourceEditionId?: string;
+  editions: WorkEditionView[];
   effectiveMode: ProgressTrackingMode;
   globalMode: ProgressTrackingMode;
   overrideMode: ProgressTrackingMode | null;
@@ -481,6 +522,33 @@ function toAudioLinkSummary(audioLink: AudioLinkRecord): AudioLinkSummary {
   };
 }
 
+function toExternalLinkEntry(externalLink: ExternalLinkRecord): ExternalLinkEntry {
+  return {
+    editionId: externalLink.editionId,
+    externalId: externalLink.externalId,
+    id: externalLink.id,
+    lastSyncedAt: externalLink.lastSyncedAt?.toISOString() ?? null,
+    metadata: externalLink.metadata === null ? "" : JSON.stringify(externalLink.metadata, null, 2),
+    provider: externalLink.provider,
+  };
+}
+
+function toWorkEditionView(
+  edition: WorkEditionRecord,
+  externalLinks: ExternalLinkRecord[],
+): WorkEditionView {
+  return {
+    asin: edition.asin,
+    externalLinks: externalLinks.map(toExternalLinkEntry),
+    formatFamily: edition.formatFamily,
+    id: edition.id,
+    isbn10: edition.isbn10,
+    isbn13: edition.isbn13,
+    publishedAt: edition.publishedAt?.toISOString() ?? null,
+    publisher: edition.publisher,
+  };
+}
+
 function toCollectionSummary(collection: CollectionWithItems): CollectionSummary {
   return {
     id: collection.id,
@@ -667,6 +735,120 @@ export async function updateAudioLinkStatus(
   });
 
   return toAudioLinkSummary(audioLink);
+}
+
+export async function listExternalLinksForWork(
+  db: LibraryServiceDb,
+  workId: string,
+): Promise<WorkEditionView[]> {
+  const work = await db.work.findUnique({
+    where: { id: workId },
+  });
+
+  if (work === null) {
+    throw new Error("Work not found");
+  }
+
+  const editions = [...(work.editions ?? [])].sort((left, right) =>
+    left.formatFamily.localeCompare(right.formatFamily) ||
+    left.id.localeCompare(right.id)
+  );
+
+  const externalLinksByEdition = new Map<string, ExternalLinkRecord[]>();
+  await Promise.all(editions.map(async (edition) => {
+    const externalLinks = await db.externalLink.findMany({
+      orderBy: [{ provider: "asc" }, { externalId: "asc" }, { id: "asc" }],
+      where: { editionId: edition.id },
+    });
+    externalLinksByEdition.set(edition.id, externalLinks);
+  }));
+
+  return editions.map((edition) =>
+    toWorkEditionView(edition, externalLinksByEdition.get(edition.id) ?? [])
+  );
+}
+
+export async function createExternalLink(
+  db: LibraryServiceDb,
+  editionId: string,
+  provider: string,
+  externalId: string,
+  metadata: Record<string, unknown> | null,
+  lastSyncedAt: Date | null,
+): Promise<ExternalLinkEntry> {
+  const edition = await db.edition.findUnique({
+    where: { id: editionId },
+  });
+
+  if (edition === null) {
+    throw new Error("Edition not found");
+  }
+
+  const externalLink = await db.externalLink.create({
+    data: {
+      editionId,
+      externalId,
+      lastSyncedAt,
+      metadata,
+      provider,
+    },
+  });
+
+  return toExternalLinkEntry(externalLink);
+}
+
+export async function updateExternalLink(
+  db: LibraryServiceDb,
+  linkId: string,
+  provider: string,
+  externalId: string,
+  metadata: Record<string, unknown> | null,
+  lastSyncedAt: Date | null,
+): Promise<ExternalLinkEntry> {
+  const existing = await db.externalLink.findUnique({
+    where: { id: linkId },
+  });
+
+  if (existing === null) {
+    throw new Error("External link not found");
+  }
+
+  const edition = await db.edition.findUnique({
+    where: { id: existing.editionId },
+  });
+
+  if (edition === null) {
+    throw new Error("Edition not found");
+  }
+
+  const externalLink = await db.externalLink.update({
+    where: { id: linkId },
+    data: {
+      externalId,
+      lastSyncedAt,
+      metadata,
+      provider,
+    },
+  });
+
+  return toExternalLinkEntry(externalLink);
+}
+
+export async function deleteExternalLink(
+  db: LibraryServiceDb,
+  linkId: string,
+): Promise<void> {
+  const existing = await db.externalLink.findUnique({
+    where: { id: linkId },
+  });
+
+  if (existing === null) {
+    throw new Error("External link not found");
+  }
+
+  await db.externalLink.delete({
+    where: { id: linkId },
+  });
 }
 
 export async function listCollections(
@@ -1445,8 +1627,9 @@ export async function getWorkProgressView(
     return null;
   }
 
-  const [collections, globalMode, override, progressRows] = await Promise.all([
+  const [collections, editions, globalMode, override, progressRows] = await Promise.all([
     getWorkCollectionMembership(db, userId, workId),
+    listExternalLinksForWork(db, workId),
     getUserProgressTrackingMode(db, userId),
     db.workProgressPreference.findUnique({
       where: {
@@ -1481,6 +1664,7 @@ export async function getWorkProgressView(
   return {
     collections,
     currentSourceEditionId: summaryRow?.editionId,
+    editions,
     effectiveMode,
     globalMode,
     overrideMode: override?.progressTrackingMode ?? null,

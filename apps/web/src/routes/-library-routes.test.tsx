@@ -6,18 +6,22 @@ import { ProgressTrackingMode } from "@bookhouse/domain";
 const getCurrentUserServerFnMock = vi.fn();
 const addWorkToCollectionServerFnMock = vi.fn();
 const createCollectionServerFnMock = vi.fn();
+const createExternalLinkServerFnMock = vi.fn();
 const deleteCollectionServerFnMock = vi.fn();
+const deleteExternalLinkServerFnMock = vi.fn();
 const getCollectionDetailServerFnMock = vi.fn();
 const getAudioLinkDetailServerFnMock = vi.fn();
 const getDuplicateCandidateDetailServerFnMock = vi.fn();
 const getUserProgressTrackingModeServerFnMock = vi.fn();
 const getWorkProgressViewServerFnMock = vi.fn();
+const listExternalLinksForWorkServerFnMock = vi.fn();
 const listCollectionsServerFnMock = vi.fn();
 const listAudioLinksServerFnMock = vi.fn();
 const listDuplicateCandidatesServerFnMock = vi.fn();
 const mergeDuplicateCandidateServerFnMock = vi.fn();
 const removeWorkFromCollectionServerFnMock = vi.fn();
 const renameCollectionServerFnMock = vi.fn();
+const updateExternalLinkServerFnMock = vi.fn();
 const updateAudioLinkStatusServerFnMock = vi.fn();
 const updateDuplicateCandidateStatusServerFnMock = vi.fn();
 const updateUserProgressTrackingModeServerFnMock = vi.fn();
@@ -31,18 +35,22 @@ vi.mock("../lib/auth-client", () => ({
 vi.mock("../lib/library-server", () => ({
   addWorkToCollectionServerFn: addWorkToCollectionServerFnMock,
   createCollectionServerFn: createCollectionServerFnMock,
+  createExternalLinkServerFn: createExternalLinkServerFnMock,
   deleteCollectionServerFn: deleteCollectionServerFnMock,
+  deleteExternalLinkServerFn: deleteExternalLinkServerFnMock,
   getCollectionDetailServerFn: getCollectionDetailServerFnMock,
   getAudioLinkDetailServerFn: getAudioLinkDetailServerFnMock,
   getDuplicateCandidateDetailServerFn: getDuplicateCandidateDetailServerFnMock,
   getUserProgressTrackingModeServerFn: getUserProgressTrackingModeServerFnMock,
   getWorkProgressViewServerFn: getWorkProgressViewServerFnMock,
+  listExternalLinksForWorkServerFn: listExternalLinksForWorkServerFnMock,
   listCollectionsServerFn: listCollectionsServerFnMock,
   listAudioLinksServerFn: listAudioLinksServerFnMock,
   listDuplicateCandidatesServerFn: listDuplicateCandidatesServerFnMock,
   mergeDuplicateCandidateServerFn: mergeDuplicateCandidateServerFnMock,
   removeWorkFromCollectionServerFn: removeWorkFromCollectionServerFnMock,
   renameCollectionServerFn: renameCollectionServerFnMock,
+  updateExternalLinkServerFn: updateExternalLinkServerFnMock,
   updateAudioLinkStatusServerFn: updateAudioLinkStatusServerFnMock,
   updateDuplicateCandidateStatusServerFn: updateDuplicateCandidateStatusServerFnMock,
   updateUserProgressTrackingModeServerFn: updateUserProgressTrackingModeServerFnMock,
@@ -76,18 +84,22 @@ describe("library routes", () => {
     getCurrentUserServerFnMock.mockReset();
     addWorkToCollectionServerFnMock.mockReset();
     createCollectionServerFnMock.mockReset();
+    createExternalLinkServerFnMock.mockReset();
     deleteCollectionServerFnMock.mockReset();
+    deleteExternalLinkServerFnMock.mockReset();
     getCollectionDetailServerFnMock.mockReset();
     getAudioLinkDetailServerFnMock.mockReset();
     getDuplicateCandidateDetailServerFnMock.mockReset();
     getUserProgressTrackingModeServerFnMock.mockReset();
     getWorkProgressViewServerFnMock.mockReset();
+    listExternalLinksForWorkServerFnMock.mockReset();
     listCollectionsServerFnMock.mockReset();
     listAudioLinksServerFnMock.mockReset();
     listDuplicateCandidatesServerFnMock.mockReset();
     mergeDuplicateCandidateServerFnMock.mockReset();
     removeWorkFromCollectionServerFnMock.mockReset();
     renameCollectionServerFnMock.mockReset();
+    updateExternalLinkServerFnMock.mockReset();
     updateAudioLinkStatusServerFnMock.mockReset();
     updateDuplicateCandidateStatusServerFnMock.mockReset();
     updateUserProgressTrackingModeServerFnMock.mockReset();
@@ -529,6 +541,45 @@ describe("library routes", () => {
           name: "Queued",
         },
       ],
+      editions: [
+        {
+          asin: "B123",
+          externalLinks: [
+            {
+              editionId: "edition-1",
+              externalId: "OL1",
+              id: "external-link-1",
+              lastSyncedAt: "2025-01-01T10:00:00.000Z",
+              metadata: "{\n  \"source\": \"manual\"\n}",
+              provider: "openlibrary",
+            },
+            {
+              editionId: "edition-1",
+              externalId: "GR1",
+              id: "external-link-2",
+              lastSyncedAt: null,
+              metadata: "",
+              provider: "goodreads",
+            },
+          ],
+          formatFamily: "EBOOK",
+          id: "edition-1",
+          isbn10: "0316498840",
+          isbn13: "9780316498834",
+          publishedAt: "2015-08-04T00:00:00.000Z",
+          publisher: "Orbit",
+        },
+        {
+          asin: null,
+          externalLinks: [],
+          formatFamily: "AUDIOBOOK",
+          id: "edition-2",
+          isbn10: null,
+          isbn13: null,
+          publishedAt: null,
+          publisher: null,
+        },
+      ],
       effectiveMode: ProgressTrackingMode.BY_WORK,
       globalMode: ProgressTrackingMode.BY_WORK,
       overrideMode: ProgressTrackingMode.BY_EDITION,
@@ -574,6 +625,11 @@ describe("library routes", () => {
     expect(workHtml).toContain("The Fifth Season");
     expect(workHtml).toContain("Override: BY_EDITION");
     expect(workHtml).toContain("Edition edition-1");
+    expect(workHtml).toContain("External links");
+    expect(workHtml).toContain("openlibrary");
+    expect(workHtml).toContain("goodreads");
+    expect(workHtml).toContain("Current metadata: None");
+    expect(workHtml).toContain("Add external link");
     expect(workHtml).toContain("Favorites");
     expect(workHtml).toContain("On this shelf");
     expect(workHtml).toContain("Queued");
@@ -586,6 +642,18 @@ describe("library routes", () => {
     getCurrentUserServerFnMock.mockResolvedValue({ id: "user-1" });
     getWorkProgressViewServerFnMock.mockResolvedValueOnce({
       collections: [],
+      editions: [
+        {
+          asin: null,
+          externalLinks: [],
+          formatFamily: "EBOOK",
+          id: "edition-empty",
+          isbn10: null,
+          isbn13: null,
+          publishedAt: null,
+          publisher: null,
+        },
+      ],
       effectiveMode: ProgressTrackingMode.BY_WORK,
       globalMode: ProgressTrackingMode.BY_WORK,
       overrideMode: null,
@@ -607,6 +675,7 @@ describe("library routes", () => {
 
     const workHtml = renderToStaticMarkup(<workModule.WorkDetailRoute />);
     expect(workHtml).toContain("No progress recorded for this work.");
+    expect(workHtml).toContain("No external links for this edition.");
     expect(workHtml).not.toContain("Override:");
 
     getWorkProgressViewServerFnMock.mockResolvedValueOnce(null);
@@ -637,6 +706,7 @@ describe("library routes", () => {
     getCurrentUserServerFnMock.mockResolvedValueOnce({ id: "user-1" });
     getWorkProgressViewServerFnMock.mockResolvedValueOnce({
       collections: [],
+      editions: [],
       effectiveMode: ProgressTrackingMode.BY_WORK,
       globalMode: ProgressTrackingMode.BY_EDITION,
       overrideMode: null,
@@ -676,6 +746,123 @@ describe("library routes", () => {
     expect(workHtml).toContain("EBOOK");
     expect(workHtml).toContain("0%");
     expect(workHtml).toContain("Percent: 0");
+  });
+
+  it("submits create, update, and delete external-link actions from work helpers", async () => {
+    const workModule = await import("./works.$workId");
+    const originalFormData = globalThis.FormData;
+    const createExternalLink = vi.fn(async () => undefined);
+    const updateExternalLink = vi.fn(async () => undefined);
+    const deleteExternalLink = vi.fn(async () => undefined);
+    const invalidate = vi.fn(async () => undefined);
+    const setPending = vi.fn();
+    const reset = vi.fn();
+
+    class FakeFormData {
+      private readonly fields: Record<string, string>;
+
+      constructor(target: { fields: Record<string, string> }) {
+        this.fields = target.fields;
+      }
+
+      get(key: string) {
+        return this.fields[key] ?? null;
+      }
+    }
+
+    // @ts-expect-error test shim for FormData(form)
+    globalThis.FormData = FakeFormData;
+
+    workModule.createExternalLinkCreateSubmitHandler({
+      createExternalLink,
+      editionId: "edition-1",
+      router: { invalidate },
+      setPending,
+    })({
+      currentTarget: {
+        fields: {
+          externalId: "OL1",
+          lastSyncedAt: "2025-01-01T10:00",
+          metadata: "{\"source\":\"manual\"}",
+          provider: "openlibrary",
+        },
+        reset,
+      },
+      preventDefault: vi.fn(),
+    } as never);
+
+    workModule.createExternalLinkUpdateSubmitHandler({
+      linkId: "external-link-1",
+      router: { invalidate },
+      setPending,
+      updateExternalLink,
+    })({
+      currentTarget: {
+        fields: {
+          externalId: "GR1",
+          lastSyncedAt: "",
+          metadata: "{\"shelf\":\"favorites\"}",
+          provider: "goodreads",
+        },
+      },
+      preventDefault: vi.fn(),
+    } as never);
+
+    workModule.createExternalLinkDeleteClickHandler({
+      deleteExternalLink,
+      linkId: "external-link-1",
+      router: { invalidate },
+      setPending,
+    })();
+
+    workModule.createExternalLinkCreateSubmitHandler({
+      createExternalLink,
+      editionId: "edition-2",
+      router: { invalidate },
+      setPending,
+    })({
+      currentTarget: {
+        fields: {},
+        reset: vi.fn(),
+      },
+      preventDefault: vi.fn(),
+    } as never);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    globalThis.FormData = originalFormData;
+
+    expect(createExternalLink).toHaveBeenCalledWith({
+      data: {
+        editionId: "edition-1",
+        externalId: "OL1",
+        lastSyncedAt: "2025-01-01T10:00",
+        metadata: "{\"source\":\"manual\"}",
+        provider: "openlibrary",
+      },
+    });
+    expect(updateExternalLink).toHaveBeenCalledWith({
+      data: {
+        externalId: "GR1",
+        lastSyncedAt: null,
+        linkId: "external-link-1",
+        metadata: "{\"shelf\":\"favorites\"}",
+        provider: "goodreads",
+      },
+    });
+    expect(deleteExternalLink).toHaveBeenCalledWith({
+      data: { linkId: "external-link-1" },
+    });
+    expect(createExternalLink).toHaveBeenNthCalledWith(2, {
+      data: {
+        editionId: "edition-2",
+        externalId: "",
+        lastSyncedAt: null,
+        metadata: "",
+        provider: "",
+      },
+    });
+    expect(reset).toHaveBeenCalledTimes(1);
+    expect(invalidate).toHaveBeenCalledTimes(4);
   });
 
   it("loads collection routes and renders empty and populated shelf states", async () => {

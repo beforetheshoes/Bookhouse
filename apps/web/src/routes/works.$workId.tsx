@@ -1,18 +1,132 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { Link, createFileRoute, redirect, useRouter } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { ProgressTrackingMode } from "@bookhouse/domain";
 import { getCurrentUserServerFn } from "../lib/auth-client";
 import {
   createCollectionMembershipHandler,
+  createExternalLinkMutationHandler,
   createWorkProgressModeHandler,
 } from "../lib/library-route-actions";
 import {
   addWorkToCollectionServerFn,
+  createExternalLinkServerFn,
+  deleteExternalLinkServerFn,
   getWorkProgressViewServerFn,
   removeWorkFromCollectionServerFn,
+  updateExternalLinkServerFn,
   updateWorkProgressTrackingModeServerFn,
 } from "../lib/library-server";
+import type { WorkProgressView } from "../lib/library-service";
+
+function formatMetadataDisplay(metadata: string): string {
+  return metadata === "" ? "None" : metadata;
+}
+
+function getFormStringValue(formData: FormData, key: string): string {
+  return String(formData.get(key) ?? "");
+}
+
+function getOptionalFormStringValue(formData: FormData, key: string): string | null {
+  const value = String(formData.get(key) ?? "").trim();
+  return value === "" ? null : value;
+}
+
+export function createExternalLinkCreateSubmitHandler(input: {
+  createExternalLink: (input: {
+    data: {
+      editionId: string;
+      externalId: string;
+      lastSyncedAt: string | null;
+      metadata: string;
+      provider: string;
+    };
+  }) => Promise<unknown>;
+  editionId: string;
+  router: Parameters<typeof createExternalLinkMutationHandler>[0]["router"];
+  setPending: (value: string | null) => void;
+}) {
+  return (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+
+    createExternalLinkMutationHandler({
+      action: async () => {
+        await input.createExternalLink({
+          data: {
+            editionId: input.editionId,
+            externalId: getFormStringValue(formData, "externalId"),
+            lastSyncedAt: getOptionalFormStringValue(formData, "lastSyncedAt"),
+            metadata: getFormStringValue(formData, "metadata"),
+            provider: getFormStringValue(formData, "provider"),
+          },
+        });
+        form.reset();
+      },
+      pendingValue: `create:${input.editionId}`,
+      router: input.router,
+      setPending: input.setPending,
+    })();
+  };
+}
+
+export function createExternalLinkUpdateSubmitHandler(input: {
+  linkId: string;
+  router: Parameters<typeof createExternalLinkMutationHandler>[0]["router"];
+  setPending: (value: string | null) => void;
+  updateExternalLink: (input: {
+    data: {
+      externalId: string;
+      lastSyncedAt: string | null;
+      linkId: string;
+      metadata: string;
+      provider: string;
+    };
+  }) => Promise<unknown>;
+}) {
+  return (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+
+    createExternalLinkMutationHandler({
+      action: async () => {
+        await input.updateExternalLink({
+          data: {
+            externalId: getFormStringValue(formData, "externalId"),
+            lastSyncedAt: getOptionalFormStringValue(formData, "lastSyncedAt"),
+            linkId: input.linkId,
+            metadata: getFormStringValue(formData, "metadata"),
+            provider: getFormStringValue(formData, "provider"),
+          },
+        });
+      },
+      pendingValue: `update:${input.linkId}`,
+      router: input.router,
+      setPending: input.setPending,
+    })();
+  };
+}
+
+export function createExternalLinkDeleteClickHandler(input: {
+  deleteExternalLink: (input: { data: { linkId: string } }) => Promise<unknown>;
+  linkId: string;
+  router: Parameters<typeof createExternalLinkMutationHandler>[0]["router"];
+  setPending: (value: string | null) => void;
+}) {
+  return () => {
+    createExternalLinkMutationHandler({
+      action: async () => {
+        await input.deleteExternalLink({
+          data: { linkId: input.linkId },
+        });
+      },
+      pendingValue: `delete:${input.linkId}`,
+      router: input.router,
+      setPending: input.setPending,
+    })();
+  };
+}
 
 export const Route = createFileRoute("/works/$workId")({
   loader: async ({ params, serverContext }) => {
@@ -47,12 +161,16 @@ export const Route = createFileRoute("/works/$workId")({
 });
 
 export function WorkDetailRoute() {
-  const { work } = Route.useLoaderData();
+  const { work } = Route.useLoaderData() as { work: WorkProgressView };
   const router = useRouter();
   const addToCollection = useServerFn(addWorkToCollectionServerFn);
+  const createExternalLink = useServerFn(createExternalLinkServerFn);
+  const deleteExternalLink = useServerFn(deleteExternalLinkServerFn);
   const removeFromCollection = useServerFn(removeWorkFromCollectionServerFn);
+  const updateExternalLink = useServerFn(updateExternalLinkServerFn);
   const updateMode = useServerFn(updateWorkProgressTrackingModeServerFn);
   const [pendingCollectionId, setPendingCollectionId] = useState<string | null>(null);
+  const [pendingExternalLinkAction, setPendingExternalLinkAction] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
   return (
@@ -149,6 +267,159 @@ export function WorkDetailRoute() {
           {work.collections.length === 0 ? (
             <p className="text-gray-600">No shelves yet. Create one from the collections page.</p>
           ) : null}
+        </div>
+      </section>
+
+      <section className="mb-6 rounded border border-gray-200 p-4">
+        <div className="mb-3">
+          <p className="font-medium">External links</p>
+          <p className="text-sm text-gray-600">
+            Manage edition-level links from external providers.
+          </p>
+        </div>
+        <div className="space-y-4">
+          {work.editions.map((edition) => (
+            <article key={edition.id} className="rounded border border-gray-200 p-4">
+              <div className="mb-3">
+                <p className="font-medium">{edition.formatFamily} edition {edition.id}</p>
+                <p className="text-sm text-gray-600">
+                  ISBN-13: {edition.isbn13 ?? "None"} · ISBN-10: {edition.isbn10 ?? "None"} · ASIN: {edition.asin ?? "None"}
+                </p>
+                <p className="text-sm text-gray-600">
+                  Publisher: {edition.publisher ?? "None"} · Published: {edition.publishedAt ?? "None"}
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                {edition.externalLinks.map((externalLink) => (
+                  <form
+                    key={externalLink.id}
+                    className="rounded border border-gray-200 p-3 text-sm"
+                    onSubmit={createExternalLinkUpdateSubmitHandler({
+                      linkId: externalLink.id,
+                      router,
+                      setPending: setPendingExternalLinkAction,
+                      updateExternalLink,
+                    })}
+                  >
+                    <p className="mb-2 font-medium">External link {externalLink.id}</p>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <label className="flex flex-col gap-1">
+                        <span>Provider</span>
+                        <input
+                          defaultValue={externalLink.provider}
+                          disabled={pendingExternalLinkAction !== null}
+                          name="provider"
+                          type="text"
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1">
+                        <span>External ID</span>
+                        <input
+                          defaultValue={externalLink.externalId}
+                          disabled={pendingExternalLinkAction !== null}
+                          name="externalId"
+                          type="text"
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1 md:col-span-2">
+                        <span>Metadata (JSON)</span>
+                        <textarea
+                          defaultValue={externalLink.metadata}
+                          disabled={pendingExternalLinkAction !== null}
+                          name="metadata"
+                          rows={4}
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1">
+                        <span>Last synced at</span>
+                        <input
+                          defaultValue={externalLink.lastSyncedAt?.slice(0, 16) ?? ""}
+                          disabled={pendingExternalLinkAction !== null}
+                          name="lastSyncedAt"
+                          type="datetime-local"
+                        />
+                      </label>
+                    </div>
+                    <p className="mt-2 text-xs text-gray-600">
+                      Current metadata: {formatMetadataDisplay(externalLink.metadata)}
+                    </p>
+                    <div className="mt-3 flex gap-3">
+                      <button
+                        disabled={pendingExternalLinkAction !== null}
+                        type="submit"
+                      >
+                        Save link
+                      </button>
+                      <button
+                        disabled={pendingExternalLinkAction !== null}
+                        onClick={createExternalLinkDeleteClickHandler({
+                          deleteExternalLink,
+                          linkId: externalLink.id,
+                          router,
+                          setPending: setPendingExternalLinkAction,
+                        })}
+                        type="button"
+                      >
+                        Delete link
+                      </button>
+                    </div>
+                  </form>
+                ))}
+
+                {edition.externalLinks.length === 0 ? (
+                  <p className="text-sm text-gray-600">No external links for this edition.</p>
+                ) : null}
+
+                <form
+                  className="rounded border border-dashed border-gray-300 p-3 text-sm"
+                  onSubmit={createExternalLinkCreateSubmitHandler({
+                    createExternalLink,
+                    editionId: edition.id,
+                    router,
+                    setPending: setPendingExternalLinkAction,
+                  })}
+                >
+                  <p className="mb-2 font-medium">Add external link</p>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className="flex flex-col gap-1">
+                      <span>Provider</span>
+                      <input disabled={pendingExternalLinkAction !== null} name="provider" type="text" />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span>External ID</span>
+                      <input disabled={pendingExternalLinkAction !== null} name="externalId" type="text" />
+                    </label>
+                    <label className="flex flex-col gap-1 md:col-span-2">
+                      <span>Metadata (JSON)</span>
+                      <textarea
+                        defaultValue=""
+                        disabled={pendingExternalLinkAction !== null}
+                        name="metadata"
+                        placeholder='{"rating": 5}'
+                        rows={4}
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span>Last synced at</span>
+                      <input
+                        disabled={pendingExternalLinkAction !== null}
+                        name="lastSyncedAt"
+                        type="datetime-local"
+                      />
+                    </label>
+                  </div>
+                  <button
+                    className="mt-3"
+                    disabled={pendingExternalLinkAction !== null}
+                    type="submit"
+                  >
+                    Add link
+                  </button>
+                </form>
+              </div>
+            </article>
+          ))}
         </div>
       </section>
 

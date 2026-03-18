@@ -5,6 +5,7 @@ import {
   createCollectionMutationHandler,
   createDuplicateMergeHandler,
   createDuplicateStatusHandler,
+  createExternalLinkMutationHandler,
   createGlobalProgressModeHandler,
   createWorkProgressModeHandler,
 } from "./library-route-actions";
@@ -184,5 +185,25 @@ describe("library route actions", () => {
     expect(mutation).toHaveBeenCalledTimes(1);
     expect(invalidate).toHaveBeenCalledTimes(1);
     expect(setPending).toHaveBeenLastCalledWith(false);
+  });
+
+  it("runs external link mutations and invalidates the router", async () => {
+    const invalidate = vi.fn(async () => undefined);
+    const setPending = vi.fn();
+    const action = vi.fn(async () => undefined);
+
+    createExternalLinkMutationHandler({
+      action,
+      pendingValue: "update:external-link-1",
+      router: { invalidate },
+      setPending,
+    })();
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(setPending).toHaveBeenNthCalledWith(1, "update:external-link-1");
+    expect(action).toHaveBeenCalledTimes(1);
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    expect(setPending).toHaveBeenLastCalledWith(null);
   });
 });

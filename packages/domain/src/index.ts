@@ -21,6 +21,7 @@ export type {
   DuplicateCandidate,
   Edition,
   EditionFile,
+  ExternalLink,
   FileAsset,
   LibraryRoot,
   ReadingProgress,
@@ -38,6 +39,7 @@ import type {
   DuplicateCandidate,
   Edition,
   EditionFile,
+  ExternalLink,
   FileAsset,
   LibraryRoot,
   ReadingProgress,
@@ -49,6 +51,7 @@ import type {
 
 export interface Batch1DomainModels {
   audioLink: AudioLink;
+  externalLink: ExternalLink;
   libraryRoot: LibraryRoot;
   fileAsset: FileAsset;
   work: Work;
@@ -66,6 +69,7 @@ export interface Batch1DomainModels {
 
 export const BATCH1_DOMAIN_MODEL_NAMES = [
   "AudioLink",
+  "ExternalLink",
   "LibraryRoot",
   "FileAsset",
   "Work",

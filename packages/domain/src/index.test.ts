@@ -14,10 +14,11 @@ import {
 } from "./index";
 import type {
   AudioLink,
+  Batch1DomainModels,
   Collection,
   CollectionItem,
-  Batch1DomainModels,
   DuplicateCandidate,
+  ExternalLink,
   ReadingProgress,
   UserPreference,
   WorkProgressPreference,
@@ -37,6 +38,7 @@ describe("domain package", () => {
     expect(ReviewStatus.PENDING).toBe("PENDING");
     expect(BATCH1_DOMAIN_MODEL_NAMES).toEqual([
       "AudioLink",
+      "ExternalLink",
       "LibraryRoot",
       "FileAsset",
       "Work",
@@ -56,6 +58,8 @@ describe("domain package", () => {
   it("includes duplicate and progress preference models in the batch 1 domain model map", () => {
     const audioLink = null as AudioLink | null;
     const batchModelAudioLink = null as Batch1DomainModels["audioLink"] | null;
+    const externalLink = null as ExternalLink | null;
+    const batchModelExternalLink = null as Batch1DomainModels["externalLink"] | null;
     const duplicateCandidate = null as DuplicateCandidate | null;
     const batchModelDuplicateCandidate = null as Batch1DomainModels["duplicateCandidate"] | null;
     const collection = null as Collection | null;
@@ -71,6 +75,8 @@ describe("domain package", () => {
 
     expect(audioLink).toBeNull();
     expect(batchModelAudioLink).toBeNull();
+    expect(externalLink).toBeNull();
+    expect(batchModelExternalLink).toBeNull();
     expect(duplicateCandidate).toBeNull();
     expect(batchModelDuplicateCandidate).toBeNull();
     expect(collection).toBeNull();
