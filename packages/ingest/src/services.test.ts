@@ -1440,6 +1440,7 @@ describe("ingest services", () => {
       createdEdition: false,
       createdEditionFile: false,
       createdWork: false,
+      enqueuedCoverJob: false,
       fileAssetId: "missing-file",
       skipped: true,
     });
@@ -1604,6 +1605,7 @@ describe("ingest services", () => {
         createdEditionFile: true,
         createdWork: false,
         editionId: "edition-1",
+        enqueuedCoverJob: true,
         fileAssetId: "file-1",
         skipped: false,
         workId: "work-1",
@@ -1613,6 +1615,7 @@ describe("ingest services", () => {
         createdEditionFile: false,
         createdWork: false,
         editionId: "edition-1",
+        enqueuedCoverJob: true,
         fileAssetId: "file-1",
         skipped: false,
         workId: "work-1",
@@ -1663,6 +1666,7 @@ describe("ingest services", () => {
       createdEditionFile: true,
       createdWork: false,
       editionId: "edition-2",
+      enqueuedCoverJob: true,
       fileAssetId: "file-1",
       skipped: false,
       workId: "work-1",
@@ -1709,6 +1713,7 @@ describe("ingest services", () => {
       createdEditionFile: true,
       createdWork: true,
       editionId: "edition-1",
+      enqueuedCoverJob: true,
       fileAssetId: "file-1",
       skipped: false,
       workId: "work-1",
@@ -1807,10 +1812,53 @@ describe("ingest services", () => {
       createdEditionFile: false,
       createdWork: false,
       editionId: "edition-1",
+      enqueuedCoverJob: true,
       fileAssetId: "file-1",
       skipped: false,
       workId: "work-1",
     });
+  });
+
+  it("handles orphaned editionFile when edition no longer exists", async () => {
+    const state = createEmptyState("/tmp/root");
+    addFileAsset(state, {
+      metadata: {
+        normalized: {
+          authors: ["N. K. Jemisin"],
+          identifiers: { isbn13: "9780316498834", unknown: [] },
+          title: "The Fifth Season",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      },
+    });
+    // Add editionFile but NO edition — orphaned reference
+    addEditionFile(state);
+
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+    });
+
+    await expect(
+      services.matchFileAssetToEdition({ fileAssetId: "file-1" }),
+    ).resolves.toEqual({
+      createdEdition: false,
+      createdEditionFile: false,
+      createdWork: false,
+      editionId: undefined,
+      enqueuedCoverJob: false,
+      fileAssetId: "file-1",
+      skipped: false,
+      workId: undefined,
+    });
+
+    // Should NOT enqueue a cover job when edition is missing
+    expect(enqueueLibraryJob).not.toHaveBeenCalled();
   });
 
   it("throws when metadata parsing is requested for an unknown file asset", async () => {

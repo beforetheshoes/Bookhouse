@@ -23,7 +23,7 @@ const yauzl = require("yauzl-promise") as {
   open(path: string): Promise<ZipArchive>;
 };
 
-async function readZipEntryText(absolutePath: string, entryPath: string): Promise<string> {
+async function readZipEntryBuffer(absolutePath: string, entryPath: string): Promise<Buffer> {
   const zip = await yauzl.open(absolutePath);
 
   try {
@@ -39,13 +39,18 @@ async function readZipEntryText(absolutePath: string, entryPath: string): Promis
         chunks.push(Buffer.from(chunk));
       }
 
-      return Buffer.concat(chunks).toString("utf8");
+      return Buffer.concat(chunks);
     }
   } finally {
     await zip.close();
   }
 
   throw new Error(`EPUB entry "${entryPath}" was not found`);
+}
+
+async function readZipEntryText(absolutePath: string, entryPath: string): Promise<string> {
+  const buffer = await readZipEntryBuffer(absolutePath, entryPath);
+  return buffer.toString("utf8");
 }
 
 function normalizeZipPath(pathValue: string): string {
@@ -136,6 +141,74 @@ function getPackageMetadata(opfXml: string): ParsedEpubMetadataRaw {
   };
 }
 
+export interface EpubCoverResult {
+  buffer: Buffer;
+  mediaType: string;
+}
+
+interface ManifestItem {
+  id?: string;
+  href?: string;
+  "media-type"?: string;
+  properties?: string;
+}
+
+function getManifestCoverHref(opfXml: string): { href: string; mediaType: string } | null {
+  const parsed = xmlParser.parse(opfXml) as {
+    package?: {
+      metadata?: Record<string, unknown>;
+      manifest?: { item?: ManifestItem | ManifestItem[] };
+    };
+  };
+
+  const manifest = parsed.package?.manifest;
+  if (!manifest) {
+    return null;
+  }
+
+  const items = ensureArray(manifest.item);
+
+  // EPUB 3: look for properties="cover-image"
+  for (const item of items) {
+    if (
+      typeof item.properties === "string" &&
+      item.properties.split(/\s+/).includes("cover-image") &&
+      typeof item.href === "string" &&
+      typeof item["media-type"] === "string"
+    ) {
+      return { href: item.href, mediaType: item["media-type"] };
+    }
+  }
+
+  // EPUB 2 fallback: <meta name="cover" content="item-id" />
+  const metadata = parsed.package?.metadata;
+  if (metadata && typeof metadata === "object") {
+    const metaEntries = ensureArray(metadata.meta);
+    for (const meta of metaEntries) {
+      if (
+        meta &&
+        typeof meta === "object" &&
+        (meta as Record<string, unknown>).name === "cover" &&
+        typeof (meta as Record<string, unknown>).content === "string"
+      ) {
+        const coverId = (meta as Record<string, unknown>).content as string;
+        const coverItem = items.find(
+          (item) => item.id === coverId,
+        );
+        if (
+          coverItem &&
+          typeof coverItem.href === "string" &&
+          typeof coverItem["media-type"] === "string"
+        ) {
+          return { href: coverItem.href, mediaType: coverItem["media-type"] };
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
 export async function parseEpubMetadata(absolutePath: string): Promise<ParsedEpubMetadataRaw> {
   const containerXml = await readZipEntryText(absolutePath, "META-INF/container.xml");
   const rootfilePath = getRootfilePath(containerXml);
@@ -144,12 +217,30 @@ export async function parseEpubMetadata(absolutePath: string): Promise<ParsedEpu
   return getPackageMetadata(opfXml);
 }
 
+export async function extractEpubCover(absolutePath: string): Promise<EpubCoverResult | null> {
+  const containerXml = await readZipEntryText(absolutePath, "META-INF/container.xml");
+  const rootfilePath = getRootfilePath(containerXml);
+  const opfXml = await readZipEntryText(absolutePath, rootfilePath);
+  const coverRef = getManifestCoverHref(opfXml);
+
+  if (coverRef === null) {
+    return null;
+  }
+
+  const coverEntryPath = resolveRelativeZipPath(rootfilePath, coverRef.href);
+  const buffer = await readZipEntryBuffer(absolutePath, coverEntryPath);
+
+  return { buffer, mediaType: coverRef.mediaType };
+}
+
 export const EPUB_INTERNALS = {
+  getManifestCoverHref,
   getPackageMetadata,
   getIdentifierScheme,
   getRootfilePath,
   getTextContent,
   normalizeZipPath,
+  readZipEntryBuffer,
   readZipEntryText,
   resolveRelativeZipPath,
 };

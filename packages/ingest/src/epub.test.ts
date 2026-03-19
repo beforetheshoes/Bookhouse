@@ -5,7 +5,7 @@ import path from "node:path";
 import { once } from "node:events";
 import yazl from "yazl";
 import { afterEach, describe, expect, it } from "vitest";
-import { parseEpubMetadata } from "./index";
+import { parseEpubMetadata, extractEpubCover } from "./index";
 import { EPUB_INTERNALS } from "./epub";
 
 const tempDirectories: string[] = [];
@@ -15,7 +15,11 @@ afterEach(async () => {
   tempDirectories.length = 0;
 });
 
-async function createEpub(entries: Record<string, string>): Promise<string> {
+interface EpubEntries {
+  [path: string]: string | Buffer;
+}
+
+async function createEpub(entries: EpubEntries): Promise<string> {
   const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-epub-"));
   tempDirectories.push(directory);
   const outputPath = path.join(directory, "book.epub");
@@ -25,7 +29,8 @@ async function createEpub(entries: Record<string, string>): Promise<string> {
   zipfile.outputStream.pipe(output);
 
   for (const [entryPath, contents] of Object.entries(entries)) {
-    zipfile.addBuffer(Buffer.from(contents, "utf8"), entryPath);
+    const buffer = typeof contents === "string" ? Buffer.from(contents, "utf8") : contents;
+    zipfile.addBuffer(buffer, entryPath);
   }
 
   zipfile.end();
@@ -184,6 +189,231 @@ describe("EPUB metadata parser", () => {
     ).toThrow("EPUB package document did not contain metadata");
     await expect(
       EPUB_INTERNALS.readZipEntryText("/definitely/missing.epub", "content.opf"),
+    ).rejects.toThrow();
+  });
+});
+
+describe("EPUB cover extraction", () => {
+  const FAKE_COVER = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+  it("extracts cover via EPUB 3 properties='cover-image'", async () => {
+    const epubPath = await createEpub({
+      "META-INF/container.xml": `<?xml version="1.0"?>
+        <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+          <rootfiles>
+            <rootfile full-path="content.opf" media-type="application/oebps-package+xml" />
+          </rootfiles>
+        </container>`,
+      "content.opf": `<?xml version="1.0" encoding="utf-8"?>
+        <package version="3.0" xmlns="http://www.idpf.org/2007/opf">
+          <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:title>Cover Test</dc:title>
+          </metadata>
+          <manifest>
+            <item id="cover" href="cover.png" media-type="image/png" properties="cover-image" />
+            <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" />
+          </manifest>
+        </package>`,
+      "cover.png": FAKE_COVER,
+    });
+
+    const result = await extractEpubCover(epubPath);
+    expect(result).toEqual({ buffer: FAKE_COVER, mediaType: "image/png" });
+  });
+
+  it("extracts cover via EPUB 2 meta name='cover' fallback", async () => {
+    const epubPath = await createEpub({
+      "META-INF/container.xml": `<?xml version="1.0"?>
+        <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+          <rootfiles>
+            <rootfile full-path="content.opf" media-type="application/oebps-package+xml" />
+          </rootfiles>
+        </container>`,
+      "content.opf": `<?xml version="1.0" encoding="utf-8"?>
+        <package version="2.0" xmlns="http://www.idpf.org/2007/opf">
+          <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:title>EPUB 2 Cover</dc:title>
+            <meta name="cover" content="cover-img" />
+          </metadata>
+          <manifest>
+            <item id="cover-img" href="images/cover.jpg" media-type="image/jpeg" />
+          </manifest>
+        </package>`,
+      "images/cover.jpg": FAKE_COVER,
+    });
+
+    const result = await extractEpubCover(epubPath);
+    expect(result).toEqual({ buffer: FAKE_COVER, mediaType: "image/jpeg" });
+  });
+
+  it("returns null when no cover is in the manifest", async () => {
+    const epubPath = await createEpub({
+      "META-INF/container.xml": `<?xml version="1.0"?>
+        <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+          <rootfiles>
+            <rootfile full-path="content.opf" media-type="application/oebps-package+xml" />
+          </rootfiles>
+        </container>`,
+      "content.opf": `<?xml version="1.0" encoding="utf-8"?>
+        <package version="3.0" xmlns="http://www.idpf.org/2007/opf">
+          <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:title>No Cover</dc:title>
+          </metadata>
+          <manifest>
+            <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" />
+          </manifest>
+        </package>`,
+    });
+
+    const result = await extractEpubCover(epubPath);
+    expect(result).toBeNull();
+  });
+
+  it("resolves cover paths relative to OPF directory", async () => {
+    const epubPath = await createEpub({
+      "META-INF/container.xml": `<?xml version="1.0"?>
+        <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+          <rootfiles>
+            <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml" />
+          </rootfiles>
+        </container>`,
+      "OEBPS/content.opf": `<?xml version="1.0" encoding="utf-8"?>
+        <package version="3.0" xmlns="http://www.idpf.org/2007/opf">
+          <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:title>Nested Cover</dc:title>
+          </metadata>
+          <manifest>
+            <item id="cover" href="images/cover.jpg" media-type="image/jpeg" properties="cover-image" />
+          </manifest>
+        </package>`,
+      "OEBPS/images/cover.jpg": FAKE_COVER,
+    });
+
+    const result = await extractEpubCover(epubPath);
+    expect(result).toEqual({ buffer: FAKE_COVER, mediaType: "image/jpeg" });
+  });
+
+  it("returns null when manifest is missing entirely", async () => {
+    const epubPath = await createEpub({
+      "META-INF/container.xml": `<?xml version="1.0"?>
+        <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+          <rootfiles>
+            <rootfile full-path="content.opf" media-type="application/oebps-package+xml" />
+          </rootfiles>
+        </container>`,
+      "content.opf": `<?xml version="1.0" encoding="utf-8"?>
+        <package version="3.0" xmlns="http://www.idpf.org/2007/opf">
+          <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:title>No Manifest</dc:title>
+          </metadata>
+        </package>`,
+    });
+
+    const result = await extractEpubCover(epubPath);
+    expect(result).toBeNull();
+  });
+
+  it("covers readZipEntryBuffer error for missing entry", async () => {
+    const epubPath = await createEpub({
+      "META-INF/container.xml": `<?xml version="1.0"?>
+        <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+          <rootfiles>
+            <rootfile full-path="content.opf" media-type="application/oebps-package+xml" />
+          </rootfiles>
+        </container>`,
+      "content.opf": `<?xml version="1.0" encoding="utf-8"?>
+        <package version="3.0" xmlns="http://www.idpf.org/2007/opf">
+          <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:title>Missing Cover File</dc:title>
+          </metadata>
+          <manifest>
+            <item id="cover" href="missing.png" media-type="image/png" properties="cover-image" />
+          </manifest>
+        </package>`,
+    });
+
+    await expect(extractEpubCover(epubPath)).rejects.toThrow('EPUB entry "missing.png" was not found');
+  });
+
+  it("covers getManifestCoverHref internal edge cases", () => {
+    // No manifest in package
+    expect(EPUB_INTERNALS.getManifestCoverHref(`<?xml version="1.0"?>
+      <package xmlns="http://www.idpf.org/2007/opf">
+        <metadata><title>Test</title></metadata>
+      </package>`)).toBeNull();
+
+    // EPUB 3 with cover-image property
+    expect(EPUB_INTERNALS.getManifestCoverHref(`<?xml version="1.0"?>
+      <package xmlns="http://www.idpf.org/2007/opf">
+        <metadata />
+        <manifest>
+          <item id="cover" href="cover.jpg" media-type="image/jpeg" properties="cover-image" />
+        </manifest>
+      </package>`)).toEqual({ href: "cover.jpg", mediaType: "image/jpeg" });
+
+    // EPUB 2 meta name="cover" fallback
+    expect(EPUB_INTERNALS.getManifestCoverHref(`<?xml version="1.0"?>
+      <package xmlns="http://www.idpf.org/2007/opf">
+        <metadata>
+          <meta name="cover" content="img-cover" />
+        </metadata>
+        <manifest>
+          <item id="img-cover" href="images/cover.png" media-type="image/png" />
+        </manifest>
+      </package>`)).toEqual({ href: "images/cover.png", mediaType: "image/png" });
+
+    // EPUB 2 meta but no matching manifest item
+    expect(EPUB_INTERNALS.getManifestCoverHref(`<?xml version="1.0"?>
+      <package xmlns="http://www.idpf.org/2007/opf">
+        <metadata>
+          <meta name="cover" content="nonexistent-id" />
+        </metadata>
+        <manifest>
+          <item id="other" href="other.xhtml" media-type="application/xhtml+xml" />
+        </manifest>
+      </package>`)).toBeNull();
+
+    // Manifest items without properties or cover meta
+    expect(EPUB_INTERNALS.getManifestCoverHref(`<?xml version="1.0"?>
+      <package xmlns="http://www.idpf.org/2007/opf">
+        <metadata />
+        <manifest>
+          <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" />
+        </manifest>
+      </package>`)).toBeNull();
+
+    // Single manifest item (not an array)
+    expect(EPUB_INTERNALS.getManifestCoverHref(`<?xml version="1.0"?>
+      <package xmlns="http://www.idpf.org/2007/opf">
+        <metadata />
+        <manifest>
+          <item id="cover" href="c.jpg" media-type="image/jpeg" properties="cover-image" />
+        </manifest>
+      </package>`)).toEqual({ href: "c.jpg", mediaType: "image/jpeg" });
+
+    // Metadata with non-cover meta entries (EPUB 2 loop runs but no match)
+    expect(EPUB_INTERNALS.getManifestCoverHref(`<?xml version="1.0"?>
+      <package xmlns="http://www.idpf.org/2007/opf">
+        <metadata>
+          <meta name="generator" content="calibre" />
+        </metadata>
+        <manifest>
+          <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" />
+        </manifest>
+      </package>`)).toBeNull();
+
+    // Manifest with items but no metadata element (EPUB 2 fallback can't run)
+    expect(EPUB_INTERNALS.getManifestCoverHref(`<?xml version="1.0"?>
+      <package xmlns="http://www.idpf.org/2007/opf">
+        <manifest>
+          <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" />
+        </manifest>
+      </package>`)).toBeNull();
+  });
+
+  it("covers readZipEntryBuffer for missing file", async () => {
+    await expect(
+      EPUB_INTERNALS.readZipEntryBuffer("/definitely/missing.epub", "cover.png"),
     ).rejects.toThrow();
   });
 });

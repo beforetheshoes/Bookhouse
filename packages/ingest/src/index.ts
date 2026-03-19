@@ -43,6 +43,10 @@ export type {
   ScanProgressData,
 } from "./services";
 
+export { extractEpubCover } from "./epub";
+export type { EpubCoverResult } from "./epub";
+export { detectAdjacentCover, resizeCoverImage, processCoverForWork } from "./covers";
+export type { CoverDependencies, ProcessCoverInput, ProcessCoverResult } from "./covers";
 export { PARTIAL_HASH_BYTES } from "./hashing";
 export { SCAN_PROGRESS_INTERVAL } from "./services";
 
@@ -50,6 +54,8 @@ export const INGEST_PUBLIC_API = [
   "classifyMediaKind",
   "createIdentifierMap",
   "createIngestServices",
+  "detectAdjacentCover",
+  "extractEpubCover",
   "canonicalizeBookTitle",
   "canonicalizeContributorName",
   "canonicalizeContributorNames",
@@ -68,6 +74,8 @@ export const INGEST_PUBLIC_API = [
   "parseEpubMetadata",
   "parseFileAssetMetadata",
   "parseOpfSidecar",
+  "processCoverForWork",
+  "resizeCoverImage",
   "scanLibraryRoot",
   "walkRegularFiles",
 ] as const;
