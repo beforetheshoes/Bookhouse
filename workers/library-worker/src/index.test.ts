@@ -237,6 +237,66 @@ describe("library worker", () => {
     expect(importJobUpdateMock).not.toHaveBeenCalled();
   });
 
+  it("passes reportProgress to scanLibraryRoot that updates ImportJob and job progress", async () => {
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor({
+      hashFileAsset: hashFileAssetMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
+      parseFileAssetMetadata: parseFileAssetMetadataMock,
+      scanLibraryRoot: scanLibraryRootMock,
+    });
+
+    const updateProgressMock = vi.fn();
+    scanLibraryRootMock.mockImplementationOnce(async (input: { reportProgress?: (data: unknown) => Promise<void> }) => {
+      if (input.reportProgress) {
+        await input.reportProgress({ totalFiles: 100 });
+        await input.reportProgress({ processedFiles: 50, errorCount: 1 });
+      }
+      return "scan-result";
+    });
+
+    await processor({
+      data: { libraryRootId: "root-1", importJobId: "ij-progress" },
+      name: "scan-library-root",
+      attemptsMade: 0,
+      updateProgress: updateProgressMock,
+    } as never);
+
+    // importJob.update should have been called: RUNNING, progress(totalFiles), progress(processedFiles), SUCCEEDED
+    expect(importJobUpdateMock).toHaveBeenCalledWith({
+      where: { id: "ij-progress" },
+      data: { totalFiles: 100 },
+    });
+    expect(importJobUpdateMock).toHaveBeenCalledWith({
+      where: { id: "ij-progress" },
+      data: { processedFiles: 50, errorCount: 1 },
+    });
+    // job.updateProgress should have been called for each progress report
+    expect(updateProgressMock).toHaveBeenCalledWith({ totalFiles: 100 });
+    expect(updateProgressMock).toHaveBeenCalledWith({ processedFiles: 50, errorCount: 1 });
+  });
+
+  it("does not pass reportProgress to scanLibraryRoot when importJobId is absent", async () => {
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor({
+      hashFileAsset: hashFileAssetMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
+      parseFileAssetMetadata: parseFileAssetMetadataMock,
+      scanLibraryRoot: scanLibraryRootMock,
+    });
+
+    scanLibraryRootMock.mockResolvedValueOnce("scan-result");
+
+    await processor({
+      data: { libraryRootId: "root-1" },
+      name: "scan-library-root",
+      attemptsMade: 0,
+    } as never);
+
+    // scanLibraryRoot should be called WITHOUT reportProgress
+    expect(scanLibraryRootMock).toHaveBeenCalledWith({ libraryRootId: "root-1" });
+  });
+
   it("fails unknown jobs", async () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({

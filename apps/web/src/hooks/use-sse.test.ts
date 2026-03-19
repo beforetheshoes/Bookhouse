@@ -33,13 +33,14 @@ beforeEach(() => {
   eventSourceListeners.clear();
 });
 
-it("creates EventSource and registers 3 event listeners when enabled=true", () => {
+it("creates EventSource and registers 4 event listeners when enabled=true", () => {
   renderHook(() => { useSSE({ enabled: true }); });
 
-  expect(addEventListenerMock).toHaveBeenCalledTimes(3);
+  expect(addEventListenerMock).toHaveBeenCalledTimes(4);
   expect(addEventListenerMock).toHaveBeenCalledWith("job:completed", expect.any(Function));
   expect(addEventListenerMock).toHaveBeenCalledWith("job:failed", expect.any(Function));
   expect(addEventListenerMock).toHaveBeenCalledWith("job:active", expect.any(Function));
+  expect(addEventListenerMock).toHaveBeenCalledWith("job:progress", expect.any(Function));
 });
 
 it("sets onerror on the EventSource", () => {

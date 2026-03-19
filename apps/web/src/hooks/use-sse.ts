@@ -13,7 +13,7 @@ export function useSSE({ enabled = true }: UseSSEOptions = {}) {
 
     const es = new EventSource("/api/events");
 
-    const eventTypes = ["job:completed", "job:failed", "job:active"];
+    const eventTypes = ["job:completed", "job:failed", "job:active", "job:progress"];
 
     const handler = () => {
       void router.invalidate();

@@ -1,3 +1,4 @@
+import type { ParsedAudiobookMetadataJsonRaw, ParsedAudioId3TagsRaw } from "./audiobook";
 import type { ParsedEpubIdentifier, ParsedEpubMetadataRaw } from "./epub";
 import type { ParsedOpfMetadataRaw } from "./opf";
 
@@ -12,6 +13,7 @@ export interface NormalizedBookMetadata {
   authors: string[];
   identifiers: NormalizedBookIdentifiers;
   title?: string;
+  narrators?: string[];
   description?: string;
   subjects?: string[];
   publisher?: string;
@@ -184,6 +186,89 @@ export function normalizeOpfMetadata(raw: ParsedOpfMetadataRaw): NormalizedBookM
     date: normalizeWhitespace(raw.date),
     language: normalizeWhitespace(raw.language),
     series: raw.series ? { name: raw.series.name, index: raw.series.index } : undefined,
+  };
+}
+
+export function normalizeAudiobookMetadata(
+  json: ParsedAudiobookMetadataJsonRaw,
+  id3?: ParsedAudioId3TagsRaw,
+): NormalizedBookMetadata {
+  const title = normalizeWhitespace(json.title);
+
+  // Authors: json.authors, fallback to ID3 albumArtist or artist
+  let authors = [...new Set(
+    json.authors
+      .map((a) => normalizeWhitespace(a))
+      .filter((a): a is string => a !== undefined),
+  )];
+  if (authors.length === 0 && id3) {
+    const fallbackAuthor = normalizeWhitespace(id3.albumArtist ?? id3.artist);
+    if (fallbackAuthor !== undefined) {
+      authors = [fallbackAuthor];
+    }
+  }
+
+  // Narrators
+  const narrators = [...new Set(
+    json.narrators
+      .map((n) => normalizeWhitespace(n))
+      .filter((n): n is string => n !== undefined),
+  )];
+
+  // Identifiers from isbn/asin fields
+  const identifierInputs: ParsedEpubIdentifier[] = [];
+  if (json.isbn !== undefined) {
+    identifierInputs.push({ scheme: "ISBN", value: json.isbn });
+  }
+  if (json.asin !== undefined) {
+    identifierInputs.push({ scheme: "ASIN", value: json.asin });
+  }
+  const identifiers = createIdentifierMap(identifierInputs);
+
+  // Description
+  const description = normalizeWhitespace(json.description);
+
+  // Subjects from genres, fallback to ID3
+  let subjects = json.genres
+    .map((g) => normalizeWhitespace(g))
+    .filter((g): g is string => g !== undefined);
+  if (subjects.length === 0 && id3?.genres && id3.genres.length > 0) {
+    subjects = id3.genres
+      .map((g) => normalizeWhitespace(g))
+      .filter((g): g is string => g !== undefined);
+  }
+
+  // Publisher
+  const publisher = normalizeWhitespace(json.publisher);
+
+  // Date from publishedYear, fallback to ID3 year
+  let date: string | undefined = normalizeWhitespace(json.publishedYear);
+  if (date === undefined && id3?.year !== undefined) {
+    date = String(id3.year);
+  }
+
+  // Language
+  const language = normalizeWhitespace(json.language);
+
+  // Series from first entry
+  let series: { name: string; index?: number } | undefined;
+  const firstSeries = json.series[0];
+  if (firstSeries) {
+    const index = parseFloat(firstSeries.sequence);
+    series = { name: firstSeries.name, index: isNaN(index) ? undefined : index };
+  }
+
+  return {
+    authors,
+    identifiers,
+    title,
+    narrators,
+    description,
+    subjects: subjects.length > 0 ? subjects : undefined,
+    publisher,
+    date,
+    language,
+    series,
   };
 }
 

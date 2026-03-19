@@ -1,0 +1,104 @@
+import { readFile } from "node:fs/promises";
+import { parseFile } from "music-metadata";
+
+export interface ParsedAudiobookMetadataJsonRaw {
+  title: string;
+  subtitle?: string;
+  authors: string[];
+  narrators: string[];
+  series: Array<{ name: string; sequence: string }>;
+  publisher?: string;
+  publishedYear?: string;
+  description?: string;
+  genres: string[];
+  language?: string;
+  isbn?: string;
+  asin?: string;
+}
+
+export interface ParsedAudioId3TagsRaw {
+  title?: string;
+  artist?: string;
+  albumArtist?: string;
+  album?: string;
+  year?: number;
+  genres: string[];
+  comment?: string;
+  trackNumber?: number;
+  trackTotal?: number;
+}
+
+function ensureStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+function ensureSeriesArray(value: unknown): Array<{ name: string; sequence: string }> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter(
+    (item): item is { name: string; sequence: string } =>
+      typeof item === "object" &&
+      item !== null &&
+      typeof (item as Record<string, unknown>).name === "string" &&
+      typeof (item as Record<string, unknown>).sequence === "string",
+  );
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+export async function parseAudiobookMetadataJson(
+  absolutePath: string,
+): Promise<ParsedAudiobookMetadataJsonRaw> {
+  const content = await readFile(absolutePath, "utf8");
+  const parsed: unknown = JSON.parse(content);
+
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("metadata.json content is not an object");
+  }
+
+  const obj = parsed as Record<string, unknown>;
+
+  if (typeof obj.title !== "string") {
+    throw new Error("metadata.json missing required field: title");
+  }
+
+  return {
+    title: obj.title,
+    subtitle: optionalString(obj.subtitle),
+    authors: ensureStringArray(obj.authors),
+    narrators: ensureStringArray(obj.narrators),
+    series: ensureSeriesArray(obj.series),
+    publisher: optionalString(obj.publisher),
+    publishedYear: optionalString(obj.publishedYear),
+    description: optionalString(obj.description),
+    genres: ensureStringArray(obj.genres),
+    language: optionalString(obj.language),
+    isbn: optionalString(obj.isbn),
+    asin: optionalString(obj.asin),
+  };
+}
+
+export async function parseAudioId3Tags(
+  absolutePath: string,
+): Promise<ParsedAudioId3TagsRaw> {
+  const metadata = await parseFile(absolutePath);
+  const { common } = metadata;
+
+  return {
+    title: common.title,
+    artist: common.artist,
+    albumArtist: common.albumartist,
+    album: common.album,
+    year: common.year,
+    genres: common.genre ?? [],
+    comment: common.comment?.[0]?.text,
+    trackNumber: common.track.no ?? undefined,
+    trackTotal: common.track.of ?? undefined,
+  };
+}

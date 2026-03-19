@@ -25,6 +25,12 @@ import {
   enqueueLibraryJob,
 } from "@bookhouse/shared";
 import { classifyMediaKind, getFileExtension, normalizeRelativePath, normalizeRootPath } from "./classification";
+import {
+  parseAudiobookMetadataJson,
+  parseAudioId3Tags,
+  type ParsedAudiobookMetadataJsonRaw,
+  type ParsedAudioId3TagsRaw,
+} from "./audiobook";
 import { parseEpubMetadata, type ParsedEpubMetadataRaw } from "./epub";
 import { parseOpfSidecar, type ParsedOpfMetadataRaw } from "./opf";
 import { hashFileContents } from "./hashing";
@@ -32,6 +38,7 @@ import {
   canonicalizeBookTitle,
   canonicalizeContributorName,
   canonicalizeContributorNames,
+  normalizeAudiobookMetadata,
   normalizeBookMetadata,
   normalizeOpfMetadata,
   type NormalizedBookMetadata,
@@ -41,8 +48,8 @@ export interface ParsedFileAssetMetadata {
   normalized?: NormalizedBookMetadata;
   parsedAt: string;
   parserVersion: number;
-  raw?: ParsedEpubMetadataRaw | ParsedOpfMetadataRaw;
-  source: "epub" | "opf-sidecar";
+  raw?: ParsedEpubMetadataRaw | ParsedOpfMetadataRaw | ParsedAudiobookMetadataJsonRaw | ParsedAudioId3TagsRaw;
+  source: "epub" | "opf-sidecar" | "audiobook-json" | "audio-id3";
   status: "parsed" | "unparseable";
   warnings: string[];
 }
@@ -233,11 +240,20 @@ export interface IngestDependencies {
   hashFile: typeof hashFileContents;
   parseEpub: typeof parseEpubMetadata;
   parseOpf: typeof parseOpfSidecar;
+  parseAudiobookJson: typeof parseAudiobookMetadataJson;
+  parseAudioId3: typeof parseAudioId3Tags;
+}
+
+export interface ScanProgressData {
+  totalFiles?: number;
+  processedFiles?: number;
+  errorCount?: number;
 }
 
 export interface ScanLibraryRootInput {
   libraryRootId: string;
   now?: Date;
+  reportProgress?: (data: ScanProgressData) => Promise<void>;
 }
 
 export interface ScanLibraryRootResult {
@@ -285,6 +301,9 @@ export interface MatchFileAssetToEditionResult {
 
 const EPUB_PARSER_VERSION = 1;
 const OPF_PARSER_VERSION = 1;
+const AUDIOBOOK_JSON_PARSER_VERSION = 1;
+const AUDIO_ID3_PARSER_VERSION = 1;
+export const SCAN_PROGRESS_INTERVAL = 50;
 
 
 function isFileChanged(existingFileAsset: FileAssetRecord | undefined, nextFileState: { mtime: Date; sizeBytes: bigint }): boolean {
@@ -321,7 +340,10 @@ function parseStoredMetadata(metadata: FileAsset["metadata"]): ParsedFileAssetMe
   const source = candidate["source"];
   const status = candidate["status"];
 
-  if ((source !== "epub" && source !== "opf-sidecar") || (status !== "parsed" && status !== "unparseable")) {
+  if (
+    (source !== "epub" && source !== "opf-sidecar" && source !== "audiobook-json" && source !== "audio-id3") ||
+    (status !== "parsed" && status !== "unparseable")
+  ) {
     return undefined;
   }
 
@@ -388,19 +410,20 @@ async function ensureEditionFileLink(
   return true;
 }
 
-async function ensureAuthorContributors(
+async function ensureContributors(
   ingestDb: IngestDb,
   editionId: string,
-  authors: string[],
+  names: string[],
+  role: ContributorRole,
 ): Promise<void> {
-  const normalizedAuthors = authors
+  const normalizedNames = names
     .map((nameDisplay) => ({
       nameCanonical: canonicalizeContributorName(nameDisplay),
       nameDisplay,
     }))
     .filter(
-      (author): author is { nameCanonical: string; nameDisplay: string } =>
-        author.nameCanonical !== undefined,
+      (entry): entry is { nameCanonical: string; nameDisplay: string } =>
+        entry.nameCanonical !== undefined,
     );
 
   const contributorsByCanonical = new Map(
@@ -408,19 +431,19 @@ async function ensureAuthorContributors(
       await ingestDb.contributor.findMany({
         where: {
           nameCanonical: {
-            in: [...new Set(normalizedAuthors.map((author) => author.nameCanonical))],
+            in: [...new Set(normalizedNames.map((entry) => entry.nameCanonical))],
           },
         },
       })
     ).map((contributor) => [contributor.nameCanonical, contributor]),
   );
 
-  for (const author of normalizedAuthors) {
-    let contributor = contributorsByCanonical.get(author.nameCanonical);
+  for (const entry of normalizedNames) {
+    let contributor = contributorsByCanonical.get(entry.nameCanonical);
 
     if (contributor === undefined) {
       contributor = await ingestDb.contributor.create({
-        data: author,
+        data: entry,
       });
       contributorsByCanonical.set(contributor.nameCanonical, contributor);
     }
@@ -429,7 +452,7 @@ async function ensureAuthorContributors(
       where: {
         contributorId: contributor.id,
         editionId,
-        role: ContributorRole.AUTHOR,
+        role,
       },
     });
 
@@ -438,7 +461,7 @@ async function ensureAuthorContributors(
         data: {
           contributorId: contributor.id,
           editionId,
-          role: ContributorRole.AUTHOR,
+          role,
         },
       });
     }
@@ -570,10 +593,13 @@ export function createIngestServices(
   const hashFile = dependencies.hashFile ?? hashFileContents;
   const parseEpub = dependencies.parseEpub ?? parseEpubMetadata;
   const parseOpf = dependencies.parseOpf ?? parseOpfSidecar;
+  const parseAudioJson = dependencies.parseAudiobookJson ?? parseAudiobookMetadataJson;
+  const parseAudioId3 = dependencies.parseAudioId3 ?? parseAudioId3Tags;
   const enqueueJob = dependencies.enqueueLibraryJob ?? enqueueLibraryJob;
 
   async function scanLibraryRoot(input: ScanLibraryRootInput): Promise<ScanLibraryRootResult> {
     const now = input.now ?? new Date();
+    const reportProgress = input.reportProgress;
     const libraryRoot = await getExistingLibraryRootOrThrow(ingestDb, input.libraryRootId);
     const normalizedRootPath = normalizeRootPath(libraryRoot.path);
     const existingFileAssets = await ingestDb.fileAsset.findMany({
@@ -587,16 +613,32 @@ export function createIngestServices(
     const scannedFileAssetIds: string[] = [];
     const enqueuedHashJobs: string[] = [];
 
+    if (reportProgress) {
+      await reportProgress({ totalFiles: discoveredPaths.length });
+    }
+
+    let processedFiles = 0;
+    let errorCount = 0;
+
     for (const absolutePath of discoveredPaths) {
       let fileStats;
 
       try {
         fileStats = await readStats(absolutePath);
       } catch {
+        processedFiles++;
+        errorCount++;
+        if (reportProgress && processedFiles % SCAN_PROGRESS_INTERVAL === 0) {
+          await reportProgress({ processedFiles, errorCount });
+        }
         continue;
       }
 
       if (!fileStats.isFile() || fileStats.isSymbolicLink()) {
+        processedFiles++;
+        if (reportProgress && processedFiles % SCAN_PROGRESS_INTERVAL === 0) {
+          await reportProgress({ processedFiles, errorCount });
+        }
         continue;
       }
 
@@ -645,6 +687,16 @@ export function createIngestServices(
         });
         enqueuedHashJobs.push(upsertedFileAsset.id);
       }
+
+      processedFiles++;
+      if (reportProgress && processedFiles % SCAN_PROGRESS_INTERVAL === 0) {
+        await reportProgress({ processedFiles, errorCount });
+      }
+    }
+
+
+    if (reportProgress) {
+      await reportProgress({ processedFiles, errorCount });
     }
 
     const missingFileAssetIds: string[] = [];
@@ -702,7 +754,10 @@ export function createIngestServices(
 
       if (
         fileAsset.mediaKind === MediaKind.EPUB ||
-        (fileAsset.mediaKind === MediaKind.SIDECAR && getFileExtension(fileAsset.absolutePath) === "opf")
+        (fileAsset.mediaKind === MediaKind.SIDECAR && getFileExtension(fileAsset.absolutePath) === "opf") ||
+        fileAsset.mediaKind === MediaKind.AUDIO ||
+        (fileAsset.mediaKind === MediaKind.SIDECAR &&
+          path.basename(fileAsset.absolutePath).toLowerCase() === "metadata.json")
       ) {
         await enqueueJob(LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA, {
           fileAssetId: fileAsset.id,
@@ -877,6 +932,205 @@ export function createIngestServices(
       }
     }
 
+    // Audiobook metadata.json sidecar
+    const isAudiobookJson = fileAsset.mediaKind === MediaKind.SIDECAR &&
+      path.basename(fileAsset.absolutePath).toLowerCase() === "metadata.json";
+
+    if (isAudiobookJson) {
+      try {
+        const jsonRaw = await parseAudioJson(fileAsset.absolutePath);
+
+        // Try to supplement with ID3 tags from first audio sibling
+        const directory = path.dirname(fileAsset.absolutePath);
+        const audioSiblings = await ingestDb.fileAsset.findByDirectory({
+          directoryPath: directory,
+          mediaKinds: [MediaKind.AUDIO],
+        });
+
+        let id3Raw: ParsedAudioId3TagsRaw | undefined;
+        const firstAudioSibling = audioSiblings[0];
+        if (firstAudioSibling) {
+          try {
+            id3Raw = await parseAudioId3(firstAudioSibling.absolutePath);
+          } catch {
+            // ID3 parsing failure is non-fatal for sidecar flow
+          }
+        }
+
+        const normalized = normalizeAudiobookMetadata(jsonRaw, id3Raw);
+        const metadata: ParsedFileAssetMetadata = {
+          normalized,
+          parsedAt: now.toISOString(),
+          parserVersion: AUDIOBOOK_JSON_PARSER_VERSION,
+          raw: jsonRaw,
+          source: "audiobook-json",
+          status: "parsed",
+          warnings: [],
+        };
+
+        await ingestDb.fileAsset.update({
+          where: { id: fileAsset.id },
+          data: {
+            availabilityStatus: AvailabilityStatus.PRESENT,
+            lastSeenAt: now,
+            metadata: metadata as unknown as FileAsset["metadata"],
+          },
+        });
+
+        await enqueueJob(LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, {
+          fileAssetId: fileAsset.id,
+        });
+
+        return {
+          availabilityStatus: AvailabilityStatus.PRESENT,
+          fileAssetId: fileAsset.id,
+          metadata,
+          skipped: false,
+        };
+      } catch (error) {
+        const errorCode = getErrorCode(error);
+
+        if (errorCode === "ENOENT") {
+          await ingestDb.fileAsset.update({
+            where: { id: fileAsset.id },
+            data: {
+              availabilityStatus: AvailabilityStatus.MISSING,
+              lastSeenAt: now,
+            },
+          });
+          return { availabilityStatus: AvailabilityStatus.MISSING, fileAssetId: fileAsset.id, skipped: false };
+        }
+
+        const warning = error instanceof Error ? error.message : "Unknown audiobook metadata.json parsing error";
+        const metadata: ParsedFileAssetMetadata = {
+          parsedAt: now.toISOString(),
+          parserVersion: AUDIOBOOK_JSON_PARSER_VERSION,
+          source: "audiobook-json",
+          status: "unparseable",
+          warnings: [warning],
+        };
+
+        await ingestDb.fileAsset.update({
+          where: { id: fileAsset.id },
+          data: {
+            availabilityStatus: AvailabilityStatus.PRESENT,
+            lastSeenAt: now,
+            metadata: metadata as unknown as FileAsset["metadata"],
+          },
+        });
+
+        return { availabilityStatus: AvailabilityStatus.PRESENT, fileAssetId: fileAsset.id, metadata, skipped: false };
+      }
+    }
+
+    // Standalone audio file (no metadata.json)
+    if (fileAsset.mediaKind === MediaKind.AUDIO) {
+      // Check if a sibling metadata.json exists and is already parsed
+      const directory = path.dirname(fileAsset.absolutePath);
+      const sidecarSiblings = await ingestDb.fileAsset.findByDirectory({
+        directoryPath: directory,
+        mediaKinds: [MediaKind.SIDECAR],
+      });
+      const metadataJsonSibling = sidecarSiblings.find(
+        (fa) => path.basename(fa.absolutePath).toLowerCase() === "metadata.json",
+      );
+
+      if (metadataJsonSibling !== undefined) {
+        const siblingMetadata = parseStoredMetadata(metadataJsonSibling.metadata);
+        if (siblingMetadata?.source === "audiobook-json" && siblingMetadata.status === "parsed") {
+          // Sidecar already parsed; skip this audio file
+          return {
+            availabilityStatus: fileAsset.availabilityStatus,
+            fileAssetId: fileAsset.id,
+            skipped: true,
+          };
+        }
+      }
+
+      try {
+        const id3Raw = await parseAudioId3(fileAsset.absolutePath);
+        const normalized = normalizeAudiobookMetadata(
+          {
+            title: id3Raw.album ?? id3Raw.title ?? "",
+            authors: id3Raw.albumArtist ? [id3Raw.albumArtist] : id3Raw.artist ? [id3Raw.artist] : [],
+            narrators: [],
+            series: [],
+            genres: id3Raw.genres,
+          },
+          id3Raw,
+        );
+
+        const hasEnoughMetadata = normalized.title !== undefined &&
+          normalized.title.length > 0 &&
+          normalized.authors.length > 0;
+
+        const metadata: ParsedFileAssetMetadata = {
+          normalized,
+          parsedAt: now.toISOString(),
+          parserVersion: AUDIO_ID3_PARSER_VERSION,
+          raw: id3Raw,
+          source: "audio-id3",
+          status: "parsed",
+          warnings: [],
+        };
+
+        await ingestDb.fileAsset.update({
+          where: { id: fileAsset.id },
+          data: {
+            availabilityStatus: AvailabilityStatus.PRESENT,
+            lastSeenAt: now,
+            metadata: metadata as unknown as FileAsset["metadata"],
+          },
+        });
+
+        if (hasEnoughMetadata) {
+          await enqueueJob(LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, {
+            fileAssetId: fileAsset.id,
+          });
+        }
+
+        return {
+          availabilityStatus: AvailabilityStatus.PRESENT,
+          fileAssetId: fileAsset.id,
+          metadata,
+          skipped: false,
+        };
+      } catch (error) {
+        const errorCode = getErrorCode(error);
+
+        if (errorCode === "ENOENT") {
+          await ingestDb.fileAsset.update({
+            where: { id: fileAsset.id },
+            data: {
+              availabilityStatus: AvailabilityStatus.MISSING,
+              lastSeenAt: now,
+            },
+          });
+          return { availabilityStatus: AvailabilityStatus.MISSING, fileAssetId: fileAsset.id, skipped: false };
+        }
+
+        const warning = error instanceof Error ? error.message : "Unknown audio ID3 parsing error";
+        const metadata: ParsedFileAssetMetadata = {
+          parsedAt: now.toISOString(),
+          parserVersion: AUDIO_ID3_PARSER_VERSION,
+          source: "audio-id3",
+          status: "unparseable",
+          warnings: [warning],
+        };
+
+        await ingestDb.fileAsset.update({
+          where: { id: fileAsset.id },
+          data: {
+            availabilityStatus: AvailabilityStatus.PRESENT,
+            lastSeenAt: now,
+            metadata: metadata as unknown as FileAsset["metadata"],
+          },
+        });
+
+        return { availabilityStatus: AvailabilityStatus.PRESENT, fileAssetId: fileAsset.id, metadata, skipped: false };
+      }
+    }
+
     if (fileAsset.mediaKind !== MediaKind.EPUB) {
       return {
         availabilityStatus: fileAsset.availabilityStatus,
@@ -969,7 +1223,9 @@ export function createIngestServices(
       where: { id: input.fileAssetId },
     });
 
-    if (fileAsset === null || fileAsset.mediaKind !== MediaKind.EPUB) {
+    const matchableMediaKinds: Set<MediaKind> = new Set([MediaKind.EPUB, MediaKind.AUDIO, MediaKind.SIDECAR]);
+
+    if (fileAsset === null || !matchableMediaKinds.has(fileAsset.mediaKind)) {
       return {
         createdEdition: false,
         createdEditionFile: false,
@@ -978,6 +1234,10 @@ export function createIngestServices(
         skipped: true,
       };
     }
+
+    const isAudiobook = fileAsset.mediaKind === MediaKind.AUDIO ||
+      (fileAsset.mediaKind === MediaKind.SIDECAR &&
+        path.basename(fileAsset.absolutePath).toLowerCase() === "metadata.json");
 
     const existingEditionFile = await ingestDb.editionFile.findFirst({
       where: { fileAssetId: fileAsset.id },
@@ -1076,10 +1336,12 @@ export function createIngestServices(
       workId = matchingWork.id;
     }
 
+    const formatFamily = isAudiobook ? FormatFamily.AUDIOBOOK : FormatFamily.EBOOK;
+
     const createdEdition = await ingestDb.edition.create({
       data: {
         asin: identifiers?.asin ?? null,
-        formatFamily: FormatFamily.EBOOK,
+        formatFamily,
         isbn10: identifiers?.isbn10 ?? null,
         isbn13: identifiers?.isbn13 ?? null,
         publishedAt: null,
@@ -1088,8 +1350,38 @@ export function createIngestServices(
       },
     });
 
-    await ensureAuthorContributors(ingestDb, createdEdition.id, matchableMetadata.authors);
+    await ensureContributors(ingestDb, createdEdition.id, matchableMetadata.authors, ContributorRole.AUTHOR);
+
+    // Add narrator contributors for audiobooks
+    if (isAudiobook && storedMetadata.normalized?.narrators && storedMetadata.normalized.narrators.length > 0) {
+      await ensureContributors(ingestDb, createdEdition.id, storedMetadata.normalized.narrators, ContributorRole.NARRATOR);
+    }
+
     const createdEditionFile = await ensureEditionFileLink(ingestDb, createdEdition.id, fileAsset.id);
+
+    // Link sibling audio files as AUDIO_TRACK for audiobook editions
+    if (isAudiobook) {
+      const directory = path.dirname(fileAsset.absolutePath);
+      const audioSiblings = await ingestDb.fileAsset.findByDirectory({
+        directoryPath: directory,
+        mediaKinds: [MediaKind.AUDIO],
+      });
+
+      for (const sibling of audioSiblings) {
+        const existingSiblingLink = await ingestDb.editionFile.findFirst({
+          where: { fileAssetId: sibling.id },
+        });
+        if (existingSiblingLink === null) {
+          await ingestDb.editionFile.create({
+            data: {
+              editionId: createdEdition.id,
+              fileAssetId: sibling.id,
+              role: EditionFileRole.AUDIO_TRACK,
+            },
+          });
+        }
+      }
+    }
 
     return {
       createdEdition: true,
@@ -1119,12 +1411,15 @@ export const parseFileAssetMetadata = services.parseFileAssetMetadata;
 export { classifyMediaKind, getFileExtension, hashFileContents, isFileChanged, normalizeRelativePath, normalizeRootPath, walkRegularFiles };
 export { parseEpubMetadata } from "./epub";
 export { parseOpfSidecar } from "./opf";
+export { parseAudiobookMetadataJson, parseAudioId3Tags } from "./audiobook";
 export {
   canonicalizeBookTitle,
   canonicalizeContributorName,
   canonicalizeContributorNames,
   createIdentifierMap,
+  normalizeAudiobookMetadata,
   normalizeBookMetadata,
   normalizeOpfMetadata,
 } from "./metadata";
+export type { ParsedAudiobookMetadataJsonRaw, ParsedAudioId3TagsRaw } from "./audiobook";
 export type { NormalizedBookMetadata, ParsedEpubMetadataRaw, ParsedOpfMetadataRaw };
