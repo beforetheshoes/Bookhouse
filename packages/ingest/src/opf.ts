@@ -43,9 +43,7 @@ export function parseOpfXml(opfXml: string): ParsedOpfMetadataRaw {
       if (typeof author === "object" && author !== null) {
         const authorObj = author as Record<string, unknown>;
         if (typeof authorObj["file-as"] === "string") fileAs = authorObj["file-as"];
-        if (typeof authorObj["opf:file-as"] === "string") fileAs = authorObj["opf:file-as"];
         if (typeof authorObj.role === "string") role = authorObj.role;
-        if (typeof authorObj["opf:role"] === "string") role = authorObj["opf:role"];
       }
 
       return { name, fileAs, role };

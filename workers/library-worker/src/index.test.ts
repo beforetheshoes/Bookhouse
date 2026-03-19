@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const addMock = vi.fn();
@@ -185,6 +186,36 @@ describe("library worker", () => {
     });
   });
 
+  it("records String(error) when a non-Error value is thrown with importJobId", async () => {
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor({
+      hashFileAsset: hashFileAssetMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
+      parseFileAssetMetadata: parseFileAssetMetadataMock,
+      scanLibraryRoot: scanLibraryRootMock,
+    });
+
+    scanLibraryRootMock.mockRejectedValueOnce("plain string error");
+
+    await expect(
+      processor({
+        data: { libraryRootId: "root-1", importJobId: "ij-3" },
+        name: "scan-library-root",
+        attemptsMade: 1,
+      } as never),
+    ).rejects.toBe("plain string error");
+
+    expect(importJobUpdateMock).toHaveBeenNthCalledWith(2, {
+      where: { id: "ij-3" },
+      data: {
+        status: "FAILED",
+        finishedAt: expect.any(Date),
+        error: "plain string error",
+        attemptsMade: 1,
+      },
+    });
+  });
+
   it("skips ImportJob updates when importJobId is absent", async () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
@@ -265,6 +296,17 @@ describe("library worker", () => {
 
     expect(processExitSpy).toHaveBeenCalledWith(0);
 
+    // Invoke event callbacks to cover their bodies
+    const readyCallback = onMock.mock.calls.find(([e]) => e === "ready")?.[1] as () => void;
+    readyCallback();
+
+    const completedCallback = onMock.mock.calls.find(([e]) => e === "completed")?.[1] as (job: unknown) => void;
+    completedCallback({ id: "job-1", name: "scan-library-root" });
+
+    const failedCallback = onMock.mock.calls.find(([e]) => e === "failed")?.[1] as (job: unknown, err: Error) => void;
+    failedCallback({ id: "job-1", name: "scan-library-root" }, new Error("disk full"));
+    failedCallback(undefined, new Error("no job ref"));
+
     processOnSpy.mockRestore();
     processExitSpy.mockRestore();
   });
@@ -274,7 +316,7 @@ describe("library worker", () => {
     const processOnSpy = vi.spyOn(process, "on").mockImplementation(() => process);
     const originalArgv = [...process.argv];
 
-    process.argv[1] = "/Users/ryan/Developer/Bookhouse/workers/library-worker/src/index.ts";
+    process.argv[1] = fileURLToPath(new URL("./index.ts", import.meta.url));
 
     await import("./index");
 

@@ -1584,4 +1584,698 @@ describe("ingest services", () => {
       services.parseFileAssetMetadata({ fileAssetId: "missing-file" }),
     ).rejects.toThrow('File asset "missing-file" was not found');
   });
+
+  it("enqueues metadata parsing after hashing an OPF sidecar", async () => {
+    const state = createEmptyState("/tmp/root");
+    const existing: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.opf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.opf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "opf",
+      fullHash: null,
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: null,
+      relativePath: "Author/Book/metadata.opf",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(existing.absolutePath, existing);
+    state.fileAssetsById.set(existing.id, existing);
+    const enqueueLibraryJob = vi.fn(async () => undefined);
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+      hashFile: vi.fn(async () => ({
+        fullHash: "hash",
+        mtime: new Date("2025-01-01T00:00:00.000Z"),
+        partialHash: "phash",
+        sizeBytes: 2n,
+      })),
+    });
+
+    await services.hashFileAsset({ fileAssetId: "file-1" });
+
+    expect(enqueueLibraryJob).toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA,
+      { fileAssetId: "file-1" },
+    );
+  });
+
+  it("does not enqueue metadata parsing for non-opf SIDECAR files", async () => {
+    const state = createEmptyState("/tmp/root");
+    const existing: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/cover.jpg",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "cover.jpg",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "jpg",
+      fullHash: null,
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: null,
+      relativePath: "Author/Book/cover.jpg",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(existing.absolutePath, existing);
+    state.fileAssetsById.set(existing.id, existing);
+    const enqueueLibraryJob = vi.fn(async () => undefined);
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+      hashFile: vi.fn(async () => ({
+        fullHash: "hash",
+        mtime: new Date("2025-01-01T00:00:00.000Z"),
+        partialHash: "phash",
+        sizeBytes: 2n,
+      })),
+    });
+
+    await services.hashFileAsset({ fileAssetId: "file-1" });
+
+    expect(enqueueLibraryJob).not.toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA,
+      expect.anything(),
+    );
+  });
+
+  it("parses OPF sidecar metadata and stores normalized result without sibling enrichment", async () => {
+    const state = createEmptyState("/tmp/root");
+    const opfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.opf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.opf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "opf",
+      fullHash: "hash",
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/metadata.opf",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(opfAsset.absolutePath, opfAsset);
+    state.fileAssetsById.set(opfAsset.id, opfAsset);
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(async () => undefined),
+      parseOpf: vi.fn(async () => ({
+        authors: [{ name: "Patrick Rothfuss", fileAs: "Rothfuss, Patrick", role: "aut" }],
+        identifiers: [{ scheme: "ISBN", value: "9780756404079" }],
+        title: "The Name of the Wind",
+        description: "<p>A story.</p>",
+        subjects: ["Fantasy"],
+        publisher: "DAW Books",
+        date: "2007-03-27",
+        language: "en",
+        series: { name: "The Kingkiller Chronicle", index: 1 },
+      })),
+    });
+
+    const result = await services.parseFileAssetMetadata({
+      fileAssetId: "file-1",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(result).toMatchObject({
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      fileAssetId: "file-1",
+      skipped: false,
+    });
+    expect(state.fileAssetsById.get("file-1")?.metadata).toMatchObject({
+      normalized: {
+        authors: ["Patrick Rothfuss"],
+        title: "The Name of the Wind",
+        publisher: "DAW Books",
+      },
+      source: "opf-sidecar",
+      status: "parsed",
+    });
+  });
+
+  it("enriches sibling edition and work from OPF sidecar folder-proximity", async () => {
+    const state = createEmptyState("/tmp/root");
+    const opfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.opf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.opf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "opf",
+      fullHash: "hash",
+      id: "file-opf",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/metadata.opf",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(opfAsset.absolutePath, opfAsset);
+    state.fileAssetsById.set(opfAsset.id, opfAsset);
+
+    const epubAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/book.epub",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.epub",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "epub",
+      fullHash: "epub-hash",
+      id: "file-epub",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.EPUB,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "epub-phash",
+      relativePath: "Author/Book/book.epub",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(epubAsset.absolutePath, epubAsset);
+    state.fileAssetsById.set(epubAsset.id, epubAsset);
+
+    addWork(state, { id: "work-1", titleDisplay: "The Name of the Wind", titleCanonical: "the name of the wind" });
+    addEdition(state, { id: "edition-1", workId: "work-1", publisher: null, publishedAt: null });
+    addEditionFile(state, { editionId: "edition-1", fileAssetId: "file-epub" });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(async () => undefined),
+      parseOpf: vi.fn(async () => ({
+        authors: [],
+        identifiers: [],
+        subjects: [],
+        publisher: "DAW Books",
+        date: "2007-03-27",
+        description: "A story.",
+        language: "en",
+        series: { name: "The Kingkiller Chronicle", index: 1 },
+      })),
+    });
+
+    await services.parseFileAssetMetadata({
+      fileAssetId: "file-opf",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(state.editions.get("edition-1")).toMatchObject({
+      publisher: "DAW Books",
+      publishedAt: expect.any(Date),
+    });
+    expect(state.works.get("work-1")).toMatchObject({
+      description: "A story.",
+      language: "en",
+      seriesId: "series-The Kingkiller Chronicle",
+    });
+  });
+
+  it("skips OPF enrichment when edition and work already have values", async () => {
+    const state = createEmptyState("/tmp/root");
+    const opfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.opf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.opf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "opf",
+      fullHash: "hash",
+      id: "file-opf",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/metadata.opf",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(opfAsset.absolutePath, opfAsset);
+    state.fileAssetsById.set(opfAsset.id, opfAsset);
+
+    const epubAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/book.epub",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.epub",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "epub",
+      fullHash: "epub-hash",
+      id: "file-epub",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.EPUB,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "epub-phash",
+      relativePath: "Author/Book/book.epub",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(epubAsset.absolutePath, epubAsset);
+    state.fileAssetsById.set(epubAsset.id, epubAsset);
+
+    addWork(state, {
+      id: "work-1",
+      titleDisplay: "The Name of the Wind",
+      titleCanonical: "the name of the wind",
+      description: "Existing description",
+      language: "fr",
+      seriesId: "existing-series",
+    });
+    addEdition(state, { id: "edition-1", workId: "work-1", publisher: "Existing Publisher", publishedAt: new Date("2000-01-01") });
+    addEditionFile(state, { editionId: "edition-1", fileAssetId: "file-epub" });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(async () => undefined),
+      parseOpf: vi.fn(async () => ({
+        authors: [],
+        identifiers: [],
+        subjects: [],
+        publisher: "New Publisher",
+        date: "2007-03-27",
+        description: "New description",
+        language: "en",
+        series: { name: "New Series", index: 1 },
+      })),
+    });
+
+    await services.parseFileAssetMetadata({
+      fileAssetId: "file-opf",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(state.editions.get("edition-1")).toMatchObject({ publisher: "Existing Publisher" });
+    expect(state.works.get("work-1")).toMatchObject({
+      description: "Existing description",
+      language: "fr",
+      seriesId: "existing-series",
+    });
+  });
+
+  it("skips OPF sibling enrichment when sibling has no editionFile", async () => {
+    const state = createEmptyState("/tmp/root");
+    const opfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.opf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.opf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "opf",
+      fullHash: "hash",
+      id: "file-opf",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/metadata.opf",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(opfAsset.absolutePath, opfAsset);
+    state.fileAssetsById.set(opfAsset.id, opfAsset);
+
+    const epubAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/book.epub",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.epub",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "epub",
+      fullHash: "epub-hash",
+      id: "file-epub",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.EPUB,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "epub-phash",
+      relativePath: "Author/Book/book.epub",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(epubAsset.absolutePath, epubAsset);
+    state.fileAssetsById.set(epubAsset.id, epubAsset);
+    // No editionFile added for epubAsset
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(async () => undefined),
+      parseOpf: vi.fn(async () => ({
+        authors: [],
+        identifiers: [],
+        subjects: [],
+        publisher: "DAW Books",
+      })),
+    });
+
+    const result = await services.parseFileAssetMetadata({
+      fileAssetId: "file-opf",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(result.skipped).toBe(false);
+    expect(result.availabilityStatus).toBe(AvailabilityStatus.PRESENT);
+  });
+
+  it("skips OPF sibling enrichment when sibling editionFile has no matching edition", async () => {
+    const state = createEmptyState("/tmp/root");
+    const opfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.opf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.opf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "opf",
+      fullHash: "hash",
+      id: "file-opf",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/metadata.opf",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(opfAsset.absolutePath, opfAsset);
+    state.fileAssetsById.set(opfAsset.id, opfAsset);
+
+    const epubAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/book.epub",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.epub",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "epub",
+      fullHash: "epub-hash",
+      id: "file-epub",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.EPUB,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "epub-phash",
+      relativePath: "Author/Book/book.epub",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(epubAsset.absolutePath, epubAsset);
+    state.fileAssetsById.set(epubAsset.id, epubAsset);
+    addEditionFile(state, { editionId: "missing-edition", fileAssetId: "file-epub" });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(async () => undefined),
+      parseOpf: vi.fn(async () => ({
+        authors: [],
+        identifiers: [],
+        subjects: [],
+        publisher: "DAW Books",
+      })),
+    });
+
+    const result = await services.parseFileAssetMetadata({
+      fileAssetId: "file-opf",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(result.skipped).toBe(false);
+    expect(result.availabilityStatus).toBe(AvailabilityStatus.PRESENT);
+  });
+
+  it("handles invalid date in OPF sidecar without writing publishedAt", async () => {
+    const state = createEmptyState("/tmp/root");
+    const opfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.opf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.opf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "opf",
+      fullHash: "hash",
+      id: "file-opf",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/metadata.opf",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(opfAsset.absolutePath, opfAsset);
+    state.fileAssetsById.set(opfAsset.id, opfAsset);
+
+    const epubAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/book.epub",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.epub",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "epub",
+      fullHash: "epub-hash",
+      id: "file-epub",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.EPUB,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "epub-phash",
+      relativePath: "Author/Book/book.epub",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(epubAsset.absolutePath, epubAsset);
+    state.fileAssetsById.set(epubAsset.id, epubAsset);
+
+    addWork(state, { id: "work-1", titleDisplay: "The Name of the Wind", titleCanonical: "the name of the wind" });
+    addEdition(state, { id: "edition-1", workId: "work-1", publisher: null, publishedAt: null });
+    addEditionFile(state, { editionId: "edition-1", fileAssetId: "file-epub" });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(async () => undefined),
+      parseOpf: vi.fn(async () => ({
+        authors: [],
+        identifiers: [],
+        subjects: [],
+        date: "not-a-date",
+        publisher: "DAW Books",
+      })),
+    });
+
+    await services.parseFileAssetMetadata({
+      fileAssetId: "file-opf",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(state.editions.get("edition-1")).toMatchObject({
+      publisher: "DAW Books",
+      publishedAt: null,
+    });
+  });
+
+  it("marks OPF sidecar as missing when the file disappears during parsing", async () => {
+    const state = createEmptyState("/tmp/root");
+    const opfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.opf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.opf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "opf",
+      fullHash: "hash",
+      id: "file-opf",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/metadata.opf",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(opfAsset.absolutePath, opfAsset);
+    state.fileAssetsById.set(opfAsset.id, opfAsset);
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(async () => undefined),
+      parseOpf: vi.fn(async () => {
+        const error = new Error("no such file") as NodeJS.ErrnoException;
+        error.code = "ENOENT";
+        throw error;
+      }),
+    });
+
+    const result = await services.parseFileAssetMetadata({
+      fileAssetId: "file-opf",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(result).toEqual({
+      availabilityStatus: AvailabilityStatus.MISSING,
+      fileAssetId: "file-opf",
+      skipped: false,
+    });
+    expect(state.fileAssetsById.get("file-opf")?.availabilityStatus).toBe(AvailabilityStatus.MISSING);
+  });
+
+  it("marks OPF sidecar as unparseable on non-ENOENT parse errors", async () => {
+    const state = createEmptyState("/tmp/root");
+    const opfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.opf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.opf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "opf",
+      fullHash: "hash",
+      id: "file-opf",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/metadata.opf",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(opfAsset.absolutePath, opfAsset);
+    state.fileAssetsById.set(opfAsset.id, opfAsset);
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(async () => undefined),
+      parseOpf: vi.fn(async () => {
+        throw new Error("OPF document did not contain metadata");
+      }),
+    });
+
+    const result = await services.parseFileAssetMetadata({
+      fileAssetId: "file-opf",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(result).toMatchObject({
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      fileAssetId: "file-opf",
+      skipped: false,
+    });
+    expect(state.fileAssetsById.get("file-opf")?.metadata).toMatchObject({
+      source: "opf-sidecar",
+      status: "unparseable",
+      warnings: ["OPF document did not contain metadata"],
+    });
+  });
+
+  it("uses fallback warning for non-Error OPF parse failures", async () => {
+    const state = createEmptyState("/tmp/root");
+    const opfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.opf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.opf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "opf",
+      fullHash: "hash",
+      id: "file-opf",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/metadata.opf",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(opfAsset.absolutePath, opfAsset);
+    state.fileAssetsById.set(opfAsset.id, opfAsset);
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(async () => undefined),
+      parseOpf: vi.fn(async () => {
+        throw "bad-value";
+      }),
+    });
+
+    await services.parseFileAssetMetadata({
+      fileAssetId: "file-opf",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(state.fileAssetsById.get("file-opf")?.metadata).toMatchObject({
+      warnings: ["Unknown OPF parsing error"],
+    });
+  });
+
+  it("skips OPF work enrichment when work is not found for an edition", async () => {
+    const state = createEmptyState("/tmp/root");
+    const opfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.opf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.opf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "opf",
+      fullHash: "hash",
+      id: "file-opf",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/metadata.opf",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(opfAsset.absolutePath, opfAsset);
+    state.fileAssetsById.set(opfAsset.id, opfAsset);
+
+    const epubAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/book.epub",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.epub",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "epub",
+      fullHash: "epub-hash",
+      id: "file-epub",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.EPUB,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "epub-phash",
+      relativePath: "Author/Book/book.epub",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(epubAsset.absolutePath, epubAsset);
+    state.fileAssetsById.set(epubAsset.id, epubAsset);
+
+    // Edition references a workId that doesn't exist in state
+    addEdition(state, { id: "edition-1", workId: "missing-work", publisher: null, publishedAt: null });
+    addEditionFile(state, { editionId: "edition-1", fileAssetId: "file-epub" });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(async () => undefined),
+      parseOpf: vi.fn(async () => ({
+        authors: [],
+        identifiers: [],
+        subjects: [],
+        publisher: "DAW Books",
+        description: "A story.",
+        language: "en",
+      })),
+    });
+
+    const result = await services.parseFileAssetMetadata({
+      fileAssetId: "file-opf",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(result.skipped).toBe(false);
+    expect(state.editions.get("edition-1")).toMatchObject({ publisher: "DAW Books" });
+  });
 });
