@@ -119,7 +119,8 @@ export function VirtualizedDataTable<TData, TValue>({
                   <tr style={{ height: virtualRows[0].start }} />
                 )}
                 {virtualRows.map((virtualRow) => {
-                  const row = rows[virtualRow.index]!;
+                  const row = rows[virtualRow.index];
+                  if (!row) return null;
                   return (
                     <TableRow
                       key={row.id}

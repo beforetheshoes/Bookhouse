@@ -5,7 +5,7 @@ import { authSessionConfig } from "../../../src/lib/auth-server";
 export default defineEventHandler(async (event) => {
   // Validate auth
   const session = await getSession(event, authSessionConfig);
-  if (!session.data?.userId) {
+  if (!session.data.userId) {
     throw createError({ statusCode: 401, statusMessage: "Unauthorized" });
   }
 
@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
 
   // Subscribe to queue events and forward to SSE stream
   const unsubscribe = manager.subscribe((sseEvent) => {
-    stream.push({
+    void stream.push({
       event: sseEvent.type,
       data: JSON.stringify(sseEvent.data),
     });
@@ -22,7 +22,7 @@ export default defineEventHandler(async (event) => {
 
   // Heartbeat every 30s to keep connection alive
   const heartbeat = setInterval(() => {
-    stream.push({ event: "heartbeat", data: "{}" });
+    void stream.push({ event: "heartbeat", data: "{}" });
   }, 30_000);
 
   // Clean up on disconnect

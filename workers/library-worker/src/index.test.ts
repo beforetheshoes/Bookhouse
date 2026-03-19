@@ -1,12 +1,13 @@
 import { fileURLToPath } from "node:url";
+import type * as SharedModule from "@bookhouse/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const addMock = vi.fn();
 const onMock = vi.fn();
-const workerCloseMock = vi.fn(async () => undefined);
+const workerCloseMock = vi.fn(() => Promise.resolve(undefined));
 const workerConstructorMock = vi.fn();
 const queueConnectionConfigMock = vi.fn(() => ({ host: "localhost", port: 6379 }));
-const quitMock = vi.fn(async () => "OK");
+const quitMock = vi.fn(() => Promise.resolve("OK"));
 const redisConstructorMock = vi.fn();
 const hashFileAssetMock = vi.fn();
 const matchFileAssetToEditionMock = vi.fn();
@@ -33,7 +34,7 @@ vi.mock("bullmq", () => ({
     on = onMock;
     close = workerCloseMock;
   },
-  Job: class {},
+  Job: function Job() { return {}; },
   Queue: class {
     add = addMock;
   },
@@ -55,7 +56,7 @@ vi.mock("@bookhouse/ingest", () => ({
 }));
 
 vi.mock("@bookhouse/shared", async () => {
-  const actual = await vi.importActual<typeof import("@bookhouse/shared")>(
+  const actual = await vi.importActual<typeof SharedModule>(
     "@bookhouse/shared",
   );
 
@@ -282,7 +283,7 @@ describe("library worker", () => {
       .mockImplementation((() => undefined) as never);
     const { bootstrapLibraryWorker } = await import("./index");
 
-    await bootstrapLibraryWorker();
+    bootstrapLibraryWorker();
 
     expect(onMock).toHaveBeenCalledTimes(3);
     expect(onMock).toHaveBeenNthCalledWith(1, "ready", expect.any(Function));
@@ -291,8 +292,10 @@ describe("library worker", () => {
     expect(processOnSpy).toHaveBeenCalledWith("SIGINT", expect.any(Function));
     expect(processOnSpy).toHaveBeenCalledWith("SIGTERM", expect.any(Function));
 
-    const shutdownHandler = processOnSpy.mock.calls.find(([event]) => event === "SIGINT")?.[1] as () => Promise<void>;
-    await shutdownHandler();
+    const shutdownHandler = processOnSpy.mock.calls.find(([event]) => event === "SIGINT")?.[1] as () => void;
+    shutdownHandler();
+    // Allow the async shutdown() chain to complete (workerClose + quit + process.exit)
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(processExitSpy).toHaveBeenCalledWith(0);
 

@@ -72,7 +72,8 @@ describe("DataTableColumnHeader", () => {
     const { container } = render(
       <DataTableColumnHeader column={column as unknown as Column<unknown>} title="Name" />
     );
-    const button = container.querySelector("button")!;
+    const button = container.querySelector("button");
+    if (!button) throw new Error("button not found");
     fireEvent.click(button);
     // toggleSorting called with true because sorted === "asc"
     expect(toggleSorting).toHaveBeenCalledWith(true);
@@ -88,7 +89,8 @@ describe("DataTableColumnHeader", () => {
     const { container } = render(
       <DataTableColumnHeader column={column as unknown as Column<unknown>} title="Name" />
     );
-    const button = container.querySelector("button")!;
+    const button = container.querySelector("button");
+    if (!button) throw new Error("button not found");
     fireEvent.click(button);
     expect(toggleSorting).toHaveBeenCalledWith(false);
   });

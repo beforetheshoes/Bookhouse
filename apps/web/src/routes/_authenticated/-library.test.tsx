@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import type * as DataTableModule from "~/components/data-table";
+import type * as TanstackRouter from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -21,13 +23,14 @@ let mockLoaderData: {
 };
 
 vi.mock("@tanstack/react-router", async () => {
-  const actual = await vi.importActual<typeof import("@tanstack/react-router")>("@tanstack/react-router");
+  const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
     ...actual,
     Link: ({ children, to, ...props }: { children?: React.ReactNode; to: string; [key: string]: unknown }) => <a href={to} {...props}>{children}</a>,
     useRouter: () => ({ invalidate: vi.fn(), navigate: vi.fn() }),
     createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
       ...opts,
+      options: opts,
       useLoaderData: () => mockLoaderData,
       useRouteContext: () => ({}),
     }),
@@ -50,7 +53,7 @@ vi.mock("~/lib/server-fns/import-jobs", () => ({
 
 // Use real data-table so column cell renderers execute
 vi.mock("~/components/data-table", async () => {
-  const actual = await vi.importActual<typeof import("~/components/data-table")>("~/components/data-table");
+  const actual = await vi.importActual<typeof DataTableModule>("~/components/data-table");
   return actual;
 });
 
@@ -99,7 +102,7 @@ describe("LibraryPage", () => {
     getLibraryWorksServerFnMock.mockResolvedValueOnce([]);
     getActiveJobCountServerFnMock.mockResolvedValueOnce(0);
     const { Route } = await import("./library");
-    const result = await Route.loader!({} as Parameters<NonNullable<typeof Route.loader>>[0]);
+    const result = await (Route.options.loader as (args: Record<string, unknown>) => Promise<unknown>)({});
     expect(getLibraryWorksServerFnMock).toHaveBeenCalled();
     expect(getActiveJobCountServerFnMock).toHaveBeenCalled();
     expect(result).toEqual({ works: [], activeJobCount: 0 });
@@ -107,7 +110,7 @@ describe("LibraryPage", () => {
 
   it("renders 'Library' heading", async () => {
     const { Route } = await import("./library");
-    const LibraryPage = Route.component!;
+    const LibraryPage = (Route.options.component as React.ComponentType);
     render(<LibraryPage />);
     expect(screen.getByText("Library")).toBeTruthy();
   });
@@ -118,7 +121,7 @@ describe("LibraryPage", () => {
       activeJobCount: 0,
     };
     const { Route } = await import("./library");
-    const LibraryPage = Route.component!;
+    const LibraryPage = (Route.options.component as React.ComponentType);
     render(<LibraryPage />);
     expect(screen.getByText("The Great Gatsby")).toBeTruthy();
     expect(screen.getByText("Moby Dick")).toBeTruthy();
@@ -132,7 +135,7 @@ describe("LibraryPage", () => {
       activeJobCount: 0,
     };
     const { Route } = await import("./library");
-    const LibraryPage = Route.component!;
+    const LibraryPage = (Route.options.component as React.ComponentType);
     render(<LibraryPage />);
     expect(screen.getByText("Unknown Author Book")).toBeTruthy();
     // getAuthors returns "—" when no authors
@@ -149,7 +152,7 @@ describe("LibraryPage", () => {
       activeJobCount: 0,
     };
     const { Route } = await import("./library");
-    const LibraryPage = Route.component!;
+    const LibraryPage = (Route.options.component as React.ComponentType);
     render(<LibraryPage />);
     expect(screen.getByText("No Editions")).toBeTruthy();
   });
@@ -157,7 +160,7 @@ describe("LibraryPage", () => {
   it("shows scanning indicator when activeJobCount > 0", async () => {
     mockLoaderData = { works: [], activeJobCount: 2 };
     const { Route } = await import("./library");
-    const LibraryPage = Route.component!;
+    const LibraryPage = (Route.options.component as React.ComponentType);
     render(<LibraryPage />);
     expect(screen.getByText(/Scanning/)).toBeTruthy();
   });
@@ -169,7 +172,7 @@ describe("LibraryPage", () => {
       activeJobCount: 0,
     };
     const { Route } = await import("./library");
-    const LibraryPage = Route.component!;
+    const LibraryPage = (Route.options.component as React.ComponentType);
     const { rerender } = render(<LibraryPage />);
 
     // Wait for effect to set prevCount = 1
@@ -189,7 +192,7 @@ describe("LibraryPage", () => {
   it("does not show scanning indicator when activeJobCount is 0", async () => {
     mockLoaderData = { works: [], activeJobCount: 0 };
     const { Route } = await import("./library");
-    const LibraryPage = Route.component!;
+    const LibraryPage = (Route.options.component as React.ComponentType);
     render(<LibraryPage />);
     expect(screen.queryByText(/Scanning/)).toBeNull();
   });

@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { expect, it } from "vitest";
 import { DataTable, DataTableColumnHeader, DataTablePagination, DataTableToolbar, VirtualizedDataTable, __loaded } from "./index";
 
 it("exports all data table components", () => {

@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import type * as TanstackRouter from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 
@@ -22,7 +23,7 @@ vi.mock("~/lib/auth-client", () => ({
 }));
 
 vi.mock("@tanstack/react-router", async () => {
-  const actual = await vi.importActual<typeof import("@tanstack/react-router")>("@tanstack/react-router");
+  const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
     ...actual,
     Outlet: () => <div data-testid="outlet">outlet</div>,
@@ -33,6 +34,7 @@ vi.mock("@tanstack/react-router", async () => {
     },
     createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
       ...opts,
+      options: opts,
       useLoaderData: () => ({}),
       useRouteContext: () => mockRouteContext,
     }),
@@ -42,7 +44,7 @@ vi.mock("@tanstack/react-router", async () => {
 describe("_authenticated route", () => {
   it("AuthenticatedLayout renders sidebar, header, and outlet", async () => {
     const { Route } = await import("./_authenticated");
-    const Layout = Route.component!;
+    const Layout = (Route.options.component as React.ComponentType);
     render(<Layout />);
 
     expect(screen.getByTestId("app-sidebar")).toBeTruthy();
@@ -56,8 +58,9 @@ describe("_authenticated route", () => {
 
     const { Route } = await import("./_authenticated");
 
+    const beforeLoad = Route.options.beforeLoad as unknown as (args: Record<string, unknown>) => Promise<unknown>;
     await expect(
-      Route.beforeLoad({ context: {} } as Parameters<NonNullable<typeof Route.beforeLoad>>[0])
+      beforeLoad({ context: {} })
     ).rejects.toMatchObject({ href: "/auth/login" });
   });
 
@@ -68,7 +71,8 @@ describe("_authenticated route", () => {
 
     const { Route } = await import("./_authenticated");
 
-    const result = await Route.beforeLoad({ context: {} } as Parameters<NonNullable<typeof Route.beforeLoad>>[0]);
+    const beforeLoad2 = Route.options.beforeLoad as unknown as (args: Record<string, unknown>) => Promise<unknown>;
+    const result = await beforeLoad2({ context: {} });
     expect(result).toEqual({ user });
   });
 });

@@ -81,7 +81,7 @@ function getRootfilePath(containerXml: string): string {
   };
 
   const rootfiles = ensureArray(parsed.container?.rootfiles?.rootfile);
-  const rootfilePath = rootfiles.find((candidate) => typeof candidate?.["full-path"] === "string")?.["full-path"];
+  const rootfilePath = rootfiles.find((candidate) => typeof candidate["full-path"] === "string")?.["full-path"];
 
   if (!rootfilePath) {
     throw new Error('EPUB container.xml did not declare a rootfile "full-path"');

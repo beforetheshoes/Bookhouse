@@ -1,17 +1,20 @@
 // @vitest-environment happy-dom
+import type * as DataTableModule from "~/components/data-table";
+import type * as TanstackRouter from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 let mockLoaderData: { collections: { name: string; kind: string; _count: { items: number } }[] } = { collections: [] };
 
 vi.mock("@tanstack/react-router", async () => {
-  const actual = await vi.importActual<typeof import("@tanstack/react-router")>("@tanstack/react-router");
+  const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
     ...actual,
     Link: ({ children, to, ...props }: { children?: React.ReactNode; to: string; [key: string]: unknown }) => <a href={to} {...props}>{children}</a>,
     useRouter: () => ({ invalidate: vi.fn(), navigate: vi.fn() }),
     createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
       ...opts,
+      options: opts,
       useLoaderData: () => mockLoaderData,
       useRouteContext: () => ({}),
     }),
@@ -25,7 +28,7 @@ vi.mock("~/lib/server-fns/collections", () => ({
 
 // Use real DataTable so column cell renderers execute
 vi.mock("~/components/data-table", async () => {
-  const actual = await vi.importActual<typeof import("~/components/data-table")>("~/components/data-table");
+  const actual = await vi.importActual<typeof DataTableModule>("~/components/data-table");
   return actual;
 });
 
@@ -42,14 +45,14 @@ describe("CollectionsPage", () => {
   it("loader calls getCollectionsServerFn", async () => {
     getCollectionsServerFnMock.mockResolvedValueOnce([]);
     const { Route } = await import("./collections");
-    const result = await Route.loader!({} as Parameters<NonNullable<typeof Route.loader>>[0]);
+    const result = await (Route.options.loader as (args: Record<string, unknown>) => Promise<unknown>)({});
     expect(getCollectionsServerFnMock).toHaveBeenCalled();
     expect(result).toEqual({ collections: [] });
   });
 
   it("renders 'Collections' heading", async () => {
     const { Route } = await import("./collections");
-    const CollectionsPage = Route.component!;
+    const CollectionsPage = (Route.options.component as React.ComponentType);
     render(<CollectionsPage />);
     expect(screen.getByText("Collections")).toBeTruthy();
   });
@@ -62,7 +65,7 @@ describe("CollectionsPage", () => {
       ],
     };
     const { Route } = await import("./collections");
-    const CollectionsPage = Route.component!;
+    const CollectionsPage = (Route.options.component as React.ComponentType);
     render(<CollectionsPage />);
     expect(screen.getByText("Fantasy")).toBeTruthy();
     expect(screen.getByText("SERIES")).toBeTruthy();
@@ -72,14 +75,14 @@ describe("CollectionsPage", () => {
 
   it("renders filter input", async () => {
     const { Route } = await import("./collections");
-    const CollectionsPage = Route.component!;
+    const CollectionsPage = (Route.options.component as React.ComponentType);
     render(<CollectionsPage />);
     expect(screen.getByPlaceholderText("Filter by name...")).toBeTruthy();
   });
 
   it("shows 'No results.' when collections is empty", async () => {
     const { Route } = await import("./collections");
-    const CollectionsPage = Route.component!;
+    const CollectionsPage = (Route.options.component as React.ComponentType);
     render(<CollectionsPage />);
     expect(screen.getByText("No results.")).toBeTruthy();
   });

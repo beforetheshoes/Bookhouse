@@ -80,7 +80,7 @@ export function parseOpfXml(opfXml: string): ParsedOpfMetadataRaw {
   // Calibre series from <meta name="calibre:series" content="..."/>
   let seriesName: string | undefined;
   let seriesIndex: number | undefined;
-  const metaEntries = ensureArray((metadata as Record<string, unknown>).meta);
+  const metaEntries = ensureArray(metadata.meta);
   for (const entry of metaEntries) {
     if (entry && typeof entry === "object") {
       const metaObj = entry as Record<string, unknown>;

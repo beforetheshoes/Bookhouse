@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { expect, it } from "vitest";
 import { render } from "@testing-library/react";
 import { Separator } from "./separator";
 

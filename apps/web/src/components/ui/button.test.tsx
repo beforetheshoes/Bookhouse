@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { expect, it, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { Button } from "./button";
 

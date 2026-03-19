@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { beforeEach, expect, it, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useIsMobile } from "./use-mobile";
 
@@ -7,7 +8,7 @@ function setupMatchMedia(matches: boolean, innerWidth: number) {
   const listeners: (() => void)[] = [];
   const mql = {
     matches,
-    addEventListener: vi.fn((event: string, cb: () => void) => listeners.push(cb)),
+    addEventListener: vi.fn((_event: string, cb: () => void) => listeners.push(cb)),
     removeEventListener: vi.fn(),
   };
   Object.defineProperty(window, "matchMedia", { writable: true, configurable: true, value: vi.fn(() => mql) });
@@ -38,7 +39,7 @@ it("updates when media query change event fires", () => {
   // Simulate viewport shrinking below breakpoint
   Object.defineProperty(window, "innerWidth", { writable: true, configurable: true, value: 375 });
   act(() => {
-    listeners[0]();
+    listeners[0]?.();
   });
 
   expect(result.current).toBe(true);

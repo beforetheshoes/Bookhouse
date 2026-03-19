@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
+import type * as TanstackRouter from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { SidebarProvider } from "./ui/sidebar";
 import { AppSidebar } from "./app-sidebar";
 
 vi.mock("@tanstack/react-router", async () => {
-  const actual = await vi.importActual<typeof import("@tanstack/react-router")>("@tanstack/react-router");
+  const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
     ...actual,
     Link: ({ children, to, ...props }: { children?: React.ReactNode; to: string; [key: string]: unknown }) => <a href={to} {...props}>{children}</a>,
@@ -16,7 +17,7 @@ vi.mock("@tanstack/react-router", async () => {
 
 const mockUser = { name: "John Doe", email: "john@example.com", image: null };
 
-function renderSidebar(user = mockUser) {
+function renderSidebar(user: { name: string | null; email: string | null; image: string | null } = mockUser) {
   return render(
     <SidebarProvider>
       <AppSidebar user={user as unknown as Parameters<typeof AppSidebar>[0]["user"]} />

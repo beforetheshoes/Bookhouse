@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import React from "react";
+import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
@@ -271,11 +271,12 @@ describe("Sidebar", () => {
     );
 
     expect(capturedContext).not.toBeNull();
-    expect(capturedContext!.state).toBe("expanded");
-    expect(capturedContext!.open).toBe(true);
-    expect(typeof capturedContext!.toggleSidebar).toBe("function");
-    expect(typeof capturedContext!.setOpen).toBe("function");
-    expect(typeof capturedContext!.setOpenMobile).toBe("function");
+    const ctx0 = capturedContext as unknown as ReturnType<typeof useSidebar>;
+    expect(ctx0.state).toBe("expanded");
+    expect(ctx0.open).toBe(true);
+    expect(typeof ctx0.toggleSidebar).toBe("function");
+    expect(typeof ctx0.setOpen).toBe("function");
+    expect(typeof ctx0.setOpenMobile).toBe("function");
   });
 
   it("useSidebar throws when used outside SidebarProvider", () => {
@@ -418,7 +419,8 @@ describe("Sidebar", () => {
     expect(capturedContext).not.toBeNull();
     // When isMobile=true, Sidebar renders as Sheet (closed by default)
     // The test just verifies this path is executed without crashing
-    expect(capturedContext!.isMobile).toBe(true);
+    const capturedCtxMobile = capturedContext as unknown as ReturnType<typeof useSidebar>;
+    expect(capturedCtxMobile.isMobile).toBe(true);
 
     // Restore window width
     unmount();
@@ -509,15 +511,16 @@ describe("Sidebar", () => {
       </SidebarProvider>
     );
 
-    expect(capturedCtx!.open).toBe(true);
+    expect(capturedCtx).not.toBeNull();
+    expect((capturedCtx as unknown as ReturnType<typeof useSidebar>).open).toBe(true);
 
     // Call setOpen with a direct boolean value (not a function) to cover the else branch
-    await act(async () => {
-      capturedCtx!.setOpen(false);
+    act(() => {
+      (capturedCtx as unknown as ReturnType<typeof useSidebar>).setOpen(false);
     });
 
-    // After state update, context should reflect new value
-    expect(capturedCtx!.open).toBe(false);
+    // After state update, capturedCtx is updated by ContextCapture re-render
+    expect((capturedCtx as unknown as ReturnType<typeof useSidebar>).open).toBe(false);
   });
 
   it("renders SidebarMenuButton with tooltip when sidebar is collapsed (state=collapsed, not mobile)", () => {
@@ -564,14 +567,16 @@ describe("Sidebar", () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
     });
 
-    expect(capturedCtx!.isMobile).toBe(true);
+    expect(capturedCtx).not.toBeNull();
+    expect((capturedCtx as unknown as ReturnType<typeof useSidebar>).isMobile).toBe(true);
 
     // toggleSidebar when isMobile should call setOpenMobile (not setOpen)
-    await act(async () => {
-      capturedCtx!.toggleSidebar();
+    act(() => {
+      (capturedCtx as unknown as ReturnType<typeof useSidebar>).toggleSidebar();
     });
 
-    expect(capturedCtx!.openMobile).toBe(true);
+    // After act(), capturedCtx is updated by ContextCapture re-render
+    expect((capturedCtx as unknown as ReturnType<typeof useSidebar>).openMobile).toBe(true);
 
     unmount();
     Object.defineProperty(window, "innerWidth", { writable: true, configurable: true, value: originalWidth });

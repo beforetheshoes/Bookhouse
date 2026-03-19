@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "./tooltip";
 

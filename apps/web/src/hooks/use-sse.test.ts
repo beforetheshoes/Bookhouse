@@ -1,10 +1,11 @@
 // @vitest-environment happy-dom
+import { beforeEach, expect, it, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { useSSE } from "./use-sse";
 
 const addEventListenerMock = vi.fn();
 const closeMock = vi.fn();
-const eventSourceListeners: Record<string, (...args: unknown[]) => unknown> = {};
+const eventSourceListeners: Map<string, (...args: unknown[]) => unknown> = new Map();
 
 class FakeEventSource {
   static CONNECTING = 0;
@@ -13,7 +14,7 @@ class FakeEventSource {
   onerror: ((...args: unknown[]) => unknown) | null = null;
   constructor(public url: string) {}
   addEventListener = vi.fn((type: string, handler: (...args: unknown[]) => unknown) => {
-    eventSourceListeners[type] = handler;
+    eventSourceListeners.set(type, handler);
     addEventListenerMock(type, handler);
   });
   close = closeMock;
@@ -29,13 +30,11 @@ vi.mock("@tanstack/react-router", () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   // Clear tracked listeners
-  for (const key of Object.keys(eventSourceListeners)) {
-    delete eventSourceListeners[key];
-  }
+  eventSourceListeners.clear();
 });
 
 it("creates EventSource and registers 3 event listeners when enabled=true", () => {
-  renderHook(() => useSSE({ enabled: true }));
+  renderHook(() => { useSSE({ enabled: true }); });
 
   expect(addEventListenerMock).toHaveBeenCalledTimes(3);
   expect(addEventListenerMock).toHaveBeenCalledWith("job:completed", expect.any(Function));
@@ -53,28 +52,29 @@ it("sets onerror on the EventSource", () => {
     }
   });
 
-  renderHook(() => useSSE({ enabled: true }));
+  renderHook(() => { useSSE({ enabled: true }); });
   expect(instances.length).toBeGreaterThan(0);
-  expect(instances[instances.length - 1].onerror).toBeTypeOf("function");
+  const lastInstance = instances[instances.length - 1];
+  expect(lastInstance?.onerror).toBeTypeOf("function");
 
   // Restore original stub
   vi.stubGlobal("EventSource", FakeEventSource);
 });
 
 it("calling an event handler calls router.invalidate()", () => {
-  renderHook(() => useSSE({ enabled: true }));
+  renderHook(() => { useSSE({ enabled: true }); });
 
-  eventSourceListeners["job:completed"]({});
+  eventSourceListeners.get("job:completed")?.({});
   expect(invalidateMock).toHaveBeenCalledTimes(1);
 });
 
 it("does not create EventSource when enabled=false", () => {
-  renderHook(() => useSSE({ enabled: false }));
+  renderHook(() => { useSSE({ enabled: false }); });
   expect(addEventListenerMock).not.toHaveBeenCalled();
 });
 
 it("calls es.close() on unmount", () => {
-  const { unmount } = renderHook(() => useSSE({ enabled: true }));
+  const { unmount } = renderHook(() => { useSSE({ enabled: true }); });
   unmount();
   expect(closeMock).toHaveBeenCalled();
 });
@@ -89,9 +89,10 @@ it("calling onerror does nothing (no throw)", () => {
     }
   });
 
-  renderHook(() => useSSE({ enabled: true }));
+  renderHook(() => { useSSE({ enabled: true }); });
   const capturedInstance = instances[instances.length - 1];
-  expect(() => capturedInstance.onerror!({})).not.toThrow();
+  const onerror = capturedInstance?.onerror;
+  expect(() => onerror?.({})).not.toThrow();
 
   vi.stubGlobal("EventSource", FakeEventSource);
 });

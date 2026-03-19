@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import type * as TanstackRouter from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -15,13 +16,14 @@ let mockLoaderData: {
 } = { duplicates: [] };
 
 vi.mock("@tanstack/react-router", async () => {
-  const actual = await vi.importActual<typeof import("@tanstack/react-router")>("@tanstack/react-router");
+  const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
     ...actual,
     Link: ({ children, to, ...props }: { children?: React.ReactNode; to: string; [key: string]: unknown }) => <a href={to} {...props}>{children}</a>,
     useRouter: () => ({ invalidate: vi.fn(), navigate: vi.fn() }),
     createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
       ...opts,
+      options: opts,
       useLoaderData: () => mockLoaderData,
       useRouteContext: () => ({}),
     }),
@@ -78,14 +80,14 @@ describe("DuplicatesPage", () => {
   it("loader calls getDuplicatesServerFn", async () => {
     getDuplicatesServerFnMock.mockResolvedValueOnce([]);
     const { Route } = await import("./duplicates");
-    const result = await Route.loader!({} as Parameters<NonNullable<typeof Route.loader>>[0]);
+    const result = await (Route.options.loader as (args: Record<string, unknown>) => Promise<unknown>)({});
     expect(getDuplicatesServerFnMock).toHaveBeenCalled();
     expect(result).toEqual({ duplicates: [] });
   });
 
   it("renders 'Duplicates' heading", async () => {
     const { Route } = await import("./duplicates");
-    const DuplicatesPage = Route.component!;
+    const DuplicatesPage = (Route.options.component as React.ComponentType);
     render(<DuplicatesPage />);
     expect(screen.getByText("Duplicates")).toBeTruthy();
   });
@@ -100,7 +102,7 @@ describe("DuplicatesPage", () => {
       ],
     };
     const { Route } = await import("./duplicates");
-    const DuplicatesPage = Route.component!;
+    const DuplicatesPage = (Route.options.component as React.ComponentType);
     render(<DuplicatesPage />);
     expect(screen.getByText("Left Work Title")).toBeTruthy();
     expect(screen.getByText("Right Work Title")).toBeTruthy();
@@ -116,7 +118,7 @@ describe("DuplicatesPage", () => {
       ],
     };
     const { Route } = await import("./duplicates");
-    const DuplicatesPage = Route.component!;
+    const DuplicatesPage = (Route.options.component as React.ComponentType);
     render(<DuplicatesPage />);
     expect(screen.getByText("book.epub")).toBeTruthy();
     expect(screen.getByText("book-copy.epub")).toBeTruthy();
@@ -127,7 +129,7 @@ describe("DuplicatesPage", () => {
       duplicates: [makeDuplicate()],
     };
     const { Route } = await import("./duplicates");
-    const DuplicatesPage = Route.component!;
+    const DuplicatesPage = (Route.options.component as React.ComponentType);
     render(<DuplicatesPage />);
     const dashes = screen.getAllByText("—");
     expect(dashes.length).toBeGreaterThanOrEqual(2);
@@ -138,7 +140,7 @@ describe("DuplicatesPage", () => {
       duplicates: [makeDuplicate({ confidence: 0.75 })],
     };
     const { Route } = await import("./duplicates");
-    const DuplicatesPage = Route.component!;
+    const DuplicatesPage = (Route.options.component as React.ComponentType);
     render(<DuplicatesPage />);
     expect(screen.getByText("75%")).toBeTruthy();
   });
@@ -148,7 +150,7 @@ describe("DuplicatesPage", () => {
       duplicates: [makeDuplicate({ status: "UNKNOWN_STATUS" })],
     };
     const { Route } = await import("./duplicates");
-    const DuplicatesPage = Route.component!;
+    const DuplicatesPage = (Route.options.component as React.ComponentType);
     render(<DuplicatesPage />);
     expect(screen.getByText("UNKNOWN_STATUS")).toBeTruthy();
   });

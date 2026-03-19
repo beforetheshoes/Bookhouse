@@ -1,25 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const enqueueLibraryJobMock = vi.fn(async () => "job-1");
+const enqueueLibraryJobMock = vi.fn(() => Promise.resolve("job-1"));
 
 vi.mock("@bookhouse/db", () => ({
   db: {
     libraryRoot: {
-      findUnique: vi.fn(async () => ({
+      findUnique: vi.fn(() => Promise.resolve({
         id: "root-1",
         lastScannedAt: null,
         path: "/tmp/runtime-root",
       })),
-      update: vi.fn(async ({ data }: { data: { lastScannedAt: Date } }) => ({
+      update: vi.fn(({ data }: { data: { lastScannedAt: Date } }) => Promise.resolve({
         id: "root-1",
         lastScannedAt: data.lastScannedAt,
         path: "/tmp/runtime-root",
       })),
     },
     fileAsset: {
-      findByDirectory: vi.fn(async () => []),
-      findMany: vi.fn(async () => []),
-      upsert: vi.fn(async () => ({
+      findByDirectory: vi.fn(() => Promise.resolve([])),
+      findMany: vi.fn(() => Promise.resolve([])),
+      upsert: vi.fn(() => Promise.resolve({
         absolutePath: "/tmp/runtime-root/book.epub",
         availabilityStatus: "PRESENT",
         fullHash: null,
@@ -28,52 +28,36 @@ vi.mock("@bookhouse/db", () => ({
         partialHash: null,
         sizeBytes: 5n,
       })),
-      findUnique: vi.fn(async () => null),
-      update: vi.fn(async () => {
-        throw new Error("not used");
-      }),
+      findUnique: vi.fn(() => Promise.resolve(null)),
+      update: vi.fn(() => Promise.reject(new Error("not used"))),
     },
     contributor: {
-      create: vi.fn(async () => {
-        throw new Error("not used");
-      }),
-      findMany: vi.fn(async () => []),
+      create: vi.fn(() => Promise.reject(new Error("not used"))),
+      findMany: vi.fn(() => Promise.resolve([])),
     },
     edition: {
-      create: vi.fn(async () => {
-        throw new Error("not used");
-      }),
-      findFirst: vi.fn(async () => null),
-      findUnique: vi.fn(async () => null),
-      update: vi.fn(async () => {
-        throw new Error("not used");
-      }),
+      create: vi.fn(() => Promise.reject(new Error("not used"))),
+      findFirst: vi.fn(() => Promise.resolve(null)),
+      findUnique: vi.fn(() => Promise.resolve(null)),
+      update: vi.fn(() => Promise.reject(new Error("not used"))),
     },
     editionContributor: {
-      create: vi.fn(async () => {
-        throw new Error("not used");
-      }),
-      findFirst: vi.fn(async () => null),
+      create: vi.fn(() => Promise.reject(new Error("not used"))),
+      findFirst: vi.fn(() => Promise.resolve(null)),
     },
     editionFile: {
-      create: vi.fn(async () => {
-        throw new Error("not used");
-      }),
-      findFirst: vi.fn(async () => null),
+      create: vi.fn(() => Promise.reject(new Error("not used"))),
+      findFirst: vi.fn(() => Promise.resolve(null)),
     },
     work: {
-      create: vi.fn(async () => {
-        throw new Error("not used");
-      }),
-      findMany: vi.fn(async () => []),
-      findUnique: vi.fn(async () => null),
-      update: vi.fn(async () => {
-        throw new Error("not used");
-      }),
+      create: vi.fn(() => Promise.reject(new Error("not used"))),
+      findMany: vi.fn(() => Promise.resolve([])),
+      findUnique: vi.fn(() => Promise.resolve(null)),
+      update: vi.fn(() => Promise.reject(new Error("not used"))),
     },
     series: {
-      findFirst: vi.fn(async () => null),
-      create: vi.fn(async () => ({ id: "series-1", name: "test" })),
+      findFirst: vi.fn(() => Promise.resolve(null)),
+      create: vi.fn(() => Promise.resolve({ id: "series-1", name: "test" })),
     },
   },
 }));
@@ -104,9 +88,7 @@ vi.mock("@bookhouse/domain", () => ({
 }));
 
 vi.mock("@bookhouse/shared", async () => {
-  const actual = await vi.importActual<typeof import("@bookhouse/shared")>(
-    "@bookhouse/shared",
-  );
+  const actual = await vi.importActual("@bookhouse/shared");
 
   return {
     ...actual,
@@ -161,7 +143,7 @@ describe("ingest runtime defaults", () => {
       sizeBytes: 100n,
     }] as never);
 
-    const parseOpf = vi.fn(async () => ({
+    const parseOpf = vi.fn(() => Promise.resolve({
       authors: [],
       identifiers: [],
       subjects: [],
@@ -212,23 +194,23 @@ describe("ingest runtime defaults", () => {
     vi.resetModules();
     const { createIngestServices } = await import("./services");
     const services = createIngestServices({
-      listDirectory: (async () =>
-        [
+      listDirectory: (() =>
+        Promise.resolve([
           {
             isDirectory: () => false,
             isFile: () => true,
             isSymbolicLink: () => false,
             name: "book.epub",
           },
-        ] as never),
-      readStats: (async () =>
-        ({
+        ] as never)),
+      readStats: (() =>
+        Promise.resolve({
           ctime: new Date("2025-01-01T00:00:00.000Z"),
           isFile: () => true,
           isSymbolicLink: () => false,
           mtime: new Date("2025-01-01T00:00:00.000Z"),
           size: 5,
-        }) as never),
+        } as never)),
     });
 
     const result = await services.scanLibraryRoot({ libraryRootId: "root-1" });

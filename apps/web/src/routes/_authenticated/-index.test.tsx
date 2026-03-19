@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
+import type * as TanstackRouter from "@tanstack/react-router";
 import { describe, it, expect, vi } from "vitest";
 
 vi.mock("@tanstack/react-router", async () => {
-  const actual = await vi.importActual<typeof import("@tanstack/react-router")>("@tanstack/react-router");
+  const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
     ...actual,
     redirect: (args: Record<string, unknown>) => {
@@ -11,6 +12,7 @@ vi.mock("@tanstack/react-router", async () => {
     },
     createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
       ...opts,
+      options: opts,
       useLoaderData: () => ({}),
       useRouteContext: () => ({}),
     }),
@@ -20,9 +22,9 @@ vi.mock("@tanstack/react-router", async () => {
 describe("_authenticated/index route", () => {
   it("loader throws redirect to /library", async () => {
     const { Route } = await import("./index");
-    expect(() => Route.loader!({} as Parameters<NonNullable<typeof Route.loader>>[0])).toThrow("redirect");
+    expect(() => (Route.options.loader as (args: Record<string, unknown>) => Promise<unknown>)({})).toThrow("redirect");
     try {
-      Route.loader!({} as Parameters<NonNullable<typeof Route.loader>>[0]);
+      await (Route.options.loader as (args: Record<string, unknown>) => Promise<unknown>)({});
     } catch (e) {
       expect((e as Record<string, unknown>).href).toBe("/library");
     }

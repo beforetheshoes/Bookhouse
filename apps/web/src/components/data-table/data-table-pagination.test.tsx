@@ -49,7 +49,8 @@ describe("DataTablePagination", () => {
       (b) => b.querySelector(".sr-only")?.textContent === "Go to next page"
     );
     expect(nextBtn).toBeTruthy();
-    expect(nextBtn!.disabled).toBe(false);
+    if (!nextBtn) return;
+    expect(nextBtn.disabled).toBe(false);
   });
 
   it("previous page button is disabled when canPreviousPage=false", () => {
@@ -60,7 +61,8 @@ describe("DataTablePagination", () => {
       (b) => b.querySelector(".sr-only")?.textContent === "Go to previous page"
     );
     expect(prevBtn).toBeTruthy();
-    expect(prevBtn!.disabled).toBe(true);
+    if (!prevBtn) return;
+    expect(prevBtn.disabled).toBe(true);
   });
 
   it("clicking next page calls table.nextPage()", () => {
@@ -69,7 +71,8 @@ describe("DataTablePagination", () => {
     const buttons = container.querySelectorAll("button");
     const nextBtn = Array.from(buttons).find(
       (b) => b.querySelector(".sr-only")?.textContent === "Go to next page"
-    )!;
+    );
+    if (!nextBtn) throw new Error("next page button not found");
     fireEvent.click(nextBtn);
     expect(nextPage).toHaveBeenCalled();
   });
@@ -80,7 +83,8 @@ describe("DataTablePagination", () => {
     const buttons = container.querySelectorAll("button");
     const firstBtn = Array.from(buttons).find(
       (b) => b.querySelector(".sr-only")?.textContent === "Go to first page"
-    )!;
+    );
+    if (!firstBtn) throw new Error("first page button not found");
     fireEvent.click(firstBtn);
     expect(setPageIndex).toHaveBeenCalledWith(0);
   });
@@ -91,7 +95,8 @@ describe("DataTablePagination", () => {
     const buttons = container.querySelectorAll("button");
     const lastBtn = Array.from(buttons).find(
       (b) => b.querySelector(".sr-only")?.textContent === "Go to last page"
-    )!;
+    );
+    if (!lastBtn) throw new Error("last page button not found");
     fireEvent.click(lastBtn);
     expect(setPageIndex).toHaveBeenCalledWith(4);
   });
@@ -102,7 +107,8 @@ describe("DataTablePagination", () => {
     const buttons = container.querySelectorAll("button");
     const prevBtn = Array.from(buttons).find(
       (b) => b.querySelector(".sr-only")?.textContent === "Go to previous page"
-    )!;
+    );
+    if (!prevBtn) throw new Error("previous page button not found");
     fireEvent.click(prevBtn);
     expect(previousPage).toHaveBeenCalled();
   });

@@ -1,5 +1,5 @@
 import path from "node:path";
-import { Dirent } from "node:fs";
+import type { Dirent, Stats } from "node:fs";
 import { lstat, readdir } from "node:fs/promises";
 import {
   AvailabilityStatus,
@@ -228,8 +228,8 @@ export interface IngestDependencies {
     jobName: TName,
     payload: LibraryJobPayload<TName>,
   ): Promise<void>;
-  listDirectory: typeof readdir;
-  readStats: typeof lstat;
+  listDirectory: ListDirectoryFn;
+  readStats: ReadStatsFn;
   hashFile: typeof hashFileContents;
   parseEpub: typeof parseEpubMetadata;
   parseOpf: typeof parseOpfSidecar;
@@ -317,13 +317,15 @@ function parseStoredMetadata(metadata: FileAsset["metadata"]): ParsedFileAssetMe
     return undefined;
   }
 
-  const candidate = metadata as unknown as ParsedFileAssetMetadata;
+  const candidate = metadata as Record<string, unknown>;
+  const source = candidate["source"];
+  const status = candidate["status"];
 
-  if ((candidate.source !== "epub" && candidate.source !== "opf-sidecar") || (candidate.status !== "parsed" && candidate.status !== "unparseable")) {
+  if ((source !== "epub" && source !== "opf-sidecar") || (status !== "parsed" && status !== "unparseable")) {
     return undefined;
   }
 
-  return candidate;
+  return candidate as unknown as ParsedFileAssetMetadata;
 }
 
 function getAuthorCanonicalsForWork(work: WorkMatchRecord): string[] {
@@ -443,10 +445,13 @@ async function ensureAuthorContributors(
   }
 }
 
+type ListDirectoryFn = (path: string, options: { withFileTypes: true }) => Promise<Dirent[]>;
+type ReadStatsFn = (path: string) => Promise<Stats>;
+
 async function walkRegularFiles(
   rootPath: string,
-  listDirectory: typeof readdir,
-  readStats: typeof lstat,
+  listDirectory: ListDirectoryFn,
+  readStats: ReadStatsFn,
 ): Promise<string[]> {
   const pendingDirectories = [normalizeRootPath(rootPath)];
   const files: string[] = [];

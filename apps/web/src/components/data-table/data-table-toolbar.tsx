@@ -16,7 +16,7 @@ export function DataTableToolbar<TData>({
   filterPlaceholder = "Filter...",
 }: DataTableToolbarProps<TData>) {
   const column = filterColumn ? table.getColumn(filterColumn) : undefined;
-  const filterValue = (column?.getFilterValue() as string) ?? "";
+  const filterValue = (column?.getFilterValue() as string | undefined) ?? "";
   const isFiltered = table.getState().columnFilters.length > 0;
 
   if (!filterColumn) return null;
@@ -33,7 +33,7 @@ export function DataTableToolbar<TData>({
         {isFiltered && (
           <Button
             variant="ghost"
-            onClick={() => table.resetColumnFilters()}
+            onClick={() => { table.resetColumnFilters(); }}
             className="h-8 px-2 lg:px-3"
           >
             Reset

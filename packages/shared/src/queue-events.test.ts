@@ -1,20 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
 const queueEventsConstructorMock = vi.fn();
 const queueConnectionConfigMock = vi.fn(() => ({ host: "localhost", port: 6379 }));
 
 vi.mock("bullmq", () => ({
-  QueueEvents: class FakeQueueEvents {
-    constructor(...args: unknown[]) {
-      queueEventsConstructorMock(...args);
-    }
+  QueueEvents: function FakeQueueEvents(...args: unknown[]) {
+    queueEventsConstructorMock(...args);
   },
 }));
 
 vi.mock("./queues.js", async () => {
-  const actual = await vi.importActual<typeof import("./queues.js")>("./queues.js");
+  const actual = await vi.importActual("./queues.js");
   return {
-    ...actual,
+    ...(actual as Record<string, unknown>),
     getQueueConnectionConfig: queueConnectionConfigMock,
   };
 });

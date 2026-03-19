@@ -8,7 +8,7 @@ vi.mock("@tanstack/react-start", () => ({
     };
     const b: Builder = {
       inputValidator: () => b,
-      handler: (fn) => (a) => fn(a ?? {}),
+      handler: (fn) => (a) => fn(a),
     };
     return b;
   },

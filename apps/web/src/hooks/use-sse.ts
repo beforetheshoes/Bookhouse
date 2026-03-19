@@ -16,7 +16,7 @@ export function useSSE({ enabled = true }: UseSSEOptions = {}) {
     const eventTypes = ["job:completed", "job:failed", "job:active"];
 
     const handler = () => {
-      router.invalidate();
+      void router.invalidate();
     };
 
     for (const type of eventTypes) {

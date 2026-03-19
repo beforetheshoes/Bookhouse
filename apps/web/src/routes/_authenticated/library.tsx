@@ -103,7 +103,7 @@ function LibraryPage() {
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" />
             <span>
-              Scanning{newCount > 0 ? ` — ${newCount} new` : ""}...
+              Scanning{newCount > 0 ? ` — ${String(newCount)} new` : ""}...
             </span>
           </div>
         )}

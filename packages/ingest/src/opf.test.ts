@@ -152,7 +152,7 @@ describe("parseOpfXml", () => {
 describe("parseOpfSidecar", () => {
   it("reads a file and parses it as OPF XML", async () => {
     vi.mock("node:fs/promises", () => ({
-      readFile: vi.fn(async () => CALIBRE_OPF),
+      readFile: vi.fn(() => Promise.resolve(CALIBRE_OPF)),
     }));
 
     const { readFile } = await import("node:fs/promises");

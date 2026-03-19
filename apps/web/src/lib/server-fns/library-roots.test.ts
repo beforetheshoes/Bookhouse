@@ -8,7 +8,7 @@ vi.mock("@tanstack/react-start", () => ({
     };
     const b: Builder = {
       inputValidator: () => b,
-      handler: (fn) => (a) => fn(a ?? {}),
+      handler: (fn) => (a) => fn(a),
     };
     return b;
   },
@@ -144,7 +144,9 @@ describe("removeLibraryRootServerFn", () => {
     await removeLibraryRootServerFn({ data: { id: "root-1" } });
 
     expect(transactionMock).toHaveBeenCalledTimes(1);
-    const [ops] = transactionMock.mock.calls[0];
+    const firstCall = transactionMock.mock.calls[0];
+    expect(firstCall).toBeDefined();
+    const ops = firstCall?.[0];
     expect(Array.isArray(ops)).toBe(true);
     expect(ops).toHaveLength(4);
   });

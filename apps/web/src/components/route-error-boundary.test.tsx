@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import type * as TanstackRouter from "@tanstack/react-router";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { RouteErrorBoundary } from "./route-error-boundary";
@@ -6,7 +7,7 @@ import { RouteErrorBoundary } from "./route-error-boundary";
 const mockInvalidate = vi.fn();
 
 vi.mock("@tanstack/react-router", async () => {
-  const actual = await vi.importActual<typeof import("@tanstack/react-router")>("@tanstack/react-router");
+  const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
     ...actual,
     useRouter: () => ({ invalidate: mockInvalidate, navigate: vi.fn() }),

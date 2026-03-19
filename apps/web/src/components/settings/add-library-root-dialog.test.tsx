@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import type * as TanstackRouter from "@tanstack/react-router";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -14,7 +15,7 @@ vi.mock("~/lib/server-fns/library-roots", () => ({
 const mockInvalidate = vi.fn();
 
 vi.mock("@tanstack/react-router", async () => {
-  const actual = await vi.importActual<typeof import("@tanstack/react-router")>("@tanstack/react-router");
+  const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
     ...actual,
     useRouter: () => ({ invalidate: mockInvalidate, navigate: vi.fn() }),
@@ -66,7 +67,8 @@ describe("AddLibraryRootDialog", () => {
       target: { value: "/home/books" },
     });
 
-    const form = screen.getByPlaceholderText("My Library").closest("form")!;
+    const form = screen.getByPlaceholderText("My Library").closest("form");
+    if (!form) throw new Error("form not found");
     fireEvent.submit(form);
 
     await waitFor(() => {
@@ -93,7 +95,8 @@ describe("AddLibraryRootDialog", () => {
       target: { value: "/home/books" },
     });
 
-    const form = screen.getByPlaceholderText("My Library").closest("form")!;
+    const form = screen.getByPlaceholderText("My Library").closest("form");
+    if (!form) throw new Error("form not found");
     fireEvent.submit(form);
 
     await waitFor(() => {
@@ -113,7 +116,8 @@ describe("AddLibraryRootDialog", () => {
       target: { value: "/home/books" },
     });
 
-    const form = screen.getByPlaceholderText("My Library").closest("form")!;
+    const form = screen.getByPlaceholderText("My Library").closest("form");
+    if (!form) throw new Error("form not found");
     fireEvent.submit(form);
 
     await waitFor(() => {
@@ -137,7 +141,8 @@ describe("AddLibraryRootDialog", () => {
       target: { value: "/home/books" },
     });
 
-    const form = screen.getByPlaceholderText("My Library").closest("form")!;
+    const form = screen.getByPlaceholderText("My Library").closest("form");
+    if (!form) throw new Error("form not found");
     fireEvent.submit(form);
 
     await waitFor(() => {
@@ -159,10 +164,13 @@ describe("AddLibraryRootDialog", () => {
 
     // Open the Kind select
     const kindTrigger = screen.getAllByRole("combobox")[0];
+    if (!kindTrigger) throw new Error("kind combobox not found");
     await user.click(kindTrigger);
     // Select "Audiobooks" - use getAllByText to handle duplicates
     const audiobooksOptions = screen.getAllByText("Audiobooks");
-    await user.click(audiobooksOptions[audiobooksOptions.length - 1]);
+    const lastAudiobooksOption = audiobooksOptions[audiobooksOptions.length - 1];
+    if (!lastAudiobooksOption) throw new Error("audiobooks option not found");
+    await user.click(lastAudiobooksOption);
 
     // Submit to verify the kind value was changed
     fireEvent.change(screen.getByPlaceholderText("My Library"), {
@@ -171,7 +179,8 @@ describe("AddLibraryRootDialog", () => {
     fireEvent.change(screen.getByPlaceholderText("/path/to/books"), {
       target: { value: "/test" },
     });
-    const form = screen.getByPlaceholderText("My Library").closest("form")!;
+    const form = screen.getByPlaceholderText("My Library").closest("form");
+    if (!form) throw new Error("form not found");
     fireEvent.submit(form);
 
     await waitFor(() => {
@@ -189,11 +198,14 @@ describe("AddLibraryRootDialog", () => {
 
     // Open the ScanMode select (second combobox)
     const scanModeTrigger = screen.getAllByRole("combobox")[1];
+    if (!scanModeTrigger) throw new Error("scan mode combobox not found");
     await user.click(scanModeTrigger);
     // Select "Full" - there may be multiple "Full" texts, pick the one in the select listbox
     const fullOptions = screen.getAllByText("Full");
     // Click the last one (which should be the option in the dropdown listbox)
-    await user.click(fullOptions[fullOptions.length - 1]);
+    const lastFullOption = fullOptions[fullOptions.length - 1];
+    if (!lastFullOption) throw new Error("full option not found");
+    await user.click(lastFullOption);
 
     // Submit to verify the scanMode value was changed
     fireEvent.change(screen.getByPlaceholderText("My Library"), {
@@ -202,7 +214,8 @@ describe("AddLibraryRootDialog", () => {
     fireEvent.change(screen.getByPlaceholderText("/path/to/books"), {
       target: { value: "/test" },
     });
-    const form = screen.getByPlaceholderText("My Library").closest("form")!;
+    const form = screen.getByPlaceholderText("My Library").closest("form");
+    if (!form) throw new Error("form not found");
     fireEvent.submit(form);
 
     await waitFor(() => {
@@ -224,7 +237,8 @@ describe("AddLibraryRootDialog", () => {
       target: { value: "/home/books" },
     });
 
-    const form = screen.getByPlaceholderText("My Library").closest("form")!;
+    const form = screen.getByPlaceholderText("My Library").closest("form");
+    if (!form) throw new Error("form not found");
     fireEvent.submit(form);
 
     await waitFor(() => {
@@ -246,7 +260,8 @@ describe("AddLibraryRootDialog", () => {
       target: { value: "/home/books" },
     });
 
-    const form = screen.getByPlaceholderText("My Library").closest("form")!;
+    const form = screen.getByPlaceholderText("My Library").closest("form");
+    if (!form) throw new Error("form not found");
     fireEvent.submit(form);
 
     await waitFor(() => {

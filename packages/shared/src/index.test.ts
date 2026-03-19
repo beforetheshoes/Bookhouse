@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
-import {
+import type {
   HashFileAssetJobPayload,
-  LIBRARY_JOB_NAMES,
   MatchFileAssetToEditionJobPayload,
-  NotFoundError,
   ParseFileAssetMetadataJobPayload,
+  ScanLibraryRootJobPayload,
+} from "./index";
+import {
+  LIBRARY_JOB_NAMES,
+  NotFoundError,
   QUEUES,
   RETRY_CONFIG,
-  ScanLibraryRootJobPayload,
   ValidationError,
   getQueueConnectionConfig,
   getQueueUrl,

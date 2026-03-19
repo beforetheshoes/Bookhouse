@@ -96,11 +96,12 @@ function LibraryRootCard({ root }: { root: LibraryRootRow }) {
       toast.success(`Scan started for "${root.name}"`, {
         action: {
           label: "View Job",
-          onClick: () =>
-            router.navigate({
+          onClick: () => {
+            void router.navigate({
               to: "/settings/jobs/$jobId",
               params: { jobId: result.importJobId },
-            }),
+            });
+          },
         },
       });
     } catch (error) {
@@ -118,7 +119,7 @@ function LibraryRootCard({ root }: { root: LibraryRootRow }) {
       await removeLibraryRootServerFn({ data: { id: root.id } });
       toast.success(`"${root.name}" removed`);
       setDeleteOpen(false);
-      router.invalidate();
+      void router.invalidate();
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to remove library root",
@@ -152,7 +153,7 @@ function LibraryRootCard({ root }: { root: LibraryRootRow }) {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleScan}
+                onClick={() => { void handleScan(); }}
                 disabled={scanning}
               >
                 <Play className="size-4" />
@@ -161,7 +162,7 @@ function LibraryRootCard({ root }: { root: LibraryRootRow }) {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setDeleteOpen(true)}
+                onClick={() => { setDeleteOpen(true); }}
               >
                 <Trash2 className="size-4" />
               </Button>
@@ -198,14 +199,14 @@ function LibraryRootCard({ root }: { root: LibraryRootRow }) {
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setDeleteOpen(false)}
+              onClick={() => { setDeleteOpen(false); }}
               disabled={deleting}
             >
               Cancel
             </Button>
             <Button
               variant="destructive"
-              onClick={handleDelete}
+              onClick={() => { void handleDelete(); }}
               disabled={deleting}
             >
               {deleting ? "Removing..." : "Remove"}

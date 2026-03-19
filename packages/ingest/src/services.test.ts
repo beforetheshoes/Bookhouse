@@ -1,3 +1,4 @@
+import type { Dirent, Stats } from "node:fs";
 import { mkdir, mkdtemp, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -20,8 +21,8 @@ import {
   walkRegularFiles,
 } from "./index";
 
-type ReaddirFn = typeof import("node:fs/promises").readdir;
-type LstatFn = typeof import("node:fs/promises").lstat;
+type ReaddirFn = (path: string, options: { withFileTypes: true }) => Promise<Dirent[]>;
+type LstatFn = (path: string) => Promise<Stats>;
 
 interface TestFileAsset {
   absolutePath: string;
@@ -129,6 +130,7 @@ function createTestDb(state: TestState): IngestDb {
   return {
     libraryRoot: {
       async findUnique({ where }) {
+        await Promise.resolve();
         if (where.id !== "root-1") {
           return null;
         }
@@ -140,6 +142,7 @@ function createTestDb(state: TestState): IngestDb {
         };
       },
       async update({ data, where }) {
+        await Promise.resolve();
         if (where.id !== "root-1") {
           throw new Error(`Unexpected library root update: ${where.id}`);
         }
@@ -154,19 +157,23 @@ function createTestDb(state: TestState): IngestDb {
     },
     fileAsset: {
       async findByDirectory({ directoryPath, mediaKinds }) {
+        await Promise.resolve();
         return [...state.fileAssets.values()].filter(
           (fa) => fa.absolutePath.startsWith(directoryPath + "/") && mediaKinds.includes(fa.mediaKind),
         );
       },
       async findMany({ where }) {
+        await Promise.resolve();
         return [...state.fileAssets.values()].filter(
           (fileAsset) => fileAsset.libraryRootId === where.libraryRootId,
         );
       },
       async findUnique({ where }) {
+        await Promise.resolve();
         return state.fileAssetsById.get(where.id) ?? null;
       },
       async update({ data, where }) {
+        await Promise.resolve();
         const existing = state.fileAssetsById.get(where.id);
 
         if (existing === undefined) {
@@ -179,6 +186,7 @@ function createTestDb(state: TestState): IngestDb {
         return updated;
       },
       async upsert({ create, update, where }) {
+        await Promise.resolve();
         const existing = state.fileAssets.get(where.absolutePath);
 
         if (existing === undefined) {
@@ -186,7 +194,7 @@ function createTestDb(state: TestState): IngestDb {
           const created: TestFileAsset = {
             ...create,
             fullHash: null,
-            id: `file-${fileAssetSequence}`,
+            id: `file-${String(fileAssetSequence)}`,
             metadata: create.metadata ?? null,
             partialHash: null,
           };
@@ -203,10 +211,11 @@ function createTestDb(state: TestState): IngestDb {
     },
     work: {
       async create({ data }) {
+        await Promise.resolve();
         workSequence += 1;
         const created: TestWork = {
           description: null,
-          id: `work-${workSequence}`,
+          id: `work-${String(workSequence)}`,
           language: null,
           seriesId: null,
           ...data,
@@ -215,9 +224,11 @@ function createTestDb(state: TestState): IngestDb {
         return created;
       },
       async findUnique({ where }) {
+        await Promise.resolve();
         return state.works.get(where.id) ?? null;
       },
       async update({ data, where }) {
+        await Promise.resolve();
         const existing = state.works.get(where.id);
         if (!existing) throw new Error(`Unknown work: ${where.id}`);
         const updated = { ...existing, ...data };
@@ -225,6 +236,7 @@ function createTestDb(state: TestState): IngestDb {
         return updated;
       },
       async findMany({ where }) {
+        await Promise.resolve();
         return [...state.works.values()]
           .filter((work) => work.titleCanonical === where.titleCanonical)
           .map((work) => ({
@@ -237,7 +249,7 @@ function createTestDb(state: TestState): IngestDb {
                   .filter((link) => link.editionId === edition.id)
                   .map((link) => ({
                     ...link,
-                    contributor: state.contributors.get(link.contributorId)!,
+                    contributor: state.contributors.get(link.contributorId) ?? (() => { throw new Error(`Contributor not found: ${link.contributorId}`); })(),
                   })),
               })),
           }));
@@ -245,23 +257,27 @@ function createTestDb(state: TestState): IngestDb {
     },
     edition: {
       async create({ data }) {
+        await Promise.resolve();
         editionSequence += 1;
         const created: TestEdition = {
-          id: `edition-${editionSequence}`,
+          id: `edition-${String(editionSequence)}`,
           ...data,
         };
         state.editions.set(created.id, created);
         return created;
       },
       async findFirst({ where }) {
+        await Promise.resolve();
         return [...state.editions.values()].find((edition) =>
           Object.entries(where).every(([key, value]) => edition[key as keyof TestEdition] === value),
         ) ?? null;
       },
       async findUnique({ where }) {
+        await Promise.resolve();
         return state.editions.get(where.id) ?? null;
       },
       async update({ data, where }) {
+        await Promise.resolve();
         const existing = state.editions.get(where.id);
         if (!existing) throw new Error(`Unknown edition: ${where.id}`);
         const updated = { ...existing, ...data };
@@ -271,20 +287,23 @@ function createTestDb(state: TestState): IngestDb {
     },
     series: {
       async upsert({ name }) {
+        await Promise.resolve();
         return { id: `series-${name}`, name };
       },
     },
     editionFile: {
       async create({ data }) {
+        await Promise.resolve();
         editionFileSequence += 1;
         const created: TestEditionFile = {
-          id: `edition-file-${editionFileSequence}`,
+          id: `edition-file-${String(editionFileSequence)}`,
           ...data,
         };
         state.editionFiles.set(getEditionFileKey(created.editionId, created.fileAssetId), created);
         return created;
       },
       async findFirst({ where }) {
+        await Promise.resolve();
         return [...state.editionFiles.values()].find((editionFile) =>
           (where.editionId === undefined || editionFile.editionId === where.editionId) &&
           (where.fileAssetId === undefined || editionFile.fileAssetId === where.fileAssetId),
@@ -293,9 +312,10 @@ function createTestDb(state: TestState): IngestDb {
     },
     contributor: {
       async create({ data }) {
+        await Promise.resolve();
         contributorSequence += 1;
         const created: TestContributor = {
-          id: `contributor-${contributorSequence}`,
+          id: `contributor-${String(contributorSequence)}`,
           ...data,
         };
         state.contributors.set(created.id, created);
@@ -303,6 +323,7 @@ function createTestDb(state: TestState): IngestDb {
         return created;
       },
       async findMany({ where }) {
+        await Promise.resolve();
         return where.nameCanonical.in
           .map((nameCanonical) => state.contributorsByCanonical.get(nameCanonical))
           .filter((contributor): contributor is TestContributor => contributor !== undefined);
@@ -310,9 +331,10 @@ function createTestDb(state: TestState): IngestDb {
     },
     editionContributor: {
       async create({ data }) {
+        await Promise.resolve();
         editionContributorSequence += 1;
         const created: TestEditionContributor = {
-          id: `edition-contributor-${editionContributorSequence}`,
+          id: `edition-contributor-${String(editionContributorSequence)}`,
           ...data,
         };
         state.editionContributors.set(
@@ -322,6 +344,7 @@ function createTestDb(state: TestState): IngestDb {
         return created;
       },
       async findFirst({ where }) {
+        await Promise.resolve();
         return state.editionContributors.get(
           getEditionContributorKey(where.editionId, where.contributorId, where.role),
         ) ?? null;
@@ -487,7 +510,7 @@ describe("ingest services", () => {
       directory,
       (async (dirPath, options) => {
         const { readdir } = await import("node:fs/promises");
-        return readdir(dirPath, options as Parameters<ReaddirFn>[1]);
+        return readdir(dirPath, options);
       }) as ReaddirFn,
       (async (entryPath) => {
         const { lstat } = await import("node:fs/promises");
@@ -504,12 +527,8 @@ describe("ingest services", () => {
   it("continues when a directory cannot be listed", async () => {
     const files = await walkRegularFiles(
       "/tmp/unreadable-root",
-      (async () => {
-        throw new Error("permission denied");
-      }) as ReaddirFn,
-      (async () => {
-        throw new Error("should not be called");
-      }) as LstatFn,
+      (() => Promise.reject(new Error("permission denied"))) as ReaddirFn,
+      (() => Promise.reject(new Error("should not be called"))) as LstatFn,
     );
 
     expect(files).toEqual([]);
@@ -519,7 +538,8 @@ describe("ingest services", () => {
     const files = await walkRegularFiles(
       "/tmp/fallback-root",
       (async (dirPath) => {
-        if (String(dirPath) === path.resolve("/tmp/fallback-root")) {
+        await Promise.resolve();
+        if (dirPath === path.resolve("/tmp/fallback-root")) {
           return [
             {
               isDirectory: () => false,
@@ -554,7 +574,7 @@ describe("ingest services", () => {
           ] as never;
         }
 
-        if (String(dirPath) === path.resolve("/tmp/fallback-root/nested")) {
+        if (dirPath === path.resolve("/tmp/fallback-root/nested")) {
           return [
             {
               isDirectory: () => false,
@@ -568,7 +588,8 @@ describe("ingest services", () => {
         return [] as never;
       }) as ReaddirFn,
       (async (entryPath) => {
-        const normalized = path.resolve(String(entryPath));
+        await Promise.resolve();
+        const normalized = path.resolve(entryPath);
 
         if (normalized.endsWith("/nested")) {
           return {
@@ -624,11 +645,12 @@ describe("ingest services", () => {
     const enqueuedJobs: Array<{ jobName: string; payload: { fileAssetId: string } }> = [];
     const services = createIngestServices({
       db: createTestDb(state),
-      enqueueLibraryJob: async (jobName, payload) => {
+      enqueueLibraryJob: (jobName, payload) => {
         enqueuedJobs.push({
           jobName,
           payload: payload as { fileAssetId: string },
         });
+        return Promise.resolve(undefined);
       },
     });
     const firstScanAt = new Date("2025-01-01T00:00:00.000Z");
@@ -681,10 +703,10 @@ describe("ingest services", () => {
       "file-2",
     ]);
 
-    state.fileAssets.get(path.join(directory, "author", "book.epub"))!.partialHash = "partial";
-    state.fileAssets.get(path.join(directory, "author", "book.epub"))!.fullHash = "full";
-    state.fileAssets.get(path.join(directory, "author", "cover.jpg"))!.partialHash = "partial";
-    state.fileAssets.get(path.join(directory, "author", "cover.jpg"))!.fullHash = "full";
+    const bookFileAsset = state.fileAssets.get(path.join(directory, "author", "book.epub"));
+    const coverFileAsset = state.fileAssets.get(path.join(directory, "author", "cover.jpg"));
+    if (bookFileAsset) { bookFileAsset.partialHash = "partial"; bookFileAsset.fullHash = "full"; }
+    if (coverFileAsset) { coverFileAsset.partialHash = "partial"; coverFileAsset.fullHash = "full"; }
 
     enqueuedJobs.length = 0;
     const thirdScan = await services.scanLibraryRoot({
@@ -719,22 +741,23 @@ describe("ingest services", () => {
   });
 
   it("skips entries that disappear during scanning", async () => {
-    const listDirectory = vi.fn(async () => [
+    const listDirectory = vi.fn(() => Promise.resolve([
       {
         isDirectory: () => false,
         isFile: () => true,
         isSymbolicLink: () => false,
         name: "gone.epub",
       },
-    ]);
+    ]));
     const readStats = vi.fn(async () => {
+      await Promise.resolve();
       const error = new Error("missing") as NodeJS.ErrnoException;
       error.code = "ENOENT";
       throw error;
     });
     const services = createIngestServices({
       db: createTestDb(createEmptyState("/tmp/root")),
-      enqueueLibraryJob: vi.fn(async () => undefined),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
       listDirectory: listDirectory as never,
       readStats: readStats as never,
     });
@@ -758,32 +781,30 @@ describe("ingest services", () => {
   it("creates services with default runtime dependencies", () => {
     const services = createIngestServices();
 
-    expect(services).toMatchObject({
-      hashFileAsset: expect.any(Function),
-      matchFileAssetToEdition: expect.any(Function),
-      parseFileAssetMetadata: expect.any(Function),
-      scanLibraryRoot: expect.any(Function),
-    });
+    expect(typeof services.hashFileAsset).toBe("function");
+    expect(typeof services.matchFileAssetToEdition).toBe("function");
+    expect(typeof services.parseFileAssetMetadata).toBe("function");
+    expect(typeof services.scanLibraryRoot).toBe("function");
   });
 
   it("skips paths that are no longer regular files during the scan upsert pass", async () => {
     const services = createIngestServices({
       db: createTestDb(createEmptyState("/tmp/root")),
-      enqueueLibraryJob: vi.fn(async () => undefined),
-      listDirectory: (async () =>
-        [
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      listDirectory: (() =>
+        Promise.resolve([
           {
             isDirectory: () => false,
             isFile: () => true,
             isSymbolicLink: () => false,
             name: "ghost.epub",
           },
-        ] as never) as ReaddirFn,
-      readStats: (async () =>
-        ({
+        ] as never)) as ReaddirFn,
+      readStats: (() =>
+        Promise.resolve({
           isFile: () => false,
           isSymbolicLink: () => true,
-        }) as never) as LstatFn,
+        } as never)) as LstatFn,
     });
 
     const result = await services.scanLibraryRoot({ libraryRootId: "root-1" });
@@ -816,13 +837,16 @@ describe("ingest services", () => {
 
     const services = createIngestServices({
       db: createTestDb(state),
-      enqueueLibraryJob: vi.fn(async () => undefined),
-      hashFile: vi.fn(async () => ({
-        fullHash: "next-full",
-        mtime: new Date("2025-01-01T00:00:00.000Z"),
-        partialHash: "next-partial",
-        sizeBytes: 12n,
-      })),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      hashFile: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          fullHash: "next-full",
+          mtime: new Date("2025-01-01T00:00:00.000Z"),
+          partialHash: "next-partial",
+          sizeBytes: 12n,
+        };
+      }),
     });
 
     const hashed = await services.hashFileAsset({
@@ -845,8 +869,9 @@ describe("ingest services", () => {
 
     const missingServices = createIngestServices({
       db: createTestDb(state),
-      enqueueLibraryJob: vi.fn(async () => undefined),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
       hashFile: vi.fn(async () => {
+        await Promise.resolve();
         const error = new Error("missing") as NodeJS.ErrnoException;
         error.code = "ENOENT";
         throw error;
@@ -873,7 +898,7 @@ describe("ingest services", () => {
     const state = createEmptyState("/tmp/root");
     const services = createIngestServices({
       db: createTestDb(state),
-      enqueueLibraryJob: vi.fn(async () => undefined),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
     });
 
     await expect(
@@ -903,8 +928,9 @@ describe("ingest services", () => {
     const hashError = new Error("read failed");
     const failingServices = createIngestServices({
       db: createTestDb(state),
-      enqueueLibraryJob: vi.fn(async () => undefined),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
       hashFile: vi.fn(async () => {
+        await Promise.resolve();
         throw hashError;
       }),
     });
@@ -935,16 +961,19 @@ describe("ingest services", () => {
     };
     state.fileAssets.set(existing.absolutePath, existing);
     state.fileAssetsById.set(existing.id, existing);
-    const enqueueLibraryJob = vi.fn(async () => undefined);
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
     const services = createIngestServices({
       db: createTestDb(state),
       enqueueLibraryJob,
-      hashFile: vi.fn(async () => ({
-        fullHash: "next-full",
-        mtime: new Date("2025-01-01T00:00:00.000Z"),
-        partialHash: "next-partial",
-        sizeBytes: 12n,
-      })),
+      hashFile: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          fullHash: "next-full",
+          mtime: new Date("2025-01-01T00:00:00.000Z"),
+          partialHash: "next-partial",
+          sizeBytes: 12n,
+        };
+      }),
     });
 
     await services.hashFileAsset({ fileAssetId: "file-1" });
@@ -976,16 +1005,19 @@ describe("ingest services", () => {
     };
     state.fileAssets.set(existing.absolutePath, existing);
     state.fileAssetsById.set(existing.id, existing);
-    const enqueueLibraryJob = vi.fn(async () => undefined);
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
     const services = createIngestServices({
       db: createTestDb(state),
       enqueueLibraryJob,
-      hashFile: vi.fn(async () => ({
-        fullHash: "next-full",
-        mtime: new Date("2025-01-01T00:00:00.000Z"),
-        partialHash: "next-partial",
-        sizeBytes: 12n,
-      })),
+      hashFile: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          fullHash: "next-full",
+          mtime: new Date("2025-01-01T00:00:00.000Z"),
+          partialHash: "next-partial",
+          sizeBytes: 12n,
+        };
+      }),
     });
 
     await services.hashFileAsset({ fileAssetId: "file-1" });
@@ -999,19 +1031,22 @@ describe("ingest services", () => {
   it("parses EPUB metadata and persists normalized results", async () => {
     const state = createEmptyState("/tmp/root");
     addFileAsset(state);
-    const enqueueLibraryJob = vi.fn(async () => undefined);
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
 
     const services = createIngestServices({
       db: createTestDb(state),
       enqueueLibraryJob,
-      parseEpub: vi.fn(async () => ({
-        authors: ["  N. K. Jemisin  ", "N. K. Jemisin"],
-        identifiers: [
-          { scheme: "ISBN-13", value: "978-0-316-49883-4" },
-          { value: "B012345678" },
-        ],
-        title: "  The Fifth Season ",
-      })),
+      parseEpub: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          authors: ["  N. K. Jemisin  ", "N. K. Jemisin"],
+          identifiers: [
+            { scheme: "ISBN-13", value: "978-0-316-49883-4" },
+            { value: "B012345678" },
+          ],
+          title: "  The Fifth Season ",
+        };
+      }),
     });
 
     const result = await services.parseFileAssetMetadata({
@@ -1071,7 +1106,7 @@ describe("ingest services", () => {
     const parseEpub = vi.fn();
     const services = createIngestServices({
       db: createTestDb(state),
-      enqueueLibraryJob: vi.fn(async () => undefined),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
       parseEpub,
     });
 
@@ -1108,8 +1143,9 @@ describe("ingest services", () => {
     state.fileAssetsById.set(existing.id, existing);
     const services = createIngestServices({
       db: createTestDb(state),
-      enqueueLibraryJob: vi.fn(async () => undefined),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
       parseEpub: vi.fn(async () => {
+        await Promise.resolve();
         throw new Error("bad epub");
       }),
     });
@@ -1151,8 +1187,9 @@ describe("ingest services", () => {
     state.fileAssetsById.set(existing.id, existing);
     const services = createIngestServices({
       db: createTestDb(state),
-      enqueueLibraryJob: vi.fn(async () => undefined),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
       parseEpub: vi.fn(async () => {
+        await Promise.resolve();
         throw "bad-value";
       }),
     });
@@ -1169,8 +1206,9 @@ describe("ingest services", () => {
     addFileAsset(state);
     const services = createIngestServices({
       db: createTestDb(state),
-      enqueueLibraryJob: vi.fn(async () => undefined),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
       parseEpub: vi.fn(async () => {
+        await Promise.resolve();
         const error = new Error("missing") as NodeJS.ErrnoException;
         error.code = "ENOENT";
         throw error;
@@ -1192,7 +1230,7 @@ describe("ingest services", () => {
   it("skips matching for unknown assets, non-EPUB assets, and unusable metadata", async () => {
     const unknownServices = createIngestServices({
       db: createTestDb(createEmptyState("/tmp/root")),
-      enqueueLibraryJob: vi.fn(async () => undefined),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
     });
 
     await expect(
@@ -1215,7 +1253,7 @@ describe("ingest services", () => {
     });
     const nonEpubServices = createIngestServices({
       db: createTestDb(nonEpubState),
-      enqueueLibraryJob: vi.fn(async () => undefined),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
     });
 
     await expect(
@@ -1306,7 +1344,7 @@ describe("ingest services", () => {
     ]) {
       const services = createIngestServices({
         db: createTestDb(state),
-        enqueueLibraryJob: vi.fn(async () => undefined),
+        enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
       });
 
       await expect(
@@ -1354,7 +1392,7 @@ describe("ingest services", () => {
       addEdition(state, { [testCase.field]: testCase.value });
       const services = createIngestServices({
         db: createTestDb(state),
-        enqueueLibraryJob: vi.fn(async () => undefined),
+        enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
       });
 
       const firstResult = await services.matchFileAssetToEdition({ fileAssetId: "file-1" });
@@ -1402,19 +1440,19 @@ describe("ingest services", () => {
       },
     });
     addWork(state, {
-      titleCanonical: canonicalizeBookTitle("The Fifth Season")!,
+      titleCanonical: canonicalizeBookTitle("The Fifth Season") ?? "the fifth season",
     });
     addEdition(state, {
       isbn13: "9780316498834",
     });
     addContributor(state, {
-      nameCanonical: canonicalizeContributorNames(["N. K. Jemisin"])[0]!,
+      nameCanonical: canonicalizeContributorNames(["N. K. Jemisin"])[0] ?? "n k jemisin",
     });
     addEditionContributor(state);
 
     const services = createIngestServices({
       db: createTestDb(state),
-      enqueueLibraryJob: vi.fn(async () => undefined),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
     });
 
     const result = await services.matchFileAssetToEdition({ fileAssetId: "file-1" });
@@ -1460,7 +1498,7 @@ describe("ingest services", () => {
     });
     const services = createIngestServices({
       db: createTestDb(state),
-      enqueueLibraryJob: vi.fn(async () => undefined),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
     });
 
     const result = await services.matchFileAssetToEdition({ fileAssetId: "file-1" });
@@ -1518,7 +1556,7 @@ describe("ingest services", () => {
 
     const services = createIngestServices({
       db: createTestDb(state),
-      enqueueLibraryJob: vi.fn(async () => undefined),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
     });
 
     await expect(
@@ -1558,7 +1596,7 @@ describe("ingest services", () => {
 
     const services = createIngestServices({
       db: createTestDb(state),
-      enqueueLibraryJob: vi.fn(async () => undefined),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
     });
 
     await expect(
@@ -1577,7 +1615,7 @@ describe("ingest services", () => {
   it("throws when metadata parsing is requested for an unknown file asset", async () => {
     const services = createIngestServices({
       db: createTestDb(createEmptyState("/tmp/root")),
-      enqueueLibraryJob: vi.fn(async () => undefined),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
     });
 
     await expect(
@@ -1606,16 +1644,19 @@ describe("ingest services", () => {
     };
     state.fileAssets.set(existing.absolutePath, existing);
     state.fileAssetsById.set(existing.id, existing);
-    const enqueueLibraryJob = vi.fn(async () => undefined);
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
     const services = createIngestServices({
       db: createTestDb(state),
       enqueueLibraryJob,
-      hashFile: vi.fn(async () => ({
-        fullHash: "hash",
-        mtime: new Date("2025-01-01T00:00:00.000Z"),
-        partialHash: "phash",
-        sizeBytes: 2n,
-      })),
+      hashFile: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          fullHash: "hash",
+          mtime: new Date("2025-01-01T00:00:00.000Z"),
+          partialHash: "phash",
+          sizeBytes: 2n,
+        };
+      }),
     });
 
     await services.hashFileAsset({ fileAssetId: "file-1" });
@@ -1647,16 +1688,19 @@ describe("ingest services", () => {
     };
     state.fileAssets.set(existing.absolutePath, existing);
     state.fileAssetsById.set(existing.id, existing);
-    const enqueueLibraryJob = vi.fn(async () => undefined);
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
     const services = createIngestServices({
       db: createTestDb(state),
       enqueueLibraryJob,
-      hashFile: vi.fn(async () => ({
-        fullHash: "hash",
-        mtime: new Date("2025-01-01T00:00:00.000Z"),
-        partialHash: "phash",
-        sizeBytes: 2n,
-      })),
+      hashFile: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          fullHash: "hash",
+          mtime: new Date("2025-01-01T00:00:00.000Z"),
+          partialHash: "phash",
+          sizeBytes: 2n,
+        };
+      }),
     });
 
     await services.hashFileAsset({ fileAssetId: "file-1" });
@@ -1691,18 +1735,21 @@ describe("ingest services", () => {
 
     const services = createIngestServices({
       db: createTestDb(state),
-      enqueueLibraryJob: vi.fn(async () => undefined),
-      parseOpf: vi.fn(async () => ({
-        authors: [{ name: "Patrick Rothfuss", fileAs: "Rothfuss, Patrick", role: "aut" }],
-        identifiers: [{ scheme: "ISBN", value: "9780756404079" }],
-        title: "The Name of the Wind",
-        description: "<p>A story.</p>",
-        subjects: ["Fantasy"],
-        publisher: "DAW Books",
-        date: "2007-03-27",
-        language: "en",
-        series: { name: "The Kingkiller Chronicle", index: 1 },
-      })),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      parseOpf: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          authors: [{ name: "Patrick Rothfuss", fileAs: "Rothfuss, Patrick", role: "aut" }],
+          identifiers: [{ scheme: "ISBN", value: "9780756404079" }],
+          title: "The Name of the Wind",
+          description: "<p>A story.</p>",
+          subjects: ["Fantasy"],
+          publisher: "DAW Books",
+          date: "2007-03-27",
+          language: "en",
+          series: { name: "The Kingkiller Chronicle", index: 1 },
+        };
+      }),
     });
 
     const result = await services.parseFileAssetMetadata({
@@ -1774,17 +1821,20 @@ describe("ingest services", () => {
 
     const services = createIngestServices({
       db: createTestDb(state),
-      enqueueLibraryJob: vi.fn(async () => undefined),
-      parseOpf: vi.fn(async () => ({
-        authors: [],
-        identifiers: [],
-        subjects: [],
-        publisher: "DAW Books",
-        date: "2007-03-27",
-        description: "A story.",
-        language: "en",
-        series: { name: "The Kingkiller Chronicle", index: 1 },
-      })),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      parseOpf: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          authors: [],
+          identifiers: [],
+          subjects: [],
+          publisher: "DAW Books",
+          date: "2007-03-27",
+          description: "A story.",
+          language: "en",
+          series: { name: "The Kingkiller Chronicle", index: 1 },
+        };
+      }),
     });
 
     await services.parseFileAssetMetadata({
@@ -1794,8 +1844,8 @@ describe("ingest services", () => {
 
     expect(state.editions.get("edition-1")).toMatchObject({
       publisher: "DAW Books",
-      publishedAt: expect.any(Date),
     });
+    expect(state.editions.get("edition-1")?.publishedAt).toBeInstanceOf(Date);
     expect(state.works.get("work-1")).toMatchObject({
       description: "A story.",
       language: "en",
@@ -1858,17 +1908,20 @@ describe("ingest services", () => {
 
     const services = createIngestServices({
       db: createTestDb(state),
-      enqueueLibraryJob: vi.fn(async () => undefined),
-      parseOpf: vi.fn(async () => ({
-        authors: [],
-        identifiers: [],
-        subjects: [],
-        publisher: "New Publisher",
-        date: "2007-03-27",
-        description: "New description",
-        language: "en",
-        series: { name: "New Series", index: 1 },
-      })),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      parseOpf: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          authors: [],
+          identifiers: [],
+          subjects: [],
+          publisher: "New Publisher",
+          date: "2007-03-27",
+          description: "New description",
+          language: "en",
+          series: { name: "New Series", index: 1 },
+        };
+      }),
     });
 
     await services.parseFileAssetMetadata({
@@ -1929,13 +1982,16 @@ describe("ingest services", () => {
 
     const services = createIngestServices({
       db: createTestDb(state),
-      enqueueLibraryJob: vi.fn(async () => undefined),
-      parseOpf: vi.fn(async () => ({
-        authors: [],
-        identifiers: [],
-        subjects: [],
-        publisher: "DAW Books",
-      })),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      parseOpf: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          authors: [],
+          identifiers: [],
+          subjects: [],
+          publisher: "DAW Books",
+        };
+      }),
     });
 
     const result = await services.parseFileAssetMetadata({
@@ -1992,13 +2048,16 @@ describe("ingest services", () => {
 
     const services = createIngestServices({
       db: createTestDb(state),
-      enqueueLibraryJob: vi.fn(async () => undefined),
-      parseOpf: vi.fn(async () => ({
-        authors: [],
-        identifiers: [],
-        subjects: [],
-        publisher: "DAW Books",
-      })),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      parseOpf: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          authors: [],
+          identifiers: [],
+          subjects: [],
+          publisher: "DAW Books",
+        };
+      }),
     });
 
     const result = await services.parseFileAssetMetadata({
@@ -2058,14 +2117,17 @@ describe("ingest services", () => {
 
     const services = createIngestServices({
       db: createTestDb(state),
-      enqueueLibraryJob: vi.fn(async () => undefined),
-      parseOpf: vi.fn(async () => ({
-        authors: [],
-        identifiers: [],
-        subjects: [],
-        date: "not-a-date",
-        publisher: "DAW Books",
-      })),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      parseOpf: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          authors: [],
+          identifiers: [],
+          subjects: [],
+          date: "not-a-date",
+          publisher: "DAW Books",
+        };
+      }),
     });
 
     await services.parseFileAssetMetadata({
@@ -2103,8 +2165,9 @@ describe("ingest services", () => {
 
     const services = createIngestServices({
       db: createTestDb(state),
-      enqueueLibraryJob: vi.fn(async () => undefined),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
       parseOpf: vi.fn(async () => {
+        await Promise.resolve();
         const error = new Error("no such file") as NodeJS.ErrnoException;
         error.code = "ENOENT";
         throw error;
@@ -2148,8 +2211,9 @@ describe("ingest services", () => {
 
     const services = createIngestServices({
       db: createTestDb(state),
-      enqueueLibraryJob: vi.fn(async () => undefined),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
       parseOpf: vi.fn(async () => {
+        await Promise.resolve();
         throw new Error("OPF document did not contain metadata");
       }),
     });
@@ -2195,8 +2259,9 @@ describe("ingest services", () => {
 
     const services = createIngestServices({
       db: createTestDb(state),
-      enqueueLibraryJob: vi.fn(async () => undefined),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
       parseOpf: vi.fn(async () => {
+        await Promise.resolve();
         throw "bad-value";
       }),
     });
@@ -2259,15 +2324,18 @@ describe("ingest services", () => {
 
     const services = createIngestServices({
       db: createTestDb(state),
-      enqueueLibraryJob: vi.fn(async () => undefined),
-      parseOpf: vi.fn(async () => ({
-        authors: [],
-        identifiers: [],
-        subjects: [],
-        publisher: "DAW Books",
-        description: "A story.",
-        language: "en",
-      })),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      parseOpf: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          authors: [],
+          identifiers: [],
+          subjects: [],
+          publisher: "DAW Books",
+          description: "A story.",
+          language: "en",
+        };
+      }),
     });
 
     const result = await services.parseFileAssetMetadata({

@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import type * as TanstackRouter from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -19,13 +20,14 @@ let mockLoaderData: {
 } = { job: null };
 
 vi.mock("@tanstack/react-router", async () => {
-  const actual = await vi.importActual<typeof import("@tanstack/react-router")>("@tanstack/react-router");
+  const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
     ...actual,
     Link: ({ children, to, ...props }: { children?: React.ReactNode; to: string; [key: string]: unknown }) => <a href={to} {...props}>{children}</a>,
     useRouter: () => ({ invalidate: vi.fn(), navigate: vi.fn() }),
     createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
       ...opts,
+      options: opts,
       useLoaderData: () => mockLoaderData,
       useRouteContext: () => ({}),
     }),
@@ -71,7 +73,7 @@ describe("JobDetailPage", () => {
 
   it("renders 'Job Detail' heading", async () => {
     const { Route } = await import("./jobs.$jobId");
-    const JobDetailPage = Route.component!;
+    const JobDetailPage = (Route.options.component as React.ComponentType);
     render(<JobDetailPage />);
     expect(screen.getByText("Job Detail")).toBeTruthy();
   });
@@ -79,7 +81,7 @@ describe("JobDetailPage", () => {
   it("shows job id", async () => {
     mockLoaderData = { job: makeJobDetail({ id: "job-abc-123" }) };
     const { Route } = await import("./jobs.$jobId");
-    const JobDetailPage = Route.component!;
+    const JobDetailPage = (Route.options.component as React.ComponentType);
     render(<JobDetailPage />);
     expect(screen.getByText("job-abc-123")).toBeTruthy();
   });
@@ -87,7 +89,7 @@ describe("JobDetailPage", () => {
   it("shows job status badge", async () => {
     mockLoaderData = { job: makeJobDetail({ status: "SUCCEEDED" }) };
     const { Route } = await import("./jobs.$jobId");
-    const JobDetailPage = Route.component!;
+    const JobDetailPage = (Route.options.component as React.ComponentType);
     render(<JobDetailPage />);
     expect(screen.getByText("SUCCEEDED")).toBeTruthy();
   });
@@ -97,7 +99,7 @@ describe("JobDetailPage", () => {
       job: makeJobDetail({ error: "Something went wrong in the job" }),
     };
     const { Route } = await import("./jobs.$jobId");
-    const JobDetailPage = Route.component!;
+    const JobDetailPage = (Route.options.component as React.ComponentType);
     render(<JobDetailPage />);
     expect(screen.getByText("Something went wrong in the job")).toBeTruthy();
   });
@@ -105,7 +107,7 @@ describe("JobDetailPage", () => {
   it("does not show error section when job.error is null", async () => {
     mockLoaderData = { job: makeJobDetail({ error: null }) };
     const { Route } = await import("./jobs.$jobId");
-    const JobDetailPage = Route.component!;
+    const JobDetailPage = (Route.options.component as React.ComponentType);
     render(<JobDetailPage />);
     // The Error label is in the grid above, but the pre block should not exist
     expect(screen.queryByText("Something went wrong in the job")).toBeNull();
@@ -116,7 +118,7 @@ describe("JobDetailPage", () => {
       job: makeJobDetail({ payload: { libraryRootId: "root-1" } }),
     };
     const { Route } = await import("./jobs.$jobId");
-    const JobDetailPage = Route.component!;
+    const JobDetailPage = (Route.options.component as React.ComponentType);
     render(<JobDetailPage />);
     expect(screen.getByText(/libraryRootId/)).toBeTruthy();
   });
@@ -124,7 +126,7 @@ describe("JobDetailPage", () => {
   it("does not show payload section when job.payload is null", async () => {
     mockLoaderData = { job: makeJobDetail({ payload: null }) };
     const { Route } = await import("./jobs.$jobId");
-    const JobDetailPage = Route.component!;
+    const JobDetailPage = (Route.options.component as React.ComponentType);
     render(<JobDetailPage />);
     expect(screen.queryByText(/libraryRootId/)).toBeNull();
   });
@@ -132,7 +134,7 @@ describe("JobDetailPage", () => {
   it("shows duration as '—' when no startedAt", async () => {
     mockLoaderData = { job: makeJobDetail({ startedAt: null }) };
     const { Route } = await import("./jobs.$jobId");
-    const JobDetailPage = Route.component!;
+    const JobDetailPage = (Route.options.component as React.ComponentType);
     render(<JobDetailPage />);
     // Duration cell and started/finished cells all show "—"
     const dashes = screen.getAllByText("—");
@@ -146,7 +148,7 @@ describe("JobDetailPage", () => {
       job: makeJobDetail({ startedAt: start, finishedAt: end }),
     };
     const { Route } = await import("./jobs.$jobId");
-    const JobDetailPage = Route.component!;
+    const JobDetailPage = (Route.options.component as React.ComponentType);
     render(<JobDetailPage />);
     const durationEls = screen.queryAllByText(/^\d+\.\d+s$/);
     expect(durationEls.length).toBeGreaterThan(0);
@@ -156,7 +158,7 @@ describe("JobDetailPage", () => {
     await import("./jobs.$jobId");
     // JobDetailSkeleton is not exported - test via pendingComponent
     const { Route } = await import("./jobs.$jobId");
-    const Skeleton = Route.pendingComponent!;
+    const Skeleton = Route.options.pendingComponent as React.ComponentType;
     render(<Skeleton />);
     // Should render without crashing - Skeleton renders Skeleton UI elements
   });
@@ -165,7 +167,8 @@ describe("JobDetailPage", () => {
     const mockJob = makeJobDetail({ id: "job-xyz" });
     getImportJobDetailServerFnMock.mockResolvedValueOnce(mockJob);
     const { Route } = await import("./jobs.$jobId");
-    const result = await Route.loader!({ params: { jobId: "job-xyz" } } as Parameters<NonNullable<typeof Route.loader>>[0]);
+    const loader = Route.options.loader as (args: { params: { jobId: string } }) => Promise<unknown>;
+    const result = await loader({ params: { jobId: "job-xyz" } });
     expect(getImportJobDetailServerFnMock).toHaveBeenCalledWith({ data: { id: "job-xyz" } });
     expect(result).toEqual({ job: mockJob });
   });
@@ -176,7 +179,7 @@ describe("JobDetailPage", () => {
       job: makeJobDetail({ startedAt: start, finishedAt: null }),
     };
     const { Route } = await import("./jobs.$jobId");
-    const JobDetailPage = Route.component!;
+    const JobDetailPage = (Route.options.component as React.ComponentType);
     render(<JobDetailPage />);
     // Should show duration in seconds (not "—")
     const durationEls = screen.queryAllByText(/^\d+\.\d+s$/);
@@ -190,7 +193,7 @@ describe("JobDetailPage", () => {
       job: makeJobDetail({ startedAt: start, finishedAt: end }),
     };
     const { Route } = await import("./jobs.$jobId");
-    const JobDetailPage = Route.component!;
+    const JobDetailPage = (Route.options.component as React.ComponentType);
     render(<JobDetailPage />);
     const durationEls = screen.queryAllByText(/m$/);
     expect(durationEls.length).toBeGreaterThan(0);
@@ -203,7 +206,7 @@ describe("JobDetailPage", () => {
       job: makeJobDetail({ startedAt: start, finishedAt: end }),
     };
     const { Route } = await import("./jobs.$jobId");
-    const JobDetailPage = Route.component!;
+    const JobDetailPage = (Route.options.component as React.ComponentType);
     render(<JobDetailPage />);
     const durationEls = screen.queryAllByText(/ms$/);
     expect(durationEls.length).toBeGreaterThan(0);
@@ -212,7 +215,7 @@ describe("JobDetailPage", () => {
   it("shows status badge with fallback 'secondary' variant for unknown status", async () => {
     mockLoaderData = { job: makeJobDetail({ status: "UNKNOWN_STATUS" }) };
     const { Route } = await import("./jobs.$jobId");
-    const JobDetailPage = Route.component!;
+    const JobDetailPage = (Route.options.component as React.ComponentType);
     render(<JobDetailPage />);
     expect(screen.getByText("UNKNOWN_STATUS")).toBeTruthy();
   });

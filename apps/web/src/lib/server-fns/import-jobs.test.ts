@@ -8,7 +8,7 @@ vi.mock("@tanstack/react-start", () => ({
     };
     const b: Builder = {
       inputValidator: () => b,
-      handler: (fn) => (a) => fn(a ?? {}),
+      handler: (fn) => (a) => fn(a),
     };
     return b;
   },
@@ -89,8 +89,9 @@ describe("getImportJobsServerFn", () => {
   it("calls findMany WITHOUT status filter when status is not provided", async () => {
     await getImportJobsServerFn({ data: { page: 1, pageSize: 20 } });
 
-    const callArgs = findManyMock.mock.calls[0][0];
-    expect(callArgs.where).not.toHaveProperty("status");
+    const callArgs: unknown = findManyMock.mock.calls[0]?.[0];
+    expect(callArgs).toHaveProperty("where");
+    expect((callArgs as Record<string, unknown>).where).not.toHaveProperty("status");
   });
 
   it("calls findMany WITHOUT status filter when status is an empty array", async () => {
@@ -98,8 +99,9 @@ describe("getImportJobsServerFn", () => {
       data: { page: 1, pageSize: 20, status: [] },
     });
 
-    const callArgs = findManyMock.mock.calls[0][0];
-    expect(callArgs.where).not.toHaveProperty("status");
+    const callArgs: unknown = findManyMock.mock.calls[0]?.[0];
+    expect(callArgs).toHaveProperty("where");
+    expect((callArgs as Record<string, unknown>).where).not.toHaveProperty("status");
   });
 
   it("calls findMany with kind filter when kind is provided", async () => {
@@ -121,8 +123,9 @@ describe("getImportJobsServerFn", () => {
       data: { page: 1, pageSize: 20, kind: [] },
     });
 
-    const callArgs = findManyMock.mock.calls[0][0];
-    expect(callArgs.where).not.toHaveProperty("kind");
+    const callArgs: unknown = findManyMock.mock.calls[0]?.[0];
+    expect(callArgs).toHaveProperty("where");
+    expect((callArgs as Record<string, unknown>).where).not.toHaveProperty("kind");
   });
 
   it("calls findMany with libraryRootId filter when provided", async () => {
@@ -140,8 +143,9 @@ describe("getImportJobsServerFn", () => {
   it("calls findMany WITHOUT libraryRootId filter when not provided", async () => {
     await getImportJobsServerFn({ data: { page: 1, pageSize: 20 } });
 
-    const callArgs = findManyMock.mock.calls[0][0];
-    expect(callArgs.where).not.toHaveProperty("libraryRootId");
+    const callArgs: unknown = findManyMock.mock.calls[0]?.[0];
+    expect(callArgs).toHaveProperty("where");
+    expect((callArgs as Record<string, unknown>).where).not.toHaveProperty("libraryRootId");
   });
 
   it("uses correct skip/take for pagination (page 2, pageSize 10 → skip: 10, take: 10)", async () => {

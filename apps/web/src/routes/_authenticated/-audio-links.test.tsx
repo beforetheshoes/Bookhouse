@@ -1,17 +1,20 @@
 // @vitest-environment happy-dom
+import type * as DataTableModule from "~/components/data-table";
+import type * as TanstackRouter from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 let mockLoaderData: { audioLinks: { ebookEdition: unknown; audioEdition: unknown; matchType: string; confidence: number | null; reviewStatus: string }[] } = { audioLinks: [] };
 
 vi.mock("@tanstack/react-router", async () => {
-  const actual = await vi.importActual<typeof import("@tanstack/react-router")>("@tanstack/react-router");
+  const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
     ...actual,
     Link: ({ children, to, ...props }: { children?: React.ReactNode; to: string; [key: string]: unknown }) => <a href={to} {...props}>{children}</a>,
     useRouter: () => ({ invalidate: vi.fn(), navigate: vi.fn() }),
     createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
       ...opts,
+      options: opts,
       useLoaderData: () => mockLoaderData,
       useRouteContext: () => ({}),
     }),
@@ -29,7 +32,7 @@ vi.mock("~/components/skeletons/table-page-skeleton", () => ({
 
 // Use real DataTable so column cell renderers execute
 vi.mock("~/components/data-table", async () => {
-  const actual = await vi.importActual<typeof import("~/components/data-table")>("~/components/data-table");
+  const actual = await vi.importActual<typeof DataTableModule>("~/components/data-table");
   return actual;
 });
 
@@ -55,14 +58,14 @@ describe("AudioLinksPage", () => {
   it("loader calls getAudioLinksServerFn", async () => {
     getAudioLinksServerFnMock.mockResolvedValueOnce([]);
     const { Route } = await import("./audio-links");
-    const result = await Route.loader!({} as Parameters<NonNullable<typeof Route.loader>>[0]);
+    const result = await (Route.options.loader as (args: Record<string, unknown>) => Promise<unknown>)({});
     expect(getAudioLinksServerFnMock).toHaveBeenCalled();
     expect(result).toEqual({ audioLinks: [] });
   });
 
   it("renders 'Audio Links' heading", async () => {
     const { Route } = await import("./audio-links");
-    const AudioLinksPage = Route.component!;
+    const AudioLinksPage = (Route.options.component as React.ComponentType);
     render(<AudioLinksPage />);
     expect(screen.getByText("Audio Links")).toBeTruthy();
   });
@@ -72,7 +75,7 @@ describe("AudioLinksPage", () => {
       audioLinks: [makeAudioLink({ confidence: null })],
     };
     const { Route } = await import("./audio-links");
-    const AudioLinksPage = Route.component!;
+    const AudioLinksPage = (Route.options.component as React.ComponentType);
     render(<AudioLinksPage />);
     expect(screen.getByText("—")).toBeTruthy();
   });
@@ -82,7 +85,7 @@ describe("AudioLinksPage", () => {
       audioLinks: [makeAudioLink({ confidence: 0.85 })],
     };
     const { Route } = await import("./audio-links");
-    const AudioLinksPage = Route.component!;
+    const AudioLinksPage = (Route.options.component as React.ComponentType);
     render(<AudioLinksPage />);
     expect(screen.getByText("85%")).toBeTruthy();
   });
@@ -92,7 +95,7 @@ describe("AudioLinksPage", () => {
       audioLinks: [makeAudioLink({ reviewStatus: "PENDING" })],
     };
     const { Route } = await import("./audio-links");
-    const AudioLinksPage = Route.component!;
+    const AudioLinksPage = (Route.options.component as React.ComponentType);
     render(<AudioLinksPage />);
     expect(screen.getByText("PENDING")).toBeTruthy();
   });
@@ -102,7 +105,7 @@ describe("AudioLinksPage", () => {
       audioLinks: [makeAudioLink({ reviewStatus: "CONFIRMED" })],
     };
     const { Route } = await import("./audio-links");
-    const AudioLinksPage = Route.component!;
+    const AudioLinksPage = (Route.options.component as React.ComponentType);
     render(<AudioLinksPage />);
     expect(screen.getByText("CONFIRMED")).toBeTruthy();
   });
@@ -112,7 +115,7 @@ describe("AudioLinksPage", () => {
       audioLinks: [makeAudioLink({ reviewStatus: "UNKNOWN_STATUS" })],
     };
     const { Route } = await import("./audio-links");
-    const AudioLinksPage = Route.component!;
+    const AudioLinksPage = (Route.options.component as React.ComponentType);
     render(<AudioLinksPage />);
     expect(screen.getByText("UNKNOWN_STATUS")).toBeTruthy();
   });

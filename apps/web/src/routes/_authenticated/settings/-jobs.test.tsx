@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import type * as TanstackRouter from "@tanstack/react-router";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -17,13 +18,14 @@ let mockLoaderData: {
 } = { jobs: [], totalCount: 0 };
 
 vi.mock("@tanstack/react-router", async () => {
-  const actual = await vi.importActual<typeof import("@tanstack/react-router")>("@tanstack/react-router");
+  const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
     ...actual,
     Link: ({ children, to, params: _params, ...props }: { children?: React.ReactNode; to: string; params?: unknown; [key: string]: unknown }) => <a href={to} {...props}>{children}</a>,
     useRouter: () => ({ invalidate: vi.fn(), navigate: vi.fn() }),
     createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
       ...opts,
+      options: opts,
       useLoaderData: () => mockLoaderData,
       useRouteContext: () => ({}),
     }),
@@ -59,7 +61,7 @@ vi.mock("@tanstack/react-virtual", () => ({
 import { Route } from "./jobs";
 import { getImportJobsServerFn } from "~/lib/server-fns/import-jobs";
 
-const JobsPage = Route.component!;
+const JobsPage = (Route.options.component as React.ComponentType);
 
 const makeJob = (overrides: Partial<{
   id: string;
@@ -184,10 +186,10 @@ describe("JobsPage", () => {
   });
 
   it("loader calls getImportJobsServerFn", async () => {
-    vi.mocked(getImportJobsServerFn).mockResolvedValueOnce({ jobs: [], totalCount: 0 });
-    const result = await Route.loader!({} as Parameters<NonNullable<typeof Route.loader>>[0]);
+    vi.mocked(getImportJobsServerFn).mockResolvedValueOnce({ jobs: [], totalCount: 0, page: 1, pageSize: 20 });
+    const result = await (Route.options.loader as (args: Record<string, unknown>) => Promise<unknown>)({});
     expect(getImportJobsServerFn).toHaveBeenCalled();
-    expect(result).toEqual({ jobs: [], totalCount: 0 });
+    expect(result).toEqual({ jobs: [], totalCount: 0, page: 1, pageSize: 20 });
   });
 
   it("renders duration using Date.now() when startedAt set but finishedAt is null", () => {

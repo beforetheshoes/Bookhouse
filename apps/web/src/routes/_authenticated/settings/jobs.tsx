@@ -35,7 +35,7 @@ function formatDuration(job: ImportJobRow): string {
   const start = new Date(job.startedAt).getTime();
   const end = job.finishedAt ? new Date(job.finishedAt).getTime() : Date.now();
   const ms = end - start;
-  if (ms < 1000) return `${ms}ms`;
+  if (ms < 1000) return `${String(ms)}ms`;
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
   return `${(ms / 60_000).toFixed(1)}m`;
 }

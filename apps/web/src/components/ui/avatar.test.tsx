@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { Avatar, AvatarImage, AvatarFallback, AvatarBadge, AvatarGroup, AvatarGroupCount } from "./avatar";
 

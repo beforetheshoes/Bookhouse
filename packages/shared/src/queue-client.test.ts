@@ -4,10 +4,8 @@ const addMock = vi.fn();
 const redisConstructorMock = vi.fn();
 
 vi.mock("ioredis", () => ({
-  default: class FakeRedis {
-    constructor(config: unknown) {
-      redisConstructorMock(config);
-    }
+  default: function FakeRedis(config: unknown) {
+    redisConstructorMock(config);
   },
 }));
 
