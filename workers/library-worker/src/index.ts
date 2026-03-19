@@ -2,7 +2,7 @@ import { pathToFileURL } from "node:url";
 import IORedis from "ioredis";
 import { type Job, Worker } from "bullmq";
 import { db } from "@bookhouse/db";
-import { hashFileAsset, matchFileAssetToEdition, parseFileAssetMetadata, scanLibraryRoot, type ScanProgressData } from "@bookhouse/ingest";
+import { hashFileAsset, matchFileAssetToEdition, parseFileAssetMetadata, processCoverForWork, scanLibraryRoot, type ScanProgressData } from "@bookhouse/ingest";
 import {
   LIBRARY_JOB_NAMES,
   type BaseJobPayload,
@@ -11,6 +11,7 @@ import {
   type LibraryJobPayload,
   type MatchFileAssetToEditionJobPayload,
   type ParseFileAssetMetadataJobPayload,
+  type ProcessCoverJobPayload,
   QUEUES,
   type ScanLibraryRootJobPayload,
   createLogger,
@@ -23,6 +24,7 @@ export interface LibraryWorkerHandlers {
   hashFileAsset: typeof hashFileAsset;
   matchFileAssetToEdition: typeof matchFileAssetToEdition;
   parseFileAssetMetadata: typeof parseFileAssetMetadata;
+  processCoverForWork: (input: { workId: string; fileAssetId: string; coverCacheDir: string }) => Promise<unknown>;
   scanLibraryRoot: typeof scanLibraryRoot;
 }
 
@@ -53,6 +55,14 @@ function dispatch(
       return handlers.matchFileAssetToEdition(job.data as MatchFileAssetToEditionJobPayload);
     case LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA:
       return handlers.parseFileAssetMetadata(job.data as ParseFileAssetMetadataJobPayload);
+    case LIBRARY_JOB_NAMES.PROCESS_COVER: {
+      const coverPayload = job.data as ProcessCoverJobPayload;
+      return handlers.processCoverForWork({
+        workId: coverPayload.workId,
+        fileAssetId: coverPayload.fileAssetId,
+        coverCacheDir: process.env.COVER_CACHE_DIR ?? "/data/covers",
+      });
+    }
     default:
       throw new Error(`Unsupported library job: ${String(job.name)}`);
   }
@@ -63,6 +73,7 @@ export function createLibraryWorkerProcessor(
     hashFileAsset,
     matchFileAssetToEdition,
     parseFileAssetMetadata,
+    processCoverForWork: processCoverForWork as LibraryWorkerHandlers["processCoverForWork"],
     scanLibraryRoot,
   },
 ) {
@@ -115,6 +126,7 @@ export function createLibraryWorker(
     hashFileAsset,
     matchFileAssetToEdition,
     parseFileAssetMetadata,
+    processCoverForWork: processCoverForWork as LibraryWorkerHandlers["processCoverForWork"],
     scanLibraryRoot,
   },
 ) {

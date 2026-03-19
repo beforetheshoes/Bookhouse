@@ -294,6 +294,7 @@ export interface MatchFileAssetToEditionResult {
   createdEditionFile: boolean;
   createdWork: boolean;
   editionId?: string;
+  enqueuedCoverJob: boolean;
   fileAssetId: string;
   skipped: boolean;
   workId?: string;
@@ -1230,6 +1231,7 @@ export function createIngestServices(
         createdEdition: false,
         createdEditionFile: false,
         createdWork: false,
+        enqueuedCoverJob: false,
         fileAssetId: input.fileAssetId,
         skipped: true,
       };
@@ -1248,11 +1250,21 @@ export function createIngestServices(
         where: { id: existingEditionFile.editionId },
       });
 
+      let enqueuedCoverJob = false;
+      if (existingEdition?.workId) {
+        await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
+          workId: existingEdition.workId,
+          fileAssetId: fileAsset.id,
+        });
+        enqueuedCoverJob = true;
+      }
+
       return {
         createdEdition: false,
         createdEditionFile: false,
         createdWork: false,
         editionId: existingEdition?.id,
+        enqueuedCoverJob,
         fileAssetId: fileAsset.id,
         skipped: false,
         workId: existingEdition?.workId,
@@ -1267,6 +1279,7 @@ export function createIngestServices(
         createdEdition: false,
         createdEditionFile: false,
         createdWork: false,
+        enqueuedCoverJob: false,
         fileAssetId: fileAsset.id,
         skipped: true,
       };
@@ -1287,11 +1300,17 @@ export function createIngestServices(
     if (editionMatch !== null) {
       const createdEditionFile = await ensureEditionFileLink(ingestDb, editionMatch.id, fileAsset.id);
 
+      await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
+        workId: editionMatch.workId,
+        fileAssetId: fileAsset.id,
+      });
+
       return {
         createdEdition: false,
         createdEditionFile,
         createdWork: false,
         editionId: editionMatch.id,
+        enqueuedCoverJob: true,
         fileAssetId: fileAsset.id,
         skipped: false,
         workId: editionMatch.workId,
@@ -1383,11 +1402,17 @@ export function createIngestServices(
       }
     }
 
+    await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
+      workId,
+      fileAssetId: fileAsset.id,
+    });
+
     return {
       createdEdition: true,
       createdEditionFile,
       createdWork,
       editionId: createdEdition.id,
+      enqueuedCoverJob: true,
       fileAssetId: fileAsset.id,
       skipped: false,
       workId,

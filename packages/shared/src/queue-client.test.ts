@@ -92,6 +92,23 @@ describe("enqueueLibraryJob", () => {
     );
   });
 
+  it("passes retry config for process-cover", async () => {
+    addMock.mockResolvedValueOnce({ id: "job-5" });
+    const { enqueueLibraryJob, LIBRARY_JOB_NAMES, RETRY_CONFIG } = await import("./index");
+
+    await enqueueLibraryJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
+      workId: "work-1",
+      fileAssetId: "file-4",
+    });
+
+    const config = RETRY_CONFIG[LIBRARY_JOB_NAMES.PROCESS_COVER];
+    expect(addMock).toHaveBeenCalledWith(
+      "process-cover",
+      { workId: "work-1", fileAssetId: "file-4" },
+      { attempts: config.attempts, backoff: config.backoff },
+    );
+  });
+
   it("returns 'unknown' when job.id is undefined", async () => {
     addMock.mockResolvedValueOnce({});
     const { enqueueLibraryJob, LIBRARY_JOB_NAMES } = await import("./index");

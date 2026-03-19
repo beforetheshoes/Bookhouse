@@ -22,6 +22,7 @@ export default defineConfig({
         "packages/**/*.ts",
         "apps/web/src/**/*.ts",
         "apps/web/src/**/*.tsx",
+        "apps/web/server/routes/api/covers/**/*.ts",
         "workers/**/*.ts",
       ],
       exclude: ["**/*.d.ts", "apps/web/src/routeTree.gen.ts"],

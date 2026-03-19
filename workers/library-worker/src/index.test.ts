@@ -12,6 +12,7 @@ const redisConstructorMock = vi.fn();
 const hashFileAssetMock = vi.fn();
 const matchFileAssetToEditionMock = vi.fn();
 const parseFileAssetMetadataMock = vi.fn();
+const processCoverForWorkMock = vi.fn();
 const scanLibraryRootMock = vi.fn();
 const importJobUpdateMock = vi.fn();
 
@@ -52,6 +53,7 @@ vi.mock("@bookhouse/ingest", () => ({
   hashFileAsset: hashFileAssetMock,
   matchFileAssetToEdition: matchFileAssetToEditionMock,
   parseFileAssetMetadata: parseFileAssetMetadataMock,
+  processCoverForWork: processCoverForWorkMock,
   scanLibraryRoot: scanLibraryRootMock,
 }));
 
@@ -74,6 +76,7 @@ beforeEach(() => {
   matchFileAssetToEditionMock.mockReset();
   onMock.mockReset();
   parseFileAssetMetadataMock.mockReset();
+  processCoverForWorkMock.mockReset();
   quitMock.mockReset();
   queueConnectionConfigMock.mockClear();
   redisConstructorMock.mockClear();
@@ -89,6 +92,7 @@ describe("library worker", () => {
       hashFileAsset: hashFileAssetMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
     });
 
@@ -96,6 +100,7 @@ describe("library worker", () => {
     hashFileAssetMock.mockResolvedValueOnce("hash-result");
     matchFileAssetToEditionMock.mockResolvedValueOnce("match-result");
     parseFileAssetMetadataMock.mockResolvedValueOnce("parse-result");
+    processCoverForWorkMock.mockResolvedValueOnce("cover-result");
 
     await expect(
       processor({
@@ -121,11 +126,22 @@ describe("library worker", () => {
         name: "parse-file-asset-metadata",
       } as never),
     ).resolves.toBe("parse-result");
+    await expect(
+      processor({
+        data: { workId: "work-1", fileAssetId: "file-1" },
+        name: "process-cover",
+      } as never),
+    ).resolves.toBe("cover-result");
 
     expect(scanLibraryRootMock).toHaveBeenCalledWith({ libraryRootId: "root-1" });
     expect(hashFileAssetMock).toHaveBeenCalledWith({ fileAssetId: "file-1" });
     expect(matchFileAssetToEditionMock).toHaveBeenCalledWith({ fileAssetId: "file-1" });
     expect(parseFileAssetMetadataMock).toHaveBeenCalledWith({ fileAssetId: "file-1" });
+    expect(processCoverForWorkMock).toHaveBeenCalledWith({
+      workId: "work-1",
+      fileAssetId: "file-1",
+      coverCacheDir: "/data/covers",
+    });
   });
 
   it("updates ImportJob to RUNNING then SUCCEEDED when importJobId is present", async () => {
@@ -134,6 +150,7 @@ describe("library worker", () => {
       hashFileAsset: hashFileAssetMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
     });
 
@@ -162,6 +179,7 @@ describe("library worker", () => {
       hashFileAsset: hashFileAssetMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
     });
 
@@ -193,6 +211,7 @@ describe("library worker", () => {
       hashFileAsset: hashFileAssetMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
     });
 
@@ -223,6 +242,7 @@ describe("library worker", () => {
       hashFileAsset: hashFileAssetMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
     });
 
@@ -243,6 +263,7 @@ describe("library worker", () => {
       hashFileAsset: hashFileAssetMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
     });
 
@@ -282,6 +303,7 @@ describe("library worker", () => {
       hashFileAsset: hashFileAssetMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
     });
 
@@ -303,6 +325,7 @@ describe("library worker", () => {
       hashFileAsset: hashFileAssetMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
     });
 

@@ -7,6 +7,7 @@ export const LIBRARY_JOB_NAMES = {
   HASH_FILE_ASSET: "hash-file-asset",
   PARSE_FILE_ASSET_METADATA: "parse-file-asset-metadata",
   MATCH_FILE_ASSET_TO_EDITION: "match-file-asset-to-edition",
+  PROCESS_COVER: "process-cover",
 } as const;
 
 export interface BaseJobPayload {
@@ -30,11 +31,17 @@ export interface MatchFileAssetToEditionJobPayload extends BaseJobPayload {
   fileAssetId: string;
 }
 
+export interface ProcessCoverJobPayload extends BaseJobPayload {
+  workId: string;
+  fileAssetId: string;
+}
+
 export interface LibraryJobPayloads {
   [LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT]: ScanLibraryRootJobPayload;
   [LIBRARY_JOB_NAMES.HASH_FILE_ASSET]: HashFileAssetJobPayload;
   [LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA]: ParseFileAssetMetadataJobPayload;
   [LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION]: MatchFileAssetToEditionJobPayload;
+  [LIBRARY_JOB_NAMES.PROCESS_COVER]: ProcessCoverJobPayload;
 }
 
 export type LibraryJobName = keyof LibraryJobPayloads;
@@ -61,6 +68,10 @@ export const RETRY_CONFIG: Record<LibraryJobName, JobRetryConfig> = {
   [LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION]: {
     attempts: 3,
     backoff: { type: "exponential", delay: 2000 },
+  },
+  [LIBRARY_JOB_NAMES.PROCESS_COVER]: {
+    attempts: 2,
+    backoff: { type: "exponential", delay: 3000 },
   },
 };
 

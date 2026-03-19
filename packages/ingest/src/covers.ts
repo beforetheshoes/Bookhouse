@@ -1,0 +1,163 @@
+import path from "node:path";
+import type { Dirent } from "node:fs";
+import { MediaKind } from "@bookhouse/domain";
+import { classifyMediaKind } from "./classification";
+import type { EpubCoverResult } from "./epub";
+
+type ListDirectoryFn = (path: string, options: { withFileTypes: true }) => Promise<Dirent[]>;
+type ReadFileFn = (path: string) => Promise<Buffer>;
+type MkdirFn = (path: string, options: { recursive: true }) => Promise<string | undefined>;
+type WriteFileFn = (path: string, data: Buffer) => Promise<void>;
+
+export interface ProcessCoverInput {
+  workId: string;
+  fileAssetId: string;
+  coverCacheDir: string;
+}
+
+export interface ProcessCoverResult {
+  source: "epub" | "adjacent" | "none";
+  updated: boolean;
+}
+
+interface FileAssetRecord {
+  id: string;
+  absolutePath: string;
+  mediaKind: MediaKind;
+}
+
+export interface CoverDb {
+  fileAsset: {
+    findUnique(args: { where: { id: string } }): Promise<FileAssetRecord | null>;
+  };
+  work: {
+    update(args: { where: { id: string }; data: { coverPath: string } }): Promise<unknown>;
+  };
+}
+
+export interface ResizeCoverDeps {
+  sharp: (input: Buffer) => { resize: (width: number, height: undefined, options: { fit: string; withoutEnlargement: boolean }) => { webp: () => { toBuffer: () => Promise<Buffer> } } };
+  mkdir: MkdirFn;
+  writeFile: WriteFileFn;
+}
+
+export interface CoverDependencies {
+  extractEpubCover: (absolutePath: string) => Promise<EpubCoverResult | null>;
+  readFile: ReadFileFn;
+  detectAdjacentCover: (directory: string, listDirectory?: ListDirectoryFn) => Promise<string | null>;
+  resizeCoverImage: (input: { imageBuffer: Buffer; outputDir: string }, deps: ResizeCoverDeps) => Promise<{ thumbPath: string; mediumPath: string }>;
+  db: CoverDb;
+}
+
+export async function detectAdjacentCover(
+  directory: string,
+  listDirectory: ListDirectoryFn,
+): Promise<string | null> {
+  let entries: Dirent[];
+
+  try {
+    entries = await listDirectory(directory, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+
+  let coverFile: string | null = null;
+  let fallbackFile: string | null = null;
+
+  for (const entry of entries) {
+    if (!entry.isFile()) {
+      continue;
+    }
+
+    const mediaKind = classifyMediaKind(entry.name);
+    if (mediaKind !== MediaKind.COVER) {
+      continue;
+    }
+
+    const baseName = path.basename(entry.name, path.extname(entry.name)).toLowerCase();
+    if (baseName === "cover") {
+      coverFile = path.join(directory, entry.name);
+      break;
+    }
+
+    if (fallbackFile === null) {
+      fallbackFile = path.join(directory, entry.name);
+    }
+  }
+
+  return coverFile ?? fallbackFile;
+}
+
+export async function resizeCoverImage(
+  input: { imageBuffer: Buffer; outputDir: string },
+  deps: ResizeCoverDeps,
+): Promise<{ thumbPath: string; mediumPath: string }> {
+  await deps.mkdir(input.outputDir, { recursive: true });
+
+  const thumbPath = path.join(input.outputDir, "thumb.webp");
+  const mediumPath = path.join(input.outputDir, "medium.webp");
+
+  const thumbBuffer = await deps.sharp(input.imageBuffer)
+    .resize(200, undefined, { fit: "inside", withoutEnlargement: true })
+    .webp()
+    .toBuffer();
+
+  const mediumBuffer = await deps.sharp(input.imageBuffer)
+    .resize(400, undefined, { fit: "inside", withoutEnlargement: true })
+    .webp()
+    .toBuffer();
+
+  await deps.writeFile(thumbPath, thumbBuffer);
+  await deps.writeFile(mediumPath, mediumBuffer);
+
+  return { thumbPath, mediumPath };
+}
+
+export async function processCoverForWork(
+  input: ProcessCoverInput,
+  deps: CoverDependencies,
+): Promise<ProcessCoverResult> {
+  const fileAsset = await deps.db.fileAsset.findUnique({
+    where: { id: input.fileAssetId },
+  });
+
+  if (fileAsset === null) {
+    throw new Error(`File asset "${input.fileAssetId}" was not found`);
+  }
+
+  let imageBuffer: Buffer | null = null;
+  let source: "epub" | "adjacent" | "none" = "none";
+
+  // Try EPUB embedded cover first
+  if (fileAsset.mediaKind === MediaKind.EPUB) {
+    const epubCover = await deps.extractEpubCover(fileAsset.absolutePath);
+    if (epubCover !== null) {
+      imageBuffer = epubCover.buffer;
+      source = "epub";
+    }
+  }
+
+  // Fallback to adjacent cover file
+  if (imageBuffer === null) {
+    const directory = path.dirname(fileAsset.absolutePath);
+    const adjacentPath = await deps.detectAdjacentCover(directory);
+    if (adjacentPath !== null) {
+      imageBuffer = await deps.readFile(adjacentPath);
+      source = "adjacent";
+    }
+  }
+
+  if (imageBuffer === null) {
+    return { source: "none", updated: false };
+  }
+
+  const outputDir = path.join(input.coverCacheDir, input.workId);
+  await deps.resizeCoverImage({ imageBuffer, outputDir }, {} as ResizeCoverDeps);
+
+  await deps.db.work.update({
+    where: { id: input.workId },
+    data: { coverPath: input.workId },
+  });
+
+  return { source, updated: true };
+}

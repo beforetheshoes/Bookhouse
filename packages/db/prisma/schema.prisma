@@ -195,6 +195,7 @@ model Work {
   sortTitle      String?
   description    String?
   language       String?
+  coverPath      String?
   seriesId       String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
