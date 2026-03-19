@@ -30,7 +30,15 @@ vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
     ...actual,
-    Link: ({ children, to, ...props }: { children?: React.ReactNode; to: string; [key: string]: unknown }) => <a href={to} {...props}>{children}</a>,
+    Link: ({ children, to, params, ...props }: { children?: React.ReactNode; to: string; params?: Record<string, string>; [key: string]: unknown }) => {
+      let href = to;
+      if (params) {
+        for (const [key, value] of Object.entries(params)) {
+          href = href.replace(`$${key}`, value);
+        }
+      }
+      return <a href={href} {...props}>{children}</a>;
+    },
     useRouter: () => ({ invalidate: vi.fn(), navigate: vi.fn() }),
     createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
       ...opts,
@@ -168,6 +176,20 @@ describe("LibraryPage", () => {
     expect(screen.getByText("The Great Gatsby")).toBeTruthy();
     expect(screen.getByText("Moby Dick")).toBeTruthy();
     expect(screen.getByText("F. Scott Fitzgerald")).toBeTruthy();
+  });
+
+  it("renders title as link to work detail in table view", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      works: [makeWork("The Great Gatsby", ["F. Scott Fitzgerald"], ["EBOOK"])],
+      activeJobCount: 0,
+    };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    const titleLink = screen.getByText("The Great Gatsby").closest("a");
+    expect(titleLink).toBeTruthy();
+    expect(titleLink?.getAttribute("href")).toBe("/library/work-the-great-gatsby");
   });
 
   it("renders work with no authors showing dash in table view", async () => {

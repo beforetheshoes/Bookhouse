@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { BookOpen } from "lucide-react";
 import { Badge } from "~/components/ui/badge";
 
@@ -16,7 +17,7 @@ export function WorkCard({ id, title, authors, formats, series, coverPath }: Wor
   const showPlaceholder = !coverPath || imgFailed;
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-lg border bg-card">
+    <Link to="/library/$workId" params={{ workId: id }} className="flex flex-col overflow-hidden rounded-lg border bg-card">
       <div className="aspect-[2/3] bg-muted">
         {showPlaceholder ? (
           <div className="flex size-full items-center justify-center text-muted-foreground">
@@ -48,6 +49,6 @@ export function WorkCard({ id, title, authors, formats, series, coverPath }: Wor
           )}
         </div>
       </div>
-    </div>
+    </Link>
   );
 }

@@ -1,6 +1,14 @@
 // @vitest-environment happy-dom
 import { render, screen, fireEvent } from "@testing-library/react";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children, to, params, ...props }: { children?: React.ReactNode; to: string; params?: Record<string, string>; [key: string]: unknown }) => {
+    const href = params ? to.replace("$workId", params.workId ?? "") : to;
+    return <a href={href} {...props}>{children}</a>;
+  },
+}));
+
 import { WorkCard } from "./work-card";
 
 describe("WorkCard", () => {
@@ -67,5 +75,11 @@ describe("WorkCard", () => {
     fireEvent.error(img);
     expect(screen.queryByRole("img")).toBeNull();
     expect(document.querySelector("svg")).toBeTruthy();
+  });
+
+  it("wraps card in a link to the work detail page", () => {
+    render(<WorkCard {...baseProps} />);
+    const link = screen.getByRole("link");
+    expect(link.getAttribute("href")).toBe("/library/work-123");
   });
 });

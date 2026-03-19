@@ -68,7 +68,7 @@ type FileAssetRecord = Pick<
 >;
 
 type LibraryRootRecord = Pick<LibraryRoot, "id" | "lastScannedAt" | "path">;
-type WorkRecord = Pick<Work, "description" | "id" | "language" | "seriesId" | "sortTitle" | "titleCanonical" | "titleDisplay">;
+type WorkRecord = Pick<Work, "description" | "id" | "language" | "seriesId" | "seriesPosition" | "sortTitle" | "titleCanonical" | "titleDisplay">;
 type EditionRecord = Pick<
   Edition,
   "asin" | "formatFamily" | "id" | "isbn10" | "isbn13" | "publishedAt" | "publisher" | "workId"
@@ -204,7 +204,7 @@ export interface IngestDb {
     create(args: WorkCreateArgs): Promise<WorkRecord>;
     findMany(args: WorkFindManyArgs): Promise<WorkMatchRecord[]>;
     findUnique(args: { where: { id: string } }): Promise<WorkRecord | null>;
-    update(args: { where: { id: string }; data: Partial<Pick<Work, "description" | "language" | "seriesId">> }): Promise<WorkRecord>;
+    update(args: { where: { id: string }; data: Partial<Pick<Work, "description" | "language" | "seriesId" | "seriesPosition">> }): Promise<WorkRecord>;
   };
   edition: {
     create(args: EditionCreateArgs): Promise<EditionRecord>;
@@ -561,7 +561,7 @@ function createDefaultIngestDb(): IngestDb {
     },
     work: {
       ...(prisma.work as unknown as Omit<IngestDb["work"], "update">),
-      async update(args: { where: { id: string }; data: Partial<Pick<Work, "description" | "language" | "seriesId">> }) {
+      async update(args: { where: { id: string }; data: Partial<Pick<Work, "description" | "language" | "seriesId" | "seriesPosition">> }) {
         return prisma.work.update(args) as unknown as Promise<WorkRecord>;
       },
     },
@@ -881,6 +881,9 @@ export function createIngestServices(
               name: normalized.series.name,
             });
             workUpdates.seriesId = series.id;
+            if (normalized.series.index !== undefined) {
+              workUpdates.seriesPosition = normalized.series.index;
+            }
           }
 
           if (Object.keys(workUpdates).length > 0) {

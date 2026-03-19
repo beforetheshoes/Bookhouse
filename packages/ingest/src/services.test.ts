@@ -61,6 +61,7 @@ interface TestWork {
   id: string;
   language: string | null;
   seriesId: string | null;
+  seriesPosition: number | null;
   sortTitle: string | null;
   titleCanonical: string;
   titleDisplay: string;
@@ -219,6 +220,7 @@ function createTestDb(state: TestState): IngestDb {
           id: `work-${String(workSequence)}`,
           language: null,
           seriesId: null,
+          seriesPosition: null,
           ...data,
         };
         state.works.set(created.id, created);
@@ -384,6 +386,7 @@ function addWork(state: TestState, overrides: Partial<TestWork> = {}): TestWork 
     id: "work-1",
     language: null,
     seriesId: null,
+    seriesPosition: null,
     sortTitle: null,
     titleCanonical: "the fifth season",
     titleDisplay: "The Fifth Season",
@@ -1723,6 +1726,7 @@ describe("ingest services", () => {
       id: "work-1",
       language: null,
       seriesId: null,
+      seriesPosition: null,
       sortTitle: null,
       titleCanonical: "the fifth season",
       titleDisplay: "The Fifth Season",
@@ -2099,6 +2103,82 @@ describe("ingest services", () => {
       description: "A story.",
       language: "en",
       seriesId: "series-The Kingkiller Chronicle",
+      seriesPosition: 1,
+    });
+  });
+
+  it("sets seriesPosition to null when series has no index", async () => {
+    const state = createEmptyState("/tmp/root");
+    const opfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.opf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.opf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "opf",
+      fullHash: "hash",
+      id: "file-opf",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/metadata.opf",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(opfAsset.absolutePath, opfAsset);
+    state.fileAssetsById.set(opfAsset.id, opfAsset);
+
+    const epubAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/book.epub",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.epub",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "epub",
+      fullHash: "epub-hash",
+      id: "file-epub",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.EPUB,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "epub-phash",
+      relativePath: "Author/Book/book.epub",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(epubAsset.absolutePath, epubAsset);
+    state.fileAssetsById.set(epubAsset.id, epubAsset);
+
+    addWork(state, { id: "work-1", titleDisplay: "The Name of the Wind", titleCanonical: "the name of the wind" });
+    addEdition(state, { id: "edition-1", workId: "work-1", publisher: null, publishedAt: null });
+    addEditionFile(state, { editionId: "edition-1", fileAssetId: "file-epub" });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      parseOpf: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          authors: [],
+          identifiers: [],
+          subjects: [],
+          publisher: "DAW Books",
+          date: "2007-03-27",
+          description: "A story.",
+          language: "en",
+          series: { name: "The Kingkiller Chronicle" },
+        };
+      }),
+    });
+
+    await services.parseFileAssetMetadata({
+      fileAssetId: "file-opf",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(state.works.get("work-1")).toMatchObject({
+      seriesId: "series-The Kingkiller Chronicle",
+      seriesPosition: null,
     });
   });
 

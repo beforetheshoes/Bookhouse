@@ -46,6 +46,11 @@ const columns: ColumnDef<LibraryWork>[] = [
     header: ({ column }) => (
       <DataTableColumnHeader column={column} title="Title" />
     ),
+    cell: ({ row }) => (
+      <Link to="/library/$workId" params={{ workId: row.original.id }}>
+        {row.original.titleDisplay}
+      </Link>
+    ),
   },
   {
     id: "authors",
