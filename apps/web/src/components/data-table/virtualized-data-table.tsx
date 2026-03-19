@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import {
   type ColumnDef,
   type ColumnFiltersState,
+  type RowSelectionState,
   type SortingState,
   flexRender,
   getCoreRowModel,
@@ -31,6 +32,7 @@ interface VirtualizedDataTableProps<TData, TValue> {
   pageSize?: number;
   estimateRowHeight?: number;
   containerHeight?: string;
+  rowSelection?: RowSelectionState;
 }
 
 export function VirtualizedDataTable<TData, TValue>({
@@ -41,6 +43,7 @@ export function VirtualizedDataTable<TData, TValue>({
   pageSize = 20,
   estimateRowHeight = 48,
   containerHeight = "70vh",
+  rowSelection,
 }: VirtualizedDataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -52,7 +55,9 @@ export function VirtualizedDataTable<TData, TValue>({
     state: {
       sorting,
       columnFilters,
+      ...(rowSelection !== undefined ? { rowSelection } : {}),
     },
+    enableRowSelection: rowSelection !== undefined,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     getCoreRowModel: getCoreRowModel(),

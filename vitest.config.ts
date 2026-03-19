@@ -10,7 +10,11 @@ export default defineConfig({
   test: {
     environment: "node",
     globals: true,
+    testTimeout: 30000,
     exclude: [".claude/**", "**/node_modules/**"],
+    environmentMatchGlobs: [
+      ["apps/web/src/**/*.test.{ts,tsx}", "happy-dom"],
+    ],
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],
@@ -20,20 +24,7 @@ export default defineConfig({
         "apps/web/src/**/*.tsx",
         "workers/**/*.ts",
       ],
-      exclude: [
-        "**/*.d.ts",
-        "apps/web/src/routeTree.gen.ts",
-        // Component, hook, and route tests are tracked in issue #56
-        "apps/web/src/components/**",
-        "apps/web/src/hooks/**",
-        "apps/web/src/routes/_authenticated.tsx",
-        "apps/web/src/routes/_authenticated/**",
-        "apps/web/src/lib/server-fns/**",
-        "apps/web/src/lib/mutation.ts",
-        "apps/web/src/lib/utils.ts",
-        // Barrel re-export files have no executable statements for V8 coverage
-        "packages/shared/src/index.ts",
-      ],
+      exclude: ["**/*.d.ts", "apps/web/src/routeTree.gen.ts"],
       thresholds: {
         statements: 100,
         branches: 100,

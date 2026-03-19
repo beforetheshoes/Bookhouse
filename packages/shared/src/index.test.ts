@@ -11,9 +11,14 @@ import {
   ValidationError,
   getQueueConnectionConfig,
   getQueueUrl,
+  __loaded,
 } from "./index";
 
 describe("shared queue helpers", () => {
+  it("barrel is loaded", () => {
+    expect(__loaded).toBe(true);
+  });
+
   it("returns the configured queue url", () => {
     process.env.QUEUE_URL = "redis://user:pass@localhost:6379/2";
 
