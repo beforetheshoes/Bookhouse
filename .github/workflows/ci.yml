@@ -40,7 +40,8 @@ jobs:
         run: pnpm db:generate
 
       - name: Generate route tree
-        run: touch apps/web/src/routeTree.gen.ts && pnpm --filter @bookhouse/web exec tsr generate
+        working-directory: apps/web
+        run: touch src/routeTree.gen.ts && pnpm exec tsr generate
 
       - name: Lint
         run: pnpm lint
@@ -67,7 +68,8 @@ jobs:
         run: pnpm db:generate
 
       - name: Generate route tree
-        run: touch apps/web/src/routeTree.gen.ts && pnpm --filter @bookhouse/web exec tsr generate
+        working-directory: apps/web
+        run: touch src/routeTree.gen.ts && pnpm exec tsr generate
 
       - name: Typecheck
         run: pnpm typecheck
@@ -94,7 +96,8 @@ jobs:
         run: pnpm db:generate
 
       - name: Generate route tree
-        run: touch apps/web/src/routeTree.gen.ts && pnpm --filter @bookhouse/web exec tsr generate
+        working-directory: apps/web
+        run: touch src/routeTree.gen.ts && pnpm exec tsr generate
 
       - name: Test (with coverage)
         run: pnpm test
