@@ -27,9 +27,6 @@ export default defineConfig({
     tailwindcss(),
     tanstackStart({
       srcDirectory: "src",
-      router: {
-        routeFileIgnorePattern: "\\.test\\.tsx?$",
-      },
     }),
     viteReact(),
     nitro(),
