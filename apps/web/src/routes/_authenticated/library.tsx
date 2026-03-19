@@ -1,11 +1,15 @@
-import { useEffect, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useMemo, useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useSSE } from "~/hooks/use-sse";
+import { useLibraryViewPreference } from "~/hooks/use-library-view-preference";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Loader2 } from "lucide-react";
+import { BookOpen, Loader2 } from "lucide-react";
 import { VirtualizedDataTable, DataTableColumnHeader } from "~/components/data-table";
 import { Badge } from "~/components/ui/badge";
-import { TablePageSkeleton } from "~/components/skeletons/table-page-skeleton";
+import { GridPageSkeleton } from "~/components/skeletons/grid-page-skeleton";
+import { LibraryToolbar } from "~/components/library-toolbar";
+import { LibraryGrid } from "~/components/library-grid";
+import { sortAndFilterWorks, type SortOption } from "~/lib/sort-filter-works";
 import {
   getLibraryWorksServerFn,
   type LibraryWork,
@@ -20,7 +24,7 @@ export const Route = createFileRoute("/_authenticated/library")({
     ]);
     return { works, activeJobCount };
   },
-  pendingComponent: TablePageSkeleton,
+  pendingComponent: GridPageSkeleton,
   component: LibraryPage,
 });
 
@@ -77,6 +81,9 @@ const columns: ColumnDef<LibraryWork>[] = [
 
 function LibraryPage() {
   const { works, activeJobCount } = Route.useLoaderData();
+  const [view, setView] = useLibraryViewPreference();
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<SortOption>("title-asc");
   const [prevCount, setPrevCount] = useState(works.length);
 
   const isScanning = activeJobCount > 0;
@@ -89,6 +96,30 @@ function LibraryPage() {
       setPrevCount(works.length);
     }
   }, [isScanning, works.length]);
+
+  const filteredAndSorted = useMemo(
+    () => sortAndFilterWorks(works, search, sort),
+    [works, search, sort],
+  );
+
+  if (works.length === 0 && !isScanning) {
+    return (
+      <div>
+        <h1 className="text-2xl font-bold">Library</h1>
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <BookOpen className="size-12 text-muted-foreground" />
+          <h2 className="mt-4 text-lg font-semibold">No works yet</h2>
+          <p className="mt-2 text-muted-foreground">
+            Add a library root in{" "}
+            <Link to="/settings/libraries" className="underline">
+              settings
+            </Link>
+            {" "}to start scanning your collection.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -108,12 +139,21 @@ function LibraryPage() {
           </div>
         )}
       </div>
-      <VirtualizedDataTable
-        columns={columns}
-        data={works}
-        filterColumn="titleDisplay"
-        filterPlaceholder="Filter by title..."
-      />
+      <div className="space-y-4">
+        <LibraryToolbar
+          searchValue={search}
+          onSearchChange={setSearch}
+          sortValue={sort}
+          onSortChange={setSort}
+          view={view}
+          onViewChange={setView}
+        />
+        {view === "grid" ? (
+          <LibraryGrid works={filteredAndSorted} />
+        ) : (
+          <VirtualizedDataTable columns={columns} data={filteredAndSorted} />
+        )}
+      </div>
     </div>
   );
 }

@@ -6,6 +6,7 @@ export const getLibraryWorksServerFn = createServerFn({
   const { db } = await import("@bookhouse/db");
   return db.work.findMany({
     include: {
+      series: true,
       editions: {
         include: {
           contributors: {
