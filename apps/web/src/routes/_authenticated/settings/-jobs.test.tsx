@@ -8,7 +8,7 @@ vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof import("@tanstack/react-router")>("@tanstack/react-router");
   return {
     ...actual,
-    Link: ({ children, to, params, ...props }: any) => <a href={to} {...props}>{children}</a>,
+    Link: ({ children, to, params: _params, ...props }: any) => <a href={to} {...props}>{children}</a>,
     useRouter: () => ({ invalidate: vi.fn(), navigate: vi.fn() }),
     createFileRoute: (_path: string) => (opts: any) => ({
       ...opts,

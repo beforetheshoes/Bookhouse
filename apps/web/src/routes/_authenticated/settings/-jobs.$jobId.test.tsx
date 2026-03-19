@@ -139,7 +139,7 @@ describe("JobDetailPage", () => {
   });
 
   it("JobDetailSkeleton renders", async () => {
-    const { JobDetailSkeleton } = await import("./jobs.$jobId") as any;
+    await import("./jobs.$jobId");
     // JobDetailSkeleton is not exported - test via pendingComponent
     const { Route } = await import("./jobs.$jobId");
     const Skeleton = Route.pendingComponent!;

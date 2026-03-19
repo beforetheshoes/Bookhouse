@@ -158,7 +158,6 @@ describe("LibrariesPage", () => {
     render(<LibrariesPage />);
 
     // The delete button has a Trash2 icon - find by aria or role
-    const deleteBtn = screen.getByRole("button", { name: "" });
     // There are two buttons: "Scan Now" and the trash button
     const buttons = screen.getAllByRole("button");
     // Trash button is second

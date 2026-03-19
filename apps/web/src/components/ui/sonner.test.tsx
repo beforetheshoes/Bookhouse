@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { Toaster } from "./sonner";
 
 vi.mock("sonner", () => ({
-  Toaster: ({ theme, className, icons, style, ...props }: any) => (
+  Toaster: ({ theme, className: _className, icons: _icons, style: _style, ...props }: any) => (
     <div data-testid="toaster" data-theme={theme} {...props} />
   ),
 }));

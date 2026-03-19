@@ -2,7 +2,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 
-let mockRouteContext: any = { user: { name: "Test User", email: "test@test.com", image: null } };
+const mockRouteContext: any = { user: { name: "Test User", email: "test@test.com", image: null } };
 
 vi.mock("~/components/app-sidebar", () => ({
   AppSidebar: () => <div data-testid="app-sidebar">sidebar</div>,
