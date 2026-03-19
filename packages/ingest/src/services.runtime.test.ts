@@ -124,7 +124,7 @@ describe("ingest runtime defaults", () => {
     const { db } = await import("@bookhouse/db");
     const { createIngestServices } = await import("./services");
 
-    vi.mocked(db.fileAsset.update).mockImplementation(async () => ({}) as never);
+    vi.mocked(db.fileAsset.update as any).mockResolvedValue({});
 
     const opfAsset = (id: string, path: string) => ({
       absolutePath: path,
