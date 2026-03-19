@@ -8,7 +8,7 @@ vi.mock("@tanstack/react-router", async () => {
     ...actual,
     Outlet: () => <div data-testid="outlet">outlet</div>,
     useRouter: () => ({ invalidate: vi.fn(), navigate: vi.fn() }),
-    createFileRoute: (_path: string) => (opts: any) => ({
+    createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
       ...opts,
       useLoaderData: () => ({}),
       useRouteContext: () => ({}),

@@ -2,15 +2,15 @@
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-let mockLoaderData: any = { audioLinks: [] };
+let mockLoaderData: { audioLinks: { ebookEdition: unknown; audioEdition: unknown; matchType: string; confidence: number | null; reviewStatus: string }[] } = { audioLinks: [] };
 
 vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof import("@tanstack/react-router")>("@tanstack/react-router");
   return {
     ...actual,
-    Link: ({ children, to, ...props }: any) => <a href={to} {...props}>{children}</a>,
+    Link: ({ children, to, ...props }: { children?: React.ReactNode; to: string; [key: string]: unknown }) => <a href={to} {...props}>{children}</a>,
     useRouter: () => ({ invalidate: vi.fn(), navigate: vi.fn() }),
-    createFileRoute: (_path: string) => (opts: any) => ({
+    createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
       ...opts,
       useLoaderData: () => mockLoaderData,
       useRouteContext: () => ({}),
@@ -20,7 +20,7 @@ vi.mock("@tanstack/react-router", async () => {
 
 const getAudioLinksServerFnMock = vi.fn();
 vi.mock("~/lib/server-fns/audio-links", () => ({
-  getAudioLinksServerFn: (...args: any[]) => getAudioLinksServerFnMock(...args),
+  getAudioLinksServerFn: (...args: unknown[]) => getAudioLinksServerFnMock(...args),
 }));
 
 vi.mock("~/components/skeletons/table-page-skeleton", () => ({
@@ -55,7 +55,7 @@ describe("AudioLinksPage", () => {
   it("loader calls getAudioLinksServerFn", async () => {
     getAudioLinksServerFnMock.mockResolvedValueOnce([]);
     const { Route } = await import("./audio-links");
-    const result = await Route.loader!({} as any);
+    const result = await Route.loader!({} as Parameters<NonNullable<typeof Route.loader>>[0]);
     expect(getAudioLinksServerFnMock).toHaveBeenCalled();
     expect(result).toEqual({ audioLinks: [] });
   });

@@ -8,7 +8,7 @@ vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof import("@tanstack/react-router")>("@tanstack/react-router");
   return {
     ...actual,
-    Link: ({ children, to, ...props }: any) => <a href={to} {...props}>{children}</a>,
+    Link: ({ children, to, ...props }: { children?: React.ReactNode; to: string; [key: string]: unknown }) => <a href={to} {...props}>{children}</a>,
     useRouter: () => ({ invalidate: vi.fn(), navigate: vi.fn() }),
     useRouterState: () => ({ location: { pathname: "/library" } }),
   };
@@ -19,7 +19,7 @@ const mockUser = { name: "John Doe", email: "john@example.com", image: null };
 function renderSidebar(user = mockUser) {
   return render(
     <SidebarProvider>
-      <AppSidebar user={user as any} />
+      <AppSidebar user={user as unknown as Parameters<typeof AppSidebar>[0]["user"]} />
     </SidebarProvider>
   );
 }

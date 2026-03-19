@@ -8,7 +8,7 @@ import { AddLibraryRootDialog } from "./add-library-root-dialog";
 const addLibraryRootServerFnMock = vi.fn();
 
 vi.mock("~/lib/server-fns/library-roots", () => ({
-  addLibraryRootServerFn: (...args: any[]) => addLibraryRootServerFnMock(...args),
+  addLibraryRootServerFn: (...args: unknown[]) => addLibraryRootServerFnMock(...args),
 }));
 
 const mockInvalidate = vi.fn();

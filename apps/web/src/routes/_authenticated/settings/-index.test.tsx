@@ -5,12 +5,11 @@ vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof import("@tanstack/react-router")>("@tanstack/react-router");
   return {
     ...actual,
-    redirect: (args: any) => {
-      const e: any = new Error("redirect");
-      Object.assign(e, args);
+    redirect: (args: Record<string, unknown>) => {
+      const e = Object.assign(new Error("redirect"), args);
       throw e;
     },
-    createFileRoute: (_path: string) => (opts: any) => ({
+    createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
       ...opts,
       useLoaderData: () => ({}),
       useRouteContext: () => ({}),
@@ -21,11 +20,11 @@ vi.mock("@tanstack/react-router", async () => {
 describe("settings/index route", () => {
   it("beforeLoad throws redirect to /settings/libraries", async () => {
     const { Route } = await import("./index");
-    expect(() => Route.beforeLoad!({} as any)).toThrow("redirect");
+    expect(() => Route.beforeLoad!({} as Parameters<NonNullable<typeof Route.beforeLoad>>[0])).toThrow("redirect");
     try {
-      Route.beforeLoad!({} as any);
-    } catch (e: any) {
-      expect(e.to).toBe("/settings/libraries");
+      Route.beforeLoad!({} as Parameters<NonNullable<typeof Route.beforeLoad>>[0]);
+    } catch (e) {
+      expect((e as Record<string, unknown>).to).toBe("/settings/libraries");
     }
   });
 });

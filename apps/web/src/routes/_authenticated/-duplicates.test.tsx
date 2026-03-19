@@ -2,15 +2,25 @@
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-let mockLoaderData: any = { duplicates: [] };
+let mockLoaderData: {
+  duplicates: {
+    leftEdition: { work?: { titleDisplay: string } } | null;
+    rightEdition: { work?: { titleDisplay: string } } | null;
+    leftFileAsset: { basename: string } | null;
+    rightFileAsset: { basename: string } | null;
+    reason: string;
+    confidence: number | null;
+    status: string;
+  }[]
+} = { duplicates: [] };
 
 vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof import("@tanstack/react-router")>("@tanstack/react-router");
   return {
     ...actual,
-    Link: ({ children, to, ...props }: any) => <a href={to} {...props}>{children}</a>,
+    Link: ({ children, to, ...props }: { children?: React.ReactNode; to: string; [key: string]: unknown }) => <a href={to} {...props}>{children}</a>,
     useRouter: () => ({ invalidate: vi.fn(), navigate: vi.fn() }),
-    createFileRoute: (_path: string) => (opts: any) => ({
+    createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
       ...opts,
       useLoaderData: () => mockLoaderData,
       useRouteContext: () => ({}),
@@ -20,7 +30,7 @@ vi.mock("@tanstack/react-router", async () => {
 
 const getDuplicatesServerFnMock = vi.fn();
 vi.mock("~/lib/server-fns/duplicates", () => ({
-  getDuplicatesServerFn: (...args: any[]) => getDuplicatesServerFnMock(...args),
+  getDuplicatesServerFn: (...args: unknown[]) => getDuplicatesServerFnMock(...args),
 }));
 
 vi.mock("~/components/skeletons/table-page-skeleton", () => ({
@@ -42,10 +52,10 @@ vi.mock("@tanstack/react-virtual", () => ({
 }));
 
 const makeDuplicate = (overrides: {
-  leftEdition?: any;
-  rightEdition?: any;
-  leftFileAsset?: any;
-  rightFileAsset?: any;
+  leftEdition?: { work?: { titleDisplay: string } } | null;
+  rightEdition?: { work?: { titleDisplay: string } } | null;
+  leftFileAsset?: { basename: string } | null;
+  rightFileAsset?: { basename: string } | null;
   status?: string;
   confidence?: number | null;
 } = {}) => ({
@@ -68,7 +78,7 @@ describe("DuplicatesPage", () => {
   it("loader calls getDuplicatesServerFn", async () => {
     getDuplicatesServerFnMock.mockResolvedValueOnce([]);
     const { Route } = await import("./duplicates");
-    const result = await Route.loader!({} as any);
+    const result = await Route.loader!({} as Parameters<NonNullable<typeof Route.loader>>[0]);
     expect(getDuplicatesServerFnMock).toHaveBeenCalled();
     expect(result).toEqual({ duplicates: [] });
   });

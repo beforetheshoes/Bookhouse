@@ -39,7 +39,7 @@ describe("RouteErrorBoundary", () => {
   it("shows generic message when error is not an Error instance", () => {
     render(
       <RouteErrorBoundary
-        error={"plain string error" as any}
+        error={"plain string error" as unknown as Error}
         reset={vi.fn()}
         info={{ componentStack: "" }}
       />

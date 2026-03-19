@@ -2,9 +2,10 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
+import type { Table } from "@tanstack/react-table";
 import { DataTablePagination } from "./data-table-pagination";
 
-function makeMockTable(overrides: Record<string, any> = {}) {
+function makeMockTable(overrides: Record<string, unknown> = {}) {
   const setPageSize = vi.fn();
   const previousPage = vi.fn();
   const nextPage = vi.fn();
@@ -29,19 +30,19 @@ function makeMockTable(overrides: Record<string, any> = {}) {
 describe("DataTablePagination", () => {
   it("shows row count", () => {
     const { table } = makeMockTable();
-    render(<DataTablePagination table={table as any} />);
+    render(<DataTablePagination table={table as unknown as Table<unknown>} />);
     expect(screen.getByText("3 row(s) total")).toBeTruthy();
   });
 
   it("shows current page and total pages", () => {
     const { table } = makeMockTable();
-    render(<DataTablePagination table={table as any} />);
+    render(<DataTablePagination table={table as unknown as Table<unknown>} />);
     expect(screen.getByText("Page 1 of 2")).toBeTruthy();
   });
 
   it("next page button is enabled when canNextPage=true", () => {
     const { table } = makeMockTable({ getCanNextPage: () => true });
-    const { container } = render(<DataTablePagination table={table as any} />);
+    const { container } = render(<DataTablePagination table={table as unknown as Table<unknown>} />);
     // "Go to next page" button
     const buttons = container.querySelectorAll("button");
     const nextBtn = Array.from(buttons).find(
@@ -53,7 +54,7 @@ describe("DataTablePagination", () => {
 
   it("previous page button is disabled when canPreviousPage=false", () => {
     const { table } = makeMockTable({ getCanPreviousPage: () => false });
-    const { container } = render(<DataTablePagination table={table as any} />);
+    const { container } = render(<DataTablePagination table={table as unknown as Table<unknown>} />);
     const buttons = container.querySelectorAll("button");
     const prevBtn = Array.from(buttons).find(
       (b) => b.querySelector(".sr-only")?.textContent === "Go to previous page"
@@ -64,7 +65,7 @@ describe("DataTablePagination", () => {
 
   it("clicking next page calls table.nextPage()", () => {
     const { table, nextPage } = makeMockTable();
-    const { container } = render(<DataTablePagination table={table as any} />);
+    const { container } = render(<DataTablePagination table={table as unknown as Table<unknown>} />);
     const buttons = container.querySelectorAll("button");
     const nextBtn = Array.from(buttons).find(
       (b) => b.querySelector(".sr-only")?.textContent === "Go to next page"
@@ -75,7 +76,7 @@ describe("DataTablePagination", () => {
 
   it("clicking first page sets index to 0", () => {
     const { table, setPageIndex } = makeMockTable({ getCanPreviousPage: () => true });
-    const { container } = render(<DataTablePagination table={table as any} />);
+    const { container } = render(<DataTablePagination table={table as unknown as Table<unknown>} />);
     const buttons = container.querySelectorAll("button");
     const firstBtn = Array.from(buttons).find(
       (b) => b.querySelector(".sr-only")?.textContent === "Go to first page"
@@ -86,7 +87,7 @@ describe("DataTablePagination", () => {
 
   it("clicking last page calls setPageIndex with pageCount-1", () => {
     const { table, setPageIndex } = makeMockTable({ getCanNextPage: () => true, getPageCount: () => 5 });
-    const { container } = render(<DataTablePagination table={table as any} />);
+    const { container } = render(<DataTablePagination table={table as unknown as Table<unknown>} />);
     const buttons = container.querySelectorAll("button");
     const lastBtn = Array.from(buttons).find(
       (b) => b.querySelector(".sr-only")?.textContent === "Go to last page"
@@ -97,7 +98,7 @@ describe("DataTablePagination", () => {
 
   it("clicking previous page calls table.previousPage()", () => {
     const { table, previousPage } = makeMockTable({ getCanPreviousPage: () => true });
-    const { container } = render(<DataTablePagination table={table as any} />);
+    const { container } = render(<DataTablePagination table={table as unknown as Table<unknown>} />);
     const buttons = container.querySelectorAll("button");
     const prevBtn = Array.from(buttons).find(
       (b) => b.querySelector(".sr-only")?.textContent === "Go to previous page"
@@ -109,7 +110,7 @@ describe("DataTablePagination", () => {
   it("changing page size select calls table.setPageSize", async () => {
     const user = userEvent.setup();
     const { table, setPageSize } = makeMockTable();
-    render(<DataTablePagination table={table as any} />);
+    render(<DataTablePagination table={table as unknown as Table<unknown>} />);
     // Open the Radix UI Select by clicking the trigger
     const trigger = screen.getByRole("combobox");
     await user.click(trigger);

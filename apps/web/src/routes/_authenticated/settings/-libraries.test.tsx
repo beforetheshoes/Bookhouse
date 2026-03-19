@@ -2,16 +2,26 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-let mockLoaderData: any = { roots: [] };
+let mockLoaderData: {
+  roots: {
+    id: string;
+    name: string;
+    path: string;
+    kind: string;
+    scanMode: string;
+    isEnabled: boolean;
+    lastScannedAt: string | null;
+  }[]
+} = { roots: [] };
 
 const getLibraryRootsServerFnMock = vi.fn();
 const scanLibraryRootServerFnMock = vi.fn();
 const removeLibraryRootServerFnMock = vi.fn();
 
 vi.mock("~/lib/server-fns/library-roots", () => ({
-  getLibraryRootsServerFn: (...args: any[]) => getLibraryRootsServerFnMock(...args),
-  scanLibraryRootServerFn: (...args: any[]) => scanLibraryRootServerFnMock(...args),
-  removeLibraryRootServerFn: (...args: any[]) => removeLibraryRootServerFnMock(...args),
+  getLibraryRootsServerFn: (...args: unknown[]) => getLibraryRootsServerFnMock(...args),
+  scanLibraryRootServerFn: (...args: unknown[]) => scanLibraryRootServerFnMock(...args),
+  removeLibraryRootServerFn: (...args: unknown[]) => removeLibraryRootServerFnMock(...args),
   addLibraryRootServerFn: vi.fn(),
 }));
 
@@ -22,9 +32,9 @@ vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof import("@tanstack/react-router")>("@tanstack/react-router");
   return {
     ...actual,
-    Link: ({ children, to, ...props }: any) => <a href={to} {...props}>{children}</a>,
+    Link: ({ children, to, ...props }: { children?: React.ReactNode; to: string; [key: string]: unknown }) => <a href={to} {...props}>{children}</a>,
     useRouter: () => ({ invalidate: mockInvalidate, navigate: mockNavigate }),
-    createFileRoute: (_path: string) => (opts: any) => ({
+    createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
       ...opts,
       useLoaderData: () => mockLoaderData,
       useRouteContext: () => ({}),
@@ -307,7 +317,7 @@ describe("LibrariesPage", () => {
     const mockRoots = [makeRoot({ name: "Loader Root" })];
     getLibraryRootsServerFnMock.mockResolvedValueOnce(mockRoots);
     const { Route } = await import("./libraries");
-    const result = await Route.loader!({} as any);
+    const result = await Route.loader!({} as Parameters<NonNullable<typeof Route.loader>>[0]);
     expect(getLibraryRootsServerFnMock).toHaveBeenCalled();
     expect(result).toEqual({ roots: mockRoots });
   });

@@ -4,10 +4,10 @@ import { useIsMobile } from "./use-mobile";
 
 function setupMatchMedia(matches: boolean, innerWidth: number) {
   Object.defineProperty(window, "innerWidth", { writable: true, configurable: true, value: innerWidth });
-  const listeners: Function[] = [];
+  const listeners: (() => void)[] = [];
   const mql = {
     matches,
-    addEventListener: vi.fn((event: string, cb: Function) => listeners.push(cb)),
+    addEventListener: vi.fn((event: string, cb: () => void) => listeners.push(cb)),
     removeEventListener: vi.fn(),
   };
   Object.defineProperty(window, "matchMedia", { writable: true, configurable: true, value: vi.fn(() => mql) });

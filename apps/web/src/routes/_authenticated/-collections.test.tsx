@@ -2,15 +2,15 @@
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-let mockLoaderData: any = { collections: [] };
+let mockLoaderData: { collections: { name: string; kind: string; _count: { items: number } }[] } = { collections: [] };
 
 vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof import("@tanstack/react-router")>("@tanstack/react-router");
   return {
     ...actual,
-    Link: ({ children, to, ...props }: any) => <a href={to} {...props}>{children}</a>,
+    Link: ({ children, to, ...props }: { children?: React.ReactNode; to: string; [key: string]: unknown }) => <a href={to} {...props}>{children}</a>,
     useRouter: () => ({ invalidate: vi.fn(), navigate: vi.fn() }),
-    createFileRoute: (_path: string) => (opts: any) => ({
+    createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
       ...opts,
       useLoaderData: () => mockLoaderData,
       useRouteContext: () => ({}),
@@ -20,7 +20,7 @@ vi.mock("@tanstack/react-router", async () => {
 
 const getCollectionsServerFnMock = vi.fn();
 vi.mock("~/lib/server-fns/collections", () => ({
-  getCollectionsServerFn: (...args: any[]) => getCollectionsServerFnMock(...args),
+  getCollectionsServerFn: (...args: unknown[]) => getCollectionsServerFnMock(...args),
 }));
 
 // Use real DataTable so column cell renderers execute
@@ -42,7 +42,7 @@ describe("CollectionsPage", () => {
   it("loader calls getCollectionsServerFn", async () => {
     getCollectionsServerFnMock.mockResolvedValueOnce([]);
     const { Route } = await import("./collections");
-    const result = await Route.loader!({} as any);
+    const result = await Route.loader!({} as Parameters<NonNullable<typeof Route.loader>>[0]);
     expect(getCollectionsServerFnMock).toHaveBeenCalled();
     expect(result).toEqual({ collections: [] });
   });

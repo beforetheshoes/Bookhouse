@@ -19,9 +19,7 @@ export default tseslint.config(
         projectService: true,
       },
     },
-    rules: {
-      "@typescript-eslint/no-explicit-any": "off",
-    },
+    rules: {},
   },
   {
     files: ["**/*.test.ts", "**/*.test.tsx"],
@@ -30,8 +28,6 @@ export default tseslint.config(
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
-      "@typescript-eslint/no-unsafe-function-type": "off",
-      "@typescript-eslint/no-this-alias": "off",
     },
   },
 );

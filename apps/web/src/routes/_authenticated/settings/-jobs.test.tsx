@@ -2,15 +2,27 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-let mockLoaderData: any = { jobs: [], totalCount: 0 };
+let mockLoaderData: {
+  jobs: {
+    id: string;
+    status: string;
+    kind: string;
+    startedAt: string | null;
+    finishedAt: string | null;
+    createdAt: string;
+    attemptsMade: number;
+    libraryRoot: { name: string } | null;
+  }[];
+  totalCount: number;
+} = { jobs: [], totalCount: 0 };
 
 vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof import("@tanstack/react-router")>("@tanstack/react-router");
   return {
     ...actual,
-    Link: ({ children, to, params: _params, ...props }: any) => <a href={to} {...props}>{children}</a>,
+    Link: ({ children, to, params: _params, ...props }: { children?: React.ReactNode; to: string; params?: unknown; [key: string]: unknown }) => <a href={to} {...props}>{children}</a>,
     useRouter: () => ({ invalidate: vi.fn(), navigate: vi.fn() }),
-    createFileRoute: (_path: string) => (opts: any) => ({
+    createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
       ...opts,
       useLoaderData: () => mockLoaderData,
       useRouteContext: () => ({}),
@@ -172,8 +184,8 @@ describe("JobsPage", () => {
   });
 
   it("loader calls getImportJobsServerFn", async () => {
-    vi.mocked(getImportJobsServerFn).mockResolvedValueOnce({ jobs: [], totalCount: 0 } as any);
-    const result = await Route.loader!({} as any);
+    vi.mocked(getImportJobsServerFn).mockResolvedValueOnce({ jobs: [], totalCount: 0 });
+    const result = await Route.loader!({} as Parameters<NonNullable<typeof Route.loader>>[0]);
     expect(getImportJobsServerFn).toHaveBeenCalled();
     expect(result).toEqual({ jobs: [], totalCount: 0 });
   });

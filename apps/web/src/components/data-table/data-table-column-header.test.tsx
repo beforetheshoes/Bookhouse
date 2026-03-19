@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
+import type { Column } from "@tanstack/react-table";
 import { DataTableColumnHeader } from "./data-table-column-header";
 
 describe("DataTableColumnHeader", () => {
@@ -11,7 +12,7 @@ describe("DataTableColumnHeader", () => {
       toggleSorting: vi.fn(),
     };
     const { container } = render(
-      <DataTableColumnHeader column={column as any} title="Name" />
+      <DataTableColumnHeader column={column as unknown as Column<unknown>} title="Name" />
     );
     expect(screen.getByText("Name")).toBeTruthy();
     // Should be a div, not a button
@@ -26,7 +27,7 @@ describe("DataTableColumnHeader", () => {
       toggleSorting: vi.fn(),
     };
     const { container } = render(
-      <DataTableColumnHeader column={column as any} title="Name" />
+      <DataTableColumnHeader column={column as unknown as Column<unknown>} title="Name" />
     );
     expect(container.querySelector("button")).toBeTruthy();
     // ChevronsUpDown icon renders as svg
@@ -41,7 +42,7 @@ describe("DataTableColumnHeader", () => {
       toggleSorting: vi.fn(),
     };
     const { container } = render(
-      <DataTableColumnHeader column={column as any} title="Name" />
+      <DataTableColumnHeader column={column as unknown as Column<unknown>} title="Name" />
     );
     expect(container.querySelector("button")).toBeTruthy();
     // ArrowDown icon renders as svg
@@ -56,7 +57,7 @@ describe("DataTableColumnHeader", () => {
       toggleSorting: vi.fn(),
     };
     const { container } = render(
-      <DataTableColumnHeader column={column as any} title="Name" />
+      <DataTableColumnHeader column={column as unknown as Column<unknown>} title="Name" />
     );
     expect(container.querySelector("button")).toBeTruthy();
   });
@@ -69,7 +70,7 @@ describe("DataTableColumnHeader", () => {
       toggleSorting,
     };
     const { container } = render(
-      <DataTableColumnHeader column={column as any} title="Name" />
+      <DataTableColumnHeader column={column as unknown as Column<unknown>} title="Name" />
     );
     const button = container.querySelector("button")!;
     fireEvent.click(button);
@@ -85,7 +86,7 @@ describe("DataTableColumnHeader", () => {
       toggleSorting,
     };
     const { container } = render(
-      <DataTableColumnHeader column={column as any} title="Name" />
+      <DataTableColumnHeader column={column as unknown as Column<unknown>} title="Name" />
     );
     const button = container.querySelector("button")!;
     fireEvent.click(button);

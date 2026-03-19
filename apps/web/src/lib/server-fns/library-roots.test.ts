@@ -2,10 +2,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@tanstack/react-start", () => ({
   createServerFn: () => {
-    const builder: any = {};
-    builder.inputValidator = () => builder;
-    builder.handler = (fn: Function) => (args: any) => fn(args ?? {});
-    return builder;
+    type Builder = {
+      inputValidator: () => Builder;
+      handler: (fn: (a: Record<string, unknown>) => unknown) => (a: Record<string, unknown>) => unknown;
+    };
+    const b: Builder = {
+      inputValidator: () => b,
+      handler: (fn) => (a) => fn(a ?? {}),
+    };
+    return b;
   },
 }));
 
@@ -17,7 +22,7 @@ const fileAssetDeleteManyMock = vi.fn();
 const importJobCreateMock = vi.fn();
 const importJobUpdateMock = vi.fn();
 const importJobDeleteManyMock = vi.fn();
-const transactionMock = vi.fn(async (ops: Promise<any>[]) => Promise.all(ops));
+const transactionMock = vi.fn(async (ops: Promise<unknown>[]) => Promise.all(ops));
 
 vi.mock("@bookhouse/db", () => ({
   db: {
@@ -126,7 +131,7 @@ describe("removeLibraryRootServerFn", () => {
     fileAssetDeleteManyMock.mockReset();
     importJobDeleteManyMock.mockReset();
     libraryRootDeleteMock.mockReset();
-    transactionMock.mockImplementation(async (ops: Promise<any>[]) =>
+    transactionMock.mockImplementation(async (ops: Promise<unknown>[]) =>
       Promise.all(ops),
     );
     editionFileDeleteManyMock.mockResolvedValue({ count: 0 });

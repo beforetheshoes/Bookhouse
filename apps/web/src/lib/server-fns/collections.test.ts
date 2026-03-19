@@ -2,10 +2,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@tanstack/react-start", () => ({
   createServerFn: () => {
-    const builder: any = {};
-    builder.inputValidator = () => builder;
-    builder.handler = (fn: Function) => (args: any) => fn(args ?? {});
-    return builder;
+    type Builder = {
+      inputValidator: () => Builder;
+      handler: (fn: (a: Record<string, unknown>) => unknown) => (a: Record<string, unknown>) => unknown;
+    };
+    const b: Builder = {
+      inputValidator: () => b,
+      handler: (fn) => (a) => fn(a ?? {}),
+    };
+    return b;
   },
 }));
 

@@ -2,7 +2,20 @@
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-let mockLoaderData: any = {
+let mockLoaderData: {
+  works: {
+    titleDisplay: string;
+    sortTitle: string;
+    editions: {
+      formatFamily: string;
+      publisher: string;
+      isbn13: string | null;
+      isbn10: string | null;
+      contributors: { role: string; contributor: { nameDisplay: string } }[];
+    }[];
+  }[];
+  activeJobCount: number;
+} = {
   works: [],
   activeJobCount: 0,
 };
@@ -11,9 +24,9 @@ vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof import("@tanstack/react-router")>("@tanstack/react-router");
   return {
     ...actual,
-    Link: ({ children, to, ...props }: any) => <a href={to} {...props}>{children}</a>,
+    Link: ({ children, to, ...props }: { children?: React.ReactNode; to: string; [key: string]: unknown }) => <a href={to} {...props}>{children}</a>,
     useRouter: () => ({ invalidate: vi.fn(), navigate: vi.fn() }),
-    createFileRoute: (_path: string) => (opts: any) => ({
+    createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
       ...opts,
       useLoaderData: () => mockLoaderData,
       useRouteContext: () => ({}),
@@ -27,12 +40,12 @@ vi.mock("~/hooks/use-sse", () => ({
 
 const getLibraryWorksServerFnMock = vi.fn();
 vi.mock("~/lib/server-fns/library", () => ({
-  getLibraryWorksServerFn: (...args: any[]) => getLibraryWorksServerFnMock(...args),
+  getLibraryWorksServerFn: (...args: unknown[]) => getLibraryWorksServerFnMock(...args),
 }));
 
 const getActiveJobCountServerFnMock = vi.fn();
 vi.mock("~/lib/server-fns/import-jobs", () => ({
-  getActiveJobCountServerFn: (...args: any[]) => getActiveJobCountServerFnMock(...args),
+  getActiveJobCountServerFn: (...args: unknown[]) => getActiveJobCountServerFnMock(...args),
 }));
 
 // Use real data-table so column cell renderers execute
@@ -86,7 +99,7 @@ describe("LibraryPage", () => {
     getLibraryWorksServerFnMock.mockResolvedValueOnce([]);
     getActiveJobCountServerFnMock.mockResolvedValueOnce(0);
     const { Route } = await import("./library");
-    const result = await Route.loader!({} as any);
+    const result = await Route.loader!({} as Parameters<NonNullable<typeof Route.loader>>[0]);
     expect(getLibraryWorksServerFnMock).toHaveBeenCalled();
     expect(getActiveJobCountServerFnMock).toHaveBeenCalled();
     expect(result).toEqual({ works: [], activeJobCount: 0 });

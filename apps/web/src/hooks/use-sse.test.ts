@@ -4,15 +4,15 @@ import { useSSE } from "./use-sse";
 
 const addEventListenerMock = vi.fn();
 const closeMock = vi.fn();
-const eventSourceListeners: Record<string, Function> = {};
+const eventSourceListeners: Record<string, (...args: unknown[]) => unknown> = {};
 
 class FakeEventSource {
   static CONNECTING = 0;
   static OPEN = 1;
   static CLOSED = 2;
-  onerror: Function | null = null;
+  onerror: ((...args: unknown[]) => unknown) | null = null;
   constructor(public url: string) {}
-  addEventListener = vi.fn((type: string, handler: Function) => {
+  addEventListener = vi.fn((type: string, handler: (...args: unknown[]) => unknown) => {
     eventSourceListeners[type] = handler;
     addEventListenerMock(type, handler);
   });
@@ -44,18 +44,18 @@ it("creates EventSource and registers 3 event listeners when enabled=true", () =
 });
 
 it("sets onerror on the EventSource", () => {
-  let capturedInstance: FakeEventSource | null = null;
+  const instances: FakeEventSource[] = [];
   const OriginalFake = FakeEventSource;
   vi.stubGlobal("EventSource", class extends OriginalFake {
     constructor(url: string) {
       super(url);
-      capturedInstance = this;
+      instances.push(this as unknown as FakeEventSource);
     }
   });
 
   renderHook(() => useSSE({ enabled: true }));
-  expect(capturedInstance).not.toBeNull();
-  expect(capturedInstance!.onerror).toBeTypeOf("function");
+  expect(instances.length).toBeGreaterThan(0);
+  expect(instances[instances.length - 1].onerror).toBeTypeOf("function");
 
   // Restore original stub
   vi.stubGlobal("EventSource", FakeEventSource);
@@ -80,17 +80,18 @@ it("calls es.close() on unmount", () => {
 });
 
 it("calling onerror does nothing (no throw)", () => {
-  let capturedInstance: FakeEventSource | null = null;
+  const instances: FakeEventSource[] = [];
   const OriginalFake = FakeEventSource;
   vi.stubGlobal("EventSource", class extends OriginalFake {
     constructor(url: string) {
       super(url);
-      capturedInstance = this;
+      instances.push(this as unknown as FakeEventSource);
     }
   });
 
   renderHook(() => useSSE({ enabled: true }));
-  expect(() => capturedInstance!.onerror!({})).not.toThrow();
+  const capturedInstance = instances[instances.length - 1];
+  expect(() => capturedInstance.onerror!({})).not.toThrow();
 
   vi.stubGlobal("EventSource", FakeEventSource);
 });
