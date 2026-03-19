@@ -8,10 +8,11 @@ export default tseslint.config(
       "**/.output/**",
       "**/node_modules/**",
       "apps/web/src/routeTree.gen.ts",
+      "scripts/**",
     ],
   },
   js.configs.recommended,
-  ...tseslint.configs.recommended,
+  ...tseslint.configs.strictTypeChecked,
   {
     files: ["**/*.ts", "**/*.tsx"],
     languageOptions: {
@@ -20,7 +21,23 @@ export default tseslint.config(
       },
     },
     rules: {
-      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/consistent-type-imports": ["error", { prefer: "type-imports" }],
+      "@typescript-eslint/no-import-type-side-effects": "error",
+      // TanStack Router uses `throw redirect(...)` to perform redirects from loaders/beforeLoad.
+      // redirect() returns a Redirect type (which extends Response), not an Error.
+      "@typescript-eslint/only-throw-error": [
+        "error",
+        { allow: [{ from: "lib", name: "Response" }] },
+      ],
+    },
+  },
+  {
+    files: ["**/*.test.ts", "**/*.test.tsx"],
+    rules: {
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
     },
   },
 );

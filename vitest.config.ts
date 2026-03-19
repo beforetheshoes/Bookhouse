@@ -1,9 +1,20 @@
+import path from "node:path";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      "~": path.resolve(__dirname, "apps/web/src"),
+    },
+  },
   test: {
     environment: "node",
     globals: true,
+    testTimeout: 30000,
+    exclude: [".claude/**", "**/node_modules/**"],
+    environmentMatchGlobs: [
+      ["apps/web/src/**/*.test.{ts,tsx}", "happy-dom"],
+    ],
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],

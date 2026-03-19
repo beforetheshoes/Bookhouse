@@ -1,25 +1,13 @@
 import { createRequire } from "node:module";
-import { XMLParser } from "fast-xml-parser";
+import { xmlParser, ensureArray, getTextContent, getIdentifierScheme, type ParsedEpubIdentifier } from "./xml-helpers";
 
-export interface ParsedEpubIdentifier {
-  scheme?: string;
-  value: string;
-}
+export type { ParsedEpubIdentifier } from "./xml-helpers";
 
 export interface ParsedEpubMetadataRaw {
   authors: string[];
   identifiers: ParsedEpubIdentifier[];
   title?: string;
 }
-
-const xmlParser = new XMLParser({
-  attributeNamePrefix: "",
-  ignoreAttributes: false,
-  parseAttributeValue: false,
-  parseTagValue: false,
-  removeNSPrefix: true,
-  trimValues: true,
-});
 
 interface ZipEntry {
   filename: string;
@@ -34,34 +22,6 @@ const require = createRequire(import.meta.url);
 const yauzl = require("yauzl-promise") as {
   open(path: string): Promise<ZipArchive>;
 };
-
-function ensureArray<T>(value: T | T[] | undefined): T[] {
-  if (value === undefined) {
-    return [];
-  }
-
-  return Array.isArray(value) ? value : [value];
-}
-
-function getTextContent(node: unknown): string | undefined {
-  if (typeof node === "string") {
-    return node;
-  }
-
-  if (node === null || typeof node !== "object") {
-    return undefined;
-  }
-
-  const textNode = "text" in node && typeof node.text === "string" ? node.text : undefined;
-
-  if (textNode !== undefined) {
-    return textNode;
-  }
-
-  const hashTextNode = "#text" in node && typeof node["#text"] === "string" ? node["#text"] : undefined;
-
-  return hashTextNode;
-}
 
 async function readZipEntryText(absolutePath: string, entryPath: string): Promise<string> {
   const zip = await yauzl.open(absolutePath);
@@ -121,45 +81,13 @@ function getRootfilePath(containerXml: string): string {
   };
 
   const rootfiles = ensureArray(parsed.container?.rootfiles?.rootfile);
-  const rootfilePath = rootfiles.find((candidate) => typeof candidate?.["full-path"] === "string")?.["full-path"];
+  const rootfilePath = rootfiles.find((candidate) => typeof candidate["full-path"] === "string")?.["full-path"];
 
   if (!rootfilePath) {
     throw new Error('EPUB container.xml did not declare a rootfile "full-path"');
   }
 
   return normalizeZipPath(rootfilePath);
-}
-
-function getIdentifierScheme(identifier: { id?: string; scheme?: string; "opf:scheme"?: string }, metadata: Record<string, unknown>): string | undefined {
-  if (typeof identifier["opf:scheme"] === "string") {
-    return identifier["opf:scheme"];
-  }
-
-  if (typeof identifier.scheme === "string") {
-    return identifier.scheme;
-  }
-
-  if (typeof identifier.id !== "string") {
-    return undefined;
-  }
-
-  const metaEntries = ensureArray(metadata.meta);
-
-  for (const entry of metaEntries) {
-    if (
-      entry &&
-      typeof entry === "object" &&
-      "refines" in entry &&
-      typeof entry.refines === "string" &&
-      entry.refines === `#${identifier.id}` &&
-      "property" in entry &&
-      entry.property === "identifier-type"
-    ) {
-      return getTextContent(entry);
-    }
-  }
-
-  return undefined;
 }
 
 function getPackageMetadata(opfXml: string): ParsedEpubMetadataRaw {

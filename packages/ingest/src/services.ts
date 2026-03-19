@@ -1,5 +1,5 @@
 import path from "node:path";
-import { Dirent } from "node:fs";
+import type { Dirent, Stats } from "node:fs";
 import { lstat, readdir } from "node:fs/promises";
 import {
   AvailabilityStatus,
@@ -26,12 +26,14 @@ import {
 } from "@bookhouse/shared";
 import { classifyMediaKind, getFileExtension, normalizeRelativePath, normalizeRootPath } from "./classification";
 import { parseEpubMetadata, type ParsedEpubMetadataRaw } from "./epub";
+import { parseOpfSidecar, type ParsedOpfMetadataRaw } from "./opf";
 import { hashFileContents } from "./hashing";
 import {
   canonicalizeBookTitle,
   canonicalizeContributorName,
   canonicalizeContributorNames,
   normalizeBookMetadata,
+  normalizeOpfMetadata,
   type NormalizedBookMetadata,
 } from "./metadata";
 
@@ -39,8 +41,8 @@ export interface ParsedFileAssetMetadata {
   normalized?: NormalizedBookMetadata;
   parsedAt: string;
   parserVersion: number;
-  raw?: ParsedEpubMetadataRaw;
-  source: "epub";
+  raw?: ParsedEpubMetadataRaw | ParsedOpfMetadataRaw;
+  source: "epub" | "opf-sidecar";
   status: "parsed" | "unparseable";
   warnings: string[];
 }
@@ -59,7 +61,7 @@ type FileAssetRecord = Pick<
 >;
 
 type LibraryRootRecord = Pick<LibraryRoot, "id" | "lastScannedAt" | "path">;
-type WorkRecord = Pick<Work, "id" | "sortTitle" | "titleCanonical" | "titleDisplay">;
+type WorkRecord = Pick<Work, "description" | "id" | "language" | "seriesId" | "sortTitle" | "titleCanonical" | "titleDisplay">;
 type EditionRecord = Pick<
   Edition,
   "asin" | "formatFamily" | "id" | "isbn10" | "isbn13" | "publishedAt" | "publisher" | "workId"
@@ -185,6 +187,7 @@ export interface IngestDb {
     update(args: LibraryRootUpdateArgs): Promise<LibraryRootRecord>;
   };
   fileAsset: {
+    findByDirectory(args: { directoryPath: string; mediaKinds: MediaKind[] }): Promise<FileAssetRecord[]>;
     findMany(args: FileAssetFindManyArgs): Promise<FileAssetRecord[]>;
     findUnique(args: { where: { id: string } }): Promise<FileAssetRecord | null>;
     update(args: FileAssetUpdateArgs): Promise<FileAssetRecord>;
@@ -193,11 +196,17 @@ export interface IngestDb {
   work: {
     create(args: WorkCreateArgs): Promise<WorkRecord>;
     findMany(args: WorkFindManyArgs): Promise<WorkMatchRecord[]>;
+    findUnique(args: { where: { id: string } }): Promise<WorkRecord | null>;
+    update(args: { where: { id: string }; data: Partial<Pick<Work, "description" | "language" | "seriesId">> }): Promise<WorkRecord>;
   };
   edition: {
     create(args: EditionCreateArgs): Promise<EditionRecord>;
     findFirst(args: EditionFindFirstArgs): Promise<EditionRecord | null>;
     findUnique(args: { where: { id: string } }): Promise<EditionRecord | null>;
+    update(args: { where: { id: string }; data: Partial<Pick<Edition, "publisher" | "publishedAt">> }): Promise<EditionRecord>;
+  };
+  series: {
+    upsert(args: { name: string }): Promise<{ id: string; name: string }>;
   };
   editionFile: {
     create(args: EditionFileCreateArgs): Promise<EditionFileRecord>;
@@ -219,10 +228,11 @@ export interface IngestDependencies {
     jobName: TName,
     payload: LibraryJobPayload<TName>,
   ): Promise<void>;
-  listDirectory: typeof readdir;
-  readStats: typeof lstat;
+  listDirectory: ListDirectoryFn;
+  readStats: ReadStatsFn;
   hashFile: typeof hashFileContents;
   parseEpub: typeof parseEpubMetadata;
+  parseOpf: typeof parseOpfSidecar;
 }
 
 export interface ScanLibraryRootInput {
@@ -274,6 +284,7 @@ export interface MatchFileAssetToEditionResult {
 }
 
 const EPUB_PARSER_VERSION = 1;
+const OPF_PARSER_VERSION = 1;
 
 
 function isFileChanged(existingFileAsset: FileAssetRecord | undefined, nextFileState: { mtime: Date; sizeBytes: bigint }): boolean {
@@ -306,13 +317,15 @@ function parseStoredMetadata(metadata: FileAsset["metadata"]): ParsedFileAssetMe
     return undefined;
   }
 
-  const candidate = metadata as unknown as ParsedFileAssetMetadata;
+  const candidate = metadata as Record<string, unknown>;
+  const source = candidate["source"];
+  const status = candidate["status"];
 
-  if (candidate.source !== "epub" || (candidate.status !== "parsed" && candidate.status !== "unparseable")) {
+  if ((source !== "epub" && source !== "opf-sidecar") || (status !== "parsed" && status !== "unparseable")) {
     return undefined;
   }
 
-  return candidate;
+  return candidate as unknown as ParsedFileAssetMetadata;
 }
 
 function getAuthorCanonicalsForWork(work: WorkMatchRecord): string[] {
@@ -432,10 +445,13 @@ async function ensureAuthorContributors(
   }
 }
 
+type ListDirectoryFn = (path: string, options: { withFileTypes: true }) => Promise<Dirent[]>;
+type ReadStatsFn = (path: string) => Promise<Stats>;
+
 async function walkRegularFiles(
   rootPath: string,
-  listDirectory: typeof readdir,
-  readStats: typeof lstat,
+  listDirectory: ListDirectoryFn,
+  readStats: ReadStatsFn,
 ): Promise<string[]> {
   const pendingDirectories = [normalizeRootPath(rootPath)];
   const files: string[] = [];
@@ -504,14 +520,56 @@ async function getExistingLibraryRootOrThrow(ingestDb: IngestDb, libraryRootId: 
   return libraryRoot;
 }
 
+function createDefaultIngestDb(): IngestDb {
+  const prisma = db;
+  return {
+    libraryRoot: prisma.libraryRoot as unknown as IngestDb["libraryRoot"],
+    fileAsset: {
+      ...(prisma.fileAsset as unknown as Omit<IngestDb["fileAsset"], "findByDirectory">),
+      async findByDirectory(args: { directoryPath: string; mediaKinds: MediaKind[] }) {
+        return prisma.fileAsset.findMany({
+          where: {
+            absolutePath: { startsWith: args.directoryPath + "/" },
+            mediaKind: { in: args.mediaKinds },
+          },
+        }) as unknown as Promise<FileAssetRecord[]>;
+      },
+    },
+    work: {
+      ...(prisma.work as unknown as Omit<IngestDb["work"], "update">),
+      async update(args: { where: { id: string }; data: Partial<Pick<Work, "description" | "language" | "seriesId">> }) {
+        return prisma.work.update(args) as unknown as Promise<WorkRecord>;
+      },
+    },
+    edition: {
+      ...(prisma.edition as unknown as Omit<IngestDb["edition"], "update">),
+      async update(args: { where: { id: string }; data: Partial<Pick<Edition, "publisher" | "publishedAt">> }) {
+        return prisma.edition.update(args) as unknown as Promise<EditionRecord>;
+      },
+    },
+    editionFile: prisma.editionFile as unknown as IngestDb["editionFile"],
+    contributor: prisma.contributor as unknown as IngestDb["contributor"],
+    editionContributor: prisma.editionContributor as unknown as IngestDb["editionContributor"],
+    series: {
+      async upsert(args: { name: string }) {
+        const existing = await prisma.series.findFirst({ where: { name: args.name } });
+        if (existing) return { id: existing.id, name: existing.name };
+        const created = await prisma.series.create({ data: { name: args.name } });
+        return { id: created.id, name: created.name };
+      },
+    },
+  };
+}
+
 export function createIngestServices(
   dependencies: Partial<IngestDependencies> = {},
 ) {
-  const ingestDb = dependencies.db ?? (db as unknown as IngestDb);
+  const ingestDb = dependencies.db ?? createDefaultIngestDb();
   const listDirectory = dependencies.listDirectory ?? readdir;
   const readStats = dependencies.readStats ?? lstat;
   const hashFile = dependencies.hashFile ?? hashFileContents;
   const parseEpub = dependencies.parseEpub ?? parseEpubMetadata;
+  const parseOpf = dependencies.parseOpf ?? parseOpfSidecar;
   const enqueueJob = dependencies.enqueueLibraryJob ?? enqueueLibraryJob;
 
   async function scanLibraryRoot(input: ScanLibraryRootInput): Promise<ScanLibraryRootResult> {
@@ -642,7 +700,10 @@ export function createIngestServices(
         },
       });
 
-      if (fileAsset.mediaKind === MediaKind.EPUB) {
+      if (
+        fileAsset.mediaKind === MediaKind.EPUB ||
+        (fileAsset.mediaKind === MediaKind.SIDECAR && getFileExtension(fileAsset.absolutePath) === "opf")
+      ) {
         await enqueueJob(LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA, {
           fileAssetId: fileAsset.id,
         });
@@ -686,6 +747,134 @@ export function createIngestServices(
 
     if (fileAsset === null) {
       throw new Error(`File asset "${input.fileAssetId}" was not found`);
+    }
+
+    const isOpfSidecar = fileAsset.mediaKind === MediaKind.SIDECAR && getFileExtension(fileAsset.absolutePath) === "opf";
+
+    if (isOpfSidecar) {
+      try {
+        const raw = await parseOpf(fileAsset.absolutePath);
+        const normalized = normalizeOpfMetadata(raw);
+        const metadata: ParsedFileAssetMetadata = {
+          normalized,
+          parsedAt: now.toISOString(),
+          parserVersion: OPF_PARSER_VERSION,
+          raw,
+          source: "opf-sidecar",
+          status: "parsed",
+          warnings: [],
+        };
+
+        await ingestDb.fileAsset.update({
+          where: { id: fileAsset.id },
+          data: {
+            availabilityStatus: AvailabilityStatus.PRESENT,
+            lastSeenAt: now,
+            metadata: metadata as unknown as FileAsset["metadata"],
+          },
+        });
+
+        // Folder-proximity enrichment: find sibling book files
+        const directory = path.dirname(fileAsset.absolutePath);
+        const siblings = await ingestDb.fileAsset.findByDirectory({
+          directoryPath: directory,
+          mediaKinds: [MediaKind.EPUB, MediaKind.PDF, MediaKind.CBZ, MediaKind.AUDIO],
+        });
+
+        for (const sibling of siblings) {
+          const editionFile = await ingestDb.editionFile.findFirst({
+            where: { fileAssetId: sibling.id },
+          });
+
+          if (!editionFile) continue;
+
+          const edition = await ingestDb.edition.findUnique({
+            where: { id: editionFile.editionId },
+          });
+
+          if (!edition) continue;
+
+          // Update edition fields (only if null — supplement, not override)
+          const editionUpdates: Record<string, unknown> = {};
+          if (!edition.publisher && normalized.publisher) editionUpdates.publisher = normalized.publisher;
+          if (!edition.publishedAt && normalized.date) {
+            const parsedDate = new Date(normalized.date);
+            if (!isNaN(parsedDate.getTime())) editionUpdates.publishedAt = parsedDate;
+          }
+
+          if (Object.keys(editionUpdates).length > 0) {
+            await ingestDb.edition.update({
+              where: { id: edition.id },
+              data: editionUpdates,
+            });
+          }
+
+          // Update work fields
+          const work = await ingestDb.work.findUnique({
+            where: { id: edition.workId },
+          });
+
+          if (!work) continue;
+
+          const workUpdates: Record<string, unknown> = {};
+          if (!work.description && normalized.description) workUpdates.description = normalized.description;
+          if (!work.language && normalized.language) workUpdates.language = normalized.language;
+
+          if (!work.seriesId && normalized.series) {
+            const series = await ingestDb.series.upsert({
+              name: normalized.series.name,
+            });
+            workUpdates.seriesId = series.id;
+          }
+
+          if (Object.keys(workUpdates).length > 0) {
+            await ingestDb.work.update({
+              where: { id: work.id },
+              data: workUpdates,
+            });
+          }
+        }
+
+        return {
+          availabilityStatus: AvailabilityStatus.PRESENT,
+          fileAssetId: fileAsset.id,
+          metadata,
+          skipped: false,
+        };
+      } catch (error) {
+        const errorCode = getErrorCode(error);
+
+        if (errorCode === "ENOENT") {
+          await ingestDb.fileAsset.update({
+            where: { id: fileAsset.id },
+            data: {
+              availabilityStatus: AvailabilityStatus.MISSING,
+              lastSeenAt: now,
+            },
+          });
+          return { availabilityStatus: AvailabilityStatus.MISSING, fileAssetId: fileAsset.id, skipped: false };
+        }
+
+        const warning = error instanceof Error ? error.message : "Unknown OPF parsing error";
+        const metadata: ParsedFileAssetMetadata = {
+          parsedAt: now.toISOString(),
+          parserVersion: OPF_PARSER_VERSION,
+          source: "opf-sidecar",
+          status: "unparseable",
+          warnings: [warning],
+        };
+
+        await ingestDb.fileAsset.update({
+          where: { id: fileAsset.id },
+          data: {
+            availabilityStatus: AvailabilityStatus.PRESENT,
+            lastSeenAt: now,
+            metadata: metadata as unknown as FileAsset["metadata"],
+          },
+        });
+
+        return { availabilityStatus: AvailabilityStatus.PRESENT, fileAssetId: fileAsset.id, metadata, skipped: false };
+      }
     }
 
     if (fileAsset.mediaKind !== MediaKind.EPUB) {
@@ -929,11 +1118,13 @@ export const matchFileAssetToEdition = services.matchFileAssetToEdition;
 export const parseFileAssetMetadata = services.parseFileAssetMetadata;
 export { classifyMediaKind, getFileExtension, hashFileContents, isFileChanged, normalizeRelativePath, normalizeRootPath, walkRegularFiles };
 export { parseEpubMetadata } from "./epub";
+export { parseOpfSidecar } from "./opf";
 export {
   canonicalizeBookTitle,
   canonicalizeContributorName,
   canonicalizeContributorNames,
   createIdentifierMap,
   normalizeBookMetadata,
+  normalizeOpfMetadata,
 } from "./metadata";
-export type { NormalizedBookMetadata, ParsedEpubMetadataRaw };
+export type { NormalizedBookMetadata, ParsedEpubMetadataRaw, ParsedOpfMetadataRaw };

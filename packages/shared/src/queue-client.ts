@@ -35,8 +35,9 @@ export async function enqueueLibraryJob<TName extends LibraryJobName>(
       attempts: retryConfig.attempts,
       backoff: retryConfig.backoff,
     });
-    logger.info({ jobName, jobId: job.id }, "Job enqueued");
-    return job.id!;
+    const jobId = job.id ?? "unknown";
+    logger.info({ jobName, jobId }, "Job enqueued");
+    return jobId;
   } catch (error) {
     throw new QueueError(`Failed to enqueue job: ${jobName}`, {
       cause: error,

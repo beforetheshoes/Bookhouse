@@ -1,6 +1,7 @@
 import {
   type ColumnDef,
   type ColumnFiltersState,
+  type RowSelectionState,
   type SortingState,
   flexRender,
   getCoreRowModel,
@@ -28,6 +29,7 @@ interface DataTableProps<TData, TValue> {
   filterColumn?: string;
   filterPlaceholder?: string;
   pageSize?: number;
+  rowSelection?: RowSelectionState;
 }
 
 export function DataTable<TData, TValue>({
@@ -36,6 +38,7 @@ export function DataTable<TData, TValue>({
   filterColumn,
   filterPlaceholder,
   pageSize = 20,
+  rowSelection,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -46,7 +49,9 @@ export function DataTable<TData, TValue>({
     state: {
       sorting,
       columnFilters,
+      ...(rowSelection !== undefined ? { rowSelection } : {}),
     },
+    enableRowSelection: rowSelection !== undefined,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     getCoreRowModel: getCoreRowModel(),
@@ -86,7 +91,7 @@ export function DataTable<TData, TValue>({
             ))}
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows?.length ? (
+            {table.getRowModel().rows.length > 0 ? (
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}

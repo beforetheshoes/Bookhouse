@@ -1,5 +1,4 @@
-import { useEffect, useRef } from "react";
-import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import { formatDistanceToNow } from "date-fns";
 import { ExternalLink } from "lucide-react";
@@ -11,6 +10,7 @@ import {
   getImportJobsServerFn,
   type ImportJobRow,
 } from "~/lib/server-fns/import-jobs";
+import { useSSE } from "~/hooks/use-sse";
 
 export const Route = createFileRoute("/_authenticated/settings/jobs")({
   loader: async () => {
@@ -35,7 +35,7 @@ function formatDuration(job: ImportJobRow): string {
   const start = new Date(job.startedAt).getTime();
   const end = job.finishedAt ? new Date(job.finishedAt).getTime() : Date.now();
   const ms = end - start;
-  if (ms < 1000) return `${ms}ms`;
+  if (ms < 1000) return `${String(ms)}ms`;
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
   return `${(ms / 60_000).toFixed(1)}m`;
 }
@@ -109,27 +109,12 @@ const columns: ColumnDef<ImportJobRow>[] = [
 
 function JobsPage() {
   const { jobs, totalCount } = Route.useLoaderData();
-  const router = useRouter();
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const hasActiveJobs = jobs.some(
     (j) => j.status === "QUEUED" || j.status === "RUNNING",
   );
 
-  useEffect(() => {
-    if (hasActiveJobs) {
-      intervalRef.current = setInterval(() => {
-        router.invalidate();
-      }, 5000);
-    }
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    };
-  }, [hasActiveJobs, router]);
+  useSSE({ enabled: hasActiveJobs });
 
   return (
     <div>

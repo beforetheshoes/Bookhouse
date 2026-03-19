@@ -4,10 +4,8 @@ const addMock = vi.fn();
 const redisConstructorMock = vi.fn();
 
 vi.mock("ioredis", () => ({
-  default: class FakeRedis {
-    constructor(config: unknown) {
-      redisConstructorMock(config);
-    }
+  default: function FakeRedis(config: unknown) {
+    redisConstructorMock(config);
   },
 }));
 
@@ -25,13 +23,15 @@ beforeEach(() => {
 });
 
 describe("enqueueLibraryJob", () => {
-  it("passes retry config for scan-library-root", async () => {
-    addMock.mockResolvedValueOnce({ id: "job-1" });
+  it("passes retry config for scan-library-root and reuses the queue singleton on repeated calls", async () => {
+    addMock.mockResolvedValue({ id: "job-1" });
     const { enqueueLibraryJob, LIBRARY_JOB_NAMES, RETRY_CONFIG } = await import("./index");
 
     const jobId = await enqueueLibraryJob(LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT, {
       libraryRootId: "root-1",
     });
+    // Second call — exercises the queueSingleton already-exists branch
+    await enqueueLibraryJob(LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT, { libraryRootId: "root-2" });
 
     expect(jobId).toBe("job-1");
     const config = RETRY_CONFIG[LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT];
@@ -40,6 +40,8 @@ describe("enqueueLibraryJob", () => {
       { libraryRootId: "root-1" },
       { attempts: config.attempts, backoff: config.backoff },
     );
+    // IORedis and Queue constructors should only have been called once (singleton)
+    expect(redisConstructorMock).toHaveBeenCalledTimes(1);
   });
 
   it("passes retry config for hash-file-asset", async () => {
@@ -88,6 +90,17 @@ describe("enqueueLibraryJob", () => {
       { fileAssetId: "file-3" },
       { attempts: config.attempts, backoff: config.backoff },
     );
+  });
+
+  it("returns 'unknown' when job.id is undefined", async () => {
+    addMock.mockResolvedValueOnce({});
+    const { enqueueLibraryJob, LIBRARY_JOB_NAMES } = await import("./index");
+
+    const jobId = await enqueueLibraryJob(LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT, {
+      libraryRootId: "root-1",
+    });
+
+    expect(jobId).toBe("unknown");
   });
 
   it("wraps queue errors in QueueError", async () => {

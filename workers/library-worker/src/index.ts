@@ -1,6 +1,6 @@
 import { pathToFileURL } from "node:url";
 import IORedis from "ioredis";
-import { Job, Worker } from "bullmq";
+import { type Job, Worker } from "bullmq";
 import { db } from "@bookhouse/db";
 import { hashFileAsset, matchFileAssetToEdition, parseFileAssetMetadata, scanLibraryRoot } from "@bookhouse/ingest";
 import {
@@ -40,7 +40,7 @@ function dispatch(
     case LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA:
       return handlers.parseFileAssetMetadata(job.data as ParseFileAssetMetadataJobPayload);
     default:
-      throw new Error(`Unsupported library job: ${job.name}`);
+      throw new Error(`Unsupported library job: ${String(job.name)}`);
   }
 }
 
@@ -126,14 +126,14 @@ export async function shutdownLibraryWorker(
   await connection.quit();
 }
 
-export async function bootstrapLibraryWorker(): Promise<void> {
+export function bootstrapLibraryWorker(): void {
   const { connection, worker } = createLibraryWorker();
 
-  worker.on("ready", () => logger.info("Worker ready, waiting for jobs"));
-  worker.on("completed", (job) => logger.info({ jobId: job.id, jobName: job.name }, "Job completed"));
-  worker.on("failed", (job, error) =>
-    logger.error({ jobId: job?.id, jobName: job?.name, err: error }, "Job failed"),
-  );
+  worker.on("ready", () => { logger.info("Worker ready, waiting for jobs"); });
+  worker.on("completed", (job) => { logger.info({ jobId: job.id, jobName: job.name }, "Job completed"); });
+  worker.on("failed", (job, error) => {
+    logger.error({ jobId: job?.id, jobName: job?.name, err: error }, "Job failed");
+  });
 
   const shutdown = async () => {
     logger.info("Shutting down worker");
@@ -141,12 +141,12 @@ export async function bootstrapLibraryWorker(): Promise<void> {
     process.exit(0);
   };
 
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", () => { void shutdown(); });
+  process.on("SIGTERM", () => { void shutdown(); });
 
   logger.info({ queue: QUEUES.LIBRARY }, "library-worker listening");
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  void bootstrapLibraryWorker();
+  bootstrapLibraryWorker();
 }

@@ -1,4 +1,5 @@
 import type { ParsedEpubIdentifier, ParsedEpubMetadataRaw } from "./epub";
+import type { ParsedOpfMetadataRaw } from "./opf";
 
 export interface NormalizedBookIdentifiers {
   asin?: string;
@@ -11,6 +12,12 @@ export interface NormalizedBookMetadata {
   authors: string[];
   identifiers: NormalizedBookIdentifiers;
   title?: string;
+  description?: string;
+  subjects?: string[];
+  publisher?: string;
+  date?: string;
+  language?: string;
+  series?: { name: string; index?: number };
 }
 
 function canonicalizeForMatching(value: string | undefined): string | undefined {
@@ -151,6 +158,35 @@ export function canonicalizeContributorNames(values: string[]): string[] {
   )].sort();
 }
 
+function stripHtmlTags(html: string): string {
+  return html.replace(/<[^>]*>/g, "").trim();
+}
+
+export function normalizeOpfMetadata(raw: ParsedOpfMetadataRaw): NormalizedBookMetadata {
+  const authors = [...new Set(
+    raw.authors
+      .map((a) => normalizeWhitespace(a.name))
+      .filter((a): a is string => a !== undefined)
+  )];
+
+  const description = raw.description ? normalizeWhitespace(stripHtmlTags(raw.description)) : undefined;
+  const subjects = raw.subjects
+    .map((s) => normalizeWhitespace(s))
+    .filter((s): s is string => s !== undefined);
+
+  return {
+    authors,
+    identifiers: createIdentifierMap(raw.identifiers),
+    title: normalizeWhitespace(raw.title),
+    description,
+    subjects: subjects.length > 0 ? subjects : undefined,
+    publisher: normalizeWhitespace(raw.publisher),
+    date: normalizeWhitespace(raw.date),
+    language: normalizeWhitespace(raw.language),
+    series: raw.series ? { name: raw.series.name, index: raw.series.index } : undefined,
+  };
+}
+
 export const METADATA_INTERNALS = {
   canonicalizeBookTitle,
   canonicalizeContributorName,
@@ -163,4 +199,5 @@ export const METADATA_INTERNALS = {
   normalizeIdentifierValue,
   normalizeScheme,
   normalizeWhitespace,
+  stripHtmlTags,
 };

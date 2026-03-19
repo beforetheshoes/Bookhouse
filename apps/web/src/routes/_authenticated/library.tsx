@@ -1,5 +1,8 @@
+import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { useSSE } from "~/hooks/use-sse";
 import type { ColumnDef } from "@tanstack/react-table";
+import { Loader2 } from "lucide-react";
 import { VirtualizedDataTable, DataTableColumnHeader } from "~/components/data-table";
 import { Badge } from "~/components/ui/badge";
 import { TablePageSkeleton } from "~/components/skeletons/table-page-skeleton";
@@ -7,11 +10,15 @@ import {
   getLibraryWorksServerFn,
   type LibraryWork,
 } from "~/lib/server-fns/library";
+import { getActiveJobCountServerFn } from "~/lib/server-fns/import-jobs";
 
 export const Route = createFileRoute("/_authenticated/library")({
   loader: async () => {
-    const works = await getLibraryWorksServerFn();
-    return { works };
+    const [works, activeJobCount] = await Promise.all([
+      getLibraryWorksServerFn(),
+      getActiveJobCountServerFn(),
+    ]);
+    return { works, activeJobCount };
   },
   pendingComponent: TablePageSkeleton,
   component: LibraryPage,
@@ -69,14 +76,38 @@ const columns: ColumnDef<LibraryWork>[] = [
 ];
 
 function LibraryPage() {
-  const { works } = Route.useLoaderData();
+  const { works, activeJobCount } = Route.useLoaderData();
+  const [prevCount, setPrevCount] = useState(works.length);
+
+  const isScanning = activeJobCount > 0;
+  const newCount = works.length - prevCount;
+
+  useSSE({ enabled: isScanning });
+
+  useEffect(() => {
+    if (!isScanning) {
+      setPrevCount(works.length);
+    }
+  }, [isScanning, works.length]);
 
   return (
     <div>
-      <h1 className="text-2xl font-bold">Library</h1>
-      <p className="mb-6 mt-2 text-muted-foreground">
-        Browse and manage your works.
-      </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Library</h1>
+          <p className="mb-6 mt-2 text-muted-foreground">
+            Browse and manage your works.
+          </p>
+        </div>
+        {isScanning && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            <span>
+              Scanning{newCount > 0 ? ` — ${String(newCount)} new` : ""}...
+            </span>
+          </div>
+        )}
+      </div>
       <VirtualizedDataTable
         columns={columns}
         data={works}

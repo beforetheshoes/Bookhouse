@@ -66,7 +66,7 @@ const columns: ColumnDef<DuplicateRow>[] = [
     ),
     cell: ({ row }) => {
       const val = row.original.confidence;
-      return val != null ? `${Math.round(val * 100)}%` : "—";
+      return val != null ? `${String(Math.round(val * 100))}%` : "—";
     },
   },
   {

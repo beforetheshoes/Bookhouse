@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createIdentifierMap, normalizeBookMetadata } from "./index";
+import { createIdentifierMap, normalizeBookMetadata, normalizeOpfMetadata } from "./index";
 import { METADATA_INTERNALS } from "./metadata";
 
 describe("metadata normalization", () => {
@@ -81,5 +81,63 @@ describe("metadata normalization", () => {
         "!!!",
       ]),
     ).toEqual(["n k jemisin"]);
+  });
+});
+
+describe("normalizeOpfMetadata", () => {
+  it("normalizes authors, strips HTML from description, and maps extended fields", () => {
+    const result = normalizeOpfMetadata({
+      title: "  The Name of the Wind  ",
+      authors: [
+        { name: "  Patrick Rothfuss  ", fileAs: "Rothfuss, Patrick", role: "aut" },
+        { name: "  Patrick Rothfuss  ", fileAs: "Rothfuss, Patrick", role: "aut" },
+      ],
+      identifiers: [{ scheme: "ISBN", value: "9780756404079" }],
+      description: "<p>A story about <i>Kvothe</i>.</p>",
+      subjects: ["Fantasy", "Adventure"],
+      publisher: "  DAW Books  ",
+      date: "2007-03-27",
+      language: "en",
+      series: { name: "The Kingkiller Chronicle", index: 1 },
+    });
+
+    expect(result.authors).toEqual(["Patrick Rothfuss"]);
+    expect(result.title).toBe("The Name of the Wind");
+    expect(result.description).toBe("A story about Kvothe.");
+    expect(result.subjects).toEqual(["Fantasy", "Adventure"]);
+    expect(result.publisher).toBe("DAW Books");
+    expect(result.date).toBe("2007-03-27");
+    expect(result.language).toBe("en");
+    expect(result.series).toEqual({ name: "The Kingkiller Chronicle", index: 1 });
+    expect(result.identifiers).toEqual({ isbn13: "9780756404079", unknown: [] });
+  });
+
+  it("returns undefined subjects when the subjects array is empty", () => {
+    const result = normalizeOpfMetadata({
+      authors: [],
+      identifiers: [],
+      subjects: [],
+    });
+    expect(result.subjects).toBeUndefined();
+  });
+
+  it("returns undefined description when raw description is absent", () => {
+    const result = normalizeOpfMetadata({
+      authors: [],
+      identifiers: [],
+      subjects: [],
+      description: undefined,
+    });
+    expect(result.description).toBeUndefined();
+  });
+
+  it("returns undefined series when raw series is absent", () => {
+    const result = normalizeOpfMetadata({
+      authors: [],
+      identifiers: [],
+      subjects: [],
+      series: undefined,
+    });
+    expect(result.series).toBeUndefined();
   });
 });

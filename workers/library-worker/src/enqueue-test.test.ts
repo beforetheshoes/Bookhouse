@@ -1,12 +1,13 @@
+import type * as SharedModule from "@bookhouse/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const closeQueueEventsMock = vi.fn(async () => undefined);
+const closeQueueEventsMock = vi.fn(() => Promise.resolve(undefined));
 const duplicateMock = vi.fn(() => ({ duplicated: true }));
-const enqueueLibraryJobMock = vi.fn(async () => "job-1");
+const enqueueLibraryJobMock = vi.fn(() => Promise.resolve("job-1"));
 const queueEventsConstructorMock = vi.fn();
-const quitMock = vi.fn(async () => "OK");
+const quitMock = vi.fn(() => Promise.resolve("OK"));
 const redisConstructorMock = vi.fn();
-const waitUntilReadyMock = vi.fn(async () => undefined);
+const waitUntilReadyMock = vi.fn(() => Promise.resolve(undefined));
 
 vi.mock("ioredis", () => ({
   default: class FakeRedis {
@@ -31,12 +32,12 @@ vi.mock("bullmq", () => ({
 }));
 
 vi.mock("@bookhouse/shared", async () => {
-  const actual = await vi.importActual<typeof import("@bookhouse/shared")>(
+  const actual = await vi.importActual<typeof SharedModule>(
     "@bookhouse/shared",
   );
 
   return {
-    ...actual,
+    ...(actual as Record<string, unknown>),
     enqueueLibraryJob: enqueueLibraryJobMock,
     getQueueConnectionConfig: () => ({ host: "localhost", port: 6379 }),
   };
@@ -60,7 +61,7 @@ describe("enqueue test script", () => {
 
     expect(redisConstructorMock).toHaveBeenCalledWith({ host: "localhost", port: 6379 });
     expect(queueEventsConstructorMock).toHaveBeenCalledWith("library", {
-      connection: expect.any(Object),
+      connection: expect.any(Object) as unknown,
     });
     expect(waitUntilReadyMock).toHaveBeenCalledTimes(1);
     expect(enqueueLibraryJobMock).toHaveBeenCalledWith("scan-library-root", {

@@ -38,7 +38,7 @@ export function AddLibraryRootDialog() {
     setScanMode("INCREMENTAL");
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.SubmitEvent) {
     e.preventDefault();
     setSubmitting(true);
     try {
@@ -46,7 +46,7 @@ export function AddLibraryRootDialog() {
       toast.success("Library root added");
       setOpen(false);
       resetForm();
-      router.invalidate();
+      void router.invalidate();
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to add library root",
@@ -65,7 +65,7 @@ export function AddLibraryRootDialog() {
         </Button>
       </DialogTrigger>
       <DialogContent>
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={(e) => { void handleSubmit(e); }}>
           <DialogHeader>
             <DialogTitle>Add Library Root</DialogTitle>
             <DialogDescription>
@@ -80,7 +80,7 @@ export function AddLibraryRootDialog() {
               <Input
                 id="name"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => { setName(e.target.value); }}
                 placeholder="My Library"
                 required
               />
@@ -92,14 +92,14 @@ export function AddLibraryRootDialog() {
               <Input
                 id="path"
                 value={path}
-                onChange={(e) => setPath(e.target.value)}
+                onChange={(e) => { setPath(e.target.value); }}
                 placeholder="/path/to/books"
                 required
               />
             </div>
             <div className="grid gap-2">
               <label className="text-sm font-medium">Kind</label>
-              <Select value={kind} onValueChange={(v) => setKind(v as typeof kind)}>
+              <Select value={kind} onValueChange={(v) => { setKind(v as typeof kind); }}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -112,7 +112,7 @@ export function AddLibraryRootDialog() {
             </div>
             <div className="grid gap-2">
               <label className="text-sm font-medium">Scan Mode</label>
-              <Select value={scanMode} onValueChange={(v) => setScanMode(v as typeof scanMode)}>
+              <Select value={scanMode} onValueChange={(v) => { setScanMode(v as typeof scanMode); }}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>

@@ -3,10 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 const prismaConstructorMock = vi.fn();
 
 vi.mock("@prisma/client", () => {
-  class PrismaClient {
-    constructor() {
-      prismaConstructorMock();
-    }
+  function PrismaClient() {
+    prismaConstructorMock();
   }
 
   return { PrismaClient };

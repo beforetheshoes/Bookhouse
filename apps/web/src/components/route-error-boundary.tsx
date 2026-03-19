@@ -29,7 +29,7 @@ export function RouteErrorBoundary({ error, reset }: ErrorComponentProps) {
             variant="outline"
             onClick={() => {
               reset();
-              router.invalidate();
+              void router.invalidate();
             }}
           >
             <RefreshCw className="size-4" />

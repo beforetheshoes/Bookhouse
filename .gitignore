@@ -32,6 +32,7 @@ Spec.md
 npm-debug.log*
 pnpm-debug.log*
 
-# TanStack generated
-**/routeTree.gen.ts
+# TanStack generated (committed so CI typecheck has a valid base file)
+# **/routeTree.gen.ts
 AGENTS.md
+apps/web/.tanstack/tmp/*

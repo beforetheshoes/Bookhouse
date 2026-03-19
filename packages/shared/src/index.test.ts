@@ -1,17 +1,26 @@
 import { describe, expect, it } from "vitest";
-import {
+import type {
   HashFileAssetJobPayload,
-  LIBRARY_JOB_NAMES,
   MatchFileAssetToEditionJobPayload,
   ParseFileAssetMetadataJobPayload,
+  ScanLibraryRootJobPayload,
+} from "./index";
+import {
+  LIBRARY_JOB_NAMES,
+  NotFoundError,
   QUEUES,
   RETRY_CONFIG,
-  ScanLibraryRootJobPayload,
+  ValidationError,
   getQueueConnectionConfig,
   getQueueUrl,
+  __loaded,
 } from "./index";
 
 describe("shared queue helpers", () => {
+  it("barrel is loaded", () => {
+    expect(__loaded).toBe(true);
+  });
+
   it("returns the configured queue url", () => {
     process.env.QUEUE_URL = "redis://user:pass@localhost:6379/2";
 
@@ -75,6 +84,24 @@ describe("shared queue helpers", () => {
   it("uses conservative retry counts for scan jobs", () => {
     expect(RETRY_CONFIG[LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT].attempts).toBe(2);
     expect(RETRY_CONFIG[LIBRARY_JOB_NAMES.HASH_FILE_ASSET].attempts).toBe(3);
+  });
+
+  it("NotFoundError has correct name, code and statusCode", () => {
+    const err = new NotFoundError("thing not found", { id: "123" });
+    expect(err.name).toBe("NotFoundError");
+    expect(err.code).toBe("NOT_FOUND");
+    expect(err.statusCode).toBe(404);
+    expect(err.message).toBe("thing not found");
+    expect(err.context).toEqual({ id: "123" });
+  });
+
+  it("ValidationError has correct name, code and statusCode", () => {
+    const err = new ValidationError("invalid input");
+    expect(err.name).toBe("ValidationError");
+    expect(err.code).toBe("VALIDATION_ERROR");
+    expect(err.statusCode).toBe(400);
+    expect(err.message).toBe("invalid input");
+    expect(err.context).toBeUndefined();
   });
 
   it("defines typed queue payload shapes for library jobs", () => {

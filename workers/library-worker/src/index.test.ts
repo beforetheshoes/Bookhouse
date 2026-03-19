@@ -1,11 +1,13 @@
+import { fileURLToPath } from "node:url";
+import type * as SharedModule from "@bookhouse/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const addMock = vi.fn();
 const onMock = vi.fn();
-const workerCloseMock = vi.fn(async () => undefined);
+const workerCloseMock = vi.fn(() => Promise.resolve(undefined));
 const workerConstructorMock = vi.fn();
 const queueConnectionConfigMock = vi.fn(() => ({ host: "localhost", port: 6379 }));
-const quitMock = vi.fn(async () => "OK");
+const quitMock = vi.fn(() => Promise.resolve("OK"));
 const redisConstructorMock = vi.fn();
 const hashFileAssetMock = vi.fn();
 const matchFileAssetToEditionMock = vi.fn();
@@ -32,7 +34,7 @@ vi.mock("bullmq", () => ({
     on = onMock;
     close = workerCloseMock;
   },
-  Job: class {},
+  Job: function Job() { return {}; },
   Queue: class {
     add = addMock;
   },
@@ -54,12 +56,12 @@ vi.mock("@bookhouse/ingest", () => ({
 }));
 
 vi.mock("@bookhouse/shared", async () => {
-  const actual = await vi.importActual<typeof import("@bookhouse/shared")>(
+  const actual = await vi.importActual<typeof SharedModule>(
     "@bookhouse/shared",
   );
 
   return {
-    ...actual,
+    ...(actual as Record<string, unknown>),
     getQueueConnectionConfig: queueConnectionConfigMock,
   };
 });
@@ -146,11 +148,11 @@ describe("library worker", () => {
     expect(importJobUpdateMock).toHaveBeenCalledTimes(2);
     expect(importJobUpdateMock).toHaveBeenNthCalledWith(1, {
       where: { id: "ij-1" },
-      data: { status: "RUNNING", startedAt: expect.any(Date), attemptsMade: 1 },
+      data: { status: "RUNNING", startedAt: expect.any(Date) as unknown, attemptsMade: 1 },
     });
     expect(importJobUpdateMock).toHaveBeenNthCalledWith(2, {
       where: { id: "ij-1" },
-      data: { status: "SUCCEEDED", finishedAt: expect.any(Date) },
+      data: { status: "SUCCEEDED", finishedAt: expect.any(Date) as unknown },
     });
   });
 
@@ -178,9 +180,39 @@ describe("library worker", () => {
       where: { id: "ij-2" },
       data: {
         status: "FAILED",
-        finishedAt: expect.any(Date),
+        finishedAt: expect.any(Date) as unknown,
         error: "Disk full",
         attemptsMade: 2,
+      },
+    });
+  });
+
+  it("records String(error) when a non-Error value is thrown with importJobId", async () => {
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor({
+      hashFileAsset: hashFileAssetMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
+      parseFileAssetMetadata: parseFileAssetMetadataMock,
+      scanLibraryRoot: scanLibraryRootMock,
+    });
+
+    scanLibraryRootMock.mockRejectedValueOnce("plain string error");
+
+    await expect(
+      processor({
+        data: { libraryRootId: "root-1", importJobId: "ij-3" },
+        name: "scan-library-root",
+        attemptsMade: 1,
+      } as never),
+    ).rejects.toBe("plain string error");
+
+    expect(importJobUpdateMock).toHaveBeenNthCalledWith(2, {
+      where: { id: "ij-3" },
+      data: {
+        status: "FAILED",
+        finishedAt: expect.any(Date) as unknown,
+        error: "plain string error",
+        attemptsMade: 1,
       },
     });
   });
@@ -232,7 +264,7 @@ describe("library worker", () => {
       "library",
       expect.any(Function),
       {
-        connection: expect.any(Object),
+        connection: expect.any(Object) as unknown,
         removeOnComplete: { count: 1000 },
         removeOnFail: { count: 5000 },
       },
@@ -251,7 +283,7 @@ describe("library worker", () => {
       .mockImplementation((() => undefined) as never);
     const { bootstrapLibraryWorker } = await import("./index");
 
-    await bootstrapLibraryWorker();
+    bootstrapLibraryWorker();
 
     expect(onMock).toHaveBeenCalledTimes(3);
     expect(onMock).toHaveBeenNthCalledWith(1, "ready", expect.any(Function));
@@ -260,10 +292,26 @@ describe("library worker", () => {
     expect(processOnSpy).toHaveBeenCalledWith("SIGINT", expect.any(Function));
     expect(processOnSpy).toHaveBeenCalledWith("SIGTERM", expect.any(Function));
 
-    const shutdownHandler = processOnSpy.mock.calls.find(([event]) => event === "SIGINT")?.[1] as () => Promise<void>;
-    await shutdownHandler();
+    const shutdownHandler = processOnSpy.mock.calls.find(([event]) => event === "SIGINT")?.[1] as () => void;
+    shutdownHandler();
+    // Also invoke SIGTERM handler to cover that function body
+    const sigtermHandler = processOnSpy.mock.calls.find(([event]) => event === "SIGTERM")?.[1] as () => void;
+    sigtermHandler();
+    // Allow the async shutdown() chain to complete (workerClose + quit + process.exit)
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(processExitSpy).toHaveBeenCalledWith(0);
+
+    // Invoke event callbacks to cover their bodies
+    const readyCallback = onMock.mock.calls.find(([e]) => e === "ready")?.[1] as () => void;
+    readyCallback();
+
+    const completedCallback = onMock.mock.calls.find(([e]) => e === "completed")?.[1] as (job: unknown) => void;
+    completedCallback({ id: "job-1", name: "scan-library-root" });
+
+    const failedCallback = onMock.mock.calls.find(([e]) => e === "failed")?.[1] as (job: unknown, err: Error) => void;
+    failedCallback({ id: "job-1", name: "scan-library-root" }, new Error("disk full"));
+    failedCallback(undefined, new Error("no job ref"));
 
     processOnSpy.mockRestore();
     processExitSpy.mockRestore();
@@ -274,7 +322,7 @@ describe("library worker", () => {
     const processOnSpy = vi.spyOn(process, "on").mockImplementation(() => process);
     const originalArgv = [...process.argv];
 
-    process.argv[1] = "/Users/ryan/Developer/Bookhouse/workers/library-worker/src/index.ts";
+    process.argv[1] = fileURLToPath(new URL("./index.ts", import.meta.url));
 
     await import("./index");
 

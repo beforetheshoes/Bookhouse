@@ -4,6 +4,7 @@
     "baseUrl": ".",
     "jsx": "react-jsx",
     "lib": ["DOM", "DOM.Iterable", "ESNext"],
+    "types": ["node", "vitest/globals"],
     "paths": {
       "~/*": ["./src/*"]
     }

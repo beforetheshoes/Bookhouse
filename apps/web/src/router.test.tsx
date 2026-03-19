@@ -13,11 +13,12 @@ vi.mock("./lib/auth-client", () => ({
 
 describe("router helpers", () => {
   it("creates a router instance", async () => {
+    // Loading the full routeTree (all routes + components) can take >5s
     const { createRouter, getRouter } = await import("./router");
     const router = createRouter();
 
     expect(router.options.defaultPreload).toBe("intent");
     expect(router.options.scrollRestoration).toBe(true);
     expect(getRouter()).toBeDefined();
-  });
+  }, 30_000);
 });
