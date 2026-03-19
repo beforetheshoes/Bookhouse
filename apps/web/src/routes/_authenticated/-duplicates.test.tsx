@@ -32,7 +32,7 @@ vi.mock("@tanstack/react-router", async () => {
 
 const getDuplicatesServerFnMock = vi.fn();
 vi.mock("~/lib/server-fns/duplicates", () => ({
-  getDuplicatesServerFn: (...args: unknown[]) => getDuplicatesServerFnMock(...args),
+  getDuplicatesServerFn: getDuplicatesServerFnMock,
 }));
 
 vi.mock("~/components/skeletons/table-page-skeleton", () => ({

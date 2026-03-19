@@ -4,10 +4,12 @@ import { describe, it, expect, vi } from "vitest";
 import type { ColumnDef } from "@tanstack/react-table";
 import { VirtualizedDataTable } from "./virtualized-data-table";
 
-const useVirtualizerMock = vi.fn();
+const { useVirtualizerMock } = vi.hoisted(() => ({
+  useVirtualizerMock: vi.fn(),
+}));
 
 vi.mock("@tanstack/react-virtual", () => ({
-  useVirtualizer: (...args: unknown[]) => useVirtualizerMock(...args),
+  useVirtualizer: useVirtualizerMock,
 }));
 
 // Default virtualizer mock: top spacer (start > 0), bottom spacer (end < totalSize)
@@ -139,6 +141,21 @@ describe("VirtualizedDataTable", () => {
     render(<VirtualizedDataTable columns={mixedColumns} data={mixedData} />);
     expect(screen.getByText("Name")).toBeTruthy();
     expect(screen.getByText("Age")).toBeTruthy();
+  });
+
+  it("skips out-of-bounds virtual rows (null return branch)", () => {
+    // Virtualizer reports a row at index 999 which is outside the actual rows array.
+    // The component should render without crashing (the null branch is hit and skipped).
+    useVirtualizerMock.mockImplementation(({ getScrollElement, estimateSize }: { count: number; getScrollElement: () => unknown; estimateSize: () => number }) => {
+      getScrollElement();
+      estimateSize();
+      return {
+        getVirtualItems: () => [{ index: 999, start: 0, end: 48 }],
+        getTotalSize: () => 48,
+      };
+    });
+    const { container } = render(<VirtualizedDataTable columns={columns} data={data} />);
+    expect(container).toBeTruthy();
   });
 
   it("renders selected row (getIsSelected=true branch covers && 'selected')", () => {

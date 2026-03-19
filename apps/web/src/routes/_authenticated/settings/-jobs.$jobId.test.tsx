@@ -36,7 +36,7 @@ vi.mock("@tanstack/react-router", async () => {
 
 const getImportJobDetailServerFnMock = vi.fn();
 vi.mock("~/lib/server-fns/import-jobs", () => ({
-  getImportJobDetailServerFn: (...args: unknown[]) => getImportJobDetailServerFnMock(...args),
+  getImportJobDetailServerFn: getImportJobDetailServerFnMock,
 }));
 
 const makeJobDetail = (overrides: Partial<{

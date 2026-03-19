@@ -61,7 +61,7 @@ vi.mock("@bookhouse/shared", async () => {
   );
 
   return {
-    ...actual,
+    ...(actual as Record<string, unknown>),
     getQueueConnectionConfig: queueConnectionConfigMock,
   };
 });
@@ -148,11 +148,11 @@ describe("library worker", () => {
     expect(importJobUpdateMock).toHaveBeenCalledTimes(2);
     expect(importJobUpdateMock).toHaveBeenNthCalledWith(1, {
       where: { id: "ij-1" },
-      data: { status: "RUNNING", startedAt: expect.any(Date), attemptsMade: 1 },
+      data: { status: "RUNNING", startedAt: expect.any(Date) as unknown, attemptsMade: 1 },
     });
     expect(importJobUpdateMock).toHaveBeenNthCalledWith(2, {
       where: { id: "ij-1" },
-      data: { status: "SUCCEEDED", finishedAt: expect.any(Date) },
+      data: { status: "SUCCEEDED", finishedAt: expect.any(Date) as unknown },
     });
   });
 
@@ -180,7 +180,7 @@ describe("library worker", () => {
       where: { id: "ij-2" },
       data: {
         status: "FAILED",
-        finishedAt: expect.any(Date),
+        finishedAt: expect.any(Date) as unknown,
         error: "Disk full",
         attemptsMade: 2,
       },
@@ -210,7 +210,7 @@ describe("library worker", () => {
       where: { id: "ij-3" },
       data: {
         status: "FAILED",
-        finishedAt: expect.any(Date),
+        finishedAt: expect.any(Date) as unknown,
         error: "plain string error",
         attemptsMade: 1,
       },
@@ -264,7 +264,7 @@ describe("library worker", () => {
       "library",
       expect.any(Function),
       {
-        connection: expect.any(Object),
+        connection: expect.any(Object) as unknown,
         removeOnComplete: { count: 1000 },
         removeOnFail: { count: 5000 },
       },
@@ -294,6 +294,9 @@ describe("library worker", () => {
 
     const shutdownHandler = processOnSpy.mock.calls.find(([event]) => event === "SIGINT")?.[1] as () => void;
     shutdownHandler();
+    // Also invoke SIGTERM handler to cover that function body
+    const sigtermHandler = processOnSpy.mock.calls.find(([event]) => event === "SIGTERM")?.[1] as () => void;
+    sigtermHandler();
     // Allow the async shutdown() chain to complete (workerClose + quit + process.exit)
     await new Promise((resolve) => setTimeout(resolve, 0));
 

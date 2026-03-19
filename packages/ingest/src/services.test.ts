@@ -1188,10 +1188,7 @@ describe("ingest services", () => {
     const services = createIngestServices({
       db: createTestDb(state),
       enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
-      parseEpub: vi.fn(async () => {
-        await Promise.resolve();
-        throw "bad-value";
-      }),
+      parseEpub: vi.fn().mockRejectedValueOnce("bad-value"),
     });
 
     await services.parseFileAssetMetadata({ fileAssetId: "file-1" });
@@ -2260,10 +2257,7 @@ describe("ingest services", () => {
     const services = createIngestServices({
       db: createTestDb(state),
       enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
-      parseOpf: vi.fn(async () => {
-        await Promise.resolve();
-        throw "bad-value";
-      }),
+      parseOpf: vi.fn().mockRejectedValueOnce("bad-value"),
     });
 
     await services.parseFileAssetMetadata({

@@ -20,9 +20,9 @@ const scanLibraryRootServerFnMock = vi.fn();
 const removeLibraryRootServerFnMock = vi.fn();
 
 vi.mock("~/lib/server-fns/library-roots", () => ({
-  getLibraryRootsServerFn: (...args: unknown[]) => getLibraryRootsServerFnMock(...args),
-  scanLibraryRootServerFn: (...args: unknown[]) => scanLibraryRootServerFnMock(...args),
-  removeLibraryRootServerFn: (...args: unknown[]) => removeLibraryRootServerFnMock(...args),
+  getLibraryRootsServerFn: getLibraryRootsServerFnMock,
+  scanLibraryRootServerFn: scanLibraryRootServerFnMock,
+  removeLibraryRootServerFn: removeLibraryRootServerFnMock,
   addLibraryRootServerFn: vi.fn(),
 }));
 

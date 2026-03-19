@@ -23,7 +23,7 @@ vi.mock("@tanstack/react-router", async () => {
 
 const getAudioLinksServerFnMock = vi.fn();
 vi.mock("~/lib/server-fns/audio-links", () => ({
-  getAudioLinksServerFn: (...args: unknown[]) => getAudioLinksServerFnMock(...args),
+  getAudioLinksServerFn: getAudioLinksServerFnMock,
 }));
 
 vi.mock("~/components/skeletons/table-page-skeleton", () => ({

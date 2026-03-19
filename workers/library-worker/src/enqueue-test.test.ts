@@ -37,7 +37,7 @@ vi.mock("@bookhouse/shared", async () => {
   );
 
   return {
-    ...actual,
+    ...(actual as Record<string, unknown>),
     enqueueLibraryJob: enqueueLibraryJobMock,
     getQueueConnectionConfig: () => ({ host: "localhost", port: 6379 }),
   };
@@ -61,7 +61,7 @@ describe("enqueue test script", () => {
 
     expect(redisConstructorMock).toHaveBeenCalledWith({ host: "localhost", port: 6379 });
     expect(queueEventsConstructorMock).toHaveBeenCalledWith("library", {
-      connection: expect.any(Object),
+      connection: expect.any(Object) as unknown,
     });
     expect(waitUntilReadyMock).toHaveBeenCalledTimes(1);
     expect(enqueueLibraryJobMock).toHaveBeenCalledWith("scan-library-root", {

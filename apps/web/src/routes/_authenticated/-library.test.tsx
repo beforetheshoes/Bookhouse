@@ -43,12 +43,12 @@ vi.mock("~/hooks/use-sse", () => ({
 
 const getLibraryWorksServerFnMock = vi.fn();
 vi.mock("~/lib/server-fns/library", () => ({
-  getLibraryWorksServerFn: (...args: unknown[]) => getLibraryWorksServerFnMock(...args),
+  getLibraryWorksServerFn: getLibraryWorksServerFnMock,
 }));
 
 const getActiveJobCountServerFnMock = vi.fn();
 vi.mock("~/lib/server-fns/import-jobs", () => ({
-  getActiveJobCountServerFn: (...args: unknown[]) => getActiveJobCountServerFnMock(...args),
+  getActiveJobCountServerFn: getActiveJobCountServerFnMock,
 }));
 
 // Use real data-table so column cell renderers execute

@@ -23,7 +23,7 @@ vi.mock("@tanstack/react-router", async () => {
 
 const getCollectionsServerFnMock = vi.fn();
 vi.mock("~/lib/server-fns/collections", () => ({
-  getCollectionsServerFn: (...args: unknown[]) => getCollectionsServerFnMock(...args),
+  getCollectionsServerFn: getCollectionsServerFnMock,
 }));
 
 // Use real DataTable so column cell renderers execute

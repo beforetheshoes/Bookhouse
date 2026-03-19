@@ -81,7 +81,7 @@ describe("getImportJobsServerFn", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           status: { in: ["QUEUED", "RUNNING"] },
-        }),
+        }) as unknown,
       }),
     );
   });
@@ -113,7 +113,7 @@ describe("getImportJobsServerFn", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           kind: { in: ["SCAN_ROOT", "HASH_FILE"] },
-        }),
+        }) as unknown,
       }),
     );
   });
@@ -135,7 +135,7 @@ describe("getImportJobsServerFn", () => {
 
     expect(findManyMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ libraryRootId: "root-abc" }),
+        where: expect.objectContaining({ libraryRootId: "root-abc" }) as unknown,
       }),
     );
   });
@@ -152,7 +152,7 @@ describe("getImportJobsServerFn", () => {
     await getImportJobsServerFn({ data: { page: 2, pageSize: 10 } });
 
     expect(findManyMock).toHaveBeenCalledWith(
-      expect.objectContaining({ skip: 10, take: 10 }),
+      expect.objectContaining({ skip: 10, take: 10 }) as unknown,
     );
   });
 });

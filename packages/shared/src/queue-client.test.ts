@@ -92,6 +92,17 @@ describe("enqueueLibraryJob", () => {
     );
   });
 
+  it("returns 'unknown' when job.id is undefined", async () => {
+    addMock.mockResolvedValueOnce({});
+    const { enqueueLibraryJob, LIBRARY_JOB_NAMES } = await import("./index");
+
+    const jobId = await enqueueLibraryJob(LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT, {
+      libraryRootId: "root-1",
+    });
+
+    expect(jobId).toBe("unknown");
+  });
+
   it("wraps queue errors in QueueError", async () => {
     addMock.mockRejectedValueOnce(new Error("Redis down"));
     const { enqueueLibraryJob, LIBRARY_JOB_NAMES, QueueError } = await import("./index");

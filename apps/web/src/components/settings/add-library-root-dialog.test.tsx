@@ -6,13 +6,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { toast } from "sonner";
 import { AddLibraryRootDialog } from "./add-library-root-dialog";
 
-const addLibraryRootServerFnMock = vi.fn();
-
-vi.mock("~/lib/server-fns/library-roots", () => ({
-  addLibraryRootServerFn: (...args: unknown[]) => addLibraryRootServerFnMock(...args),
+const { addLibraryRootServerFnMock, mockInvalidate } = vi.hoisted(() => ({
+  addLibraryRootServerFnMock: vi.fn(),
+  mockInvalidate: vi.fn(),
 }));
 
-const mockInvalidate = vi.fn();
+vi.mock("~/lib/server-fns/library-roots", () => ({
+  addLibraryRootServerFn: addLibraryRootServerFnMock,
+}));
 
 vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
@@ -185,7 +186,7 @@ describe("AddLibraryRootDialog", () => {
 
     await waitFor(() => {
       expect(addLibraryRootServerFnMock).toHaveBeenCalledWith({
-        data: expect.objectContaining({ kind: "AUDIOBOOKS" }),
+        data: expect.objectContaining({ kind: "AUDIOBOOKS" }) as unknown,
       });
     });
   });
@@ -220,7 +221,7 @@ describe("AddLibraryRootDialog", () => {
 
     await waitFor(() => {
       expect(addLibraryRootServerFnMock).toHaveBeenCalledWith({
-        data: expect.objectContaining({ scanMode: "FULL" }),
+        data: expect.objectContaining({ scanMode: "FULL" }) as unknown,
       });
     });
   });

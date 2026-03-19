@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const enqueueLibraryJobMock = vi.fn(() => Promise.resolve("job-1"));
+const fileAssetFindManyMock = vi.fn(() => Promise.resolve([]));
+const editionUpdateMock = vi.fn(() => Promise.reject(new Error("not used")));
+const workUpdateMock = vi.fn(() => Promise.reject(new Error("not used")));
+const seriesCreateMock = vi.fn(() => Promise.resolve({ id: "series-1", name: "test" }));
 
 vi.mock("@bookhouse/db", () => ({
   db: {
@@ -18,7 +22,7 @@ vi.mock("@bookhouse/db", () => ({
     },
     fileAsset: {
       findByDirectory: vi.fn(() => Promise.resolve([])),
-      findMany: vi.fn(() => Promise.resolve([])),
+      findMany: fileAssetFindManyMock,
       upsert: vi.fn(() => Promise.resolve({
         absolutePath: "/tmp/runtime-root/book.epub",
         availabilityStatus: "PRESENT",
@@ -39,7 +43,7 @@ vi.mock("@bookhouse/db", () => ({
       create: vi.fn(() => Promise.reject(new Error("not used"))),
       findFirst: vi.fn(() => Promise.resolve(null)),
       findUnique: vi.fn(() => Promise.resolve(null)),
-      update: vi.fn(() => Promise.reject(new Error("not used"))),
+      update: editionUpdateMock,
     },
     editionContributor: {
       create: vi.fn(() => Promise.reject(new Error("not used"))),
@@ -53,11 +57,11 @@ vi.mock("@bookhouse/db", () => ({
       create: vi.fn(() => Promise.reject(new Error("not used"))),
       findMany: vi.fn(() => Promise.resolve([])),
       findUnique: vi.fn(() => Promise.resolve(null)),
-      update: vi.fn(() => Promise.reject(new Error("not used"))),
+      update: workUpdateMock,
     },
     series: {
       findFirst: vi.fn(() => Promise.resolve(null)),
-      create: vi.fn(() => Promise.resolve({ id: "series-1", name: "test" })),
+      create: seriesCreateMock,
     },
   },
 }));
@@ -106,7 +110,7 @@ describe("ingest runtime defaults", () => {
     const { db } = await import("@bookhouse/db");
     const { createIngestServices } = await import("./services");
 
-    vi.mocked(db.fileAsset.update).mockResolvedValue({} as Awaited<ReturnType<typeof db.fileAsset.update>>);
+    vi.mocked(db.fileAsset).update.mockResolvedValue({} as Awaited<ReturnType<typeof db.fileAsset.update>>);
 
     const opfAsset = (id: string, path: string) => ({
       absolutePath: path,
@@ -157,37 +161,37 @@ describe("ingest runtime defaults", () => {
     const services = createIngestServices({ parseOpf });
 
     // ── First call: series.upsert "create" path (findFirst → null → create) ──
-    vi.mocked(db.fileAsset.findUnique).mockResolvedValueOnce(opfAsset("file-opf-1", "/tmp/root/Book1/metadata.opf"));
-    vi.mocked(db.fileAsset.findMany).mockResolvedValueOnce(epubSibling("file-epub-1", "/tmp/root/Book1/book.epub"));
-    vi.mocked(db.editionFile.findFirst).mockResolvedValueOnce({ editionId: "edition-1", fileAssetId: "file-epub-1", id: "ef-1", role: "PRIMARY" } as never);
-    vi.mocked(db.edition.findUnique).mockResolvedValueOnce({ id: "edition-1", publisher: null, publishedAt: null, workId: "work-1" } as never);
-    vi.mocked(db.edition.update).mockResolvedValueOnce({} as never);
-    vi.mocked(db.work.findUnique).mockResolvedValueOnce({ id: "work-1", description: null, language: null, seriesId: null } as never);
-    vi.mocked(db.work.update).mockResolvedValueOnce({} as never);
-    vi.mocked(db.series.findFirst).mockResolvedValueOnce(null);
-    vi.mocked(db.series.create).mockResolvedValueOnce({ id: "series-1", name: "The Kingkiller Chronicle" } as never);
+    vi.mocked(db.fileAsset).findUnique.mockResolvedValueOnce(opfAsset("file-opf-1", "/tmp/root/Book1/metadata.opf"));
+    fileAssetFindManyMock.mockResolvedValueOnce(epubSibling("file-epub-1", "/tmp/root/Book1/book.epub"));
+    vi.mocked(db.editionFile).findFirst.mockResolvedValueOnce({ editionId: "edition-1", fileAssetId: "file-epub-1", id: "ef-1", role: "PRIMARY" } as never);
+    vi.mocked(db.edition).findUnique.mockResolvedValueOnce({ id: "edition-1", publisher: null, publishedAt: null, workId: "work-1" } as never);
+    editionUpdateMock.mockResolvedValueOnce({} as never);
+    vi.mocked(db.work).findUnique.mockResolvedValueOnce({ id: "work-1", description: null, language: null, seriesId: null } as never);
+    workUpdateMock.mockResolvedValueOnce({} as never);
+    vi.mocked(db.series).findFirst.mockResolvedValueOnce(null);
+    seriesCreateMock.mockResolvedValueOnce({ id: "series-1", name: "The Kingkiller Chronicle" } as never);
 
     const result1 = await services.parseFileAssetMetadata({ fileAssetId: "file-opf-1", now: new Date("2025-01-01T00:00:00.000Z") });
     expect(result1.availabilityStatus).toBe("PRESENT");
-    expect(vi.mocked(db.fileAsset.findMany)).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(db.edition.update)).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(db.work.update)).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(db.series.create)).toHaveBeenCalledTimes(1);
+    expect(fileAssetFindManyMock).toHaveBeenCalledTimes(1);
+    expect(editionUpdateMock).toHaveBeenCalledTimes(1);
+    expect(workUpdateMock).toHaveBeenCalledTimes(1);
+    expect(seriesCreateMock).toHaveBeenCalledTimes(1);
 
     // ── Second call: series.upsert "existing" path (findFirst → existing → return, no create) ──
-    vi.mocked(db.fileAsset.findUnique).mockResolvedValueOnce(opfAsset("file-opf-2", "/tmp/root/Book2/metadata.opf"));
-    vi.mocked(db.fileAsset.findMany).mockResolvedValueOnce(epubSibling("file-epub-2", "/tmp/root/Book2/book.epub"));
-    vi.mocked(db.editionFile.findFirst).mockResolvedValueOnce({ editionId: "edition-2", fileAssetId: "file-epub-2", id: "ef-2", role: "PRIMARY" } as never);
-    vi.mocked(db.edition.findUnique).mockResolvedValueOnce({ id: "edition-2", publisher: null, publishedAt: null, workId: "work-2" } as never);
-    vi.mocked(db.edition.update).mockResolvedValueOnce({} as never);
-    vi.mocked(db.work.findUnique).mockResolvedValueOnce({ id: "work-2", description: null, language: null, seriesId: null } as never);
-    vi.mocked(db.work.update).mockResolvedValueOnce({} as never);
-    vi.mocked(db.series.findFirst).mockResolvedValueOnce({ id: "series-1", name: "The Kingkiller Chronicle" } as never);
+    vi.mocked(db.fileAsset).findUnique.mockResolvedValueOnce(opfAsset("file-opf-2", "/tmp/root/Book2/metadata.opf"));
+    fileAssetFindManyMock.mockResolvedValueOnce(epubSibling("file-epub-2", "/tmp/root/Book2/book.epub"));
+    vi.mocked(db.editionFile).findFirst.mockResolvedValueOnce({ editionId: "edition-2", fileAssetId: "file-epub-2", id: "ef-2", role: "PRIMARY" } as never);
+    vi.mocked(db.edition).findUnique.mockResolvedValueOnce({ id: "edition-2", publisher: null, publishedAt: null, workId: "work-2" } as never);
+    editionUpdateMock.mockResolvedValueOnce({} as never);
+    vi.mocked(db.work).findUnique.mockResolvedValueOnce({ id: "work-2", description: null, language: null, seriesId: null } as never);
+    workUpdateMock.mockResolvedValueOnce({} as never);
+    vi.mocked(db.series).findFirst.mockResolvedValueOnce({ id: "series-1", name: "The Kingkiller Chronicle" } as never);
 
     const result2 = await services.parseFileAssetMetadata({ fileAssetId: "file-opf-2", now: new Date("2025-01-01T00:00:00.000Z") });
     expect(result2.availabilityStatus).toBe("PRESENT");
     // create should still be 1 (not called again — existing series was returned)
-    expect(vi.mocked(db.series.create)).toHaveBeenCalledTimes(1);
+    expect(seriesCreateMock).toHaveBeenCalledTimes(1);
   });
 
   it("uses the default queue enqueuer when no override is provided", async () => {
