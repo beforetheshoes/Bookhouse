@@ -68,4 +68,19 @@ describe("WorkCard", () => {
     expect(screen.queryByRole("img")).toBeNull();
     expect(document.querySelector("svg")).toBeTruthy();
   });
+
+  it("shows processing badge when enrichmentStatus is STUB", () => {
+    render(<WorkCard {...baseProps} enrichmentStatus="STUB" />);
+    expect(screen.getByText("Processing\u2026")).toBeTruthy();
+  });
+
+  it("does not show processing badge when enrichmentStatus is ENRICHED", () => {
+    render(<WorkCard {...baseProps} enrichmentStatus="ENRICHED" />);
+    expect(screen.queryByText("Processing\u2026")).toBeNull();
+  });
+
+  it("does not show processing badge when enrichmentStatus is not provided", () => {
+    render(<WorkCard {...baseProps} />);
+    expect(screen.queryByText("Processing\u2026")).toBeNull();
+  });
 });

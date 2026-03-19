@@ -1,8 +1,10 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { MediaKind } from "@bookhouse/domain";
+import { FormatFamily } from "@bookhouse/domain";
 import {
   classifyMediaKind,
+  deriveFormatFamily,
   getFileExtension,
   normalizeRelativePath,
   normalizeRootPath,
@@ -27,6 +29,16 @@ describe("classification helpers", () => {
   it("returns lowercase file extensions or null", () => {
     expect(getFileExtension("/tmp/books/Title.EPUB")).toBe("epub");
     expect(getFileExtension("/tmp/books/README")).toBeNull();
+  });
+
+  it("derives format family from media kind", () => {
+    expect(deriveFormatFamily(MediaKind.EPUB)).toBe(FormatFamily.EBOOK);
+    expect(deriveFormatFamily(MediaKind.PDF)).toBe(FormatFamily.EBOOK);
+    expect(deriveFormatFamily(MediaKind.CBZ)).toBe(FormatFamily.EBOOK);
+    expect(deriveFormatFamily(MediaKind.AUDIO)).toBe(FormatFamily.AUDIOBOOK);
+    expect(deriveFormatFamily(MediaKind.COVER)).toBeNull();
+    expect(deriveFormatFamily(MediaKind.SIDECAR)).toBeNull();
+    expect(deriveFormatFamily(MediaKind.OTHER)).toBeNull();
   });
 
   it("classifies supported media kinds", () => {

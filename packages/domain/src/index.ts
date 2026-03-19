@@ -3,6 +3,7 @@ export {
   ContributorRole,
   DuplicateReason,
   EditionFileRole,
+  EnrichmentStatus,
   FormatFamily,
   ImportJobKind,
   ImportJobStatus,

@@ -31,12 +31,13 @@ vi.mock("~/components/work-card", () => ({
   WorkCard: ({ title }: { title: string }) => <div data-testid="work-card">{title}</div>,
 }));
 
-const makeWork = (title: string, authors: string[] = []) => ({
+const makeWork = (title: string, authors: string[] = [], enrichmentStatus = "ENRICHED") => ({
   id: title.toLowerCase().replace(/\s/g, "-"),
   titleDisplay: title,
   sortTitle: title.toLowerCase(),
   coverPath: null,
   createdAt: new Date("2025-01-01"),
+  enrichmentStatus,
   series: null,
   editions: [
     {

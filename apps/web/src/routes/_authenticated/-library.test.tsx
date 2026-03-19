@@ -11,6 +11,7 @@ let mockLoaderData: {
     sortTitle: string;
     coverPath: string | null;
     createdAt: Date;
+    enrichmentStatus: string;
     series: { id: string; name: string } | null;
     editions: {
       formatFamily: string;
@@ -97,12 +98,13 @@ vi.mock("@tanstack/react-virtual", () => ({
   }),
 }));
 
-const makeWork = (title: string, authors: string[] = [], formats: string[] = []) => ({
+const makeWork = (title: string, authors: string[] = [], formats: string[] = [], enrichmentStatus = "ENRICHED") => ({
   id: `work-${title.toLowerCase().replace(/\s/g, "-")}`,
   titleDisplay: title,
   sortTitle: title.toLowerCase(),
   coverPath: null,
   createdAt: new Date("2025-01-01"),
+  enrichmentStatus,
   series: null,
   editions: [
     {
@@ -192,6 +194,7 @@ describe("LibraryPage", () => {
         sortTitle: "no editions",
         coverPath: null,
         createdAt: new Date("2025-01-01"),
+        enrichmentStatus: "ENRICHED",
         series: null,
         editions: [],
       }],
@@ -276,6 +279,30 @@ describe("LibraryPage", () => {
     rerender(<LibraryPage />);
 
     expect(screen.getByText(/Scanning.*new/)).toBeTruthy();
+  });
+
+  it("shows processing badge for stub works in table view", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      works: [makeWork("Stub Book", ["Author"], ["EBOOK"], "STUB")],
+      activeJobCount: 0,
+    };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.getByText("Processing\u2026")).toBeTruthy();
+  });
+
+  it("does not show processing badge for enriched works in table view", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      works: [makeWork("Enriched Book", ["Author"], ["EBOOK"], "ENRICHED")],
+      activeJobCount: 0,
+    };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.queryByText("Processing\u2026")).toBeNull();
   });
 
   it("does not show scanning indicator when activeJobCount is 0", async () => {

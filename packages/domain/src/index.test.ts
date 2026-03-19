@@ -4,6 +4,7 @@ import {
   BATCH1_DOMAIN_MODEL_NAMES,
   DuplicateReason,
   EditionFileRole,
+  EnrichmentStatus,
   FormatFamily,
   ImportJobKind,
   ImportJobStatus,
@@ -25,6 +26,8 @@ describe("domain package", () => {
     expect(DuplicateReason.SAME_HASH).toBe("SAME_HASH");
     expect(ReviewStatus.PENDING).toBe("PENDING");
     expect(ImportJobKind.SCAN_ROOT).toBe("SCAN_ROOT");
+    expect(EnrichmentStatus.STUB).toBe("STUB");
+    expect(EnrichmentStatus.ENRICHED).toBe("ENRICHED");
     expect(ImportJobStatus.QUEUED).toBe("QUEUED");
     expect(BATCH1_DOMAIN_MODEL_NAMES).toEqual([
       "LibraryRoot",
