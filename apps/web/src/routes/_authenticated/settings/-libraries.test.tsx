@@ -12,6 +12,8 @@ let mockLoaderData: {
     scanMode: string;
     isEnabled: boolean;
     lastScannedAt: string | null;
+    scanProgress: { status: string; totalFiles: number | null; processedFiles: number | null; errorCount: number | null } | null;
+    issueCount: number;
   }[]
 } = { roots: [] };
 
@@ -19,8 +21,13 @@ const getLibraryRootsServerFnMock = vi.fn();
 const scanLibraryRootServerFnMock = vi.fn();
 const removeLibraryRootServerFnMock = vi.fn();
 
+const getScanProgressServerFnMock = vi.fn();
+const getLibraryIssueCountServerFnMock = vi.fn();
+
 vi.mock("~/lib/server-fns/library-roots", () => ({
   getLibraryRootsServerFn: getLibraryRootsServerFnMock,
+  getScanProgressServerFn: getScanProgressServerFnMock,
+  getLibraryIssueCountServerFn: getLibraryIssueCountServerFnMock,
   scanLibraryRootServerFn: scanLibraryRootServerFnMock,
   removeLibraryRootServerFn: removeLibraryRootServerFnMock,
   addLibraryRootServerFn: vi.fn(),
@@ -33,7 +40,15 @@ vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
     ...actual,
-    Link: ({ children, to, ...props }: { children?: React.ReactNode; to: string; [key: string]: unknown }) => <a href={to} {...props}>{children}</a>,
+    Link: ({ children, to, params, ...props }: { children?: React.ReactNode; to: string; params?: Record<string, string>; [key: string]: unknown }) => {
+      let href = to;
+      if (params) {
+        for (const [key, value] of Object.entries(params)) {
+          href = href.replace(`$${key}`, value);
+        }
+      }
+      return <a href={href} {...props}>{children}</a>;
+    },
     useRouter: () => ({ invalidate: mockInvalidate, navigate: mockNavigate }),
     createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
       ...opts,
@@ -55,6 +70,8 @@ const makeRoot = (overrides: Partial<{
   scanMode: string;
   isEnabled: boolean;
   lastScannedAt: string | null;
+  scanProgress: { status: string; totalFiles: number | null; processedFiles: number | null; errorCount: number | null } | null;
+  issueCount: number;
 }> = {}) => ({
   id: "root-1",
   name: "My Library",
@@ -63,6 +80,8 @@ const makeRoot = (overrides: Partial<{
   scanMode: "INCREMENTAL",
   isEnabled: true,
   lastScannedAt: null,
+  scanProgress: null,
+  issueCount: 0,
   ...overrides,
 });
 
@@ -320,13 +339,17 @@ describe("LibrariesPage", () => {
     });
   });
 
-  it("loader calls getLibraryRootsServerFn and returns roots", async () => {
-    const mockRoots = [makeRoot({ name: "Loader Root" })];
+  it("loader calls getLibraryRootsServerFn with progress and issue count per root", async () => {
+    const mockRoots = [{ id: "root-1", name: "Loader Root", path: "/books", kind: "EBOOKS", scanMode: "INCREMENTAL", isEnabled: true, lastScannedAt: null }];
     getLibraryRootsServerFnMock.mockResolvedValueOnce(mockRoots);
+    getScanProgressServerFnMock.mockResolvedValueOnce(null);
+    getLibraryIssueCountServerFnMock.mockResolvedValueOnce(0);
     const { Route } = await import("./libraries");
     const result = await (Route.options.loader as (args: Record<string, unknown>) => Promise<unknown>)({});
     expect(getLibraryRootsServerFnMock).toHaveBeenCalled();
-    expect(result).toEqual({ roots: mockRoots });
+    expect(getScanProgressServerFnMock).toHaveBeenCalledWith({ data: { libraryRootId: "root-1" } });
+    expect(getLibraryIssueCountServerFnMock).toHaveBeenCalledWith({ data: { libraryRootId: "root-1" } });
+    expect(result).toEqual({ roots: [{ ...mockRoots[0], scanProgress: null, issueCount: 0 }] });
   });
 
   it("cancel button in delete dialog closes the dialog", async () => {
@@ -353,6 +376,78 @@ describe("LibrariesPage", () => {
     await waitFor(() => {
       expect(screen.queryByText("Remove Library Root")).toBeNull();
     });
+  });
+
+  it("shows progress bar when scan is active", async () => {
+    mockLoaderData = {
+      roots: [makeRoot({
+        scanProgress: { status: "RUNNING", totalFiles: 100, processedFiles: 42, errorCount: 2 },
+      })],
+    };
+    const { Route } = await import("./libraries");
+    const LibrariesPage = (Route.options.component as React.ComponentType);
+    render(<LibrariesPage />);
+    expect(screen.getByRole("progressbar")).toBeTruthy();
+    expect(screen.getByText("Scanning... 42 / 100 files (2 errors)")).toBeTruthy();
+  });
+
+  it("does not show progress bar when no active scan", async () => {
+    mockLoaderData = { roots: [makeRoot({ scanProgress: null })] };
+    const { Route } = await import("./libraries");
+    const LibrariesPage = (Route.options.component as React.ComponentType);
+    render(<LibrariesPage />);
+    expect(screen.queryByRole("progressbar")).toBeNull();
+  });
+
+  it("shows issue count badge linking to issues page", async () => {
+    mockLoaderData = { roots: [makeRoot({ issueCount: 3 })] };
+    const { Route } = await import("./libraries");
+    const LibrariesPage = (Route.options.component as React.ComponentType);
+    render(<LibrariesPage />);
+    const issueLink = screen.getByText("3 issues");
+    expect(issueLink).toBeTruthy();
+    expect(issueLink.closest("a")?.getAttribute("href")).toBe("/settings/library-issues/root-1");
+  });
+
+  it("shows singular 'issue' when count is 1", async () => {
+    mockLoaderData = { roots: [makeRoot({ issueCount: 1 })] };
+    const { Route } = await import("./libraries");
+    const LibrariesPage = (Route.options.component as React.ComponentType);
+    render(<LibrariesPage />);
+    expect(screen.getByText("1 issue")).toBeTruthy();
+  });
+
+  it("does not show issue badge when count is 0", async () => {
+    mockLoaderData = { roots: [makeRoot({ issueCount: 0 })] };
+    const { Route } = await import("./libraries");
+    const LibrariesPage = (Route.options.component as React.ComponentType);
+    render(<LibrariesPage />);
+    expect(screen.queryByText("0 issues")).toBeNull();
+  });
+
+  it("shows progress with null processedFiles and totalFiles", async () => {
+    mockLoaderData = {
+      roots: [makeRoot({
+        scanProgress: { status: "QUEUED", totalFiles: null, processedFiles: null, errorCount: null },
+      })],
+    };
+    const { Route } = await import("./libraries");
+    const LibrariesPage = (Route.options.component as React.ComponentType);
+    render(<LibrariesPage />);
+    expect(screen.getByRole("progressbar")).toBeTruthy();
+    expect(screen.getByText("Scanning... 0 / ? files")).toBeTruthy();
+  });
+
+  it("shows progress without error count when errorCount is 0", async () => {
+    mockLoaderData = {
+      roots: [makeRoot({
+        scanProgress: { status: "RUNNING", totalFiles: 50, processedFiles: 10, errorCount: 0 },
+      })],
+    };
+    const { Route } = await import("./libraries");
+    const LibrariesPage = (Route.options.component as React.ComponentType);
+    render(<LibrariesPage />);
+    expect(screen.getByText("Scanning... 10 / 50 files")).toBeTruthy();
   });
 
   it("toast success action navigates to job detail", async () => {

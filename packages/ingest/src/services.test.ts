@@ -18,6 +18,7 @@ import {
   createIngestServices,
   isFileChanged,
   type IngestDb,
+  SCAN_PROGRESS_INTERVAL,
   walkRegularFiles,
 } from "./index";
 
@@ -766,6 +767,209 @@ describe("ingest services", () => {
 
     expect(result.discoveredPaths).toEqual([path.resolve("/tmp/root/gone.epub")]);
     expect(result.scannedFileAssetIds).toEqual([]);
+  });
+
+  it("calls reportProgress with totalFiles after discovery, processedFiles during loop, and final counts on completion", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-progress-"));
+    tempDirectories.push(directory);
+
+    await mkdir(path.join(directory, "author"));
+    await writeFile(path.join(directory, "author", "book1.epub"), "a");
+    await writeFile(path.join(directory, "author", "book2.epub"), "b");
+    await writeFile(path.join(directory, "author", "book3.epub"), "c");
+
+    const state = createEmptyState(directory);
+    const reportProgress = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    await services.scanLibraryRoot({
+      libraryRootId: "root-1",
+      reportProgress,
+    });
+
+    // First call: totalFiles after discovery
+    expect(reportProgress).toHaveBeenCalledWith(
+      expect.objectContaining({ totalFiles: 3 }),
+    );
+    // Last call: final processedFiles and errorCount
+    const allCalls = reportProgress.mock.calls as unknown as Array<[Record<string, unknown>]>;
+    expect(allCalls.length).toBeGreaterThan(0);
+    const lastProgressCall = allCalls[allCalls.length - 1] as [Record<string, unknown>];
+    expect(lastProgressCall[0]).toMatchObject({ processedFiles: 3, errorCount: 0 });
+  });
+
+  it("does not call reportProgress when callback is not provided", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-noprogress-"));
+    tempDirectories.push(directory);
+
+    await mkdir(path.join(directory, "author"));
+    await writeFile(path.join(directory, "author", "book.epub"), "a");
+
+    const state = createEmptyState(directory);
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    // Should not throw even without reportProgress
+    const result = await services.scanLibraryRoot({
+      libraryRootId: "root-1",
+    });
+
+    expect(result.scannedFileAssetIds).toHaveLength(1);
+  });
+
+  it("calls reportProgress at batch intervals for normal files", async () => {
+    const state = createEmptyState("/tmp/root");
+    const count = SCAN_PROGRESS_INTERVAL;
+    const entries = Array.from({ length: count }, (_, i) => ({
+      isDirectory: () => false,
+      isFile: () => true,
+      isSymbolicLink: () => false,
+      name: `book${String(i).padStart(3, "0")}.epub`,
+    }));
+
+    const listDirectory = (() => Promise.resolve(entries as never)) as ReaddirFn;
+    const readStats = vi.fn(() =>
+      Promise.resolve({
+        isDirectory: () => false,
+        isFile: () => true,
+        isSymbolicLink: () => false,
+        ctime: new Date("2024-01-01T00:00:00.000Z"),
+        mtime: new Date("2024-01-01T00:00:00.000Z"),
+        size: 100,
+      } as never),
+    ) as unknown as LstatFn;
+
+    const reportProgress = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      listDirectory,
+      readStats,
+    });
+
+    await services.scanLibraryRoot({ libraryRootId: "root-1", reportProgress });
+
+    // Should have batch call at processedFiles === SCAN_PROGRESS_INTERVAL
+    const batchCall = (reportProgress.mock.calls as unknown as Array<[Record<string, unknown>]>).find(
+      (call) => call[0].processedFiles === count,
+    );
+    expect(batchCall).toBeDefined();
+  });
+
+  it("calls reportProgress at batch intervals for stat errors", async () => {
+    const state = createEmptyState("/tmp/root");
+    const count = SCAN_PROGRESS_INTERVAL;
+    const entries = Array.from({ length: count }, (_, i) => ({
+      isDirectory: () => false,
+      isFile: () => true,
+      isSymbolicLink: () => false,
+      name: `bad${String(i).padStart(3, "0")}.epub`,
+    }));
+
+    const listDirectory = (() => Promise.resolve(entries as never)) as ReaddirFn;
+    const readStats = vi.fn(() => Promise.reject(new Error("gone"))) as unknown as LstatFn;
+
+    const reportProgress = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      listDirectory,
+      readStats,
+    });
+
+    await services.scanLibraryRoot({ libraryRootId: "root-1", reportProgress });
+
+    const batchCall = (reportProgress.mock.calls as unknown as Array<[Record<string, unknown>]>).find(
+      (call) => call[0].processedFiles === count,
+    );
+    expect(batchCall).toBeDefined();
+    expect(batchCall?.[0].errorCount).toBe(count);
+  });
+
+  it("calls reportProgress at batch intervals for non-file entries", async () => {
+    const state = createEmptyState("/tmp/root");
+    const count = SCAN_PROGRESS_INTERVAL;
+    const entries = Array.from({ length: count }, (_, i) => ({
+      isDirectory: () => false,
+      isFile: () => true,
+      isSymbolicLink: () => false,
+      name: `link${String(i).padStart(3, "0")}.epub`,
+    }));
+
+    const listDirectory = (() => Promise.resolve(entries as never)) as ReaddirFn;
+    // readStats returns symlink so scanLibraryRoot skips via non-file branch
+    const readStats = vi.fn(() =>
+      Promise.resolve({
+        isDirectory: () => false,
+        isFile: () => false,
+        isSymbolicLink: () => true,
+      } as never),
+    ) as unknown as LstatFn;
+
+    const reportProgress = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      listDirectory,
+      readStats,
+    });
+
+    await services.scanLibraryRoot({ libraryRootId: "root-1", reportProgress });
+
+    const batchCall = (reportProgress.mock.calls as unknown as Array<[Record<string, unknown>]>).find(
+      (call) => call[0].processedFiles === count,
+    );
+    expect(batchCall).toBeDefined();
+  });
+
+  it("reports errorCount for files that fail stat during processing", async () => {
+    const state = createEmptyState("/tmp/root");
+    const listDirectory = (() =>
+      Promise.resolve([
+        { isDirectory: () => false, isFile: () => true, isSymbolicLink: () => false, name: "good.epub" },
+        { isDirectory: () => false, isFile: () => true, isSymbolicLink: () => false, name: "bad.epub" },
+      ] as never)) as ReaddirFn;
+
+    // walkRegularFiles uses Dirent.isFile() directly, so readStats is only called
+    // during the scan loop phase (not during walk discovery)
+    const readStats = vi.fn((p: string) => {
+      const normalized = path.normalize(p);
+      if (normalized.endsWith("/good.epub")) {
+        return Promise.resolve({
+          isDirectory: () => false,
+          isFile: () => true,
+          isSymbolicLink: () => false,
+          ctime: new Date("2024-01-01T00:00:00.000Z"),
+          mtime: new Date("2024-01-01T00:00:00.000Z"),
+          size: 100,
+        } as never);
+      }
+      // bad.epub fails during scan loop stat
+      return Promise.reject(new Error("disk error"));
+    }) as unknown as LstatFn;
+
+    const reportProgress = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      listDirectory,
+      readStats,
+    });
+
+    await services.scanLibraryRoot({
+      libraryRootId: "root-1",
+      reportProgress,
+    });
+
+    const calls = reportProgress.mock.calls as unknown as Array<[Record<string, unknown>]>;
+    expect(calls.length).toBeGreaterThan(0);
+    const lastCall = calls[calls.length - 1] as [Record<string, unknown>];
+    expect(lastCall[0]).toMatchObject({ processedFiles: 2, errorCount: 1 });
   });
 
   it("throws when the library root does not exist", async () => {
@@ -2339,5 +2543,1116 @@ describe("ingest services", () => {
 
     expect(result.skipped).toBe(false);
     expect(state.editions.get("edition-1")).toMatchObject({ publisher: "DAW Books" });
+  });
+
+  // ── Audiobook tests ──────────────────────────────────────────────────
+
+  it("enqueues metadata parsing after hashing AUDIO files", async () => {
+    const state = createEmptyState("/tmp/root");
+    const existing: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/chapter01.mp3",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "chapter01.mp3",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "mp3",
+      fullHash: null,
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.AUDIO,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: null,
+      relativePath: "Author/Book/chapter01.mp3",
+      sizeBytes: 4n,
+    };
+    state.fileAssets.set(existing.absolutePath, existing);
+    state.fileAssetsById.set(existing.id, existing);
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+      hashFile: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          fullHash: "hash",
+          mtime: new Date("2025-01-01T00:00:00.000Z"),
+          partialHash: "phash",
+          sizeBytes: 4n,
+        };
+      }),
+    });
+
+    await services.hashFileAsset({ fileAssetId: "file-1" });
+
+    expect(enqueueLibraryJob).toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA,
+      { fileAssetId: "file-1" },
+    );
+  });
+
+  it("enqueues metadata parsing after hashing a metadata.json sidecar", async () => {
+    const state = createEmptyState("/tmp/root");
+    const existing: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.json",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.json",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "json",
+      fullHash: null,
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: null,
+      relativePath: "Author/Book/metadata.json",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(existing.absolutePath, existing);
+    state.fileAssetsById.set(existing.id, existing);
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+      hashFile: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          fullHash: "hash",
+          mtime: new Date("2025-01-01T00:00:00.000Z"),
+          partialHash: "phash",
+          sizeBytes: 2n,
+        };
+      }),
+    });
+
+    await services.hashFileAsset({ fileAssetId: "file-1" });
+
+    expect(enqueueLibraryJob).toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA,
+      { fileAssetId: "file-1" },
+    );
+  });
+
+  it("does not enqueue metadata parsing for non-metadata.json SIDECAR files", async () => {
+    const state = createEmptyState("/tmp/root");
+    const existing: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/notes.json",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "notes.json",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "json",
+      fullHash: null,
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: null,
+      relativePath: "Author/Book/notes.json",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(existing.absolutePath, existing);
+    state.fileAssetsById.set(existing.id, existing);
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+      hashFile: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          fullHash: "hash",
+          mtime: new Date("2025-01-01T00:00:00.000Z"),
+          partialHash: "phash",
+          sizeBytes: 2n,
+        };
+      }),
+    });
+
+    await services.hashFileAsset({ fileAssetId: "file-1" });
+
+    expect(enqueueLibraryJob).not.toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA,
+      expect.anything(),
+    );
+  });
+
+  it("parses audiobook metadata.json with ID3 supplement", async () => {
+    const state = createEmptyState("/tmp/root");
+    const sidecarAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.json",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.json",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "json",
+      fullHash: "hash",
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/metadata.json",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(sidecarAsset.absolutePath, sidecarAsset);
+    state.fileAssetsById.set(sidecarAsset.id, sidecarAsset);
+
+    const audioSibling: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/chapter01.mp3",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "chapter01.mp3",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "mp3",
+      fullHash: "audio-hash",
+      id: "file-audio",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.AUDIO,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "audio-phash",
+      relativePath: "Author/Book/chapter01.mp3",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(audioSibling.absolutePath, audioSibling);
+    state.fileAssetsById.set(audioSibling.id, audioSibling);
+
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+      parseAudiobookJson: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          title: "Project Hail Mary",
+          authors: ["Andy Weir"],
+          narrators: ["Ray Porter"],
+          series: [{ name: "Standalone", sequence: "1" }],
+          genres: ["Sci-Fi"],
+          publisher: "Audible",
+          publishedYear: "2021",
+          isbn: "9780593135204",
+          asin: "B08GB58KD5",
+          description: "A great book",
+          language: "en",
+        };
+      }),
+      parseAudioId3: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          title: "Chapter 01",
+          album: "PHM",
+          artist: "Weir",
+          genres: [],
+          albumArtist: undefined,
+          year: undefined,
+          comment: undefined,
+          trackNumber: 1,
+          trackTotal: 12,
+        };
+      }),
+    });
+
+    const result = await services.parseFileAssetMetadata({
+      fileAssetId: "file-1",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(result).toMatchObject({
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      fileAssetId: "file-1",
+      skipped: false,
+    });
+    expect(state.fileAssetsById.get("file-1")?.metadata).toMatchObject({
+      source: "audiobook-json",
+      status: "parsed",
+      normalized: {
+        title: "Project Hail Mary",
+        authors: ["Andy Weir"],
+        narrators: ["Ray Porter"],
+      },
+    });
+    expect(enqueueLibraryJob).toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION,
+      { fileAssetId: "file-1" },
+    );
+  });
+
+  it("parses standalone AUDIO file with ID3 metadata when no metadata.json sibling exists", async () => {
+    const state = createEmptyState("/tmp/root");
+    const audioAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/chapter01.mp3",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "chapter01.mp3",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "mp3",
+      fullHash: "hash",
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.AUDIO,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/chapter01.mp3",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(audioAsset.absolutePath, audioAsset);
+    state.fileAssetsById.set(audioAsset.id, audioAsset);
+
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+      parseAudioId3: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          title: "Chapter 01",
+          album: "Project Hail Mary",
+          artist: "Andy Weir",
+          albumArtist: "Andy Weir",
+          year: 2021,
+          genres: ["Sci-Fi"],
+          comment: undefined,
+          trackNumber: 1,
+          trackTotal: 12,
+        };
+      }),
+    });
+
+    const result = await services.parseFileAssetMetadata({
+      fileAssetId: "file-1",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(result).toMatchObject({
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      fileAssetId: "file-1",
+      skipped: false,
+    });
+    expect(state.fileAssetsById.get("file-1")?.metadata).toMatchObject({
+      source: "audio-id3",
+      status: "parsed",
+    });
+    expect(enqueueLibraryJob).toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION,
+      { fileAssetId: "file-1" },
+    );
+  });
+
+  it("skips AUDIO file when sibling metadata.json is already parsed", async () => {
+    const state = createEmptyState("/tmp/root");
+    const audioAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/chapter01.mp3",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "chapter01.mp3",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "mp3",
+      fullHash: "hash",
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.AUDIO,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/chapter01.mp3",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(audioAsset.absolutePath, audioAsset);
+    state.fileAssetsById.set(audioAsset.id, audioAsset);
+
+    const sidecarAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.json",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.json",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "json",
+      fullHash: "sidecar-hash",
+      id: "file-sidecar",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: {
+        source: "audiobook-json",
+        status: "parsed",
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        warnings: [],
+        normalized: {
+          title: "Test",
+          authors: ["Author"],
+          identifiers: { unknown: [] },
+        },
+      } as unknown as FileAsset["metadata"],
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "sidecar-phash",
+      relativePath: "Author/Book/metadata.json",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(sidecarAsset.absolutePath, sidecarAsset);
+    state.fileAssetsById.set(sidecarAsset.id, sidecarAsset);
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      parseAudioId3: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          title: "Chapter 01",
+          album: "Test",
+          artist: "Author",
+          albumArtist: undefined,
+          year: undefined,
+          genres: [],
+          comment: undefined,
+          trackNumber: undefined,
+          trackTotal: undefined,
+        };
+      }),
+    });
+
+    const result = await services.parseFileAssetMetadata({
+      fileAssetId: "file-1",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(result).toMatchObject({
+      fileAssetId: "file-1",
+      skipped: true,
+    });
+  });
+
+  it("handles metadata.json ENOENT by marking file as MISSING", async () => {
+    const state = createEmptyState("/tmp/root");
+    const sidecarAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.json",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.json",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "json",
+      fullHash: "hash",
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/metadata.json",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(sidecarAsset.absolutePath, sidecarAsset);
+    state.fileAssetsById.set(sidecarAsset.id, sidecarAsset);
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      parseAudiobookJson: vi.fn(async () => {
+        await Promise.resolve();
+        const error = new Error("missing") as NodeJS.ErrnoException;
+        error.code = "ENOENT";
+        throw error;
+      }),
+    });
+
+    const result = await services.parseFileAssetMetadata({
+      fileAssetId: "file-1",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(result).toMatchObject({
+      availabilityStatus: AvailabilityStatus.MISSING,
+      fileAssetId: "file-1",
+    });
+    expect(state.fileAssetsById.get("file-1")?.availabilityStatus).toBe(
+      AvailabilityStatus.MISSING,
+    );
+  });
+
+  it("handles metadata.json parse error (non-ENOENT) as unparseable", async () => {
+    const state = createEmptyState("/tmp/root");
+    const sidecarAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.json",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.json",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "json",
+      fullHash: "hash",
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/metadata.json",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(sidecarAsset.absolutePath, sidecarAsset);
+    state.fileAssetsById.set(sidecarAsset.id, sidecarAsset);
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      parseAudiobookJson: vi.fn(async () => {
+        await Promise.resolve();
+        throw new Error("bad json");
+      }),
+    });
+
+    const result = await services.parseFileAssetMetadata({
+      fileAssetId: "file-1",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(result).toMatchObject({
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      fileAssetId: "file-1",
+      skipped: false,
+    });
+    expect(state.fileAssetsById.get("file-1")?.metadata).toMatchObject({
+      source: "audiobook-json",
+      status: "unparseable",
+      warnings: ["bad json"],
+    });
+  });
+
+  it("handles audio ID3 ENOENT by marking file as MISSING", async () => {
+    const state = createEmptyState("/tmp/root");
+    const audioAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/chapter01.mp3",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "chapter01.mp3",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "mp3",
+      fullHash: "hash",
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.AUDIO,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/chapter01.mp3",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(audioAsset.absolutePath, audioAsset);
+    state.fileAssetsById.set(audioAsset.id, audioAsset);
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      parseAudioId3: vi.fn(async () => {
+        await Promise.resolve();
+        const error = new Error("missing") as NodeJS.ErrnoException;
+        error.code = "ENOENT";
+        throw error;
+      }),
+    });
+
+    const result = await services.parseFileAssetMetadata({
+      fileAssetId: "file-1",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(result).toMatchObject({
+      availabilityStatus: AvailabilityStatus.MISSING,
+      fileAssetId: "file-1",
+    });
+    expect(state.fileAssetsById.get("file-1")?.availabilityStatus).toBe(
+      AvailabilityStatus.MISSING,
+    );
+  });
+
+  it("handles audio ID3 parse error (non-ENOENT) as unparseable", async () => {
+    const state = createEmptyState("/tmp/root");
+    const audioAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/chapter01.mp3",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "chapter01.mp3",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "mp3",
+      fullHash: "hash",
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.AUDIO,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/chapter01.mp3",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(audioAsset.absolutePath, audioAsset);
+    state.fileAssetsById.set(audioAsset.id, audioAsset);
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      parseAudioId3: vi.fn(async () => {
+        await Promise.resolve();
+        throw new Error("Unsupported format");
+      }),
+    });
+
+    const result = await services.parseFileAssetMetadata({
+      fileAssetId: "file-1",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(result).toMatchObject({
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      fileAssetId: "file-1",
+      skipped: false,
+    });
+    expect(state.fileAssetsById.get("file-1")?.metadata).toMatchObject({
+      source: "audio-id3",
+      status: "unparseable",
+    });
+  });
+
+  it("does not enqueue MATCH_FILE_ASSET_TO_EDITION for AUDIO without enough metadata", async () => {
+    const state = createEmptyState("/tmp/root");
+    const audioAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/chapter01.mp3",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "chapter01.mp3",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "mp3",
+      fullHash: "hash",
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.AUDIO,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/chapter01.mp3",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(audioAsset.absolutePath, audioAsset);
+    state.fileAssetsById.set(audioAsset.id, audioAsset);
+
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+      parseAudioId3: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          title: undefined,
+          album: undefined,
+          artist: undefined,
+          albumArtist: undefined,
+          year: undefined,
+          genres: [],
+          comment: undefined,
+          trackNumber: undefined,
+          trackTotal: undefined,
+        };
+      }),
+    });
+
+    await services.parseFileAssetMetadata({
+      fileAssetId: "file-1",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(state.fileAssetsById.get("file-1")?.metadata).toMatchObject({
+      source: "audio-id3",
+      status: "parsed",
+    });
+    expect(enqueueLibraryJob).not.toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION,
+      expect.anything(),
+    );
+  });
+
+  it("creates AUDIOBOOK edition from metadata.json sidecar with narrators and audio track links", async () => {
+    const state = createEmptyState("/tmp/root");
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Book/metadata.json",
+      basename: "metadata.json",
+      extension: "json",
+      id: "file-1",
+      mediaKind: MediaKind.SIDECAR,
+      relativePath: "Author/Book/metadata.json",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          narrators: ["Ray Porter"],
+          identifiers: {
+            isbn13: "9780593135204",
+            asin: "B08GB58KD5",
+            unknown: [],
+          },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "audiobook-json",
+        status: "parsed",
+        warnings: [],
+      } as unknown as FileAsset["metadata"],
+    });
+
+    const audioSibling: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/chapter01.mp3",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "chapter01.mp3",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "mp3",
+      fullHash: "audio-hash",
+      id: "file-audio",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.AUDIO,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "audio-phash",
+      relativePath: "Author/Book/chapter01.mp3",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(audioSibling.absolutePath, audioSibling);
+    state.fileAssetsById.set(audioSibling.id, audioSibling);
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-1" });
+
+    expect(result).toMatchObject({
+      createdEdition: true,
+      createdEditionFile: true,
+      createdWork: true,
+      skipped: false,
+    });
+
+    expect(result.editionId).toBeDefined();
+    const edition = state.editions.get(result.editionId as string);
+    expect(edition).toMatchObject({
+      formatFamily: FormatFamily.AUDIOBOOK,
+    });
+
+    // Verify narrator contributors
+    const narratorContributors = [...state.editionContributors.values()].filter(
+      (ec) => ec.role === ContributorRole.NARRATOR,
+    );
+    expect(narratorContributors).toHaveLength(1);
+
+    // Verify audio track links
+    const audioTrackLinks = [...state.editionFiles.values()].filter(
+      (ef) => ef.role === EditionFileRole.AUDIO_TRACK,
+    );
+    expect(audioTrackLinks).toHaveLength(1);
+    expect(audioTrackLinks[0]?.fileAssetId).toBe("file-audio");
+  });
+
+  it("creates AUDIOBOOK edition from standalone AUDIO file with ID3 metadata", async () => {
+    const state = createEmptyState("/tmp/root");
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Book/chapter01.mp3",
+      basename: "chapter01.mp3",
+      extension: "mp3",
+      id: "file-1",
+      mediaKind: MediaKind.AUDIO,
+      relativePath: "Author/Book/chapter01.mp3",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "audio-id3",
+        status: "parsed",
+        warnings: [],
+      } as unknown as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-1" });
+
+    expect(result).toMatchObject({
+      createdEdition: true,
+      createdWork: true,
+      skipped: false,
+    });
+
+    expect(result.editionId).toBeDefined();
+    const edition = state.editions.get(result.editionId as string);
+    expect(edition).toMatchObject({
+      formatFamily: FormatFamily.AUDIOBOOK,
+    });
+  });
+
+  it("tolerates ID3 failure during metadata.json parsing (non-fatal supplement)", async () => {
+    const state = createEmptyState("/tmp/root");
+    const sidecarAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.json",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.json",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "json",
+      fullHash: "hash",
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/metadata.json",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(sidecarAsset.absolutePath, sidecarAsset);
+    state.fileAssetsById.set(sidecarAsset.id, sidecarAsset);
+
+    const audioSibling: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/chapter01.mp3",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "chapter01.mp3",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "mp3",
+      fullHash: "audio-hash",
+      id: "file-audio",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.AUDIO,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "audio-phash",
+      relativePath: "Author/Book/chapter01.mp3",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(audioSibling.absolutePath, audioSibling);
+    state.fileAssetsById.set(audioSibling.id, audioSibling);
+
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+      parseAudiobookJson: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          title: "Project Hail Mary",
+          authors: ["Andy Weir"],
+          narrators: ["Ray Porter"],
+          series: [],
+          genres: ["Sci-Fi"],
+          publisher: "Audible",
+        };
+      }),
+      parseAudioId3: vi.fn(async () => {
+        await Promise.resolve();
+        throw new Error("ID3 parsing failed");
+      }),
+    });
+
+    const result = await services.parseFileAssetMetadata({
+      fileAssetId: "file-1",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(result).toMatchObject({
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      fileAssetId: "file-1",
+      skipped: false,
+    });
+    expect(state.fileAssetsById.get("file-1")?.metadata).toMatchObject({
+      source: "audiobook-json",
+      status: "parsed",
+    });
+    expect(enqueueLibraryJob).toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION,
+      { fileAssetId: "file-1" },
+    );
+  });
+
+  it("parses standalone AUDIO when sibling metadata.json exists but is unparseable", async () => {
+    const state = createEmptyState("/tmp/root");
+    const audioAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/chapter01.mp3",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "chapter01.mp3",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "mp3",
+      fullHash: "ahash",
+      id: "file-audio",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.AUDIO,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "aphash",
+      relativePath: "Author/Book/chapter01.mp3",
+      sizeBytes: 1000n,
+    };
+    state.fileAssets.set(audioAsset.absolutePath, audioAsset);
+    state.fileAssetsById.set(audioAsset.id, audioAsset);
+
+    const sidecarAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.json",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.json",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "json",
+      fullHash: "shash",
+      id: "file-sidecar",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: {
+        source: "audiobook-json",
+        status: "unparseable",
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        warnings: ["bad json"],
+      },
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "sphash",
+      relativePath: "Author/Book/metadata.json",
+      sizeBytes: 50n,
+    };
+    state.fileAssets.set(sidecarAsset.absolutePath, sidecarAsset);
+    state.fileAssetsById.set(sidecarAsset.id, sidecarAsset);
+
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+      parseAudioId3: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          title: "Chapter 01",
+          album: "Test Book",
+          artist: "Author",
+          albumArtist: "Author",
+          year: 2021,
+          genres: [],
+          comment: undefined,
+          trackNumber: 1,
+          trackTotal: 5,
+        };
+      }),
+    });
+
+    const result = await services.parseFileAssetMetadata({
+      fileAssetId: "file-audio",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(result.skipped).toBe(false);
+    expect(state.fileAssetsById.get("file-audio")?.metadata).toMatchObject({
+      source: "audio-id3",
+      status: "parsed",
+    });
+  });
+
+  it("uses ID3 artist fallback when albumArtist is absent for standalone AUDIO", async () => {
+    const state = createEmptyState("/tmp/root");
+    const audioAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/chapter01.mp3",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "chapter01.mp3",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "mp3",
+      fullHash: "ahash",
+      id: "file-audio",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.AUDIO,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "aphash",
+      relativePath: "Author/Book/chapter01.mp3",
+      sizeBytes: 1000n,
+    };
+    state.fileAssets.set(audioAsset.absolutePath, audioAsset);
+    state.fileAssetsById.set(audioAsset.id, audioAsset);
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      parseAudioId3: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          title: undefined,
+          album: "The Book",
+          artist: "Artist Only",
+          albumArtist: undefined,
+          year: undefined,
+          genres: [],
+          comment: undefined,
+          trackNumber: undefined,
+          trackTotal: undefined,
+        };
+      }),
+    });
+
+    const result = await services.parseFileAssetMetadata({
+      fileAssetId: "file-audio",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(result.skipped).toBe(false);
+    const metadata = state.fileAssetsById.get("file-audio")?.metadata as Record<string, unknown>;
+    const normalized = metadata.normalized as { authors: string[] };
+    expect(normalized.authors).toEqual(["Artist Only"]);
+  });
+
+  it("uses fallback warning for non-Error audio ID3 parse failures", async () => {
+    const state = createEmptyState("/tmp/root");
+    const audioAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/chapter01.mp3",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "chapter01.mp3",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "mp3",
+      fullHash: "ahash",
+      id: "file-audio",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.AUDIO,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "aphash",
+      relativePath: "Author/Book/chapter01.mp3",
+      sizeBytes: 1000n,
+    };
+    state.fileAssets.set(audioAsset.absolutePath, audioAsset);
+    state.fileAssetsById.set(audioAsset.id, audioAsset);
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      parseAudioId3: vi.fn().mockRejectedValueOnce("bad-value"),
+    });
+
+    const result = await services.parseFileAssetMetadata({
+      fileAssetId: "file-audio",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(result.skipped).toBe(false);
+    expect(state.fileAssetsById.get("file-audio")?.metadata).toMatchObject({
+      source: "audio-id3",
+      status: "unparseable",
+      warnings: ["Unknown audio ID3 parsing error"],
+    });
+  });
+
+  it("parses audiobook metadata.json with no audio siblings in directory", async () => {
+    const state = createEmptyState("/tmp/root");
+    const sidecarAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.json",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.json",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "json",
+      fullHash: "hash",
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/metadata.json",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(sidecarAsset.absolutePath, sidecarAsset);
+    state.fileAssetsById.set(sidecarAsset.id, sidecarAsset);
+
+    // No audio siblings added to state
+
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const parseAudioId3 = vi.fn();
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+      parseAudiobookJson: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          title: "Lonely Sidecar",
+          authors: ["Some Author"],
+          narrators: [],
+          series: [],
+          genres: [],
+        };
+      }),
+      parseAudioId3,
+    });
+
+    const result = await services.parseFileAssetMetadata({
+      fileAssetId: "file-1",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(result.skipped).toBe(false);
+    // ID3 parser should never be called since there are no audio siblings
+    expect(parseAudioId3).not.toHaveBeenCalled();
+    expect(state.fileAssetsById.get("file-1")?.metadata).toMatchObject({
+      source: "audiobook-json",
+      status: "parsed",
+    });
+    // Should still enqueue MATCH
+    expect(enqueueLibraryJob).toHaveBeenCalledWith(
+      "match-file-asset-to-edition",
+      { fileAssetId: "file-1" },
+    );
+  });
+
+  it("handles non-Error throw from parseAudiobookJson", async () => {
+    const state = createEmptyState("/tmp/root");
+    const sidecarAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.json",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.json",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "json",
+      fullHash: "hash",
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/metadata.json",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(sidecarAsset.absolutePath, sidecarAsset);
+    state.fileAssetsById.set(sidecarAsset.id, sidecarAsset);
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      parseAudiobookJson: vi.fn().mockRejectedValueOnce("string-error"),
+    });
+
+    const result = await services.parseFileAssetMetadata({
+      fileAssetId: "file-1",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(result.skipped).toBe(false);
+    expect(state.fileAssetsById.get("file-1")?.metadata).toMatchObject({
+      source: "audiobook-json",
+      status: "unparseable",
+      warnings: ["Unknown audiobook metadata.json parsing error"],
+    });
   });
 });

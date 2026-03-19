@@ -23,6 +23,7 @@ import { Route as AuthenticatedAudioLinksRouteImport } from './routes/_authentic
 import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
 import { Route as AuthenticatedSettingsLibrariesRouteImport } from './routes/_authenticated/settings/libraries'
 import { Route as AuthenticatedSettingsJobsRouteImport } from './routes/_authenticated/settings/jobs'
+import { Route as AuthenticatedSettingsLibraryIssuesLibraryRootIdRouteImport } from './routes/_authenticated/settings/library-issues.$libraryRootId'
 import { Route as AuthenticatedSettingsJobsJobIdRouteImport } from './routes/_authenticated/settings/jobs.$jobId'
 
 const LoggedOutRoute = LoggedOutRouteImport.update({
@@ -98,6 +99,12 @@ const AuthenticatedSettingsJobsRoute =
     path: '/jobs',
     getParentRoute: () => AuthenticatedSettingsRoute,
   } as any)
+const AuthenticatedSettingsLibraryIssuesLibraryRootIdRoute =
+  AuthenticatedSettingsLibraryIssuesLibraryRootIdRouteImport.update({
+    id: '/library-issues/$libraryRootId',
+    path: '/library-issues/$libraryRootId',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
 const AuthenticatedSettingsJobsJobIdRoute =
   AuthenticatedSettingsJobsJobIdRouteImport.update({
     id: '/$jobId',
@@ -120,6 +127,7 @@ export interface FileRoutesByFullPath {
   '/settings/libraries': typeof AuthenticatedSettingsLibrariesRoute
   '/settings/': typeof AuthenticatedSettingsIndexRoute
   '/settings/jobs/$jobId': typeof AuthenticatedSettingsJobsJobIdRoute
+  '/settings/library-issues/$libraryRootId': typeof AuthenticatedSettingsLibraryIssuesLibraryRootIdRoute
 }
 export interface FileRoutesByTo {
   '/logged-out': typeof LoggedOutRoute
@@ -135,6 +143,7 @@ export interface FileRoutesByTo {
   '/settings/libraries': typeof AuthenticatedSettingsLibrariesRoute
   '/settings': typeof AuthenticatedSettingsIndexRoute
   '/settings/jobs/$jobId': typeof AuthenticatedSettingsJobsJobIdRoute
+  '/settings/library-issues/$libraryRootId': typeof AuthenticatedSettingsLibraryIssuesLibraryRootIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -153,6 +162,7 @@ export interface FileRoutesById {
   '/_authenticated/settings/libraries': typeof AuthenticatedSettingsLibrariesRoute
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
   '/_authenticated/settings/jobs/$jobId': typeof AuthenticatedSettingsJobsJobIdRoute
+  '/_authenticated/settings/library-issues/$libraryRootId': typeof AuthenticatedSettingsLibraryIssuesLibraryRootIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -171,6 +181,7 @@ export interface FileRouteTypes {
     | '/settings/libraries'
     | '/settings/'
     | '/settings/jobs/$jobId'
+    | '/settings/library-issues/$libraryRootId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/logged-out'
@@ -186,6 +197,7 @@ export interface FileRouteTypes {
     | '/settings/libraries'
     | '/settings'
     | '/settings/jobs/$jobId'
+    | '/settings/library-issues/$libraryRootId'
   id:
     | '__root__'
     | '/_authenticated'
@@ -203,6 +215,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/libraries'
     | '/_authenticated/settings/'
     | '/_authenticated/settings/jobs/$jobId'
+    | '/_authenticated/settings/library-issues/$libraryRootId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -313,6 +326,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsJobsRouteImport
       parentRoute: typeof AuthenticatedSettingsRoute
     }
+    '/_authenticated/settings/library-issues/$libraryRootId': {
+      id: '/_authenticated/settings/library-issues/$libraryRootId'
+      path: '/library-issues/$libraryRootId'
+      fullPath: '/settings/library-issues/$libraryRootId'
+      preLoaderRoute: typeof AuthenticatedSettingsLibraryIssuesLibraryRootIdRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
     '/_authenticated/settings/jobs/$jobId': {
       id: '/_authenticated/settings/jobs/$jobId'
       path: '/$jobId'
@@ -341,12 +361,15 @@ interface AuthenticatedSettingsRouteChildren {
   AuthenticatedSettingsJobsRoute: typeof AuthenticatedSettingsJobsRouteWithChildren
   AuthenticatedSettingsLibrariesRoute: typeof AuthenticatedSettingsLibrariesRoute
   AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute
+  AuthenticatedSettingsLibraryIssuesLibraryRootIdRoute: typeof AuthenticatedSettingsLibraryIssuesLibraryRootIdRoute
 }
 
 const AuthenticatedSettingsRouteChildren: AuthenticatedSettingsRouteChildren = {
   AuthenticatedSettingsJobsRoute: AuthenticatedSettingsJobsRouteWithChildren,
   AuthenticatedSettingsLibrariesRoute: AuthenticatedSettingsLibrariesRoute,
   AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,
+  AuthenticatedSettingsLibraryIssuesLibraryRootIdRoute:
+    AuthenticatedSettingsLibraryIssuesLibraryRootIdRoute,
 }
 
 const AuthenticatedSettingsRouteWithChildren =

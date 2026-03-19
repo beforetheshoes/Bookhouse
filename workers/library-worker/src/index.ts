@@ -2,7 +2,7 @@ import { pathToFileURL } from "node:url";
 import IORedis from "ioredis";
 import { type Job, Worker } from "bullmq";
 import { db } from "@bookhouse/db";
-import { hashFileAsset, matchFileAssetToEdition, parseFileAssetMetadata, scanLibraryRoot } from "@bookhouse/ingest";
+import { hashFileAsset, matchFileAssetToEdition, parseFileAssetMetadata, scanLibraryRoot, type ScanProgressData } from "@bookhouse/ingest";
 import {
   LIBRARY_JOB_NAMES,
   type BaseJobPayload,
@@ -30,9 +30,23 @@ function dispatch(
   handlers: LibraryWorkerHandlers,
   job: Job<LibraryJobPayload<LibraryJobName>, unknown, LibraryJobName>,
 ) {
+  const importJobId = (job.data as BaseJobPayload).importJobId;
+
   switch (job.name) {
-    case LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT:
-      return handlers.scanLibraryRoot(job.data as ScanLibraryRootJobPayload);
+    case LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT: {
+      const payload = job.data as ScanLibraryRootJobPayload;
+      if (importJobId) {
+        const reportProgress = async (data: ScanProgressData) => {
+          await db.importJob.update({
+            where: { id: importJobId },
+            data,
+          });
+          await job.updateProgress(data);
+        };
+        return handlers.scanLibraryRoot({ ...payload, reportProgress });
+      }
+      return handlers.scanLibraryRoot(payload);
+    }
     case LIBRARY_JOB_NAMES.HASH_FILE_ASSET:
       return handlers.hashFileAsset(job.data as HashFileAssetJobPayload);
     case LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION:

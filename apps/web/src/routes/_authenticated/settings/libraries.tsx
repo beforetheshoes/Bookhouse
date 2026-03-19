@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { FolderOpen, Play, Trash2 } from "lucide-react";
+import { AlertCircle, FolderOpen, Play, Trash2 } from "lucide-react";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import {
@@ -18,19 +18,36 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
+import { Progress } from "~/components/ui/progress";
 import { Skeleton } from "~/components/ui/skeleton";
 import { AddLibraryRootDialog } from "~/components/settings/add-library-root-dialog";
 import {
   getLibraryRootsServerFn,
+  getLibraryIssueCountServerFn,
+  getScanProgressServerFn,
   removeLibraryRootServerFn,
   scanLibraryRootServerFn,
   type LibraryRootRow,
 } from "~/lib/server-fns/library-roots";
 
+export interface LibraryRootWithExtras extends LibraryRootRow {
+  scanProgress: Awaited<ReturnType<typeof getScanProgressServerFn>> | null;
+  issueCount: number;
+}
+
 export const Route = createFileRoute("/_authenticated/settings/libraries")({
   loader: async () => {
     const roots = await getLibraryRootsServerFn();
-    return { roots };
+    const rootsWithExtras: LibraryRootWithExtras[] = await Promise.all(
+      roots.map(async (root) => {
+        const [scanProgress, issueCount] = await Promise.all([
+          getScanProgressServerFn({ data: { libraryRootId: root.id } }),
+          getLibraryIssueCountServerFn({ data: { libraryRootId: root.id } }),
+        ]);
+        return { ...root, scanProgress, issueCount };
+      }),
+    );
+    return { roots: rootsWithExtras };
   },
   pendingComponent: LibrariesSkeleton,
   component: LibrariesPage,
@@ -83,7 +100,7 @@ function LibrariesPage() {
   );
 }
 
-function LibraryRootCard({ root }: { root: LibraryRootRow }) {
+function LibraryRootCard({ root }: { root: LibraryRootWithExtras }) {
   const router = useRouter();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -169,7 +186,7 @@ function LibraryRootCard({ root }: { root: LibraryRootRow }) {
             </div>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
           <div className="flex gap-4 text-sm">
             <div className="flex items-center gap-1.5">
               <span className="text-muted-foreground">Kind:</span>
@@ -183,7 +200,29 @@ function LibraryRootCard({ root }: { root: LibraryRootRow }) {
               <span className="text-muted-foreground">Last scanned:</span>
               <span>{lastScanned}</span>
             </div>
+            {root.issueCount > 0 && (
+              <Link
+                to="/settings/library-issues/$libraryRootId"
+                params={{ libraryRootId: root.id }}
+                className="flex items-center gap-1.5 text-destructive hover:underline"
+              >
+                <AlertCircle className="size-3.5" />
+                <span>{root.issueCount} {root.issueCount === 1 ? "issue" : "issues"}</span>
+              </Link>
+            )}
           </div>
+          {root.scanProgress && (
+            <div className="space-y-1.5">
+              <Progress
+                value={root.scanProgress.processedFiles ?? 0}
+                max={root.scanProgress.totalFiles ?? 1}
+              />
+              <p className="text-xs text-muted-foreground">
+                Scanning... {root.scanProgress.processedFiles ?? 0} / {root.scanProgress.totalFiles ?? "?"} files
+                {root.scanProgress.errorCount ? ` (${String(root.scanProgress.errorCount)} errors)` : ""}
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 

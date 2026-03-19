@@ -73,6 +73,83 @@ export const removeLibraryRootServerFn = createServerFn({
     ]);
   });
 
+const libraryRootIdSchema = z.object({
+  libraryRootId: z.string().min(1),
+});
+
+export const getScanProgressServerFn = createServerFn({
+  method: "GET",
+})
+  .inputValidator(libraryRootIdSchema)
+  .handler(async ({ data }) => {
+    const { db } = await import("@bookhouse/db");
+    return db.importJob.findFirst({
+      where: {
+        libraryRootId: data.libraryRootId,
+        kind: "SCAN_ROOT",
+        status: { in: ["QUEUED", "RUNNING"] },
+      },
+      select: {
+        status: true,
+        totalFiles: true,
+        processedFiles: true,
+        errorCount: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  });
+
+export const getLibraryIssueCountServerFn = createServerFn({
+  method: "GET",
+})
+  .inputValidator(libraryRootIdSchema)
+  .handler(async ({ data }) => {
+    const { db } = await import("@bookhouse/db");
+    return db.fileAsset.count({
+      where: {
+        libraryRootId: data.libraryRootId,
+        metadata: { path: ["status"], equals: "unparseable" },
+      },
+    });
+  });
+
+const libraryIssuesSchema = z.object({
+  libraryRootId: z.string().min(1),
+  page: z.number().int().min(1).default(1),
+  pageSize: z.number().int().min(1).max(100).default(20),
+});
+
+export const getLibraryIssuesServerFn = createServerFn({
+  method: "GET",
+})
+  .inputValidator(libraryIssuesSchema)
+  .handler(async ({ data }) => {
+    const { db } = await import("@bookhouse/db");
+    const where = {
+      libraryRootId: data.libraryRootId,
+      metadata: { path: ["status"], equals: "unparseable" },
+    };
+
+    const [items, total] = await Promise.all([
+      db.fileAsset.findMany({
+        where,
+        select: {
+          id: true,
+          relativePath: true,
+          mediaKind: true,
+          metadata: true,
+          lastSeenAt: true,
+        },
+        orderBy: { relativePath: "asc" },
+        skip: (data.page - 1) * data.pageSize,
+        take: data.pageSize,
+      }),
+      db.fileAsset.count({ where }),
+    ]);
+
+    return { items, total };
+  });
+
 const scanLibraryRootSchema = z.object({
   libraryRootId: z.string().min(1),
 });
