@@ -29,6 +29,7 @@ describe("getLibraryWorksServerFn", () => {
     await getLibraryWorksServerFn();
     expect(findManyMock).toHaveBeenCalledWith({
       include: {
+        series: true,
         editions: {
           include: {
             contributors: {

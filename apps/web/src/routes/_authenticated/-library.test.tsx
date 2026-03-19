@@ -6,8 +6,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 let mockLoaderData: {
   works: {
+    id: string;
     titleDisplay: string;
     sortTitle: string;
+    coverPath: string | null;
+    createdAt: Date;
+    series: { id: string; name: string } | null;
     editions: {
       formatFamily: string;
       publisher: string;
@@ -51,14 +55,32 @@ vi.mock("~/lib/server-fns/import-jobs", () => ({
   getActiveJobCountServerFn: getActiveJobCountServerFnMock,
 }));
 
+let mockView = "grid" as "grid" | "table";
+const mockSetView = vi.fn();
+vi.mock("~/hooks/use-library-view-preference", () => ({
+  useLibraryViewPreference: () => [mockView, mockSetView],
+}));
+
+vi.mock("~/components/library-grid", () => ({
+  LibraryGrid: ({ works }: { works: unknown[] }) => (
+    <div data-testid="library-grid">Grid: {String(works.length)} works</div>
+  ),
+}));
+
+vi.mock("~/components/library-toolbar", () => ({
+  LibraryToolbar: (props: Record<string, unknown>) => (
+    <div data-testid="library-toolbar" data-view={props.view as string} />
+  ),
+}));
+
 // Use real data-table so column cell renderers execute
 vi.mock("~/components/data-table", async () => {
   const actual = await vi.importActual<typeof DataTableModule>("~/components/data-table");
   return actual;
 });
 
-vi.mock("~/components/skeletons/table-page-skeleton", () => ({
-  TablePageSkeleton: () => <div>Loading...</div>,
+vi.mock("~/components/skeletons/grid-page-skeleton", () => ({
+  GridPageSkeleton: () => <div>Loading grid...</div>,
 }));
 
 vi.mock("@tanstack/react-virtual", () => ({
@@ -76,11 +98,15 @@ vi.mock("@tanstack/react-virtual", () => ({
 }));
 
 const makeWork = (title: string, authors: string[] = [], formats: string[] = []) => ({
+  id: `work-${title.toLowerCase().replace(/\s/g, "-")}`,
   titleDisplay: title,
   sortTitle: title.toLowerCase(),
+  coverPath: null,
+  createdAt: new Date("2025-01-01"),
+  series: null,
   editions: [
     {
-      formatFamily: formats[0] ?? "EPUB",
+      formatFamily: formats[0] ?? "EBOOK",
       publisher: "Test Publisher",
       isbn13: "1234567890123",
       isbn10: null,
@@ -95,6 +121,7 @@ const makeWork = (title: string, authors: string[] = [], formats: string[] = [])
 describe("LibraryPage", () => {
   beforeEach(() => {
     mockLoaderData = { works: [], activeJobCount: 0 };
+    mockView = "grid";
     vi.clearAllMocks();
   });
 
@@ -109,90 +136,152 @@ describe("LibraryPage", () => {
   });
 
   it("renders 'Library' heading", async () => {
+    mockLoaderData = { works: [makeWork("Test")], activeJobCount: 0 };
     const { Route } = await import("./library");
-    const LibraryPage = (Route.options.component as React.ComponentType);
+    const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
     expect(screen.getByText("Library")).toBeTruthy();
   });
 
-  it("renders works data with real DataTable (exercises getAuthors and getFormats)", async () => {
+  it("renders grid view by default", async () => {
+    mockView = "grid";
     mockLoaderData = {
-      works: [makeWork("The Great Gatsby", ["F. Scott Fitzgerald"], ["EPUB"]), makeWork("Moby Dick", [], [])],
+      works: [makeWork("The Great Gatsby", ["F. Scott Fitzgerald"], ["EBOOK"])],
       activeJobCount: 0,
     };
     const { Route } = await import("./library");
-    const LibraryPage = (Route.options.component as React.ComponentType);
+    const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
+    expect(screen.getByTestId("library-grid")).toBeTruthy();
+  });
+
+  it("renders table view with real DataTable when preference is table", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      works: [makeWork("The Great Gatsby", ["F. Scott Fitzgerald"], ["EBOOK"]), makeWork("Moby Dick", [], [])],
+      activeJobCount: 0,
+    };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    // Real DataTable exercises getAuthors, getFormats, column accessors
     expect(screen.getByText("The Great Gatsby")).toBeTruthy();
     expect(screen.getByText("Moby Dick")).toBeTruthy();
-    // Author column should be rendered
     expect(screen.getByText("F. Scott Fitzgerald")).toBeTruthy();
   });
 
-  it("renders work with no authors showing dash", async () => {
+  it("renders work with no authors showing dash in table view", async () => {
+    mockView = "table";
     mockLoaderData = {
       works: [makeWork("Unknown Author Book", [])],
       activeJobCount: 0,
     };
     const { Route } = await import("./library");
-    const LibraryPage = (Route.options.component as React.ComponentType);
+    const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
     expect(screen.getByText("Unknown Author Book")).toBeTruthy();
-    // getAuthors returns "—" when no authors
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });
 
-  it("renders work with no editions showing dash for publisher/isbn", async () => {
+  it("renders work with no editions showing dash for publisher/isbn in table view", async () => {
+    mockView = "table";
     mockLoaderData = {
       works: [{
+        id: "work-no-editions",
         titleDisplay: "No Editions",
         sortTitle: "no editions",
+        coverPath: null,
+        createdAt: new Date("2025-01-01"),
+        series: null,
         editions: [],
       }],
       activeJobCount: 0,
     };
     const { Route } = await import("./library");
-    const LibraryPage = (Route.options.component as React.ComponentType);
+    const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
     expect(screen.getByText("No Editions")).toBeTruthy();
   });
 
-  it("shows scanning indicator when activeJobCount > 0", async () => {
-    mockLoaderData = { works: [], activeJobCount: 2 };
+  it("renders format badges in table view", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      works: [makeWork("Test Book", ["Author"], ["AUDIOBOOK"])],
+      activeJobCount: 0,
+    };
     const { Route } = await import("./library");
-    const LibraryPage = (Route.options.component as React.ComponentType);
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.getByText("AUDIOBOOK")).toBeTruthy();
+  });
+
+  it("renders LibraryToolbar", async () => {
+    mockLoaderData = { works: [makeWork("Test")], activeJobCount: 0 };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.getByTestId("library-toolbar")).toBeTruthy();
+  });
+
+  it("shows empty state when no works and not scanning", async () => {
+    mockLoaderData = { works: [], activeJobCount: 0 };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.getByText("No works yet")).toBeTruthy();
+    expect(screen.getByText("settings")).toBeTruthy();
+  });
+
+  it("empty state links to settings/libraries", async () => {
+    mockLoaderData = { works: [], activeJobCount: 0 };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    const link = screen.getByText("settings");
+    expect(link.getAttribute("href")).toBe("/settings/libraries");
+  });
+
+  it("does not show empty state when scanning with no works", async () => {
+    mockLoaderData = { works: [], activeJobCount: 1 };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.queryByText("No works yet")).toBeNull();
+    expect(screen.getByText(/Scanning/)).toBeTruthy();
+  });
+
+  it("shows scanning indicator when activeJobCount > 0", async () => {
+    mockLoaderData = { works: [makeWork("Test")], activeJobCount: 2 };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
     expect(screen.getByText(/Scanning/)).toBeTruthy();
   });
 
   it("shows scanning indicator with new count when works.length > prevCount", async () => {
-    // First render with works and not scanning, to set prevCount
     mockLoaderData = {
       works: [makeWork("Old Book")],
       activeJobCount: 0,
     };
     const { Route } = await import("./library");
-    const LibraryPage = (Route.options.component as React.ComponentType);
+    const LibraryPage = Route.options.component as React.ComponentType;
     const { rerender } = render(<LibraryPage />);
 
-    // Wait for effect to set prevCount = 1
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    // Now update to scanning with more works
     mockLoaderData = {
       works: [makeWork("Old Book"), makeWork("New Book")],
       activeJobCount: 1,
     };
     rerender(<LibraryPage />);
 
-    // newCount = 2 - 1 = 1 > 0, should show "— 1 new"
     expect(screen.getByText(/Scanning.*new/)).toBeTruthy();
   });
 
   it("does not show scanning indicator when activeJobCount is 0", async () => {
-    mockLoaderData = { works: [], activeJobCount: 0 };
+    mockLoaderData = { works: [makeWork("Test")], activeJobCount: 0 };
     const { Route } = await import("./library");
-    const LibraryPage = (Route.options.component as React.ComponentType);
+    const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
     expect(screen.queryByText(/Scanning/)).toBeNull();
   });
