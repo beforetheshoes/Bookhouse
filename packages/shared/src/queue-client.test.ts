@@ -109,6 +109,22 @@ describe("enqueueLibraryJob", () => {
     );
   });
 
+  it("passes retry config for detect-duplicates", async () => {
+    addMock.mockResolvedValueOnce({ id: "job-6" });
+    const { enqueueLibraryJob, LIBRARY_JOB_NAMES, RETRY_CONFIG } = await import("./index");
+
+    await enqueueLibraryJob(LIBRARY_JOB_NAMES.DETECT_DUPLICATES, {
+      fileAssetId: "file-5",
+    });
+
+    const config = RETRY_CONFIG[LIBRARY_JOB_NAMES.DETECT_DUPLICATES];
+    expect(addMock).toHaveBeenCalledWith(
+      "detect-duplicates",
+      { fileAssetId: "file-5" },
+      { attempts: config.attempts, backoff: config.backoff },
+    );
+  });
+
   it("returns 'unknown' when job.id is undefined", async () => {
     addMock.mockResolvedValueOnce({});
     const { enqueueLibraryJob, LIBRARY_JOB_NAMES } = await import("./index");

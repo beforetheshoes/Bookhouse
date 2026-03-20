@@ -2,10 +2,11 @@ import { pathToFileURL } from "node:url";
 import IORedis from "ioredis";
 import { type Job, Worker } from "bullmq";
 import { db } from "@bookhouse/db";
-import { hashFileAsset, matchFileAssetToEdition, parseFileAssetMetadata, processCoverForWorkDefault, scanLibraryRoot, type ScanProgressData, enrichWork, searchOpenLibrary, getOpenLibraryWork, RateLimiter, type EnrichWorkDeps } from "@bookhouse/ingest";
+import { hashFileAsset, matchFileAssetToEdition, parseFileAssetMetadata, processCoverForWorkDefault, scanLibraryRoot, type ScanProgressData, enrichWork, searchOpenLibrary, getOpenLibraryWork, RateLimiter, type EnrichWorkDeps, detectDuplicates } from "@bookhouse/ingest";
 import {
   LIBRARY_JOB_NAMES,
   type BaseJobPayload,
+  type DetectDuplicatesJobPayload,
   type HashFileAssetJobPayload,
   type LibraryJobName,
   type LibraryJobPayload,
@@ -31,6 +32,7 @@ export interface LibraryWorkerHandlers {
   processCoverForWork: (input: { workId: string; fileAssetId: string; coverCacheDir: string }) => Promise<unknown>;
   scanLibraryRoot: typeof scanLibraryRoot;
   enrichWork: typeof enrichWork;
+  detectDuplicates: typeof detectDuplicates;
 }
 
 function dispatch(
@@ -68,6 +70,8 @@ function dispatch(
         coverCacheDir: process.env.COVER_CACHE_DIR ?? "/data/covers",
       });
     }
+    case LIBRARY_JOB_NAMES.DETECT_DUPLICATES:
+      return handlers.detectDuplicates(job.data as DetectDuplicatesJobPayload);
     case LIBRARY_JOB_NAMES.REFRESH_METADATA: {
       const refreshPayload = job.data as RefreshMetadataJobPayload;
       const deps: EnrichWorkDeps = {
@@ -114,6 +118,7 @@ export function createLibraryWorkerProcessor(
     processCoverForWork,
     scanLibraryRoot,
     enrichWork,
+    detectDuplicates,
   },
 ) {
   return async (
@@ -168,6 +173,7 @@ export function createLibraryWorker(
     processCoverForWork,
     scanLibraryRoot,
     enrichWork,
+    detectDuplicates,
   },
 ) {
   const connection = new IORedis(getQueueConnectionConfig());

@@ -5,6 +5,7 @@ export {
   classifyMediaKind,
   createIdentifierMap,
   deriveFormatFamily,
+  detectDuplicates,
   getFileExtension,
   hashFileContents,
   hashFileAsset,
@@ -26,6 +27,8 @@ export {
 } from "./services";
 
 export type {
+  DetectDuplicatesInput,
+  DetectDuplicatesResult,
   HashFileAssetInput,
   HashFileAssetResult,
   IngestDb,
@@ -57,6 +60,7 @@ export { RateLimiter } from "./enrichment/rate-limiter";
 export type { RateLimitResult } from "./enrichment/rate-limiter";
 export { enrichWork } from "./enrichment/enrich-work";
 export type { EnrichWorkDeps, EnrichWorkResult } from "./enrichment/enrich-work";
+export { levenshteinDistance, normalizedSimilarity } from "./similarity";
 
 export const INGEST_PUBLIC_API = [
   "enrichWork",
@@ -65,6 +69,7 @@ export const INGEST_PUBLIC_API = [
   "createIngestServices",
   "deriveFormatFamily",
   "detectAdjacentCover",
+  "detectDuplicates",
   "extractEpubCover",
   "canonicalizeBookTitle",
   "canonicalizeContributorName",
@@ -74,8 +79,10 @@ export const INGEST_PUBLIC_API = [
   "getOpenLibraryWork",
   "hashFileAsset",
   "hashFileContents",
+  "levenshteinDistance",
   "isFileChanged",
   "matchFileAssetToEdition",
+  "normalizedSimilarity",
   "normalizeAudiobookMetadata",
   "normalizeBookMetadata",
   "normalizeOpfMetadata",

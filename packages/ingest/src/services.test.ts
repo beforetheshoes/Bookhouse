@@ -44,9 +44,21 @@ interface TestFileAsset {
   sizeBytes: bigint;
 }
 
+interface TestDuplicateCandidate {
+  confidence: number | null;
+  id: string;
+  leftEditionId: string | null;
+  leftFileAssetId: string | null;
+  reason: string;
+  rightEditionId: string | null;
+  rightFileAssetId: string | null;
+  status: string;
+}
+
 interface TestState {
   contributors: Map<string, TestContributor>;
   contributorsByCanonical: Map<string, TestContributor>;
+  duplicateCandidates: Map<string, TestDuplicateCandidate>;
   editionContributors: Map<string, TestEditionContributor>;
   editionFiles: Map<string, TestEditionFile>;
   editions: Map<string, TestEdition>;
@@ -104,6 +116,7 @@ function createEmptyState(rootPath = "/tmp/root"): TestState {
   return {
     contributors: new Map(),
     contributorsByCanonical: new Map(),
+    duplicateCandidates: new Map(),
     editionContributors: new Map(),
     editionFiles: new Map(),
     editions: new Map(),
@@ -125,6 +138,7 @@ function getEditionContributorKey(editionId: string, contributorId: string, role
 
 function createTestDb(state: TestState): IngestDb {
   let contributorSequence = state.contributors.size;
+  let duplicateCandidateSequence = state.duplicateCandidates.size;
   let editionContributorSequence = state.editionContributors.size;
   let editionFileSequence = state.editionFiles.size;
   let editionSequence = state.editions.size;
@@ -168,8 +182,15 @@ function createTestDb(state: TestState): IngestDb {
       },
       async findMany({ where }) {
         await Promise.resolve();
-        return [...state.fileAssets.values()].filter(
-          (fileAsset) => fileAsset.libraryRootId === where.libraryRootId,
+        if ("libraryRootId" in where) {
+          return [...state.fileAssets.values()].filter(
+            (fileAsset) => fileAsset.libraryRootId === where.libraryRootId,
+          );
+        }
+        // Hash-based query with NOT exclusion
+        const hashWhere = where as { fullHash: string; NOT: { id: string } };
+        return [...state.fileAssetsById.values()].filter(
+          (fa) => fa.fullHash === hashWhere.fullHash && fa.id !== hashWhere.NOT.id,
         );
       },
       async findUnique({ where }) {
@@ -247,8 +268,14 @@ function createTestDb(state: TestState): IngestDb {
       },
       async findMany({ where }) {
         await Promise.resolve();
-        return [...state.works.values()]
-          .filter((work) => work.titleCanonical === where.titleCanonical)
+        let filtered: TestWork[];
+        if ("titleCanonical" in where) {
+          filtered = [...state.works.values()].filter((work) => work.titleCanonical === where.titleCanonical);
+        } else {
+          const notWhere = where as { NOT: { id: string } };
+          filtered = [...state.works.values()].filter((work) => work.id !== notWhere.NOT.id);
+        }
+        return filtered
           .map((work) => ({
             ...work,
             editions: [...state.editions.values()]
@@ -281,6 +308,16 @@ function createTestDb(state: TestState): IngestDb {
         return [...state.editions.values()].find((edition) =>
           Object.entries(where).every(([key, value]) => edition[key as keyof TestEdition] === value),
         ) ?? null;
+      },
+      async findMany({ where }) {
+        await Promise.resolve();
+        const notId = where.NOT.id;
+        return [...state.editions.values()].filter((edition) => {
+          if (edition.id === notId) return false;
+          return where.OR.some((clause: Record<string, string | null>) =>
+            Object.entries(clause).every(([key, value]) => edition[key as keyof TestEdition] === value),
+          );
+        });
       },
       async findUnique({ where }) {
         await Promise.resolve();
@@ -357,6 +394,34 @@ function createTestDb(state: TestState): IngestDb {
         await Promise.resolve();
         return state.editionContributors.get(
           getEditionContributorKey(where.editionId, where.contributorId, where.role),
+        ) ?? null;
+      },
+    },
+    duplicateCandidate: {
+      async create({ data }) {
+        await Promise.resolve();
+        duplicateCandidateSequence += 1;
+        const created: TestDuplicateCandidate = {
+          id: `dup-${String(duplicateCandidateSequence)}`,
+          leftEditionId: data.leftEditionId ?? null,
+          rightEditionId: data.rightEditionId ?? null,
+          leftFileAssetId: data.leftFileAssetId ?? null,
+          rightFileAssetId: data.rightFileAssetId ?? null,
+          reason: data.reason,
+          confidence: data.confidence,
+          status: "PENDING",
+        };
+        state.duplicateCandidates.set(created.id, created);
+        return created;
+      },
+      async findFirst({ where }) {
+        await Promise.resolve();
+        return [...state.duplicateCandidates.values()].find((dc) =>
+          where.OR.some((clause: Record<string, string | undefined>) =>
+            Object.entries(clause).every(([key, value]) =>
+              value === undefined || dc[key as keyof TestDuplicateCandidate] === value,
+            ),
+          ),
         ) ?? null;
       },
     },
@@ -2083,8 +2148,12 @@ describe("ingest services", () => {
       workId: undefined,
     });
 
-    // Should NOT enqueue a cover job when edition is missing
-    expect(enqueueLibraryJob).not.toHaveBeenCalled();
+    // Should NOT enqueue a cover job when edition is missing, only detect-duplicates
+    expect(enqueueLibraryJob).toHaveBeenCalledTimes(1);
+    expect(enqueueLibraryJob).toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.DETECT_DUPLICATES,
+      { fileAssetId: "file-1" },
+    );
   });
 
   it("enriches an existing stub work with parsed metadata", async () => {
@@ -4311,5 +4380,519 @@ describe("ingest services", () => {
       status: "unparseable",
       warnings: ["Unknown audiobook metadata.json parsing error"],
     });
+  });
+});
+
+describe("matchFileAssetToEdition enqueues DETECT_DUPLICATES", () => {
+  it("enqueues detect-duplicates after a successful match", async () => {
+    const state = createEmptyState("/tmp/root");
+    addFileAsset(state, {
+      metadata: {
+        normalized: {
+          authors: ["Test Author"],
+          identifiers: { isbn13: "9780316498834", unknown: [] },
+          title: "Test Book",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      },
+    });
+    const enqueueMock = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: enqueueMock,
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-1" });
+
+    expect(result.skipped).toBe(false);
+    expect(enqueueMock).toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.DETECT_DUPLICATES,
+      { fileAssetId: "file-1" },
+    );
+  });
+
+  it("does not enqueue detect-duplicates when match is skipped", async () => {
+    const enqueueMock = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(createEmptyState("/tmp/root")),
+      enqueueLibraryJob: enqueueMock,
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "missing-file" });
+
+    expect(result.skipped).toBe(true);
+    expect(enqueueMock).not.toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.DETECT_DUPLICATES,
+      expect.anything(),
+    );
+  });
+});
+
+describe("detectDuplicates", () => {
+  const now = new Date("2025-01-01");
+
+  function addDetectFileAsset(state: TestState, id: string, hash: string | null, absPath: string) {
+    const fa: TestFileAsset = {
+      absolutePath: absPath,
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: path.basename(absPath),
+      ctime: now,
+      extension: ".epub",
+      fullHash: hash,
+      id,
+      lastSeenAt: now,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.EPUB,
+      metadata: null,
+      mtime: now,
+      partialHash: hash,
+      relativePath: absPath.replace("/tmp/root/", ""),
+      sizeBytes: BigInt(1000),
+    };
+    state.fileAssetsById.set(id, fa);
+    state.fileAssets.set(absPath, fa);
+    return fa;
+  }
+
+  function addDetectEdition(state: TestState, id: string, workId: string, overrides: Partial<TestEdition> = {}) {
+    const ed: TestEdition = {
+      asin: null,
+      formatFamily: FormatFamily.EBOOK,
+      id,
+      isbn10: null,
+      isbn13: null,
+      publishedAt: null,
+      publisher: null,
+      workId,
+      ...overrides,
+    };
+    state.editions.set(id, ed);
+    return ed;
+  }
+
+  function addDetectWork(state: TestState, id: string, titleCanonical: string, titleDisplay: string) {
+    const w: TestWork = {
+      description: null,
+      enrichmentStatus: "STUB" as EnrichmentStatus,
+      id,
+      language: null,
+      seriesId: null,
+      seriesPosition: null,
+      sortTitle: null,
+      titleCanonical,
+      titleDisplay,
+    };
+    state.works.set(id, w);
+    return w;
+  }
+
+  function addDetectEditionFile(state: TestState, efId: string, editionId: string, fileAssetId: string) {
+    state.editionFiles.set(getEditionFileKey(editionId, fileAssetId), {
+      editionId,
+      fileAssetId,
+      id: efId,
+      role: EditionFileRole.PRIMARY,
+    });
+  }
+
+  function addDetectContributor(state: TestState, id: string, name: string) {
+    const c: TestContributor = { id, nameCanonical: name.toLowerCase(), nameDisplay: name };
+    state.contributors.set(id, c);
+    state.contributorsByCanonical.set(c.nameCanonical, c);
+    return c;
+  }
+
+  function addDetectEditionContributor(state: TestState, ecId: string, editionId: string, contributorId: string) {
+    state.editionContributors.set(getEditionContributorKey(editionId, contributorId, ContributorRole.AUTHOR), {
+      contributorId,
+      editionId,
+      id: ecId,
+      role: ContributorRole.AUTHOR,
+    });
+  }
+
+  it("skips when file asset is not found", async () => {
+    const state = createEmptyState();
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "nonexistent" });
+
+    expect(result).toEqual({ fileAssetId: "nonexistent", skipped: true, candidatesCreated: 0 });
+  });
+
+  it("skips when file asset has no linked edition file", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "abc123", "/tmp/root/book.epub");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    expect(result).toEqual({ fileAssetId: "file-1", skipped: true, candidatesCreated: 0 });
+  });
+
+  it("skips when edition is not found for edition file", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "abc123", "/tmp/root/book.epub");
+    addDetectEditionFile(state, "ef-1", "missing-edition", "file-1");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    expect(result).toEqual({ fileAssetId: "file-1", skipped: true, candidatesCreated: 0 });
+  });
+
+  it("SAME_HASH: creates candidate when another file asset has the same hash", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "samehash", "/tmp/root/book.epub");
+    addDetectFileAsset(state, "file-2", "samehash", "/tmp/root/book-copy.epub");
+    addDetectWork(state, "work-1", "book title", "Book Title");
+    addDetectEdition(state, "edition-1", "work-1");
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    expect(result.candidatesCreated).toBe(1);
+    expect(result.skipped).toBe(false);
+    const candidates = [...state.duplicateCandidates.values()];
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({
+      leftFileAssetId: "file-1",
+      rightFileAssetId: "file-2",
+      reason: "SAME_HASH",
+      confidence: 1.0,
+    });
+  });
+
+  it("SAME_HASH: does not create candidate when no hash match", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "hash-a", "/tmp/root/book.epub");
+    addDetectFileAsset(state, "file-2", "hash-b", "/tmp/root/other.epub");
+    addDetectWork(state, "work-1", "book title", "Book Title");
+    addDetectEdition(state, "edition-1", "work-1");
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    expect(result.candidatesCreated).toBe(0);
+    expect(state.duplicateCandidates.size).toBe(0);
+  });
+
+  it("SAME_HASH: skips hash check when file has no fullHash", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", null, "/tmp/root/book.epub");
+    addDetectWork(state, "work-1", "book title", "Book Title");
+    addDetectEdition(state, "edition-1", "work-1");
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    expect(result.candidatesCreated).toBe(0);
+  });
+
+  it("SAME_ISBN: creates candidate when another edition shares isbn13", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "hash-a", "/tmp/root/book.epub");
+    addDetectWork(state, "work-1", "book a", "Book A");
+    addDetectWork(state, "work-2", "book b", "Book B");
+    addDetectEdition(state, "edition-1", "work-1", { isbn13: "9781234567890" });
+    addDetectEdition(state, "edition-2", "work-2", { isbn13: "9781234567890" });
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    expect(result.candidatesCreated).toBe(1);
+    const candidates = [...state.duplicateCandidates.values()];
+    expect(candidates[0]).toMatchObject({
+      leftEditionId: "edition-1",
+      rightEditionId: "edition-2",
+      reason: "SAME_ISBN",
+      confidence: 1.0,
+    });
+  });
+
+  it("SAME_ISBN: creates candidate when another edition shares isbn10", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "hash-a", "/tmp/root/book.epub");
+    addDetectWork(state, "work-1", "book a", "Book A");
+    addDetectWork(state, "work-2", "book b", "Book B");
+    addDetectEdition(state, "edition-1", "work-1", { isbn10: "1234567890" });
+    addDetectEdition(state, "edition-2", "work-2", { isbn10: "1234567890" });
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    expect(result.candidatesCreated).toBe(1);
+    const candidates = [...state.duplicateCandidates.values()];
+    expect(candidates[0]).toMatchObject({
+      leftEditionId: "edition-1",
+      rightEditionId: "edition-2",
+      reason: "SAME_ISBN",
+      confidence: 1.0,
+    });
+  });
+
+  it("SAME_ISBN: does not create candidate if pair already exists", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "hash-a", "/tmp/root/book.epub");
+    addDetectWork(state, "work-1", "book a", "Book A");
+    addDetectWork(state, "work-2", "book b", "Book B");
+    addDetectEdition(state, "edition-1", "work-1", { isbn13: "9781234567890" });
+    addDetectEdition(state, "edition-2", "work-2", { isbn13: "9781234567890" });
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    state.duplicateCandidates.set("existing-isbn", {
+      id: "existing-isbn",
+      leftEditionId: "edition-1",
+      rightEditionId: "edition-2",
+      leftFileAssetId: null,
+      rightFileAssetId: null,
+      reason: "SAME_ISBN",
+      confidence: 1.0,
+      status: "PENDING",
+    });
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    expect(result.candidatesCreated).toBe(0);
+    expect(state.duplicateCandidates.size).toBe(1);
+  });
+
+  it("SIMILAR_TITLE_AUTHOR: creates candidate when title and author similarity >= 0.85", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "hash-a", "/tmp/root/book.epub");
+    addDetectWork(state, "work-1", "the great gatsby", "The Great Gatsby");
+    addDetectWork(state, "work-2", "the great gatspy", "The Great Gatspy");
+    addDetectEdition(state, "edition-1", "work-1");
+    addDetectEdition(state, "edition-2", "work-2");
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    addDetectContributor(state, "c-1", "F Scott Fitzgerald");
+    addDetectContributor(state, "c-2", "F Scott Fitzgerald");
+    addDetectEditionContributor(state, "ec-1", "edition-1", "c-1");
+    addDetectEditionContributor(state, "ec-2", "edition-2", "c-2");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    expect(result.candidatesCreated).toBe(1);
+    const candidates = [...state.duplicateCandidates.values()];
+    const candidate = candidates[0];
+    expect(candidate).toMatchObject({
+      leftEditionId: "edition-1",
+      rightEditionId: "edition-2",
+      reason: "SIMILAR_TITLE_AUTHOR",
+    });
+    expect(candidate?.confidence).toBeGreaterThanOrEqual(0.85);
+  });
+
+  it("SIMILAR_TITLE_AUTHOR: does not create candidate when similarity < 0.85", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "hash-a", "/tmp/root/book.epub");
+    addDetectWork(state, "work-1", "the great gatsby", "The Great Gatsby");
+    addDetectWork(state, "work-2", "completely different title", "Completely Different Title");
+    addDetectEdition(state, "edition-1", "work-1");
+    addDetectEdition(state, "edition-2", "work-2");
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    addDetectContributor(state, "c-1", "F Scott Fitzgerald");
+    addDetectContributor(state, "c-2", "Another Author");
+    addDetectEditionContributor(state, "ec-1", "edition-1", "c-1");
+    addDetectEditionContributor(state, "ec-2", "edition-2", "c-2");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    expect(result.candidatesCreated).toBe(0);
+  });
+
+  it("SIMILAR_TITLE_AUTHOR: does not match when only one side has authors", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "hash-a", "/tmp/root/book.epub");
+    addDetectWork(state, "work-1", "the great gatsby", "The Great Gatsby");
+    addDetectWork(state, "work-2", "the great gatsby", "The Great Gatsby");
+    addDetectEdition(state, "edition-1", "work-1");
+    addDetectEdition(state, "edition-2", "work-2");
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    // Only work-1 has an author, work-2 does not
+    addDetectContributor(state, "c-1", "F Scott Fitzgerald");
+    addDetectEditionContributor(state, "ec-1", "edition-1", "c-1");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    expect(result.candidatesCreated).toBe(0);
+  });
+
+  it("SIMILAR_TITLE_AUTHOR: skips when both works have no authors", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "hash-a", "/tmp/root/book.epub");
+    addDetectWork(state, "work-1", "the great gatsby", "The Great Gatsby");
+    addDetectWork(state, "work-2", "the great gatsby", "The Great Gatsby");
+    addDetectEdition(state, "edition-1", "work-1");
+    addDetectEdition(state, "edition-2", "work-2");
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    expect(result.candidatesCreated).toBe(0);
+  });
+
+  it("SIMILAR_TITLE_AUTHOR: skips other work with no editions", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "hash-a", "/tmp/root/book.epub");
+    addDetectWork(state, "work-1", "the great gatsby", "The Great Gatsby");
+    addDetectWork(state, "work-2", "the great gatsby", "The Great Gatsby");
+    addDetectEdition(state, "edition-1", "work-1");
+    // work-2 has no editions
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    addDetectContributor(state, "c-1", "F Scott Fitzgerald");
+    addDetectEditionContributor(state, "ec-1", "edition-1", "c-1");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    expect(result.candidatesCreated).toBe(0);
+  });
+
+  it("does not create candidate if pair already exists", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "samehash", "/tmp/root/book.epub");
+    addDetectFileAsset(state, "file-2", "samehash", "/tmp/root/book-copy.epub");
+    addDetectWork(state, "work-1", "book title", "Book Title");
+    addDetectEdition(state, "edition-1", "work-1");
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    // Pre-existing candidate
+    state.duplicateCandidates.set("existing-dup", {
+      id: "existing-dup",
+      leftFileAssetId: "file-1",
+      rightFileAssetId: "file-2",
+      leftEditionId: null,
+      rightEditionId: null,
+      reason: "SAME_HASH",
+      confidence: 1.0,
+      status: "PENDING",
+    });
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    expect(result.candidatesCreated).toBe(0);
+    // Should still have just the original
+    expect(state.duplicateCandidates.size).toBe(1);
+  });
+
+  it("does not create candidate if reversed pair already exists", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "samehash", "/tmp/root/book.epub");
+    addDetectFileAsset(state, "file-2", "samehash", "/tmp/root/book-copy.epub");
+    addDetectWork(state, "work-1", "book title", "Book Title");
+    addDetectEdition(state, "edition-1", "work-1");
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    // Pre-existing candidate with reversed direction
+    state.duplicateCandidates.set("existing-dup", {
+      id: "existing-dup",
+      leftFileAssetId: "file-2",
+      rightFileAssetId: "file-1",
+      leftEditionId: null,
+      rightEditionId: null,
+      reason: "SAME_HASH",
+      confidence: 1.0,
+      status: "PENDING",
+    });
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    expect(result.candidatesCreated).toBe(0);
+  });
+
+  it("returns correct total count across multiple strategies", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "samehash", "/tmp/root/book.epub");
+    addDetectFileAsset(state, "file-2", "samehash", "/tmp/root/book-copy.epub");
+    addDetectWork(state, "work-1", "book title", "Book Title");
+    addDetectWork(state, "work-2", "different title", "Different Title");
+    addDetectEdition(state, "edition-1", "work-1", { isbn13: "9781234567890" });
+    addDetectEdition(state, "edition-2", "work-2", { isbn13: "9781234567890" });
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    // 1 from SAME_HASH + 1 from SAME_ISBN
+    expect(result.candidatesCreated).toBe(2);
+    expect(state.duplicateCandidates.size).toBe(2);
+  });
+
+  it("SIMILAR_TITLE_AUTHOR: does not create candidate if pair already exists", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "hash-a", "/tmp/root/book.epub");
+    addDetectWork(state, "work-1", "the great gatsby", "The Great Gatsby");
+    addDetectWork(state, "work-2", "the great gatsby", "The Great Gatsby");
+    addDetectEdition(state, "edition-1", "work-1");
+    addDetectEdition(state, "edition-2", "work-2");
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    addDetectContributor(state, "c-1", "F Scott Fitzgerald");
+    addDetectContributor(state, "c-2", "F Scott Fitzgerald");
+    addDetectEditionContributor(state, "ec-1", "edition-1", "c-1");
+    addDetectEditionContributor(state, "ec-2", "edition-2", "c-2");
+    // Pre-existing candidate for this pair
+    state.duplicateCandidates.set("existing-sim", {
+      id: "existing-sim",
+      leftEditionId: "edition-1",
+      rightEditionId: "edition-2",
+      leftFileAssetId: null,
+      rightFileAssetId: null,
+      reason: "SIMILAR_TITLE_AUTHOR",
+      confidence: 0.95,
+      status: "PENDING",
+    });
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    // Should not have created any new candidates
+    expect(result.candidatesCreated).toBe(0);
+    expect(state.duplicateCandidates.size).toBe(1);
+  });
+
+  it("SIMILAR_TITLE_AUTHOR: skips other work with no titleCanonical", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "hash-a", "/tmp/root/book.epub");
+    addDetectWork(state, "work-1", "the great gatsby", "The Great Gatsby");
+    addDetectWork(state, "work-2", "", "");
+    addDetectEdition(state, "edition-1", "work-1");
+    addDetectEdition(state, "edition-2", "work-2");
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    addDetectContributor(state, "c-1", "F Scott Fitzgerald");
+    addDetectEditionContributor(state, "ec-1", "edition-1", "c-1");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    expect(result.candidatesCreated).toBe(0);
+  });
+
+  it("skips similarity check when current work has no titleCanonical", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "hash-a", "/tmp/root/book.epub");
+    addDetectWork(state, "work-1", "", "");
+    addDetectWork(state, "work-2", "other book", "Other Book");
+    addDetectEdition(state, "edition-1", "work-1");
+    addDetectEdition(state, "edition-2", "work-2");
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    expect(result.candidatesCreated).toBe(0);
   });
 });

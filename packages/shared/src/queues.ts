@@ -9,6 +9,7 @@ export const LIBRARY_JOB_NAMES = {
   MATCH_FILE_ASSET_TO_EDITION: "match-file-asset-to-edition",
   PROCESS_COVER: "process-cover",
   REFRESH_METADATA: "refresh-metadata",
+  DETECT_DUPLICATES: "detect-duplicates",
 } as const;
 
 export interface BaseJobPayload {
@@ -41,6 +42,10 @@ export interface RefreshMetadataJobPayload extends BaseJobPayload {
   workId: string;
 }
 
+export interface DetectDuplicatesJobPayload extends BaseJobPayload {
+  fileAssetId: string;
+}
+
 export interface LibraryJobPayloads {
   [LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT]: ScanLibraryRootJobPayload;
   [LIBRARY_JOB_NAMES.HASH_FILE_ASSET]: HashFileAssetJobPayload;
@@ -48,6 +53,7 @@ export interface LibraryJobPayloads {
   [LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION]: MatchFileAssetToEditionJobPayload;
   [LIBRARY_JOB_NAMES.PROCESS_COVER]: ProcessCoverJobPayload;
   [LIBRARY_JOB_NAMES.REFRESH_METADATA]: RefreshMetadataJobPayload;
+  [LIBRARY_JOB_NAMES.DETECT_DUPLICATES]: DetectDuplicatesJobPayload;
 }
 
 export type LibraryJobName = keyof LibraryJobPayloads;
@@ -82,6 +88,10 @@ export const RETRY_CONFIG: Record<LibraryJobName, JobRetryConfig> = {
   [LIBRARY_JOB_NAMES.REFRESH_METADATA]: {
     attempts: 2,
     backoff: { type: "exponential", delay: 5000 },
+  },
+  [LIBRARY_JOB_NAMES.DETECT_DUPLICATES]: {
+    attempts: 2,
+    backoff: { type: "exponential", delay: 3000 },
   },
 };
 
