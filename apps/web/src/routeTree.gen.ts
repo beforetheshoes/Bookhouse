@@ -23,11 +23,15 @@ import { Route as AuthenticatedCollectionsRouteImport } from './routes/_authenti
 import { Route as AuthenticatedAuthorsRouteImport } from './routes/_authenticated/authors'
 import { Route as AuthenticatedAudioLinksRouteImport } from './routes/_authenticated/audio-links'
 import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
+import { Route as AuthenticatedSeriesIndexRouteImport } from './routes/_authenticated/series.index'
+import { Route as AuthenticatedLibraryIndexRouteImport } from './routes/_authenticated/library.index'
+import { Route as AuthenticatedAuthorsIndexRouteImport } from './routes/_authenticated/authors.index'
 import { Route as AuthenticatedSettingsLibrariesRouteImport } from './routes/_authenticated/settings/libraries'
 import { Route as AuthenticatedSettingsJobsRouteImport } from './routes/_authenticated/settings/jobs'
 import { Route as AuthenticatedSeriesSeriesIdRouteImport } from './routes/_authenticated/series.$seriesId'
 import { Route as AuthenticatedLibraryWorkIdRouteImport } from './routes/_authenticated/library.$workId'
 import { Route as AuthenticatedAuthorsAuthorIdRouteImport } from './routes/_authenticated/authors.$authorId'
+import { Route as AuthenticatedSettingsJobsIndexRouteImport } from './routes/_authenticated/settings/jobs.index'
 import { Route as AuthenticatedSettingsLibraryIssuesLibraryRootIdRouteImport } from './routes/_authenticated/settings/library-issues.$libraryRootId'
 import { Route as AuthenticatedSettingsJobsJobIdRouteImport } from './routes/_authenticated/settings/jobs.$jobId'
 
@@ -102,6 +106,24 @@ const AuthenticatedSettingsIndexRoute =
     path: '/',
     getParentRoute: () => AuthenticatedSettingsRoute,
   } as any)
+const AuthenticatedSeriesIndexRoute =
+  AuthenticatedSeriesIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedSeriesRoute,
+  } as any)
+const AuthenticatedLibraryIndexRoute =
+  AuthenticatedLibraryIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedLibraryRoute,
+  } as any)
+const AuthenticatedAuthorsIndexRoute =
+  AuthenticatedAuthorsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedAuthorsRoute,
+  } as any)
 const AuthenticatedSettingsLibrariesRoute =
   AuthenticatedSettingsLibrariesRouteImport.update({
     id: '/libraries',
@@ -131,6 +153,12 @@ const AuthenticatedAuthorsAuthorIdRoute =
     id: '/$authorId',
     path: '/$authorId',
     getParentRoute: () => AuthenticatedAuthorsRoute,
+  } as any)
+const AuthenticatedSettingsJobsIndexRoute =
+  AuthenticatedSettingsJobsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedSettingsJobsRoute,
   } as any)
 const AuthenticatedSettingsLibraryIssuesLibraryRootIdRoute =
   AuthenticatedSettingsLibraryIssuesLibraryRootIdRouteImport.update({
@@ -163,18 +191,19 @@ export interface FileRoutesByFullPath {
   '/series/$seriesId': typeof AuthenticatedSeriesSeriesIdRoute
   '/settings/jobs': typeof AuthenticatedSettingsJobsRouteWithChildren
   '/settings/libraries': typeof AuthenticatedSettingsLibrariesRoute
+  '/authors/': typeof AuthenticatedAuthorsIndexRoute
+  '/library/': typeof AuthenticatedLibraryIndexRoute
+  '/series/': typeof AuthenticatedSeriesIndexRoute
   '/settings/': typeof AuthenticatedSettingsIndexRoute
   '/settings/jobs/$jobId': typeof AuthenticatedSettingsJobsJobIdRoute
   '/settings/library-issues/$libraryRootId': typeof AuthenticatedSettingsLibraryIssuesLibraryRootIdRoute
+  '/settings/jobs/': typeof AuthenticatedSettingsJobsIndexRoute
 }
 export interface FileRoutesByTo {
   '/logged-out': typeof LoggedOutRoute
   '/audio-links': typeof AuthenticatedAudioLinksRoute
-  '/authors': typeof AuthenticatedAuthorsRouteWithChildren
   '/collections': typeof AuthenticatedCollectionsRoute
   '/duplicates': typeof AuthenticatedDuplicatesRoute
-  '/library': typeof AuthenticatedLibraryRouteWithChildren
-  '/series': typeof AuthenticatedSeriesRouteWithChildren
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/logout': typeof AuthLogoutRoute
@@ -182,11 +211,14 @@ export interface FileRoutesByTo {
   '/authors/$authorId': typeof AuthenticatedAuthorsAuthorIdRoute
   '/library/$workId': typeof AuthenticatedLibraryWorkIdRoute
   '/series/$seriesId': typeof AuthenticatedSeriesSeriesIdRoute
-  '/settings/jobs': typeof AuthenticatedSettingsJobsRouteWithChildren
   '/settings/libraries': typeof AuthenticatedSettingsLibrariesRoute
+  '/authors': typeof AuthenticatedAuthorsIndexRoute
+  '/library': typeof AuthenticatedLibraryIndexRoute
+  '/series': typeof AuthenticatedSeriesIndexRoute
   '/settings': typeof AuthenticatedSettingsIndexRoute
   '/settings/jobs/$jobId': typeof AuthenticatedSettingsJobsJobIdRoute
   '/settings/library-issues/$libraryRootId': typeof AuthenticatedSettingsLibraryIssuesLibraryRootIdRoute
+  '/settings/jobs': typeof AuthenticatedSettingsJobsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -208,9 +240,13 @@ export interface FileRoutesById {
   '/_authenticated/series/$seriesId': typeof AuthenticatedSeriesSeriesIdRoute
   '/_authenticated/settings/jobs': typeof AuthenticatedSettingsJobsRouteWithChildren
   '/_authenticated/settings/libraries': typeof AuthenticatedSettingsLibrariesRoute
+  '/_authenticated/authors/': typeof AuthenticatedAuthorsIndexRoute
+  '/_authenticated/library/': typeof AuthenticatedLibraryIndexRoute
+  '/_authenticated/series/': typeof AuthenticatedSeriesIndexRoute
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
   '/_authenticated/settings/jobs/$jobId': typeof AuthenticatedSettingsJobsJobIdRoute
   '/_authenticated/settings/library-issues/$libraryRootId': typeof AuthenticatedSettingsLibraryIssuesLibraryRootIdRoute
+  '/_authenticated/settings/jobs/': typeof AuthenticatedSettingsJobsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -232,18 +268,19 @@ export interface FileRouteTypes {
     | '/series/$seriesId'
     | '/settings/jobs'
     | '/settings/libraries'
+    | '/authors/'
+    | '/library/'
+    | '/series/'
     | '/settings/'
     | '/settings/jobs/$jobId'
     | '/settings/library-issues/$libraryRootId'
+    | '/settings/jobs/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/logged-out'
     | '/audio-links'
-    | '/authors'
     | '/collections'
     | '/duplicates'
-    | '/library'
-    | '/series'
     | '/auth/callback'
     | '/auth/login'
     | '/auth/logout'
@@ -251,11 +288,14 @@ export interface FileRouteTypes {
     | '/authors/$authorId'
     | '/library/$workId'
     | '/series/$seriesId'
-    | '/settings/jobs'
     | '/settings/libraries'
+    | '/authors'
+    | '/library'
+    | '/series'
     | '/settings'
     | '/settings/jobs/$jobId'
     | '/settings/library-issues/$libraryRootId'
+    | '/settings/jobs'
   id:
     | '__root__'
     | '/_authenticated'
@@ -276,9 +316,13 @@ export interface FileRouteTypes {
     | '/_authenticated/series/$seriesId'
     | '/_authenticated/settings/jobs'
     | '/_authenticated/settings/libraries'
+    | '/_authenticated/authors/'
+    | '/_authenticated/library/'
+    | '/_authenticated/series/'
     | '/_authenticated/settings/'
     | '/_authenticated/settings/jobs/$jobId'
     | '/_authenticated/settings/library-issues/$libraryRootId'
+    | '/_authenticated/settings/jobs/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -389,6 +433,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsIndexRouteImport
       parentRoute: typeof AuthenticatedSettingsRoute
     }
+    '/_authenticated/series/': {
+      id: '/_authenticated/series/'
+      path: '/'
+      fullPath: '/series/'
+      preLoaderRoute: typeof AuthenticatedSeriesIndexRouteImport
+      parentRoute: typeof AuthenticatedSeriesRoute
+    }
+    '/_authenticated/library/': {
+      id: '/_authenticated/library/'
+      path: '/'
+      fullPath: '/library/'
+      preLoaderRoute: typeof AuthenticatedLibraryIndexRouteImport
+      parentRoute: typeof AuthenticatedLibraryRoute
+    }
+    '/_authenticated/authors/': {
+      id: '/_authenticated/authors/'
+      path: '/'
+      fullPath: '/authors/'
+      preLoaderRoute: typeof AuthenticatedAuthorsIndexRouteImport
+      parentRoute: typeof AuthenticatedAuthorsRoute
+    }
     '/_authenticated/settings/libraries': {
       id: '/_authenticated/settings/libraries'
       path: '/libraries'
@@ -424,6 +489,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAuthorsAuthorIdRouteImport
       parentRoute: typeof AuthenticatedAuthorsRoute
     }
+    '/_authenticated/settings/jobs/': {
+      id: '/_authenticated/settings/jobs/'
+      path: '/'
+      fullPath: '/settings/jobs/'
+      preLoaderRoute: typeof AuthenticatedSettingsJobsIndexRouteImport
+      parentRoute: typeof AuthenticatedSettingsJobsRoute
+    }
     '/_authenticated/settings/library-issues/$libraryRootId': {
       id: '/_authenticated/settings/library-issues/$libraryRootId'
       path: '/library-issues/$libraryRootId'
@@ -443,10 +515,12 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedAuthorsRouteChildren {
   AuthenticatedAuthorsAuthorIdRoute: typeof AuthenticatedAuthorsAuthorIdRoute
+  AuthenticatedAuthorsIndexRoute: typeof AuthenticatedAuthorsIndexRoute
 }
 
 const AuthenticatedAuthorsRouteChildren: AuthenticatedAuthorsRouteChildren = {
   AuthenticatedAuthorsAuthorIdRoute: AuthenticatedAuthorsAuthorIdRoute,
+  AuthenticatedAuthorsIndexRoute: AuthenticatedAuthorsIndexRoute,
 }
 
 const AuthenticatedAuthorsRouteWithChildren =
@@ -454,10 +528,12 @@ const AuthenticatedAuthorsRouteWithChildren =
 
 interface AuthenticatedLibraryRouteChildren {
   AuthenticatedLibraryWorkIdRoute: typeof AuthenticatedLibraryWorkIdRoute
+  AuthenticatedLibraryIndexRoute: typeof AuthenticatedLibraryIndexRoute
 }
 
 const AuthenticatedLibraryRouteChildren: AuthenticatedLibraryRouteChildren = {
   AuthenticatedLibraryWorkIdRoute: AuthenticatedLibraryWorkIdRoute,
+  AuthenticatedLibraryIndexRoute: AuthenticatedLibraryIndexRoute,
 }
 
 const AuthenticatedLibraryRouteWithChildren =
@@ -465,10 +541,12 @@ const AuthenticatedLibraryRouteWithChildren =
 
 interface AuthenticatedSeriesRouteChildren {
   AuthenticatedSeriesSeriesIdRoute: typeof AuthenticatedSeriesSeriesIdRoute
+  AuthenticatedSeriesIndexRoute: typeof AuthenticatedSeriesIndexRoute
 }
 
 const AuthenticatedSeriesRouteChildren: AuthenticatedSeriesRouteChildren = {
   AuthenticatedSeriesSeriesIdRoute: AuthenticatedSeriesSeriesIdRoute,
+  AuthenticatedSeriesIndexRoute: AuthenticatedSeriesIndexRoute,
 }
 
 const AuthenticatedSeriesRouteWithChildren =
@@ -476,11 +554,13 @@ const AuthenticatedSeriesRouteWithChildren =
 
 interface AuthenticatedSettingsJobsRouteChildren {
   AuthenticatedSettingsJobsJobIdRoute: typeof AuthenticatedSettingsJobsJobIdRoute
+  AuthenticatedSettingsJobsIndexRoute: typeof AuthenticatedSettingsJobsIndexRoute
 }
 
 const AuthenticatedSettingsJobsRouteChildren: AuthenticatedSettingsJobsRouteChildren =
   {
     AuthenticatedSettingsJobsJobIdRoute: AuthenticatedSettingsJobsJobIdRoute,
+    AuthenticatedSettingsJobsIndexRoute: AuthenticatedSettingsJobsIndexRoute,
   }
 
 const AuthenticatedSettingsJobsRouteWithChildren =
