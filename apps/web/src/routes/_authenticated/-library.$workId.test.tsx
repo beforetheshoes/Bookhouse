@@ -108,6 +108,12 @@ vi.mock("~/lib/server-fns/reading-progress", () => ({
   updateReadingProgressServerFn: updateReadingProgressServerFnMock,
 }));
 
+vi.mock("~/components/enrichment-review", () => ({
+  EnrichmentReview: ({ workId, currentDescription }: { workId: string; currentDescription: string | null }) => (
+    <div data-testid="enrichment-review" data-work-id={workId} data-description={currentDescription ?? ""} />
+  ),
+}));
+
 describe("WorkDetailPage", () => {
   beforeEach(() => {
     mockLoaderData = {
@@ -496,6 +502,15 @@ describe("WorkDetailPage", () => {
     expect(bars).toHaveLength(2);
     expect(screen.getByText("30%")).toBeTruthy();
     expect(screen.getByText("75%")).toBeTruthy();
+  });
+
+  it("renders enrichment review component", async () => {
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    const review = screen.getByTestId("enrichment-review");
+    expect(review.getAttribute("data-work-id")).toBe("work-1");
+    expect(review.getAttribute("data-description")).toBe("A story about Kvothe.");
   });
 
   it("renders pending skeleton component", async () => {

@@ -14,6 +14,7 @@ const matchFileAssetToEditionMock = vi.fn();
 const parseFileAssetMetadataMock = vi.fn();
 const processCoverForWorkMock = vi.fn();
 const scanLibraryRootMock = vi.fn();
+const enrichWorkMock = vi.fn();
 const importJobUpdateMock = vi.fn();
 
 vi.mock("ioredis", () => ({
@@ -41,10 +42,19 @@ vi.mock("bullmq", () => ({
   },
 }));
 
+const workFindUniqueMock = vi.fn();
+const externalLinkUpsertMock = vi.fn();
+
 vi.mock("@bookhouse/db", () => ({
   db: {
     importJob: {
       update: importJobUpdateMock,
+    },
+    work: {
+      findUnique: (...args: unknown[]): unknown => workFindUniqueMock(...args),
+    },
+    externalLink: {
+      upsert: (...args: unknown[]): unknown => externalLinkUpsertMock(...args),
     },
   },
 }));
@@ -55,6 +65,10 @@ vi.mock("@bookhouse/ingest", () => ({
   parseFileAssetMetadata: parseFileAssetMetadataMock,
   processCoverForWorkDefault: () => processCoverForWorkMock,
   scanLibraryRoot: scanLibraryRootMock,
+  enrichWork: enrichWorkMock,
+  searchOpenLibrary: vi.fn(),
+  getOpenLibraryWork: vi.fn(),
+  RateLimiter: class { check = () => ({ allowed: true }); },
 }));
 
 vi.mock("@bookhouse/shared", async () => {
@@ -70,6 +84,7 @@ vi.mock("@bookhouse/shared", async () => {
 
 beforeEach(() => {
   addMock.mockReset();
+  enrichWorkMock.mockReset();
   hashFileAssetMock.mockReset();
   importJobUpdateMock.mockReset();
   importJobUpdateMock.mockResolvedValue({});
@@ -81,6 +96,8 @@ beforeEach(() => {
   queueConnectionConfigMock.mockClear();
   redisConstructorMock.mockClear();
   scanLibraryRootMock.mockReset();
+  workFindUniqueMock.mockReset();
+  externalLinkUpsertMock.mockReset();
   workerCloseMock.mockReset();
   workerConstructorMock.mockClear();
 });
@@ -94,6 +111,7 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
+      enrichWork: enrichWorkMock,
     });
 
     scanLibraryRootMock.mockResolvedValueOnce("scan-result");
@@ -133,6 +151,14 @@ describe("library worker", () => {
       } as never),
     ).resolves.toBe("cover-result");
 
+    enrichWorkMock.mockResolvedValueOnce("enrich-result");
+    await expect(
+      processor({
+        data: { workId: "work-1" },
+        name: "refresh-metadata",
+      } as never),
+    ).resolves.toBe("enrich-result");
+
     expect(scanLibraryRootMock).toHaveBeenCalledWith({ libraryRootId: "root-1" });
     expect(hashFileAssetMock).toHaveBeenCalledWith({ fileAssetId: "file-1" });
     expect(matchFileAssetToEditionMock).toHaveBeenCalledWith({ fileAssetId: "file-1" });
@@ -152,6 +178,7 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
+      enrichWork: enrichWorkMock,
     });
 
     scanLibraryRootMock.mockResolvedValueOnce("scan-result");
@@ -181,6 +208,7 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
+      enrichWork: enrichWorkMock,
     });
 
     scanLibraryRootMock.mockRejectedValueOnce(new Error("Disk full"));
@@ -213,6 +241,7 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
+      enrichWork: enrichWorkMock,
     });
 
     scanLibraryRootMock.mockRejectedValueOnce("plain string error");
@@ -244,6 +273,7 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
+      enrichWork: enrichWorkMock,
     });
 
     scanLibraryRootMock.mockResolvedValueOnce("scan-result");
@@ -265,6 +295,7 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
+      enrichWork: enrichWorkMock,
     });
 
     const updateProgressMock = vi.fn();
@@ -305,6 +336,7 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
+      enrichWork: enrichWorkMock,
     });
 
     scanLibraryRootMock.mockResolvedValueOnce("scan-result");
@@ -319,6 +351,91 @@ describe("library worker", () => {
     expect(scanLibraryRootMock).toHaveBeenCalledWith({ libraryRootId: "root-1" });
   });
 
+  it("dispatches refresh-metadata jobs to enrichWork handler and wires deps", async () => {
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor({
+      hashFileAsset: hashFileAssetMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
+      parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
+      scanLibraryRoot: scanLibraryRootMock,
+      enrichWork: enrichWorkMock,
+    });
+
+    enrichWorkMock.mockResolvedValueOnce({ status: "enriched", workOlid: "OL123W" });
+
+    const result = await processor({
+      data: { workId: "work-1" },
+      name: "refresh-metadata",
+    } as never);
+
+    expect(result).toEqual({ status: "enriched", workOlid: "OL123W" });
+    expect(enrichWorkMock).toHaveBeenCalledWith("work-1", expect.objectContaining({
+      findWork: expect.any(Function) as unknown,
+      searchOL: expect.any(Function) as unknown,
+      getOLWork: expect.any(Function) as unknown,
+      upsertExternalLink: expect.any(Function) as unknown,
+      checkRateLimit: expect.any(Function) as unknown,
+    }));
+
+    // Exercise the deps callbacks for coverage
+    const deps = (enrichWorkMock.mock.calls[0] as unknown[])[1] as {
+      findWork: (id: string) => unknown;
+      searchOL: (title: string, author: string) => unknown;
+      getOLWork: (olid: string) => unknown;
+      upsertExternalLink: (data: { editionId: string; provider: string; externalId: string; metadata: Record<string, unknown> }) => unknown;
+      checkRateLimit: () => unknown;
+    };
+
+    workFindUniqueMock.mockResolvedValueOnce({ id: "w1" });
+    await deps.findWork("w1");
+    expect(workFindUniqueMock).toHaveBeenCalledWith({
+      where: { id: "w1" },
+      include: {
+        editions: {
+          include: {
+            contributors: { include: { contributor: true } },
+            externalLinks: true,
+          },
+        },
+      },
+    });
+
+    deps.searchOL("title", "author");
+    deps.getOLWork("OL1W");
+
+    externalLinkUpsertMock.mockResolvedValueOnce({ id: "el1" });
+    await deps.upsertExternalLink({
+      editionId: "e1",
+      provider: "openlibrary",
+      externalId: "OL1W",
+      metadata: { title: "Test" },
+    });
+    expect(externalLinkUpsertMock).toHaveBeenCalledWith({
+      where: {
+        editionId_provider_externalId: {
+          editionId: "e1",
+          provider: "openlibrary",
+          externalId: "OL1W",
+        },
+      },
+      create: {
+        editionId: "e1",
+        provider: "openlibrary",
+        externalId: "OL1W",
+        metadata: { title: "Test" },
+        lastSyncedAt: expect.any(Date) as unknown,
+      },
+      update: {
+        metadata: { title: "Test" },
+        lastSyncedAt: expect.any(Date) as unknown,
+      },
+    });
+
+    const rateResult = deps.checkRateLimit();
+    expect(rateResult).toEqual({ allowed: true });
+  });
+
   it("fails unknown jobs", async () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
@@ -327,6 +444,7 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
+      enrichWork: enrichWorkMock,
     });
 
     await expect(

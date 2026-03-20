@@ -2,7 +2,7 @@ import { pathToFileURL } from "node:url";
 import IORedis from "ioredis";
 import { type Job, Worker } from "bullmq";
 import { db } from "@bookhouse/db";
-import { hashFileAsset, matchFileAssetToEdition, parseFileAssetMetadata, processCoverForWorkDefault, scanLibraryRoot, type ScanProgressData } from "@bookhouse/ingest";
+import { hashFileAsset, matchFileAssetToEdition, parseFileAssetMetadata, processCoverForWorkDefault, scanLibraryRoot, type ScanProgressData, enrichWork, searchOpenLibrary, getOpenLibraryWork, RateLimiter, type EnrichWorkDeps } from "@bookhouse/ingest";
 import {
   LIBRARY_JOB_NAMES,
   type BaseJobPayload,
@@ -12,6 +12,7 @@ import {
   type MatchFileAssetToEditionJobPayload,
   type ParseFileAssetMetadataJobPayload,
   type ProcessCoverJobPayload,
+  type RefreshMetadataJobPayload,
   QUEUES,
   type ScanLibraryRootJobPayload,
   createLogger,
@@ -21,6 +22,7 @@ import {
 const logger = createLogger("library-worker");
 
 const processCoverForWork = processCoverForWorkDefault(db);
+const rateLimiter = new RateLimiter();
 
 export interface LibraryWorkerHandlers {
   hashFileAsset: typeof hashFileAsset;
@@ -28,6 +30,7 @@ export interface LibraryWorkerHandlers {
   parseFileAssetMetadata: typeof parseFileAssetMetadata;
   processCoverForWork: (input: { workId: string; fileAssetId: string; coverCacheDir: string }) => Promise<unknown>;
   scanLibraryRoot: typeof scanLibraryRoot;
+  enrichWork: typeof enrichWork;
 }
 
 function dispatch(
@@ -65,6 +68,39 @@ function dispatch(
         coverCacheDir: process.env.COVER_CACHE_DIR ?? "/data/covers",
       });
     }
+    case LIBRARY_JOB_NAMES.REFRESH_METADATA: {
+      const refreshPayload = job.data as RefreshMetadataJobPayload;
+      const deps: EnrichWorkDeps = {
+        findWork: (workId) =>
+          db.work.findUnique({
+            where: { id: workId },
+            include: {
+              editions: {
+                include: {
+                  contributors: { include: { contributor: true } },
+                  externalLinks: true,
+                },
+              },
+            },
+          }),
+        searchOL: (title, author) => searchOpenLibrary(title, author, fetch),
+        getOLWork: (olid) => getOpenLibraryWork(olid, fetch),
+        upsertExternalLink: (data) =>
+          db.externalLink.upsert({
+            where: {
+              editionId_provider_externalId: {
+                editionId: data.editionId,
+                provider: data.provider,
+                externalId: data.externalId,
+              },
+            },
+            create: { ...data, metadata: data.metadata as object, lastSyncedAt: new Date() },
+            update: { metadata: data.metadata as object, lastSyncedAt: new Date() },
+          }),
+        checkRateLimit: () => rateLimiter.check(),
+      };
+      return handlers.enrichWork(refreshPayload.workId, deps);
+    }
     default:
       throw new Error(`Unsupported library job: ${String(job.name)}`);
   }
@@ -77,6 +113,7 @@ export function createLibraryWorkerProcessor(
     parseFileAssetMetadata,
     processCoverForWork,
     scanLibraryRoot,
+    enrichWork,
   },
 ) {
   return async (
@@ -130,6 +167,7 @@ export function createLibraryWorker(
     parseFileAssetMetadata,
     processCoverForWork,
     scanLibraryRoot,
+    enrichWork,
   },
 ) {
   const connection = new IORedis(getQueueConnectionConfig());

@@ -10,6 +10,7 @@ import {
 } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
 import { ProgressBar } from "~/components/progress-bar";
+import { EnrichmentReview } from "~/components/enrichment-review";
 import {
   getWorkDetailServerFn,
   type WorkDetail,
@@ -74,7 +75,7 @@ function WorkDetailPage() {
   return (
     <div className="space-y-6">
       <nav className="flex items-center gap-1 text-sm text-muted-foreground">
-        <Link to="/library" className="hover:text-foreground">
+        <Link to="/library" search={{ page: 1, pageSize: 50, sort: "title-asc" as const }} className="hover:text-foreground">
           Library
         </Link>
         <ChevronRight className="size-4" />
@@ -141,6 +142,8 @@ function WorkDetailPage() {
           </div>
         </div>
       </div>
+
+      <EnrichmentReview workId={work.id} currentDescription={work.description ?? null} />
 
       <div className="space-y-4">
         <h2 className="text-lg font-semibold">Editions</h2>
