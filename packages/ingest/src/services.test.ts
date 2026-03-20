@@ -678,7 +678,8 @@ describe("ingest services", () => {
     expect(firstScan.enqueuedHashJobs).toHaveLength(2);
     expect(firstScan.missingFileAssetIds).toEqual([]);
     expect(firstScan.scannedFileAssetIds).toHaveLength(2);
-    const bookStubWork = [...state.works.values()][0]!;
+    const bookStubWork = [...state.works.values()].at(0);
+    expect(bookStubWork).toBeDefined();
     expect(enqueuedJobs).toEqual([
       {
         jobName: LIBRARY_JOB_NAMES.HASH_FILE_ASSET,
@@ -686,7 +687,7 @@ describe("ingest services", () => {
       },
       {
         jobName: LIBRARY_JOB_NAMES.PROCESS_COVER,
-        payload: { workId: bookStubWork.id, fileAssetId: "file-1" },
+        payload: { workId: bookStubWork?.id, fileAssetId: "file-1" },
       },
       {
         jobName: LIBRARY_JOB_NAMES.HASH_FILE_ASSET,
@@ -1093,8 +1094,11 @@ describe("ingest services", () => {
       ([name]: [string]) => name === LIBRARY_JOB_NAMES.PROCESS_COVER,
     );
     expect(coverCalls).toHaveLength(1);
-    const stubWork = works[0]!;
-    expect(coverCalls[0]![1]).toMatchObject({ workId: stubWork.id });
+    const stubWork = works.at(0);
+    expect(stubWork).toBeDefined();
+    const firstCoverCall = coverCalls.at(0);
+    expect(firstCoverCall).toBeDefined();
+    expect(firstCoverCall?.[1]).toMatchObject({ workId: stubWork?.id });
   });
 
   it("skips stubs for COVER, SIDECAR, and OTHER media kinds during scan", async () => {
