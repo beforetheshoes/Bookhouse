@@ -29,6 +29,8 @@ describe("AppSidebar", () => {
   it("renders navigation items", () => {
     renderSidebar();
     expect(screen.getByText("Library")).toBeTruthy();
+    expect(screen.getByText("Series")).toBeTruthy();
+    expect(screen.getByText("Authors")).toBeTruthy();
     expect(screen.getByText("Collections")).toBeTruthy();
     expect(screen.getByText("Duplicates")).toBeTruthy();
     expect(screen.getByText("Audio Links")).toBeTruthy();

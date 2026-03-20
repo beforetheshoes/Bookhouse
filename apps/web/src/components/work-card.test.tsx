@@ -97,4 +97,19 @@ describe("WorkCard", () => {
     render(<WorkCard {...baseProps} />);
     expect(screen.queryByText("Processing\u2026")).toBeNull();
   });
+
+  it("renders progress bar when progressPercent is provided", () => {
+    render(<WorkCard {...baseProps} progressPercent={42} />);
+    expect(screen.getByRole("progressbar")).toBeTruthy();
+  });
+
+  it("does not render progress bar when progressPercent is null", () => {
+    render(<WorkCard {...baseProps} progressPercent={null} />);
+    expect(screen.queryByRole("progressbar")).toBeNull();
+  });
+
+  it("does not render progress bar when progressPercent is undefined", () => {
+    render(<WorkCard {...baseProps} />);
+    expect(screen.queryByRole("progressbar")).toBeNull();
+  });
 });

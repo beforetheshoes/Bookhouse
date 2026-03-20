@@ -28,7 +28,9 @@ vi.mock("@tanstack/react-virtual", () => ({
 }));
 
 vi.mock("~/components/work-card", () => ({
-  WorkCard: ({ title }: { title: string }) => <div data-testid="work-card">{title}</div>,
+  WorkCard: ({ title, progressPercent }: { title: string; progressPercent?: number }) => (
+    <div data-testid="work-card" data-progress={progressPercent != null ? String(progressPercent) : undefined}>{title}</div>
+  ),
 }));
 
 const makeWork = (title: string, authors: string[] = [], enrichmentStatus = "ENRICHED") => ({
@@ -165,6 +167,16 @@ describe("LibraryGrid", () => {
     unmount();
     // Callback ref called with null on unmount disconnects the observer
     expect(disconnectMock).toHaveBeenCalled();
+  });
+
+  it("passes progressPercent from progressMap to WorkCard", async () => {
+    const { LibraryGrid } = await import("./library-grid");
+    const works = [makeWork("Alpha"), makeWork("Bravo")];
+    const progressMap = { alpha: 42 };
+    render(<LibraryGrid works={works as never[]} progressMap={progressMap} />);
+    const cards = screen.getAllByTestId("work-card");
+    expect(cards[0]?.getAttribute("data-progress")).toBe("42");
+    expect(cards[1]?.getAttribute("data-progress")).toBeNull();
   });
 
   it("handles ResizeObserver with empty entries", async () => {

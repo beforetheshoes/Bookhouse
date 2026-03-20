@@ -2,12 +2,14 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import type { AuthenticatedUser } from "@bookhouse/auth";
 import {
   Activity,
+  BookCopy,
   BookOpen,
   Copy,
   FolderOpen,
   Headphones,
   LogOut,
   Settings,
+  Users,
 } from "lucide-react";
 import {
   Sidebar,
@@ -31,6 +33,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 
 const navItems = [
   { title: "Library", href: "/library", icon: BookOpen },
+  { title: "Series", href: "/series", icon: BookCopy },
+  { title: "Authors", href: "/authors", icon: Users },
   { title: "Collections", href: "/collections", icon: FolderOpen },
   { title: "Duplicates", href: "/duplicates", icon: Copy },
   { title: "Audio Links", href: "/audio-links", icon: Headphones },
