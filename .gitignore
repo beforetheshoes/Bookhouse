@@ -37,3 +37,4 @@ pnpm-debug.log*
 AGENTS.md
 CLAUDE.md
 apps/web/.tanstack/tmp/*
+covers/

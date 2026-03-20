@@ -24,7 +24,8 @@ import {
   type ParseFileAssetMetadataJobPayload,
   enqueueLibraryJob,
 } from "@bookhouse/shared";
-import { classifyMediaKind, getFileExtension, normalizeRelativePath, normalizeRootPath } from "./classification";
+import { classifyMediaKind, deriveFormatFamily, getFileExtension, normalizeRelativePath, normalizeRootPath } from "./classification";
+import { deriveTitleFromPath } from "./filename-title";
 import {
   parseAudiobookMetadataJson,
   parseAudioId3Tags,
@@ -68,7 +69,7 @@ type FileAssetRecord = Pick<
 >;
 
 type LibraryRootRecord = Pick<LibraryRoot, "id" | "lastScannedAt" | "path">;
-type WorkRecord = Pick<Work, "description" | "id" | "language" | "seriesId" | "sortTitle" | "titleCanonical" | "titleDisplay">;
+type WorkRecord = Pick<Work, "description" | "enrichmentStatus" | "id" | "language" | "seriesId" | "seriesPosition" | "sortTitle" | "titleCanonical" | "titleDisplay">;
 type EditionRecord = Pick<
   Edition,
   "asin" | "formatFamily" | "id" | "isbn10" | "isbn13" | "publishedAt" | "publisher" | "workId"
@@ -143,7 +144,7 @@ interface WorkFindManyArgs {
 }
 
 interface WorkCreateArgs {
-  data: Pick<WorkRecord, "sortTitle" | "titleCanonical" | "titleDisplay">;
+  data: Pick<WorkRecord, "sortTitle" | "titleCanonical" | "titleDisplay"> & Partial<Pick<WorkRecord, "enrichmentStatus">>;
 }
 
 interface EditionFindFirstArgs {
@@ -202,15 +203,16 @@ export interface IngestDb {
   };
   work: {
     create(args: WorkCreateArgs): Promise<WorkRecord>;
+    delete(args: { where: { id: string } }): Promise<void>;
     findMany(args: WorkFindManyArgs): Promise<WorkMatchRecord[]>;
     findUnique(args: { where: { id: string } }): Promise<WorkRecord | null>;
-    update(args: { where: { id: string }; data: Partial<Pick<Work, "description" | "language" | "seriesId">> }): Promise<WorkRecord>;
+    update(args: { where: { id: string }; data: Partial<Pick<Work, "description" | "enrichmentStatus" | "language" | "seriesId" | "seriesPosition" | "sortTitle" | "titleCanonical" | "titleDisplay">> }): Promise<WorkRecord>;
   };
   edition: {
     create(args: EditionCreateArgs): Promise<EditionRecord>;
     findFirst(args: EditionFindFirstArgs): Promise<EditionRecord | null>;
     findUnique(args: { where: { id: string } }): Promise<EditionRecord | null>;
-    update(args: { where: { id: string }; data: Partial<Pick<Edition, "publisher" | "publishedAt">> }): Promise<EditionRecord>;
+    update(args: { where: { id: string }; data: Partial<Pick<Edition, "asin" | "isbn10" | "isbn13" | "publisher" | "publishedAt" | "workId">> }): Promise<EditionRecord>;
   };
   series: {
     upsert(args: { name: string }): Promise<{ id: string; name: string }>;
@@ -257,6 +259,7 @@ export interface ScanLibraryRootInput {
 }
 
 export interface ScanLibraryRootResult {
+  createdStubWorkIds: string[];
   discoveredPaths: string[];
   enqueuedHashJobs: string[];
   missingFileAssetIds: string[];
@@ -294,8 +297,10 @@ export interface MatchFileAssetToEditionResult {
   createdEditionFile: boolean;
   createdWork: boolean;
   editionId?: string;
+  enrichedExistingWork: boolean;
   enqueuedCoverJob: boolean;
   fileAssetId: string;
+  mergedIntoWorkId?: string;
   skipped: boolean;
   workId?: string;
 }
@@ -561,13 +566,13 @@ function createDefaultIngestDb(): IngestDb {
     },
     work: {
       ...(prisma.work as unknown as Omit<IngestDb["work"], "update">),
-      async update(args: { where: { id: string }; data: Partial<Pick<Work, "description" | "language" | "seriesId">> }) {
+      async update(args: { where: { id: string }; data: Partial<Pick<Work, "description" | "enrichmentStatus" | "language" | "seriesId" | "seriesPosition" | "sortTitle" | "titleCanonical" | "titleDisplay">> }) {
         return prisma.work.update(args) as unknown as Promise<WorkRecord>;
       },
     },
     edition: {
       ...(prisma.edition as unknown as Omit<IngestDb["edition"], "update">),
-      async update(args: { where: { id: string }; data: Partial<Pick<Edition, "publisher" | "publishedAt">> }) {
+      async update(args: { where: { id: string }; data: Partial<Pick<Edition, "asin" | "isbn10" | "isbn13" | "publisher" | "publishedAt" | "workId">> }) {
         return prisma.edition.update(args) as unknown as Promise<EditionRecord>;
       },
     },
@@ -613,6 +618,8 @@ export function createIngestServices(
     const seenPaths = new Set<string>();
     const scannedFileAssetIds: string[] = [];
     const enqueuedHashJobs: string[] = [];
+    const createdStubWorkIds: string[] = [];
+    const seenAudioDirs = new Map<string, { workId: string; editionId: string }>();
 
     if (reportProgress) {
       await reportProgress({ totalFiles: discoveredPaths.length });
@@ -689,6 +696,102 @@ export function createIngestServices(
         enqueuedHashJobs.push(upsertedFileAsset.id);
       }
 
+      // Create stub Work/Edition/EditionFile for new files with a content format
+      if (!existingFileAsset) {
+        const formatFamily = deriveFormatFamily(upsertedFileAsset.mediaKind);
+        if (formatFamily !== null) {
+          const existingLink = await ingestDb.editionFile.findFirst({
+            where: { fileAssetId: upsertedFileAsset.id },
+          });
+
+          if (existingLink === null) {
+            if (upsertedFileAsset.mediaKind === MediaKind.AUDIO) {
+              const audioDir = path.dirname(relativePath);
+              const existing = seenAudioDirs.get(audioDir);
+              if (existing) {
+                // Add track to existing audiobook edition
+                await ingestDb.editionFile.create({
+                  data: {
+                    editionId: existing.editionId,
+                    fileAssetId: upsertedFileAsset.id,
+                    role: EditionFileRole.AUDIO_TRACK,
+                  },
+                });
+              } else {
+                // New audiobook directory — create stub
+                const { title, titleCanonical } = deriveTitleFromPath(relativePath, upsertedFileAsset.mediaKind);
+                const stubWork = await ingestDb.work.create({
+                  data: {
+                    enrichmentStatus: "STUB",
+                    sortTitle: null,
+                    titleCanonical,
+                    titleDisplay: title,
+                  },
+                });
+                const stubEdition = await ingestDb.edition.create({
+                  data: {
+                    asin: null,
+                    formatFamily,
+                    isbn10: null,
+                    isbn13: null,
+                    publishedAt: null,
+                    publisher: null,
+                    workId: stubWork.id,
+                  },
+                });
+                await ingestDb.editionFile.create({
+                  data: {
+                    editionId: stubEdition.id,
+                    fileAssetId: upsertedFileAsset.id,
+                    role: EditionFileRole.AUDIO_TRACK,
+                  },
+                });
+                seenAudioDirs.set(audioDir, { workId: stubWork.id, editionId: stubEdition.id });
+                createdStubWorkIds.push(stubWork.id);
+                await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
+                  workId: stubWork.id,
+                  fileAssetId: upsertedFileAsset.id,
+                });
+              }
+            } else {
+              // Ebook file — create stub per file
+              const { title, titleCanonical } = deriveTitleFromPath(relativePath, upsertedFileAsset.mediaKind);
+              const stubWork = await ingestDb.work.create({
+                data: {
+                  enrichmentStatus: "STUB",
+                  sortTitle: null,
+                  titleCanonical,
+                  titleDisplay: title,
+                },
+              });
+              const stubEdition = await ingestDb.edition.create({
+                data: {
+                  asin: null,
+                  formatFamily,
+                  isbn10: null,
+                  isbn13: null,
+                  publishedAt: null,
+                  publisher: null,
+                  workId: stubWork.id,
+                },
+              });
+              await ingestDb.editionFile.create({
+                data: {
+                  editionId: stubEdition.id,
+                  fileAssetId: upsertedFileAsset.id,
+                  role: EditionFileRole.PRIMARY,
+                },
+              });
+              createdStubWorkIds.push(stubWork.id);
+              await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
+                workId: stubWork.id,
+                fileAssetId: upsertedFileAsset.id,
+              });
+            }
+          }
+        }
+      }
+
       processedFiles++;
       if (reportProgress && processedFiles % SCAN_PROGRESS_INTERVAL === 0) {
         await reportProgress({ processedFiles, errorCount });
@@ -722,6 +825,7 @@ export function createIngestServices(
     });
 
     return {
+      createdStubWorkIds,
       discoveredPaths,
       enqueuedHashJobs,
       missingFileAssetIds,
@@ -881,6 +985,9 @@ export function createIngestServices(
               name: normalized.series.name,
             });
             workUpdates.seriesId = series.id;
+            if (normalized.series.index !== undefined) {
+              workUpdates.seriesPosition = normalized.series.index;
+            }
           }
 
           if (Object.keys(workUpdates).length > 0) {
@@ -1231,6 +1338,7 @@ export function createIngestServices(
         createdEdition: false,
         createdEditionFile: false,
         createdWork: false,
+        enrichedExistingWork: false,
         enqueuedCoverJob: false,
         fileAssetId: input.fileAssetId,
         skipped: true,
@@ -1251,9 +1359,104 @@ export function createIngestServices(
       });
 
       let enqueuedCoverJob = false;
-      if (existingEdition?.workId) {
+      let enrichedExistingWork = false;
+      let mergedIntoWorkId: string | undefined;
+      let finalWorkId = existingEdition?.workId;
+
+      if (existingEdition && finalWorkId) {
+        const existingWork = await ingestDb.work.findUnique({
+          where: { id: finalWorkId },
+        });
+
+        if (existingWork?.enrichmentStatus === "STUB") {
+          const storedMeta = parseStoredMetadata(fileAsset.metadata);
+          const matchableMeta = extractNormalizedMetadataForMatching(fileAsset);
+
+          if (storedMeta?.status === "parsed" && matchableMeta !== undefined) {
+            // Check for ISBN/title+author match against other works
+            const identifiers = storedMeta.normalized?.identifiers;
+            const editionMatch =
+              (identifiers?.isbn13
+                ? await ingestDb.edition.findFirst({ where: { isbn13: identifiers.isbn13 } })
+                : null) ??
+              (identifiers?.isbn10
+                ? await ingestDb.edition.findFirst({ where: { isbn10: identifiers.isbn10 } })
+                : null) ??
+              (identifiers?.asin
+                ? await ingestDb.edition.findFirst({ where: { asin: identifiers.asin } })
+                : null);
+
+            const matchedDifferentWork = editionMatch !== null && editionMatch.workId !== finalWorkId;
+
+            if (!matchedDifferentWork) {
+              // Check title+author match
+              const matchingWorks = await ingestDb.work.findMany({
+                include: { editions: { include: { contributors: { include: { contributor: true } } } } },
+                where: { titleCanonical: matchableMeta.titleCanonical },
+              });
+              const titleAuthorMatch = matchingWorks.find((work) => {
+                if (work.id === finalWorkId) return false;
+                const existingAuthors = getAuthorCanonicalsForWork(work);
+                return existingAuthors.length > 0 &&
+                  existingAuthors.length === matchableMeta.authorCanonicals.length &&
+                  existingAuthors.every((author, index) => author === matchableMeta.authorCanonicals[index]);
+              });
+
+              if (titleAuthorMatch) {
+                // Merge: re-link edition to matched work, delete orphan stub
+                await ingestDb.edition.update({
+                  where: { id: existingEdition.id },
+                  data: {
+                    workId: titleAuthorMatch.id,
+                    isbn13: identifiers?.isbn13 ?? null,
+                    isbn10: identifiers?.isbn10 ?? null,
+                    asin: identifiers?.asin ?? null,
+                  },
+                });
+                await ingestDb.work.delete({ where: { id: finalWorkId } });
+                mergedIntoWorkId = titleAuthorMatch.id;
+                finalWorkId = titleAuthorMatch.id;
+                enrichedExistingWork = true;
+              } else {
+                // No match — enrich the stub in place
+                await ingestDb.work.update({
+                  where: { id: finalWorkId },
+                  data: {
+                    description: storedMeta.normalized?.description ?? null,
+                    enrichmentStatus: "ENRICHED",
+                    language: storedMeta.normalized?.language ?? null,
+                    sortTitle: null,
+                    titleCanonical: matchableMeta.titleCanonical,
+                    titleDisplay: matchableMeta.title,
+                  },
+                });
+                await ingestDb.edition.update({
+                  where: { id: existingEdition.id },
+                  data: {
+                    isbn13: identifiers?.isbn13 ?? null,
+                    isbn10: identifiers?.isbn10 ?? null,
+                    asin: identifiers?.asin ?? null,
+                  },
+                });
+                await ensureContributors(ingestDb, existingEdition.id, matchableMeta.authors, ContributorRole.AUTHOR);
+                enrichedExistingWork = true;
+              }
+            } else {
+              // ISBN matched a different work — merge
+              await ingestDb.edition.update({
+                where: { id: existingEdition.id },
+                data: { workId: editionMatch.workId },
+              });
+              await ingestDb.work.delete({ where: { id: finalWorkId } });
+              mergedIntoWorkId = editionMatch.workId;
+              finalWorkId = editionMatch.workId;
+              enrichedExistingWork = true;
+            }
+          }
+        }
+
         await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
-          workId: existingEdition.workId,
+          workId: finalWorkId,
           fileAssetId: fileAsset.id,
         });
         enqueuedCoverJob = true;
@@ -1264,10 +1467,12 @@ export function createIngestServices(
         createdEditionFile: false,
         createdWork: false,
         editionId: existingEdition?.id,
+        enrichedExistingWork,
         enqueuedCoverJob,
         fileAssetId: fileAsset.id,
+        mergedIntoWorkId,
         skipped: false,
-        workId: existingEdition?.workId,
+        workId: finalWorkId,
       };
     }
 
@@ -1279,6 +1484,7 @@ export function createIngestServices(
         createdEdition: false,
         createdEditionFile: false,
         createdWork: false,
+        enrichedExistingWork: false,
         enqueuedCoverJob: false,
         fileAssetId: fileAsset.id,
         skipped: true,
@@ -1310,6 +1516,7 @@ export function createIngestServices(
         createdEditionFile,
         createdWork: false,
         editionId: editionMatch.id,
+        enrichedExistingWork: false,
         enqueuedCoverJob: true,
         fileAssetId: fileAsset.id,
         skipped: false,
@@ -1412,6 +1619,7 @@ export function createIngestServices(
       createdEditionFile,
       createdWork,
       editionId: createdEdition.id,
+      enrichedExistingWork: false,
       enqueuedCoverJob: true,
       fileAssetId: fileAsset.id,
       skipped: false,
@@ -1433,7 +1641,7 @@ export const scanLibraryRoot = services.scanLibraryRoot;
 export const hashFileAsset = services.hashFileAsset;
 export const matchFileAssetToEdition = services.matchFileAssetToEdition;
 export const parseFileAssetMetadata = services.parseFileAssetMetadata;
-export { classifyMediaKind, getFileExtension, hashFileContents, isFileChanged, normalizeRelativePath, normalizeRootPath, walkRegularFiles };
+export { classifyMediaKind, deriveFormatFamily, getFileExtension, hashFileContents, isFileChanged, normalizeRelativePath, normalizeRootPath, walkRegularFiles };
 export { parseEpubMetadata } from "./epub";
 export { parseOpfSidecar } from "./opf";
 export { parseAudiobookMetadataJson, parseAudioId3Tags } from "./audiobook";

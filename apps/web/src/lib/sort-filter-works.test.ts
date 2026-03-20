@@ -4,6 +4,7 @@ import { sortAndFilterWorks } from "./sort-filter-works";
 interface MockWork {
   id: string;
   titleDisplay: string;
+  titleCanonical: string;
   sortTitle: string | null;
   createdAt: Date;
   editions: {
@@ -20,6 +21,7 @@ const makeWork = (
 ): MockWork => ({
   id: title.toLowerCase().replace(/\s/g, "-"),
   titleDisplay: title,
+  titleCanonical: title.toLowerCase(),
   sortTitle: title.toLowerCase(),
   createdAt,
   editions: [
@@ -105,17 +107,19 @@ describe("sortAndFilterWorks", () => {
     expect(titles).toEqual(["NoAuthor", "Alpha"]);
   });
 
-  it("handles works with null sortTitle in title-asc", () => {
+  it("falls back to titleCanonical when sortTitle is null (title-asc)", () => {
     const nullA = { ...makeWork("Null A"), sortTitle: null } as never;
     const nullB = { ...makeWork("Null B"), sortTitle: null } as never;
-    const result = sortAndFilterWorks([alpha, nullA, nullB] as never[], "", "title-asc");
-    expect(result).toHaveLength(3);
+    const result = sortAndFilterWorks([nullB, alpha, nullA] as never[], "", "title-asc");
+    const titles = result.map((w) => (w as unknown as MockWork).titleDisplay);
+    expect(titles).toEqual(["Alpha", "Null A", "Null B"]);
   });
 
-  it("handles works with null sortTitle in title-desc", () => {
+  it("falls back to titleCanonical when sortTitle is null (title-desc)", () => {
     const nullA = { ...makeWork("Null A"), sortTitle: null } as never;
     const nullB = { ...makeWork("Null B"), sortTitle: null } as never;
-    const result = sortAndFilterWorks([alpha, nullA, nullB] as never[], "", "title-desc");
-    expect(result).toHaveLength(3);
+    const result = sortAndFilterWorks([nullA, alpha, nullB] as never[], "", "title-desc");
+    const titles = result.map((w) => (w as unknown as MockWork).titleDisplay);
+    expect(titles).toEqual(["Null B", "Null A", "Alpha"]);
   });
 });

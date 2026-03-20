@@ -1,31 +1,36 @@
 import { EventEmitter } from "node:events";
 import { createQueueEvents } from "@bookhouse/shared";
 
-interface SSEEvent {
+export interface SSEEvent {
   type: string;
   data: Record<string, unknown>;
 }
 
-class QueueEventsManager {
-  private queueEvents: ReturnType<typeof createQueueEvents>;
+interface QueueEventsLike {
+  on(event: string, callback: (...args: never[]) => void): void;
+  close(): Promise<void>;
+}
+
+export class QueueEventsManager {
+  private queueEvents: QueueEventsLike;
   private emitter = new EventEmitter();
 
-  constructor() {
-    this.queueEvents = createQueueEvents();
+  constructor(queueEvents: QueueEventsLike) {
+    this.queueEvents = queueEvents;
     this.setupListeners();
   }
 
   private setupListeners() {
-    this.queueEvents.on("completed", ({ jobId }) => {
+    this.queueEvents.on("completed", ({ jobId }: { jobId: string }) => {
       this.broadcast({ type: "job:completed", data: { jobId } });
     });
-    this.queueEvents.on("failed", ({ jobId, failedReason }) => {
+    this.queueEvents.on("failed", ({ jobId, failedReason }: { jobId: string; failedReason: string }) => {
       this.broadcast({ type: "job:failed", data: { jobId, error: failedReason } });
     });
-    this.queueEvents.on("active", ({ jobId }) => {
+    this.queueEvents.on("active", ({ jobId }: { jobId: string }) => {
       this.broadcast({ type: "job:active", data: { jobId } });
     });
-    this.queueEvents.on("progress", ({ jobId, data }) => {
+    this.queueEvents.on("progress", ({ jobId, data }: { jobId: string; data: unknown }) => {
       this.broadcast({ type: "job:progress", data: { jobId, progress: data } });
     });
   }
@@ -50,7 +55,11 @@ let instance: QueueEventsManager | null = null;
 
 export function getQueueEventsManager(): QueueEventsManager {
   if (!instance) {
-    instance = new QueueEventsManager();
+    instance = new QueueEventsManager(createQueueEvents());
   }
   return instance;
+}
+
+export function resetQueueEventsManager(): void {
+  instance = null;
 }

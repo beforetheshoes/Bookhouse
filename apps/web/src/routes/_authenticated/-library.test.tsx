@@ -11,6 +11,7 @@ let mockLoaderData: {
     sortTitle: string;
     coverPath: string | null;
     createdAt: Date;
+    enrichmentStatus: string;
     series: { id: string; name: string } | null;
     editions: {
       formatFamily: string;
@@ -30,7 +31,15 @@ vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
     ...actual,
-    Link: ({ children, to, ...props }: { children?: React.ReactNode; to: string; [key: string]: unknown }) => <a href={to} {...props}>{children}</a>,
+    Link: ({ children, to, params, ...props }: { children?: React.ReactNode; to: string; params?: Record<string, string>; [key: string]: unknown }) => {
+      let href = to;
+      if (params) {
+        for (const [key, value] of Object.entries(params)) {
+          href = href.replace(`$${key}`, value);
+        }
+      }
+      return <a href={href} {...props}>{children}</a>;
+    },
     useRouter: () => ({ invalidate: vi.fn(), navigate: vi.fn() }),
     createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
       ...opts,
@@ -97,12 +106,13 @@ vi.mock("@tanstack/react-virtual", () => ({
   }),
 }));
 
-const makeWork = (title: string, authors: string[] = [], formats: string[] = []) => ({
+const makeWork = (title: string, authors: string[] = [], formats: string[] = [], enrichmentStatus = "ENRICHED") => ({
   id: `work-${title.toLowerCase().replace(/\s/g, "-")}`,
   titleDisplay: title,
   sortTitle: title.toLowerCase(),
   coverPath: null,
   createdAt: new Date("2025-01-01"),
+  enrichmentStatus,
   series: null,
   editions: [
     {
@@ -170,6 +180,20 @@ describe("LibraryPage", () => {
     expect(screen.getByText("F. Scott Fitzgerald")).toBeTruthy();
   });
 
+  it("renders title as link to work detail in table view", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      works: [makeWork("The Great Gatsby", ["F. Scott Fitzgerald"], ["EBOOK"])],
+      activeJobCount: 0,
+    };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    const titleLink = screen.getByText("The Great Gatsby").closest("a");
+    expect(titleLink).toBeTruthy();
+    expect(titleLink?.getAttribute("href")).toBe("/library/work-the-great-gatsby");
+  });
+
   it("renders work with no authors showing dash in table view", async () => {
     mockView = "table";
     mockLoaderData = {
@@ -192,6 +216,7 @@ describe("LibraryPage", () => {
         sortTitle: "no editions",
         coverPath: null,
         createdAt: new Date("2025-01-01"),
+        enrichmentStatus: "ENRICHED",
         series: null,
         editions: [],
       }],
@@ -276,6 +301,30 @@ describe("LibraryPage", () => {
     rerender(<LibraryPage />);
 
     expect(screen.getByText(/Scanning.*new/)).toBeTruthy();
+  });
+
+  it("shows processing badge for stub works in table view", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      works: [makeWork("Stub Book", ["Author"], ["EBOOK"], "STUB")],
+      activeJobCount: 0,
+    };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.getByText("Processing\u2026")).toBeTruthy();
+  });
+
+  it("does not show processing badge for enriched works in table view", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      works: [makeWork("Enriched Book", ["Author"], ["EBOOK"], "ENRICHED")],
+      activeJobCount: 0,
+    };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.queryByText("Processing\u2026")).toBeNull();
   });
 
   it("does not show scanning indicator when activeJobCount is 0", async () => {

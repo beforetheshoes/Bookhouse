@@ -1,4 +1,6 @@
 import path from "node:path";
+import os from "node:os";
+import { mkdtemp, writeFile as fsWriteFile } from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { MediaKind } from "@bookhouse/domain";
@@ -6,6 +8,7 @@ import {
   detectAdjacentCover,
   resizeCoverImage,
   processCoverForWork,
+  processCoverForWorkDefault,
   type CoverDependencies,
   type ProcessCoverInput,
 } from "./covers";
@@ -277,5 +280,61 @@ describe("processCoverForWork", () => {
     await expect(processCoverForWork(createInput(), deps)).rejects.toThrow(
       'File asset "fa-1" was not found',
     );
+  });
+});
+
+describe("processCoverForWorkDefault", () => {
+  it("throws when file asset is not found", async () => {
+    const db = {
+      fileAsset: { findUnique: vi.fn().mockResolvedValue(null) },
+      work: { update: vi.fn().mockResolvedValue({}) },
+    };
+    const handler = processCoverForWorkDefault(db);
+    await expect(handler({ workId: "w-1", fileAssetId: "fa-missing", coverCacheDir: "/tmp" })).rejects.toThrow(
+      'File asset "fa-missing" was not found',
+    );
+    expect(db.fileAsset.findUnique).toHaveBeenCalledWith({ where: { id: "fa-missing" } });
+  });
+
+  it("calls detectAdjacentCover with real readdir when no embedded cover found", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "bookhouse-covers-default-"));
+    await fsWriteFile(path.join(dir, "track.mp3"), "audio");
+    const db = {
+      fileAsset: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "fa-1",
+          absolutePath: path.join(dir, "track.mp3"),
+          mediaKind: "AUDIO",
+        }),
+      },
+      work: { update: vi.fn().mockResolvedValue({}) },
+    };
+    const handler = processCoverForWorkDefault(db);
+    const result = await handler({ workId: "w-1", fileAssetId: "fa-1", coverCacheDir: dir });
+    // No EPUB, no adjacent cover file → source "none"
+    expect(result).toEqual({ source: "none", updated: false });
+  });
+
+  it("calls resizeCoverImage with real sharp when adjacent cover is found", async () => {
+    const sharp = await import("sharp");
+    const dir = await mkdtemp(path.join(os.tmpdir(), "bookhouse-covers-resize-"));
+    await fsWriteFile(path.join(dir, "track.mp3"), "audio");
+    // Generate a valid 1x1 PNG using sharp
+    const pngBytes = await sharp.default({ create: { width: 1, height: 1, channels: 3, background: { r: 255, g: 0, b: 0 } } }).png().toBuffer();
+    await fsWriteFile(path.join(dir, "cover.jpg"), pngBytes);
+    const db = {
+      fileAsset: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "fa-1",
+          absolutePath: path.join(dir, "track.mp3"),
+          mediaKind: "AUDIO",
+        }),
+      },
+      work: { update: vi.fn().mockResolvedValue({}) },
+    };
+    const handler = processCoverForWorkDefault(db);
+    const result = await handler({ workId: "w-1", fileAssetId: "fa-1", coverCacheDir: dir });
+    expect(result).toEqual({ source: "adjacent", updated: true });
+    expect(db.work.update).toHaveBeenCalledWith({ where: { id: "w-1" }, data: { coverPath: "w-1" } });
   });
 });

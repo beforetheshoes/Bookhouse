@@ -29,9 +29,9 @@ export function sortAndFilterWorks(
   return [...result].sort((a, b) => {
     switch (sort) {
       case "title-asc":
-        return (a.sortTitle ?? "").localeCompare(b.sortTitle ?? "");
+        return (a.sortTitle ?? a.titleCanonical).localeCompare(b.sortTitle ?? b.titleCanonical);
       case "title-desc":
-        return (b.sortTitle ?? "").localeCompare(a.sortTitle ?? "");
+        return (b.sortTitle ?? b.titleCanonical).localeCompare(a.sortTitle ?? a.titleCanonical);
       case "author-asc":
         return getAuthors(a).localeCompare(getAuthors(b));
       case "author-desc":

@@ -11,7 +11,7 @@ export default defineConfig({
     environment: "node",
     globals: true,
     testTimeout: 30000,
-    exclude: [".claude/**", "**/node_modules/**"],
+    exclude: [".claude/**", "**/node_modules/**", "**/.output/**"],
     environmentMatchGlobs: [
       ["apps/web/src/**/*.test.{ts,tsx}", "happy-dom"],
     ],
@@ -22,7 +22,8 @@ export default defineConfig({
         "packages/**/*.ts",
         "apps/web/src/**/*.ts",
         "apps/web/src/**/*.tsx",
-        "apps/web/server/routes/api/covers/**/*.ts",
+        "apps/web/server/routes/api/**/*.ts",
+        "apps/web/server/utils/**/*.ts",
         "workers/**/*.ts",
       ],
       exclude: ["**/*.d.ts", "apps/web/src/routeTree.gen.ts"],

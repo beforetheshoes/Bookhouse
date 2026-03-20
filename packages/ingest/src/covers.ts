@@ -1,8 +1,10 @@
 import path from "node:path";
+import { readFile, mkdir, writeFile, readdir } from "node:fs/promises";
 import type { Dirent } from "node:fs";
+import sharp from "sharp";
 import { MediaKind } from "@bookhouse/domain";
 import { classifyMediaKind } from "./classification";
-import type { EpubCoverResult } from "./epub";
+import { extractEpubCover, type EpubCoverResult } from "./epub";
 
 type ListDirectoryFn = (path: string, options: { withFileTypes: true }) => Promise<Dirent[]>;
 type ReadFileFn = (path: string) => Promise<Buffer>;
@@ -160,4 +162,16 @@ export async function processCoverForWork(
   });
 
   return { source, updated: true };
+}
+
+export function processCoverForWorkDefault(db: CoverDb) {
+  return (input: ProcessCoverInput) =>
+    processCoverForWork(input, {
+      db,
+      extractEpubCover,
+      readFile,
+      detectAdjacentCover: (directory) => detectAdjacentCover(directory, readdir),
+      resizeCoverImage: (resizeInput) =>
+        resizeCoverImage(resizeInput, { sharp: sharp as never, mkdir, writeFile }),
+    });
 }

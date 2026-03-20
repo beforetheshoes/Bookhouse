@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { BookOpen } from "lucide-react";
 import { Badge } from "~/components/ui/badge";
 
@@ -6,17 +7,18 @@ export interface WorkCardProps {
   id: string;
   title: string;
   authors: string;
+  enrichmentStatus?: string;
   formats: string[];
   series?: string | null;
   coverPath?: string | null;
 }
 
-export function WorkCard({ id, title, authors, formats, series, coverPath }: WorkCardProps) {
+export function WorkCard({ id, title, authors, enrichmentStatus, formats, series, coverPath }: WorkCardProps) {
   const [imgFailed, setImgFailed] = useState(false);
   const showPlaceholder = !coverPath || imgFailed;
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-lg border bg-card">
+    <Link to="/library/$workId" params={{ workId: id }} className="flex flex-col overflow-hidden rounded-lg border bg-card">
       <div className="aspect-[2/3] bg-muted">
         {showPlaceholder ? (
           <div className="flex size-full items-center justify-center text-muted-foreground">
@@ -46,8 +48,13 @@ export function WorkCard({ id, title, authors, formats, series, coverPath }: Wor
               {series}
             </Badge>
           )}
+          {enrichmentStatus === "STUB" && (
+            <Badge variant="outline" className="animate-pulse px-1.5 py-0 text-[10px]">
+              Processing&hellip;
+            </Badge>
+          )}
         </div>
       </div>
-    </div>
+    </Link>
   );
 }
