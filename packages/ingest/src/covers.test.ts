@@ -316,19 +316,12 @@ describe("processCoverForWorkDefault", () => {
   });
 
   it("calls resizeCoverImage with real sharp when adjacent cover is found", async () => {
+    const sharp = await import("sharp");
     const dir = await mkdtemp(path.join(os.tmpdir(), "bookhouse-covers-resize-"));
     await fsWriteFile(path.join(dir, "track.mp3"), "audio");
-    // Minimal 1x1 red pixel JPEG
-    const jpegBytes = Buffer.from(
-      "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8U" +
-      "HRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgN" +
-      "DRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIy" +
-      "MjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQ" +
-      "AAAAAAAAAAAAAAAAAAAP/EABQBAQAAAAAAAAAAAAAAAAAAAAD/xAAUEQEAAAAAAAAAAAAA" +
-      "AAAAAAAA/9oADAMBAAIRAxEAPwCwABmX/9k=",
-      "base64",
-    );
-    await fsWriteFile(path.join(dir, "cover.jpg"), jpegBytes);
+    // Generate a valid 1x1 PNG using sharp
+    const pngBytes = await sharp.default({ create: { width: 1, height: 1, channels: 3, background: { r: 255, g: 0, b: 0 } } }).png().toBuffer();
+    await fsWriteFile(path.join(dir, "cover.jpg"), pngBytes);
     const db = {
       fileAsset: {
         findUnique: vi.fn().mockResolvedValue({
