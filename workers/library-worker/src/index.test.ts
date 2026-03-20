@@ -15,6 +15,7 @@ const parseFileAssetMetadataMock = vi.fn();
 const processCoverForWorkMock = vi.fn();
 const scanLibraryRootMock = vi.fn();
 const enrichWorkMock = vi.fn();
+const detectDuplicatesMock = vi.fn();
 const importJobUpdateMock = vi.fn();
 
 vi.mock("ioredis", () => ({
@@ -66,6 +67,7 @@ vi.mock("@bookhouse/ingest", () => ({
   processCoverForWorkDefault: () => processCoverForWorkMock,
   scanLibraryRoot: scanLibraryRootMock,
   enrichWork: enrichWorkMock,
+  detectDuplicates: detectDuplicatesMock,
   searchOpenLibrary: vi.fn(),
   getOpenLibraryWork: vi.fn(),
   RateLimiter: class { check = () => ({ allowed: true }); },
@@ -84,6 +86,7 @@ vi.mock("@bookhouse/shared", async () => {
 
 beforeEach(() => {
   addMock.mockReset();
+  detectDuplicatesMock.mockReset();
   enrichWorkMock.mockReset();
   hashFileAssetMock.mockReset();
   importJobUpdateMock.mockReset();
@@ -112,6 +115,7 @@ describe("library worker", () => {
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
       enrichWork: enrichWorkMock,
+      detectDuplicates: detectDuplicatesMock,
     });
 
     scanLibraryRootMock.mockResolvedValueOnce("scan-result");
@@ -159,6 +163,15 @@ describe("library worker", () => {
       } as never),
     ).resolves.toBe("enrich-result");
 
+    detectDuplicatesMock.mockResolvedValueOnce("detect-result");
+    await expect(
+      processor({
+        data: { fileAssetId: "file-1" },
+        name: "detect-duplicates",
+      } as never),
+    ).resolves.toBe("detect-result");
+
+    expect(detectDuplicatesMock).toHaveBeenCalledWith({ fileAssetId: "file-1" });
     expect(scanLibraryRootMock).toHaveBeenCalledWith({ libraryRootId: "root-1" });
     expect(hashFileAssetMock).toHaveBeenCalledWith({ fileAssetId: "file-1" });
     expect(matchFileAssetToEditionMock).toHaveBeenCalledWith({ fileAssetId: "file-1" });
@@ -179,6 +192,7 @@ describe("library worker", () => {
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
       enrichWork: enrichWorkMock,
+      detectDuplicates: detectDuplicatesMock,
     });
 
     scanLibraryRootMock.mockResolvedValueOnce("scan-result");
@@ -209,6 +223,7 @@ describe("library worker", () => {
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
       enrichWork: enrichWorkMock,
+      detectDuplicates: detectDuplicatesMock,
     });
 
     scanLibraryRootMock.mockRejectedValueOnce(new Error("Disk full"));
@@ -242,6 +257,7 @@ describe("library worker", () => {
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
       enrichWork: enrichWorkMock,
+      detectDuplicates: detectDuplicatesMock,
     });
 
     scanLibraryRootMock.mockRejectedValueOnce("plain string error");
@@ -274,6 +290,7 @@ describe("library worker", () => {
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
       enrichWork: enrichWorkMock,
+      detectDuplicates: detectDuplicatesMock,
     });
 
     scanLibraryRootMock.mockResolvedValueOnce("scan-result");
@@ -296,6 +313,7 @@ describe("library worker", () => {
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
       enrichWork: enrichWorkMock,
+      detectDuplicates: detectDuplicatesMock,
     });
 
     const updateProgressMock = vi.fn();
@@ -337,6 +355,7 @@ describe("library worker", () => {
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
       enrichWork: enrichWorkMock,
+      detectDuplicates: detectDuplicatesMock,
     });
 
     scanLibraryRootMock.mockResolvedValueOnce("scan-result");
@@ -360,6 +379,7 @@ describe("library worker", () => {
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
       enrichWork: enrichWorkMock,
+      detectDuplicates: detectDuplicatesMock,
     });
 
     enrichWorkMock.mockResolvedValueOnce({ status: "enriched", workOlid: "OL123W" });
@@ -445,6 +465,7 @@ describe("library worker", () => {
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
       enrichWork: enrichWorkMock,
+      detectDuplicates: detectDuplicatesMock,
     });
 
     await expect(

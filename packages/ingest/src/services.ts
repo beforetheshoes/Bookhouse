@@ -25,6 +25,7 @@ import {
   enqueueLibraryJob,
 } from "@bookhouse/shared";
 import { classifyMediaKind, deriveFormatFamily, getFileExtension, normalizeRelativePath, normalizeRootPath } from "./classification";
+import { normalizedSimilarity } from "./similarity";
 import { deriveTitleFromPath } from "./filename-title";
 import {
   parseAudiobookMetadataJson,
@@ -109,12 +110,45 @@ interface FileAssetUpdateInput extends Omit<FileAssetCreateInput, "absolutePath"
   partialHash?: string | null;
 }
 
+interface DuplicateCandidateRecord {
+  id: string;
+  leftEditionId: string | null;
+  rightEditionId: string | null;
+  leftFileAssetId: string | null;
+  rightFileAssetId: string | null;
+  reason: string;
+  confidence: number | null;
+  status: string;
+}
+
+interface DuplicateCandidateCreateArgs {
+  data: {
+    leftEditionId?: string;
+    rightEditionId?: string;
+    leftFileAssetId?: string;
+    rightFileAssetId?: string;
+    reason: string;
+    confidence: number | null;
+  };
+}
+
+interface DuplicateCandidateFindFirstArgs {
+  where: {
+    OR: Array<{
+      leftEditionId?: string;
+      rightEditionId?: string;
+      leftFileAssetId?: string;
+      rightFileAssetId?: string;
+    }>;
+  };
+}
+
 interface LibraryRootFindUniqueArgs {
   where: { id: string };
 }
 
 interface FileAssetFindManyArgs {
-  where: { libraryRootId: string };
+  where: { libraryRootId: string } | { fullHash: string; NOT: { id: string } };
 }
 
 interface FileAssetUpsertArgs {
@@ -129,7 +163,7 @@ interface FileAssetUpdateArgs {
 }
 
 interface WorkFindManyArgs {
-  where: { titleCanonical: string };
+  where: { titleCanonical: string } | { NOT: { id: string } };
   include: {
     editions: {
       include: {
@@ -149,6 +183,13 @@ interface WorkCreateArgs {
 
 interface EditionFindFirstArgs {
   where: Partial<Pick<EditionRecord, "asin" | "id" | "isbn10" | "isbn13">>;
+}
+
+interface EditionFindManyArgs {
+  where: {
+    OR: Array<Partial<Pick<EditionRecord, "isbn13" | "isbn10">>>;
+    NOT: { id: string };
+  };
 }
 
 interface EditionCreateArgs {
@@ -211,6 +252,7 @@ export interface IngestDb {
   edition: {
     create(args: EditionCreateArgs): Promise<EditionRecord>;
     findFirst(args: EditionFindFirstArgs): Promise<EditionRecord | null>;
+    findMany(args: EditionFindManyArgs): Promise<EditionRecord[]>;
     findUnique(args: { where: { id: string } }): Promise<EditionRecord | null>;
     update(args: { where: { id: string }; data: Partial<Pick<Edition, "asin" | "isbn10" | "isbn13" | "publisher" | "publishedAt" | "workId">> }): Promise<EditionRecord>;
   };
@@ -228,6 +270,10 @@ export interface IngestDb {
   editionContributor: {
     create(args: EditionContributorCreateArgs): Promise<EditionContributorRecord>;
     findFirst(args: EditionContributorFindFirstArgs): Promise<EditionContributorRecord | null>;
+  };
+  duplicateCandidate: {
+    create(args: DuplicateCandidateCreateArgs): Promise<DuplicateCandidateRecord>;
+    findFirst(args: DuplicateCandidateFindFirstArgs): Promise<DuplicateCandidateRecord | null>;
   };
 }
 
@@ -305,6 +351,16 @@ export interface MatchFileAssetToEditionResult {
   workId?: string;
 }
 
+export interface DetectDuplicatesInput {
+  fileAssetId: string;
+}
+
+export interface DetectDuplicatesResult {
+  fileAssetId: string;
+  skipped: boolean;
+  candidatesCreated: number;
+}
+
 const EPUB_PARSER_VERSION = 1;
 const OPF_PARSER_VERSION = 1;
 const AUDIOBOOK_JSON_PARSER_VERSION = 1;
@@ -364,6 +420,13 @@ function getAuthorCanonicalsForWork(work: WorkMatchRecord): string[] {
         .map((contributor) => contributor.contributor.nameCanonical),
     ),
   );
+}
+
+function computeAuthorSimilarity(authorsA: string[], authorsB: string[]): number {
+  if (authorsA.length === 0 || authorsB.length === 0) return 0;
+  const joinedA = authorsA.join(" ");
+  const joinedB = authorsB.join(" ");
+  return normalizedSimilarity(joinedA, joinedB);
 }
 
 function extractNormalizedMetadataForMatching(fileAsset: FileAssetRecord): {
@@ -587,7 +650,170 @@ function createDefaultIngestDb(): IngestDb {
         return { id: created.id, name: created.name };
       },
     },
+    duplicateCandidate: prisma.duplicateCandidate as unknown as IngestDb["duplicateCandidate"],
   };
+}
+
+const SIMILARITY_THRESHOLD = 0.85;
+
+async function duplicatePairExists(
+  dupDb: IngestDb["duplicateCandidate"],
+  left: { editionId?: string; fileAssetId?: string },
+  right: { editionId?: string; fileAssetId?: string },
+): Promise<boolean> {
+  const existing = await dupDb.findFirst({
+    where: {
+      OR: [
+        {
+          leftEditionId: left.editionId,
+          rightEditionId: right.editionId,
+          leftFileAssetId: left.fileAssetId,
+          rightFileAssetId: right.fileAssetId,
+        },
+        {
+          leftEditionId: right.editionId,
+          rightEditionId: left.editionId,
+          leftFileAssetId: right.fileAssetId,
+          rightFileAssetId: left.fileAssetId,
+        },
+      ],
+    },
+  });
+  return existing !== null;
+}
+
+async function detectDuplicatesImpl(
+  input: DetectDuplicatesInput,
+  ingestDb: IngestDb,
+): Promise<DetectDuplicatesResult> {
+  const fileAsset = await ingestDb.fileAsset.findUnique({ where: { id: input.fileAssetId } });
+
+  if (fileAsset === null) {
+    return { fileAssetId: input.fileAssetId, skipped: true, candidatesCreated: 0 };
+  }
+
+  const editionFile = await ingestDb.editionFile.findFirst({
+    where: { fileAssetId: fileAsset.id },
+  });
+
+  if (editionFile === null) {
+    return { fileAssetId: input.fileAssetId, skipped: true, candidatesCreated: 0 };
+  }
+
+  const edition = await ingestDb.edition.findUnique({ where: { id: editionFile.editionId } });
+  if (edition === null) {
+    return { fileAssetId: input.fileAssetId, skipped: true, candidatesCreated: 0 };
+  }
+
+  let candidatesCreated = 0;
+
+  // Strategy A: SAME_HASH
+  if (fileAsset.fullHash) {
+    const hashMatches = await ingestDb.fileAsset.findMany({
+      where: { fullHash: fileAsset.fullHash, NOT: { id: fileAsset.id } },
+    });
+    for (const match of hashMatches) {
+      const alreadyExists = await duplicatePairExists(
+        ingestDb.duplicateCandidate,
+        { fileAssetId: fileAsset.id },
+        { fileAssetId: match.id },
+      );
+      if (!alreadyExists) {
+        await ingestDb.duplicateCandidate.create({
+          data: {
+            leftFileAssetId: fileAsset.id,
+            rightFileAssetId: match.id,
+            reason: "SAME_HASH",
+            confidence: 1.0,
+          },
+        });
+        candidatesCreated += 1;
+      }
+    }
+  }
+
+  // Strategy B: SAME_ISBN
+  const isbnClauses: Array<Partial<Pick<EditionRecord, "isbn13" | "isbn10">>> = [];
+  if (edition.isbn13) isbnClauses.push({ isbn13: edition.isbn13 });
+  if (edition.isbn10) isbnClauses.push({ isbn10: edition.isbn10 });
+
+  if (isbnClauses.length > 0) {
+    const isbnMatches = await ingestDb.edition.findMany({
+      where: { OR: isbnClauses, NOT: { id: edition.id } },
+    });
+    for (const match of isbnMatches) {
+      const alreadyExists = await duplicatePairExists(
+        ingestDb.duplicateCandidate,
+        { editionId: edition.id },
+        { editionId: match.id },
+      );
+      if (!alreadyExists) {
+        await ingestDb.duplicateCandidate.create({
+          data: {
+            leftEditionId: edition.id,
+            rightEditionId: match.id,
+            reason: "SAME_ISBN",
+            confidence: 1.0,
+          },
+        });
+        candidatesCreated += 1;
+      }
+    }
+  }
+
+  // Strategy C: SIMILAR_TITLE_AUTHOR
+  const work = await ingestDb.work.findUnique({ where: { id: edition.workId } });
+  if (work && work.titleCanonical) {
+    const myWorkMatches = await ingestDb.work.findMany({
+      where: { titleCanonical: work.titleCanonical },
+      include: { editions: { include: { contributors: { include: { contributor: true } } } } },
+    });
+    // The work is guaranteed to be in the results since we queried by its own titleCanonical
+    const myWork = myWorkMatches.find((w) => w.id === work.id)!;
+    const myAuthors = getAuthorCanonicalsForWork(myWork);
+
+    const otherWorks = await ingestDb.work.findMany({
+      where: { NOT: { id: work.id } },
+      include: { editions: { include: { contributors: { include: { contributor: true } } } } },
+    });
+
+    for (const otherWork of otherWorks) {
+      if (!otherWork.titleCanonical) continue;
+
+      const otherEdition = otherWork.editions[0];
+      if (!otherEdition) continue;
+
+      const titleSim = normalizedSimilarity(work.titleCanonical, otherWork.titleCanonical);
+      if (titleSim < SIMILARITY_THRESHOLD) continue;
+
+      const otherAuthors = getAuthorCanonicalsForWork(otherWork);
+      if (myAuthors.length === 0 && otherAuthors.length === 0) continue;
+
+      const authorSim = computeAuthorSimilarity(myAuthors, otherAuthors);
+      if (authorSim < SIMILARITY_THRESHOLD) continue;
+
+      const confidence = Math.min(titleSim, authorSim);
+
+      const alreadyExists = await duplicatePairExists(
+        ingestDb.duplicateCandidate,
+        { editionId: edition.id },
+        { editionId: otherEdition.id },
+      );
+      if (!alreadyExists) {
+        await ingestDb.duplicateCandidate.create({
+          data: {
+            leftEditionId: edition.id,
+            rightEditionId: otherEdition.id,
+            reason: "SIMILAR_TITLE_AUTHOR",
+            confidence,
+          },
+        });
+        candidatesCreated += 1;
+      }
+    }
+  }
+
+  return { fileAssetId: input.fileAssetId, skipped: false, candidatesCreated };
 }
 
 export function createIngestServices(
@@ -1327,6 +1553,16 @@ export function createIngestServices(
   async function matchFileAssetToEdition(
     input: MatchFileAssetToEditionInput,
   ): Promise<MatchFileAssetToEditionResult> {
+    const result = await matchFileAssetToEditionCore(input);
+    if (!result.skipped) {
+      await enqueueJob(LIBRARY_JOB_NAMES.DETECT_DUPLICATES, { fileAssetId: input.fileAssetId });
+    }
+    return result;
+  }
+
+  async function matchFileAssetToEditionCore(
+    input: MatchFileAssetToEditionInput,
+  ): Promise<MatchFileAssetToEditionResult> {
     const fileAsset = await ingestDb.fileAsset.findUnique({
       where: { id: input.fileAssetId },
     });
@@ -1627,7 +1863,14 @@ export function createIngestServices(
     };
   }
 
+  async function detectDuplicates(
+    input: DetectDuplicatesInput,
+  ): Promise<DetectDuplicatesResult> {
+    return detectDuplicatesImpl(input, ingestDb);
+  }
+
   return {
+    detectDuplicates,
     hashFileAsset,
     matchFileAssetToEdition,
     parseFileAssetMetadata,
@@ -1641,6 +1884,7 @@ export const scanLibraryRoot = services.scanLibraryRoot;
 export const hashFileAsset = services.hashFileAsset;
 export const matchFileAssetToEdition = services.matchFileAssetToEdition;
 export const parseFileAssetMetadata = services.parseFileAssetMetadata;
+export const detectDuplicates = services.detectDuplicates;
 export { classifyMediaKind, deriveFormatFamily, getFileExtension, hashFileContents, isFileChanged, normalizeRelativePath, normalizeRootPath, walkRegularFiles };
 export { parseEpubMetadata } from "./epub";
 export { parseOpfSidecar } from "./opf";
