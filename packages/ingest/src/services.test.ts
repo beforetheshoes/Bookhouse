@@ -314,7 +314,7 @@ function createTestDb(state: TestState): IngestDb {
         const notId = where.NOT.id;
         return [...state.editions.values()].filter((edition) => {
           if (edition.id === notId) return false;
-          return where.OR.some((clause: Record<string, string>) =>
+          return where.OR.some((clause: Record<string, string | null>) =>
             Object.entries(clause).every(([key, value]) => edition[key as keyof TestEdition] === value),
           );
         });
@@ -4438,7 +4438,7 @@ describe("detectDuplicates", () => {
   function addDetectFileAsset(state: TestState, id: string, hash: string | null, absPath: string) {
     const fa: TestFileAsset = {
       absolutePath: absPath,
-      availabilityStatus: AvailabilityStatus.AVAILABLE,
+      availabilityStatus: AvailabilityStatus.PRESENT,
       basename: path.basename(absPath),
       ctime: now,
       extension: ".epub",
@@ -4461,7 +4461,7 @@ describe("detectDuplicates", () => {
   function addDetectEdition(state: TestState, id: string, workId: string, overrides: Partial<TestEdition> = {}) {
     const ed: TestEdition = {
       asin: null,
-      formatFamily: FormatFamily.EPUB,
+      formatFamily: FormatFamily.EBOOK,
       id,
       isbn10: null,
       isbn13: null,
@@ -4684,12 +4684,13 @@ describe("detectDuplicates", () => {
 
     expect(result.candidatesCreated).toBe(1);
     const candidates = [...state.duplicateCandidates.values()];
-    expect(candidates[0]).toMatchObject({
+    const candidate = candidates[0];
+    expect(candidate).toMatchObject({
       leftEditionId: "edition-1",
       rightEditionId: "edition-2",
       reason: "SIMILAR_TITLE_AUTHOR",
     });
-    expect(candidates[0].confidence).toBeGreaterThanOrEqual(0.85);
+    expect(candidate?.confidence).toBeGreaterThanOrEqual(0.85);
   });
 
   it("SIMILAR_TITLE_AUTHOR: does not create candidate when similarity < 0.85", async () => {

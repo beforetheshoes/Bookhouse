@@ -769,7 +769,7 @@ async function detectDuplicatesImpl(
       include: { editions: { include: { contributors: { include: { contributor: true } } } } },
     });
     // The work is guaranteed to be in the results since we queried by its own titleCanonical
-    const myWork = myWorkMatches.find((w) => w.id === work.id)!;
+    const myWork = myWorkMatches.find((w) => w.id === work.id) as typeof myWorkMatches[number];
     const myAuthors = getAuthorCanonicalsForWork(myWork);
 
     const otherWorks = await ingestDb.work.findMany({
