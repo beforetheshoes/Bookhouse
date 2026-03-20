@@ -53,7 +53,7 @@ vi.mock("@bookhouse/ingest", () => ({
   hashFileAsset: hashFileAssetMock,
   matchFileAssetToEdition: matchFileAssetToEditionMock,
   parseFileAssetMetadata: parseFileAssetMetadataMock,
-  processCoverForWork: processCoverForWorkMock,
+  processCoverForWorkDefault: () => processCoverForWorkMock,
   scanLibraryRoot: scanLibraryRootMock,
 }));
 

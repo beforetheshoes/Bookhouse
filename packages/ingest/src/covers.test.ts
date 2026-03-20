@@ -6,6 +6,7 @@ import {
   detectAdjacentCover,
   resizeCoverImage,
   processCoverForWork,
+  processCoverForWorkDefault,
   type CoverDependencies,
   type ProcessCoverInput,
 } from "./covers";
@@ -277,5 +278,20 @@ describe("processCoverForWork", () => {
     await expect(processCoverForWork(createInput(), deps)).rejects.toThrow(
       'File asset "fa-1" was not found',
     );
+  });
+});
+
+describe("processCoverForWorkDefault", () => {
+  it("returns a handler bound to the provided db", async () => {
+    const db = {
+      fileAsset: { findUnique: vi.fn().mockResolvedValue(null) },
+      work: { update: vi.fn().mockResolvedValue({}) },
+    };
+    const handler = processCoverForWorkDefault(db);
+    // fileAsset not found → throws, proving db was used
+    await expect(handler({ workId: "w-1", fileAssetId: "fa-missing", coverCacheDir: "/tmp" })).rejects.toThrow(
+      'File asset "fa-missing" was not found',
+    );
+    expect(db.fileAsset.findUnique).toHaveBeenCalledWith({ where: { id: "fa-missing" } });
   });
 });

@@ -17,12 +17,16 @@ vi.mock("@tanstack/react-start", () => ({
 const findManyMock = vi.fn();
 const countMock = vi.fn();
 const findUniqueMock = vi.fn();
+const workCountMock = vi.fn();
 vi.mock("@bookhouse/db", () => ({
   db: {
     importJob: {
       findMany: findManyMock,
       count: countMock,
       findUnique: findUniqueMock,
+    },
+    work: {
+      count: workCountMock,
     },
   },
 }));
@@ -188,19 +192,38 @@ describe("getImportJobDetailServerFn", () => {
 describe("getActiveJobCountServerFn", () => {
   beforeEach(() => {
     countMock.mockReset();
+    workCountMock.mockReset();
   });
 
   it("calls db.importJob.count with QUEUED and RUNNING status filter", async () => {
     countMock.mockResolvedValue(3);
+    workCountMock.mockResolvedValue(0);
     await getActiveJobCountServerFn();
     expect(countMock).toHaveBeenCalledWith({
       where: { status: { in: ["QUEUED", "RUNNING"] } },
     });
   });
 
-  it("returns the count", async () => {
-    countMock.mockResolvedValue(7);
+  it("calls db.work.count for STUB works", async () => {
+    countMock.mockResolvedValue(0);
+    workCountMock.mockResolvedValue(5);
+    await getActiveJobCountServerFn();
+    expect(workCountMock).toHaveBeenCalledWith({
+      where: { enrichmentStatus: "STUB" },
+    });
+  });
+
+  it("returns sum of active import jobs and stub works", async () => {
+    countMock.mockResolvedValue(2);
+    workCountMock.mockResolvedValue(5);
     const result = await getActiveJobCountServerFn();
     expect(result).toBe(7);
+  });
+
+  it("returns 0 when no active jobs and no stubs", async () => {
+    countMock.mockResolvedValue(0);
+    workCountMock.mockResolvedValue(0);
+    const result = await getActiveJobCountServerFn();
+    expect(result).toBe(0);
   });
 });

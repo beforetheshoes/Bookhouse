@@ -15,7 +15,6 @@ export const getLibraryWorksServerFn = createServerFn({
         },
       },
     },
-    orderBy: { sortTitle: "asc" },
   });
 });
 

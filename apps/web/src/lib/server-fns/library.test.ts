@@ -24,7 +24,7 @@ describe("getLibraryWorksServerFn", () => {
     findManyMock.mockReset();
   });
 
-  it("calls db.work.findMany with correct include and orderBy options", async () => {
+  it("calls db.work.findMany with correct include options", async () => {
     findManyMock.mockResolvedValue([]);
     await getLibraryWorksServerFn();
     expect(findManyMock).toHaveBeenCalledWith({
@@ -38,7 +38,6 @@ describe("getLibraryWorksServerFn", () => {
           },
         },
       },
-      orderBy: { sortTitle: "asc" },
     });
   });
 

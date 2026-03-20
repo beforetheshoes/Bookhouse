@@ -2,7 +2,7 @@ import { pathToFileURL } from "node:url";
 import IORedis from "ioredis";
 import { type Job, Worker } from "bullmq";
 import { db } from "@bookhouse/db";
-import { hashFileAsset, matchFileAssetToEdition, parseFileAssetMetadata, processCoverForWork, scanLibraryRoot, type ScanProgressData } from "@bookhouse/ingest";
+import { hashFileAsset, matchFileAssetToEdition, parseFileAssetMetadata, processCoverForWorkDefault, scanLibraryRoot, type ScanProgressData } from "@bookhouse/ingest";
 import {
   LIBRARY_JOB_NAMES,
   type BaseJobPayload,
@@ -19,6 +19,8 @@ import {
 } from "@bookhouse/shared";
 
 const logger = createLogger("library-worker");
+
+const processCoverForWork = processCoverForWorkDefault(db);
 
 export interface LibraryWorkerHandlers {
   hashFileAsset: typeof hashFileAsset;
@@ -73,7 +75,7 @@ export function createLibraryWorkerProcessor(
     hashFileAsset,
     matchFileAssetToEdition,
     parseFileAssetMetadata,
-    processCoverForWork: processCoverForWork as LibraryWorkerHandlers["processCoverForWork"],
+    processCoverForWork,
     scanLibraryRoot,
   },
 ) {
@@ -126,7 +128,7 @@ export function createLibraryWorker(
     hashFileAsset,
     matchFileAssetToEdition,
     parseFileAssetMetadata,
-    processCoverForWork: processCoverForWork as LibraryWorkerHandlers["processCoverForWork"],
+    processCoverForWork,
     scanLibraryRoot,
   },
 ) {

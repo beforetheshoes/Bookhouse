@@ -3,4 +3,21 @@ packages:
   - packages/*
   - workers/*
 
-onlyBuiltDependencies: '@prisma/engines'
+onlyBuiltDependencies:
+  - /
+  - '@'
+  - '@prisma/engines'
+  - a
+  - e
+  - esbuild
+  - g
+  - i
+  - m
+  - msgpackr-extract
+  - msw
+  - n
+  - p
+  - prisma
+  - r
+  - s
+  - sharp
