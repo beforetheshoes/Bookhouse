@@ -9,20 +9,22 @@ import { Badge } from "~/components/ui/badge";
 import { GridPageSkeleton } from "~/components/skeletons/grid-page-skeleton";
 import { LibraryToolbar } from "~/components/library-toolbar";
 import { LibraryGrid } from "~/components/library-grid";
-import { sortAndFilterWorks, type SortOption } from "~/lib/sort-filter-works";
+import { sortAndFilterWorks, type SortOption, type ReadingFilter } from "~/lib/sort-filter-works";
 import {
   getLibraryWorksServerFn,
   type LibraryWork,
 } from "~/lib/server-fns/library";
 import { getActiveJobCountServerFn } from "~/lib/server-fns/import-jobs";
+import { getBulkReadingProgressServerFn } from "~/lib/server-fns/reading-progress";
 
 export const Route = createFileRoute("/_authenticated/library")({
   loader: async () => {
-    const [works, activeJobCount] = await Promise.all([
+    const [works, activeJobCount, progressMap] = await Promise.all([
       getLibraryWorksServerFn(),
       getActiveJobCountServerFn(),
+      getBulkReadingProgressServerFn(),
     ]);
-    return { works, activeJobCount };
+    return { works, activeJobCount, progressMap };
   },
   pendingComponent: GridPageSkeleton,
   component: LibraryPage,
@@ -90,10 +92,11 @@ const columns: ColumnDef<LibraryWork>[] = [
 ];
 
 function LibraryPage() {
-  const { works, activeJobCount } = Route.useLoaderData();
+  const { works, activeJobCount, progressMap } = Route.useLoaderData();
   const [view, setView] = useLibraryViewPreference();
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortOption>("title-asc");
+  const [readingFilter, setReadingFilter] = useState<ReadingFilter>("all");
   const [prevCount, setPrevCount] = useState(works.length);
 
   const isScanning = activeJobCount > 0;
@@ -108,8 +111,8 @@ function LibraryPage() {
   }, [isScanning, works.length]);
 
   const filteredAndSorted = useMemo(
-    () => sortAndFilterWorks(works, search, sort),
-    [works, search, sort],
+    () => sortAndFilterWorks(works, search, sort, readingFilter, progressMap),
+    [works, search, sort, readingFilter, progressMap],
   );
 
   if (works.length === 0 && !isScanning) {
@@ -157,9 +160,11 @@ function LibraryPage() {
           onSortChange={setSort}
           view={view}
           onViewChange={setView}
+          filterValue={readingFilter}
+          onFilterChange={setReadingFilter}
         />
         {view === "grid" ? (
-          <LibraryGrid works={filteredAndSorted} />
+          <LibraryGrid works={filteredAndSorted} progressMap={progressMap} />
         ) : (
           <VirtualizedDataTable columns={columns} data={filteredAndSorted} />
         )}

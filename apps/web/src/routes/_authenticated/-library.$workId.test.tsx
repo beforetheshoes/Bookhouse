@@ -19,7 +19,7 @@ interface MockWork {
     isbn13: string | null;
     isbn10: string | null;
     asin: string | null;
-    contributors: { role: string; contributor: { nameDisplay: string } }[];
+    contributors: { role: string; contributor: { id: string; nameDisplay: string } }[];
     editionFiles: {
       id: string;
       role: string;
@@ -34,7 +34,14 @@ interface MockWork {
   }[];
 }
 
-let mockLoaderData: { work: MockWork } = {
+interface MockProgress {
+  id: string;
+  editionId: string;
+  progressKind: string;
+  percent: number;
+}
+
+let mockLoaderData: { work: MockWork; progress: MockProgress[]; trackingMode: string } = {
   work: {
     id: "work-1",
     titleDisplay: "The Name of the Wind",
@@ -53,7 +60,7 @@ let mockLoaderData: { work: MockWork } = {
         isbn10: null,
         asin: "B003HV0TN2",
         contributors: [
-          { role: "AUTHOR", contributor: { nameDisplay: "Patrick Rothfuss" } },
+          { role: "AUTHOR", contributor: { id: "contrib-1", nameDisplay: "Patrick Rothfuss" } },
         ],
         editionFiles: [
           {
@@ -71,6 +78,8 @@ let mockLoaderData: { work: MockWork } = {
       },
     ],
   },
+  progress: [],
+  trackingMode: "BY_EDITION",
 };
 
 vi.mock("@tanstack/react-router", async () => {
@@ -90,6 +99,13 @@ vi.mock("@tanstack/react-router", async () => {
 const getWorkDetailServerFnMock = vi.fn();
 vi.mock("~/lib/server-fns/work-detail", () => ({
   getWorkDetailServerFn: getWorkDetailServerFnMock,
+}));
+
+const getReadingProgressServerFnMock = vi.fn();
+const updateReadingProgressServerFnMock = vi.fn();
+vi.mock("~/lib/server-fns/reading-progress", () => ({
+  getReadingProgressServerFn: getReadingProgressServerFnMock,
+  updateReadingProgressServerFn: updateReadingProgressServerFnMock,
 }));
 
 describe("WorkDetailPage", () => {
@@ -113,7 +129,7 @@ describe("WorkDetailPage", () => {
             isbn10: null,
             asin: "B003HV0TN2",
             contributors: [
-              { role: "AUTHOR", contributor: { nameDisplay: "Patrick Rothfuss" } },
+              { role: "AUTHOR", contributor: { id: "contrib-1", nameDisplay: "Patrick Rothfuss" } },
             ],
             editionFiles: [
               {
@@ -131,12 +147,15 @@ describe("WorkDetailPage", () => {
           },
         ],
       },
+      progress: [],
+      trackingMode: "BY_EDITION",
     };
     vi.clearAllMocks();
   });
 
-  it("loader calls getWorkDetailServerFn with workId", async () => {
+  it("loader calls getWorkDetailServerFn and getReadingProgressServerFn", async () => {
     getWorkDetailServerFnMock.mockResolvedValueOnce(mockLoaderData.work);
+    getReadingProgressServerFnMock.mockResolvedValueOnce({ progress: [], trackingMode: "BY_EDITION" });
     const { Route } = await import("./library.$workId");
     const result = await (Route.options.loader as (args: { params: { workId: string } }) => Promise<unknown>)({
       params: { workId: "work-1" },
@@ -144,7 +163,14 @@ describe("WorkDetailPage", () => {
     expect(getWorkDetailServerFnMock).toHaveBeenCalledWith({
       data: { workId: "work-1" },
     });
-    expect(result).toEqual({ work: mockLoaderData.work });
+    expect(getReadingProgressServerFnMock).toHaveBeenCalledWith({
+      data: { workId: "work-1" },
+    });
+    expect(result).toEqual({
+      work: mockLoaderData.work,
+      progress: [],
+      trackingMode: "BY_EDITION",
+    });
   });
 
   it("renders work title as heading", async () => {
@@ -189,11 +215,29 @@ describe("WorkDetailPage", () => {
     expect(screen.getByTestId("cover-placeholder")).toBeTruthy();
   });
 
-  it("renders authors", async () => {
+  it("renders authors as links to author pages", async () => {
     const { Route } = await import("./library.$workId");
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
-    expect(screen.getAllByText("Patrick Rothfuss").length).toBeGreaterThan(0);
+    const authorLinks = screen.getAllByText("Patrick Rothfuss");
+    expect(authorLinks.length).toBeGreaterThan(0);
+    const topAuthorLink = authorLinks[0]?.closest("a");
+    expect(topAuthorLink?.getAttribute("href")).toBe("/authors/$authorId");
+  });
+
+  it("renders comma-separated authors when multiple", async () => {
+    const edition = mockLoaderData.work.editions[0];
+    if (!edition) throw new Error("expected edition");
+    edition.contributors.push(
+      { role: "AUTHOR", contributor: { id: "contrib-3", nameDisplay: "Lev Grossman" } },
+    );
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    expect(screen.getAllByText("Lev Grossman").length).toBeGreaterThan(0);
+    // Comma separator between multiple authors
+    const authorParagraph = screen.getAllByText("Patrick Rothfuss")[0]?.closest("p");
+    expect(authorParagraph?.textContent).toContain(", ");
   });
 
   it("renders description", async () => {
@@ -203,12 +247,14 @@ describe("WorkDetailPage", () => {
     expect(screen.getByText("A story about Kvothe.")).toBeTruthy();
   });
 
-  it("renders series info with position", async () => {
+  it("renders series info with position and links to series page", async () => {
     const { Route } = await import("./library.$workId");
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
     expect(screen.getByText(/The Kingkiller Chronicle/)).toBeTruthy();
     expect(screen.getByText(/#1/)).toBeTruthy();
+    const seriesLink = screen.getByText(/The Kingkiller Chronicle/).closest("a");
+    expect(seriesLink?.getAttribute("href")).toBe("/series/$seriesId");
   });
 
   it("hides series section when no series", async () => {
@@ -325,7 +371,7 @@ describe("WorkDetailPage", () => {
       isbn10: null,
       asin: null,
       contributors: [
-        { role: "NARRATOR", contributor: { nameDisplay: "Nick Podehl" } },
+        { role: "NARRATOR", contributor: { id: "contrib-2", nameDisplay: "Nick Podehl" } },
       ],
       editionFiles: [],
     });
@@ -335,6 +381,99 @@ describe("WorkDetailPage", () => {
     expect(screen.getByText("EBOOK")).toBeTruthy();
     expect(screen.getByText("AUDIOBOOK")).toBeTruthy();
     expect(screen.getByText("Nick Podehl")).toBeTruthy();
+  });
+
+  it("renders reading progress section heading", async () => {
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    expect(screen.getByRole("heading", { level: 2, name: "Reading Progress" })).toBeTruthy();
+  });
+
+  it("renders BY_EDITION progress per edition", async () => {
+    mockLoaderData.progress = [
+      { id: "rp1", editionId: "edition-1", progressKind: "EBOOK", percent: 42 },
+    ];
+    mockLoaderData.trackingMode = "BY_EDITION";
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    expect(screen.getByRole("progressbar")).toBeTruthy();
+    expect(screen.getByText("42%")).toBeTruthy();
+    // EBOOK appears in both editions section and progress section
+    expect(screen.getAllByText("EBOOK").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("renders BY_WORK aggregated progress", async () => {
+    mockLoaderData.progress = [
+      { id: "rp1", editionId: "edition-1", progressKind: "EBOOK", percent: 42 },
+    ];
+    mockLoaderData.trackingMode = "BY_WORK";
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    const bars = screen.getAllByRole("progressbar");
+    expect(bars).toHaveLength(1);
+    expect(screen.getByText("42%")).toBeTruthy();
+  });
+
+  it("shows no progress message when empty", async () => {
+    mockLoaderData.progress = [];
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    expect(screen.getByText("No reading progress yet")).toBeTruthy();
+  });
+
+  it("renders BY_WORK with max percent from multiple editions", async () => {
+    mockLoaderData.work.editions.push({
+      id: "edition-2",
+      formatFamily: "AUDIOBOOK",
+      publisher: null,
+      publishedAt: null,
+      isbn13: null,
+      isbn10: null,
+      asin: null,
+      contributors: [],
+      editionFiles: [],
+    });
+    mockLoaderData.progress = [
+      { id: "rp1", editionId: "edition-1", progressKind: "EBOOK", percent: 30 },
+      { id: "rp2", editionId: "edition-2", progressKind: "AUDIO", percent: 75 },
+    ];
+    mockLoaderData.trackingMode = "BY_WORK";
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    const bars = screen.getAllByRole("progressbar");
+    expect(bars).toHaveLength(1);
+    expect(screen.getByText("75%")).toBeTruthy();
+  });
+
+  it("renders BY_EDITION with multiple edition progress entries", async () => {
+    mockLoaderData.work.editions.push({
+      id: "edition-2",
+      formatFamily: "AUDIOBOOK",
+      publisher: null,
+      publishedAt: null,
+      isbn13: null,
+      isbn10: null,
+      asin: null,
+      contributors: [],
+      editionFiles: [],
+    });
+    mockLoaderData.progress = [
+      { id: "rp1", editionId: "edition-1", progressKind: "EBOOK", percent: 30 },
+      { id: "rp2", editionId: "edition-2", progressKind: "AUDIO", percent: 75 },
+    ];
+    mockLoaderData.trackingMode = "BY_EDITION";
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    const bars = screen.getAllByRole("progressbar");
+    expect(bars).toHaveLength(2);
+    expect(screen.getByText("30%")).toBeTruthy();
+    expect(screen.getByText("75%")).toBeTruthy();
   });
 
   it("renders pending skeleton component", async () => {

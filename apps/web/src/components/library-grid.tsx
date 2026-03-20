@@ -5,6 +5,7 @@ import type { LibraryWork } from "~/lib/server-fns/library";
 
 interface LibraryGridProps {
   works: LibraryWork[];
+  progressMap?: Record<string, number>;
 }
 
 function getAuthors(work: LibraryWork): string {
@@ -27,7 +28,7 @@ export function getColumnCount(width: number): number {
   return 6;
 }
 
-export function LibraryGrid({ works }: LibraryGridProps) {
+export function LibraryGrid({ works, progressMap }: LibraryGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [columnCount, setColumnCount] = useState(5);
   const observerRef = useRef<ResizeObserver | null>(null);
@@ -104,6 +105,7 @@ export function LibraryGrid({ works }: LibraryGridProps) {
                     formats={getFormats(work)}
                     series={work.series?.name}
                     coverPath={work.coverPath}
+                    progressPercent={progressMap?.[work.id]}
                   />
                 ))}
               </div>

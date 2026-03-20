@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { BookOpen } from "lucide-react";
 import { Badge } from "~/components/ui/badge";
+import { ProgressBar } from "~/components/progress-bar";
 
 export interface WorkCardProps {
   id: string;
@@ -11,9 +12,10 @@ export interface WorkCardProps {
   formats: string[];
   series?: string | null;
   coverPath?: string | null;
+  progressPercent?: number | null;
 }
 
-export function WorkCard({ id, title, authors, enrichmentStatus, formats, series, coverPath }: WorkCardProps) {
+export function WorkCard({ id, title, authors, enrichmentStatus, formats, series, coverPath, progressPercent }: WorkCardProps) {
   const [imgFailed, setImgFailed] = useState(false);
   const showPlaceholder = !coverPath || imgFailed;
 
@@ -55,6 +57,7 @@ export function WorkCard({ id, title, authors, enrichmentStatus, formats, series
           )}
         </div>
       </div>
+      <ProgressBar percent={progressPercent} />
     </Link>
   );
 }

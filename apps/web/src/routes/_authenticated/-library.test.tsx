@@ -22,9 +22,11 @@ let mockLoaderData: {
     }[];
   }[];
   activeJobCount: number;
+  progressMap: Record<string, number>;
 } = {
   works: [],
   activeJobCount: 0,
+  progressMap: {},
 };
 
 vi.mock("@tanstack/react-router", async () => {
@@ -64,6 +66,11 @@ vi.mock("~/lib/server-fns/import-jobs", () => ({
   getActiveJobCountServerFn: getActiveJobCountServerFnMock,
 }));
 
+const getBulkReadingProgressServerFnMock = vi.fn();
+vi.mock("~/lib/server-fns/reading-progress", () => ({
+  getBulkReadingProgressServerFn: getBulkReadingProgressServerFnMock,
+}));
+
 let mockView = "grid" as "grid" | "table";
 const mockSetView = vi.fn();
 vi.mock("~/hooks/use-library-view-preference", () => ({
@@ -71,14 +78,14 @@ vi.mock("~/hooks/use-library-view-preference", () => ({
 }));
 
 vi.mock("~/components/library-grid", () => ({
-  LibraryGrid: ({ works }: { works: unknown[] }) => (
-    <div data-testid="library-grid">Grid: {String(works.length)} works</div>
+  LibraryGrid: ({ works, progressMap }: { works: unknown[]; progressMap?: Record<string, number> }) => (
+    <div data-testid="library-grid" data-progress-map={progressMap ? JSON.stringify(progressMap) : undefined}>Grid: {String(works.length)} works</div>
   ),
 }));
 
 vi.mock("~/components/library-toolbar", () => ({
   LibraryToolbar: (props: Record<string, unknown>) => (
-    <div data-testid="library-toolbar" data-view={props.view as string} />
+    <div data-testid="library-toolbar" data-view={props.view as string} data-filter={props.filterValue as string} />
   ),
 }));
 
@@ -130,23 +137,25 @@ const makeWork = (title: string, authors: string[] = [], formats: string[] = [],
 
 describe("LibraryPage", () => {
   beforeEach(() => {
-    mockLoaderData = { works: [], activeJobCount: 0 };
+    mockLoaderData = { works: [], activeJobCount: 0, progressMap: {} };
     mockView = "grid";
     vi.clearAllMocks();
   });
 
-  it("loader calls getLibraryWorksServerFn and getActiveJobCountServerFn", async () => {
+  it("loader calls getLibraryWorksServerFn, getActiveJobCountServerFn, and getBulkReadingProgressServerFn", async () => {
     getLibraryWorksServerFnMock.mockResolvedValueOnce([]);
     getActiveJobCountServerFnMock.mockResolvedValueOnce(0);
+    getBulkReadingProgressServerFnMock.mockResolvedValueOnce({});
     const { Route } = await import("./library");
     const result = await (Route.options.loader as (args: Record<string, unknown>) => Promise<unknown>)({});
     expect(getLibraryWorksServerFnMock).toHaveBeenCalled();
     expect(getActiveJobCountServerFnMock).toHaveBeenCalled();
-    expect(result).toEqual({ works: [], activeJobCount: 0 });
+    expect(getBulkReadingProgressServerFnMock).toHaveBeenCalled();
+    expect(result).toEqual({ works: [], activeJobCount: 0, progressMap: {} });
   });
 
   it("renders 'Library' heading", async () => {
-    mockLoaderData = { works: [makeWork("Test")], activeJobCount: 0 };
+    mockLoaderData = { works: [makeWork("Test")], activeJobCount: 0, progressMap: {} };
     const { Route } = await import("./library");
     const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
@@ -158,6 +167,7 @@ describe("LibraryPage", () => {
     mockLoaderData = {
       works: [makeWork("The Great Gatsby", ["F. Scott Fitzgerald"], ["EBOOK"])],
       activeJobCount: 0,
+      progressMap: {},
     };
     const { Route } = await import("./library");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -170,6 +180,7 @@ describe("LibraryPage", () => {
     mockLoaderData = {
       works: [makeWork("The Great Gatsby", ["F. Scott Fitzgerald"], ["EBOOK"]), makeWork("Moby Dick", [], [])],
       activeJobCount: 0,
+      progressMap: {},
     };
     const { Route } = await import("./library");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -185,6 +196,7 @@ describe("LibraryPage", () => {
     mockLoaderData = {
       works: [makeWork("The Great Gatsby", ["F. Scott Fitzgerald"], ["EBOOK"])],
       activeJobCount: 0,
+      progressMap: {},
     };
     const { Route } = await import("./library");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -199,6 +211,7 @@ describe("LibraryPage", () => {
     mockLoaderData = {
       works: [makeWork("Unknown Author Book", [])],
       activeJobCount: 0,
+      progressMap: {},
     };
     const { Route } = await import("./library");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -221,6 +234,7 @@ describe("LibraryPage", () => {
         editions: [],
       }],
       activeJobCount: 0,
+      progressMap: {},
     };
     const { Route } = await import("./library");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -233,6 +247,7 @@ describe("LibraryPage", () => {
     mockLoaderData = {
       works: [makeWork("Test Book", ["Author"], ["AUDIOBOOK"])],
       activeJobCount: 0,
+      progressMap: {},
     };
     const { Route } = await import("./library");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -241,7 +256,7 @@ describe("LibraryPage", () => {
   });
 
   it("renders LibraryToolbar", async () => {
-    mockLoaderData = { works: [makeWork("Test")], activeJobCount: 0 };
+    mockLoaderData = { works: [makeWork("Test")], activeJobCount: 0, progressMap: {} };
     const { Route } = await import("./library");
     const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
@@ -249,7 +264,7 @@ describe("LibraryPage", () => {
   });
 
   it("shows empty state when no works and not scanning", async () => {
-    mockLoaderData = { works: [], activeJobCount: 0 };
+    mockLoaderData = { works: [], activeJobCount: 0, progressMap: {} };
     const { Route } = await import("./library");
     const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
@@ -258,7 +273,7 @@ describe("LibraryPage", () => {
   });
 
   it("empty state links to settings/libraries", async () => {
-    mockLoaderData = { works: [], activeJobCount: 0 };
+    mockLoaderData = { works: [], activeJobCount: 0, progressMap: {} };
     const { Route } = await import("./library");
     const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
@@ -267,7 +282,7 @@ describe("LibraryPage", () => {
   });
 
   it("does not show empty state when scanning with no works", async () => {
-    mockLoaderData = { works: [], activeJobCount: 1 };
+    mockLoaderData = { works: [], activeJobCount: 1, progressMap: {} };
     const { Route } = await import("./library");
     const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
@@ -276,7 +291,7 @@ describe("LibraryPage", () => {
   });
 
   it("shows scanning indicator when activeJobCount > 0", async () => {
-    mockLoaderData = { works: [makeWork("Test")], activeJobCount: 2 };
+    mockLoaderData = { works: [makeWork("Test")], activeJobCount: 2, progressMap: {} };
     const { Route } = await import("./library");
     const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
@@ -287,6 +302,7 @@ describe("LibraryPage", () => {
     mockLoaderData = {
       works: [makeWork("Old Book")],
       activeJobCount: 0,
+      progressMap: {},
     };
     const { Route } = await import("./library");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -297,6 +313,7 @@ describe("LibraryPage", () => {
     mockLoaderData = {
       works: [makeWork("Old Book"), makeWork("New Book")],
       activeJobCount: 1,
+      progressMap: {},
     };
     rerender(<LibraryPage />);
 
@@ -308,6 +325,7 @@ describe("LibraryPage", () => {
     mockLoaderData = {
       works: [makeWork("Stub Book", ["Author"], ["EBOOK"], "STUB")],
       activeJobCount: 0,
+      progressMap: {},
     };
     const { Route } = await import("./library");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -320,6 +338,7 @@ describe("LibraryPage", () => {
     mockLoaderData = {
       works: [makeWork("Enriched Book", ["Author"], ["EBOOK"], "ENRICHED")],
       activeJobCount: 0,
+      progressMap: {},
     };
     const { Route } = await import("./library");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -327,8 +346,22 @@ describe("LibraryPage", () => {
     expect(screen.queryByText("Processing\u2026")).toBeNull();
   });
 
+  it("passes progressMap to LibraryGrid", async () => {
+    mockView = "grid";
+    mockLoaderData = {
+      works: [makeWork("Test")],
+      activeJobCount: 0,
+      progressMap: { "work-test": 42 },
+    };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    const grid = screen.getByTestId("library-grid");
+    expect(grid.getAttribute("data-progress-map")).toBe(JSON.stringify({ "work-test": 42 }));
+  });
+
   it("does not show scanning indicator when activeJobCount is 0", async () => {
-    mockLoaderData = { works: [makeWork("Test")], activeJobCount: 0 };
+    mockLoaderData = { works: [makeWork("Test")], activeJobCount: 0, progressMap: {} };
     const { Route } = await import("./library");
     const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);

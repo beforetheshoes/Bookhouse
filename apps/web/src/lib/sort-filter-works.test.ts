@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { sortAndFilterWorks } from "./sort-filter-works";
+import { sortAndFilterWorks, type ReadingFilter } from "./sort-filter-works";
 
 interface MockWork {
   id: string;
@@ -121,5 +121,38 @@ describe("sortAndFilterWorks", () => {
     const result = sortAndFilterWorks([nullA, alpha, nullB] as never[], "", "title-desc");
     const titles = result.map((w) => (w as unknown as MockWork).titleDisplay);
     expect(titles).toEqual(["Null B", "Null A", "Alpha"]);
+  });
+
+  it("filters to 'reading' (0 < percent < 100)", () => {
+    const progressMap = { alpha: 50, bravo: 100, charlie: 0 };
+    const readingFilter: ReadingFilter = "reading";
+    const result = sortAndFilterWorks([alpha, bravo, charlie] as never[], "", "title-asc", readingFilter, progressMap);
+    const titles = result.map((w) => (w as unknown as MockWork).titleDisplay);
+    expect(titles).toEqual(["Alpha"]);
+  });
+
+  it("filters to 'finished' (percent >= 100)", () => {
+    const progressMap = { alpha: 50, bravo: 100 };
+    const result = sortAndFilterWorks([alpha, bravo, charlie] as never[], "", "title-asc", "finished", progressMap);
+    const titles = result.map((w) => (w as unknown as MockWork).titleDisplay);
+    expect(titles).toEqual(["Bravo"]);
+  });
+
+  it("filters to 'unread' (no entry or 0)", () => {
+    const progressMap = { alpha: 50, bravo: 0 };
+    const result = sortAndFilterWorks([alpha, bravo, charlie] as never[], "", "title-asc", "unread", progressMap);
+    const titles = result.map((w) => (w as unknown as MockWork).titleDisplay);
+    expect(titles).toEqual(["Bravo", "Charlie"]);
+  });
+
+  it("'all' filter returns everything", () => {
+    const progressMap = { alpha: 50 };
+    const result = sortAndFilterWorks([alpha, bravo] as never[], "", "title-asc", "all", progressMap);
+    expect(result).toHaveLength(2);
+  });
+
+  it("reading filter with no progressMap defaults to all", () => {
+    const result = sortAndFilterWorks([alpha, bravo] as never[], "", "title-asc", "reading");
+    expect(result).toHaveLength(0);
   });
 });

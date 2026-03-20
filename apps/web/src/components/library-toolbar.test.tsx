@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
 import { LibraryToolbar } from "./library-toolbar";
-import type { SortOption } from "~/lib/sort-filter-works";
+import type { SortOption, ReadingFilter } from "~/lib/sort-filter-works";
 import type { LibraryView } from "~/hooks/use-library-view-preference";
 
 const defaultProps = {
@@ -13,6 +13,8 @@ const defaultProps = {
   onSortChange: vi.fn(),
   view: "grid" as LibraryView,
   onViewChange: vi.fn(),
+  filterValue: "all" as ReadingFilter,
+  onFilterChange: vi.fn(),
 };
 
 describe("LibraryToolbar", () => {
@@ -47,16 +49,21 @@ describe("LibraryToolbar", () => {
     expect(onSearchChange).toHaveBeenCalledWith("");
   });
 
-  it("renders sort select trigger", () => {
+  it("renders sort and filter select triggers", () => {
     render(<LibraryToolbar {...defaultProps} />);
-    expect(screen.getByRole("combobox")).toBeTruthy();
+    const comboboxes = screen.getAllByRole("combobox");
+    expect(comboboxes).toHaveLength(2);
   });
 
   it("calls onSortChange when a sort option is selected", async () => {
     const onSortChange = vi.fn();
     const user = userEvent.setup();
     render(<LibraryToolbar {...defaultProps} onSortChange={onSortChange} />);
-    await user.click(screen.getByRole("combobox"));
+    const comboboxes = screen.getAllByRole("combobox");
+    // Sort select is the second combobox (after filter)
+    const sortCombobox = comboboxes.at(1);
+    expect(sortCombobox).toBeTruthy();
+    await user.click(sortCombobox as HTMLElement);
     await user.click(screen.getByText("Title Z-A"));
     expect(onSortChange).toHaveBeenCalledWith("title-desc");
   });
@@ -97,5 +104,25 @@ describe("LibraryToolbar", () => {
     const tableBtn = screen.getByLabelText("Table view");
     expect(gridBtn.getAttribute("data-active")).toBe("false");
     expect(tableBtn.getAttribute("data-active")).toBe("true");
+  });
+
+  it("renders filter select with 'All' as default", () => {
+    render(<LibraryToolbar {...defaultProps} filterValue="all" />);
+    const comboboxes = screen.getAllByRole("combobox");
+    // There should be two comboboxes: sort + filter
+    expect(comboboxes).toHaveLength(2);
+  });
+
+  it("calls onFilterChange when a filter option is selected", async () => {
+    const onFilterChange = vi.fn();
+    const user = userEvent.setup();
+    render(<LibraryToolbar {...defaultProps} onFilterChange={onFilterChange} />);
+    const comboboxes = screen.getAllByRole("combobox");
+    // Filter select is the first combobox
+    const filterCombobox = comboboxes.at(0);
+    expect(filterCombobox).toBeTruthy();
+    await user.click(filterCombobox as HTMLElement);
+    await user.click(screen.getByText("Currently Reading"));
+    expect(onFilterChange).toHaveBeenCalledWith("reading");
   });
 });

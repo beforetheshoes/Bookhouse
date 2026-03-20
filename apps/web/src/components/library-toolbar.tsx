@@ -8,7 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
-import type { SortOption } from "~/lib/sort-filter-works";
+import type { SortOption, ReadingFilter } from "~/lib/sort-filter-works";
 import type { LibraryView } from "~/hooks/use-library-view-preference";
 
 interface LibraryToolbarProps {
@@ -18,7 +18,16 @@ interface LibraryToolbarProps {
   onSortChange: (value: SortOption) => void;
   view: LibraryView;
   onViewChange: (view: LibraryView) => void;
+  filterValue: ReadingFilter;
+  onFilterChange: (value: ReadingFilter) => void;
 }
+
+const FILTER_OPTIONS: { value: ReadingFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "reading", label: "Currently Reading" },
+  { value: "finished", label: "Finished" },
+  { value: "unread", label: "Unread" },
+];
 
 const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: "title-asc", label: "Title A-Z" },
@@ -35,6 +44,8 @@ export function LibraryToolbar({
   onSortChange,
   view,
   onViewChange,
+  filterValue,
+  onFilterChange,
 }: LibraryToolbarProps) {
   return (
     <div className="flex items-center justify-between gap-2">
@@ -57,6 +68,18 @@ export function LibraryToolbar({
         )}
       </div>
       <div className="flex items-center gap-2">
+        <Select value={filterValue} onValueChange={(v) => { onFilterChange(v as ReadingFilter); }}>
+          <SelectTrigger size="sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {FILTER_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Select value={sortValue} onValueChange={(v) => { onSortChange(v as SortOption); }}>
           <SelectTrigger size="sm">
             <SelectValue />

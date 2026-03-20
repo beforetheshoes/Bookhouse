@@ -9,17 +9,20 @@ import {
   CardTitle,
 } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
+import { ProgressBar } from "~/components/progress-bar";
 import {
   getWorkDetailServerFn,
   type WorkDetail,
 } from "~/lib/server-fns/work-detail";
+import { getReadingProgressServerFn } from "~/lib/server-fns/reading-progress";
 
 export const Route = createFileRoute("/_authenticated/library/$workId")({
   loader: async ({ params }) => {
-    const work = await getWorkDetailServerFn({
-      data: { workId: params.workId },
-    });
-    return { work };
+    const [work, { progress, trackingMode }] = await Promise.all([
+      getWorkDetailServerFn({ data: { workId: params.workId } }),
+      getReadingProgressServerFn({ data: { workId: params.workId } }),
+    ]);
+    return { work, progress, trackingMode };
   },
   pendingComponent: WorkDetailSkeleton,
   component: WorkDetailPage,
@@ -41,12 +44,18 @@ function WorkDetailSkeleton() {
   );
 }
 
-function getAuthors(work: WorkDetail): string[] {
-  const authors = work.editions
-    .flatMap((e) => e.contributors)
-    .filter((c) => c.role === "AUTHOR")
-    .map((c) => c.contributor.nameDisplay);
-  return [...new Set(authors)];
+function getAuthors(work: WorkDetail): { id: string; name: string }[] {
+  const seen = new Set<string>();
+  const authors: { id: string; name: string }[] = [];
+  for (const edition of work.editions) {
+    for (const c of edition.contributors) {
+      if (c.role === "AUTHOR" && !seen.has(c.contributor.id)) {
+        seen.add(c.contributor.id);
+        authors.push({ id: c.contributor.id, name: c.contributor.nameDisplay });
+      }
+    }
+  }
+  return authors;
 }
 
 function formatBytes(bytes: bigint | number): string {
@@ -57,7 +66,7 @@ function formatBytes(bytes: bigint | number): string {
 }
 
 function WorkDetailPage() {
-  const { work } = Route.useLoaderData();
+  const { work, progress, trackingMode } = Route.useLoaderData();
   const [imgFailed, setImgFailed] = useState(false);
   const showPlaceholder = !work.coverPath || imgFailed;
   const authors = getAuthors(work);
@@ -95,17 +104,26 @@ function WorkDetailPage() {
             <h1 className="text-2xl font-bold">{work.titleDisplay}</h1>
             {authors.length > 0 && (
               <p className="mt-1 text-lg text-muted-foreground">
-                {authors.join(", ")}
+                {authors.map((author, i) => (
+                  <span key={author.id}>
+                    {i > 0 && ", "}
+                    <Link to="/authors/$authorId" params={{ authorId: author.id }} className="hover:text-foreground hover:underline">
+                      {author.name}
+                    </Link>
+                  </span>
+                ))}
               </p>
             )}
           </div>
 
           {work.series && (
             <div className="flex items-center gap-2">
-              <Badge variant="outline">
-                {work.series.name}
-                {work.seriesPosition != null && ` #${String(work.seriesPosition)}`}
-              </Badge>
+              <Link to="/series/$seriesId" params={{ seriesId: work.series.id }}>
+                <Badge variant="outline" className="cursor-pointer hover:bg-accent">
+                  {work.series.name}
+                  {work.seriesPosition != null && ` #${String(work.seriesPosition)}`}
+                </Badge>
+              </Link>
             </div>
           )}
 
@@ -166,6 +184,62 @@ function WorkDetailPage() {
           </Card>
         ))}
       </div>
+
+      <div className="space-y-4">
+        <h2 className="text-lg font-semibold">Reading Progress</h2>
+        {progress.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No reading progress yet</p>
+        ) : trackingMode === "BY_WORK" ? (
+          <WorkProgress progress={progress} />
+        ) : (
+          <EditionProgress progress={progress} editions={work.editions} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WorkProgress({ progress }: { progress: { percent: number | null }[] }) {
+  const maxPercent = Math.max(...progress.map((p) => p.percent ?? 0));
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-2">
+        <div className="flex-1">
+          <ProgressBar percent={maxPercent} />
+        </div>
+        <span className="text-sm text-muted-foreground">{String(maxPercent)}%</span>
+      </div>
+    </div>
+  );
+}
+
+function EditionProgress({
+  progress,
+  editions,
+}: {
+  progress: { editionId: string; progressKind: string; percent: number | null }[];
+  editions: WorkDetail["editions"];
+}) {
+  const editionMap = new Map(editions.map((e) => [e.id, e]));
+  return (
+    <div className="space-y-3">
+      {progress.map((p) => {
+        const edition = editionMap.get(p.editionId);
+        return (
+          <div key={`${p.editionId}-${p.progressKind}`} className="space-y-1">
+            <div className="flex items-center gap-2 text-sm">
+              {edition && <Badge variant="secondary">{edition.formatFamily}</Badge>}
+              <span className="text-muted-foreground">{p.progressKind}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex-1">
+                <ProgressBar percent={p.percent} />
+              </div>
+              <span className="text-sm text-muted-foreground">{String(p.percent ?? 0)}%</span>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
