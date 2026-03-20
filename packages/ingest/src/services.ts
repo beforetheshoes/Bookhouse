@@ -60,6 +60,7 @@ type FileAssetRecord = Pick<
   FileAsset,
   | "absolutePath"
   | "availabilityStatus"
+  | "basename"
   | "fullHash"
   | "id"
   | "mediaKind"
@@ -119,6 +120,31 @@ interface DuplicateCandidateRecord {
   reason: string;
   confidence: number | null;
   status: string;
+}
+
+interface AudioLinkRecord {
+  id: string;
+  ebookEditionId: string;
+  audioEditionId: string;
+  matchType: string;
+  confidence: number | null;
+  reviewStatus: string;
+}
+
+interface AudioLinkCreateArgs {
+  data: {
+    ebookEditionId: string;
+    audioEditionId: string;
+    matchType: string;
+    confidence: number;
+  };
+}
+
+interface AudioLinkFindFirstArgs {
+  where: {
+    ebookEditionId: string;
+    audioEditionId: string;
+  };
 }
 
 interface DuplicateCandidateCreateArgs {
@@ -275,6 +301,10 @@ export interface IngestDb {
     create(args: DuplicateCandidateCreateArgs): Promise<DuplicateCandidateRecord>;
     findFirst(args: DuplicateCandidateFindFirstArgs): Promise<DuplicateCandidateRecord | null>;
   };
+  audioLink: {
+    create(args: AudioLinkCreateArgs): Promise<AudioLinkRecord>;
+    findFirst(args: AudioLinkFindFirstArgs): Promise<AudioLinkRecord | null>;
+  };
 }
 
 export interface IngestDependencies {
@@ -359,6 +389,16 @@ export interface DetectDuplicatesResult {
   fileAssetId: string;
   skipped: boolean;
   candidatesCreated: number;
+}
+
+export interface MatchAudioInput {
+  fileAssetId: string;
+}
+
+export interface MatchAudioResult {
+  fileAssetId: string;
+  skipped: boolean;
+  linksCreated: number;
 }
 
 const EPUB_PARSER_VERSION = 1;
@@ -651,6 +691,7 @@ function createDefaultIngestDb(): IngestDb {
       },
     },
     duplicateCandidate: prisma.duplicateCandidate as unknown as IngestDb["duplicateCandidate"],
+    audioLink: prisma.audioLink as unknown as IngestDb["audioLink"],
   };
 }
 
@@ -814,6 +855,156 @@ async function detectDuplicatesImpl(
   }
 
   return { fileAssetId: input.fileAssetId, skipped: false, candidatesCreated };
+}
+
+async function audioLinkPairExists(
+  alDb: IngestDb["audioLink"],
+  ebookEditionId: string,
+  audioEditionId: string,
+): Promise<boolean> {
+  const existing = await alDb.findFirst({
+    where: { ebookEditionId, audioEditionId },
+  });
+  return existing !== null;
+}
+
+const FILENAME_BOOST_THRESHOLD = 0.8;
+const CONFIDENCE_BOOST = 0.05;
+
+async function matchAudioImpl(
+  input: MatchAudioInput,
+  ingestDb: IngestDb,
+): Promise<MatchAudioResult> {
+  const fileAsset = await ingestDb.fileAsset.findUnique({ where: { id: input.fileAssetId } });
+  if (fileAsset === null) {
+    return { fileAssetId: input.fileAssetId, skipped: true, linksCreated: 0 };
+  }
+
+  const editionFile = await ingestDb.editionFile.findFirst({
+    where: { fileAssetId: fileAsset.id },
+  });
+  if (editionFile === null) {
+    return { fileAssetId: input.fileAssetId, skipped: true, linksCreated: 0 };
+  }
+
+  const edition = await ingestDb.edition.findUnique({ where: { id: editionFile.editionId } });
+  if (edition === null) {
+    return { fileAssetId: input.fileAssetId, skipped: true, linksCreated: 0 };
+  }
+
+  const work = await ingestDb.work.findUnique({ where: { id: edition.workId } });
+  if (!work || !work.titleCanonical) {
+    return { fileAssetId: input.fileAssetId, skipped: true, linksCreated: 0 };
+  }
+
+  const isAudiobook = edition.formatFamily === "AUDIOBOOK";
+  const isEbook = edition.formatFamily === "EBOOK";
+  if (!isAudiobook && !isEbook) {
+    return { fileAssetId: input.fileAssetId, skipped: true, linksCreated: 0 };
+  }
+
+  const targetFormat = isAudiobook ? "EBOOK" : "AUDIOBOOK";
+  let linksCreated = 0;
+
+  const myEdition = edition;
+  const myFileAsset = fileAsset;
+
+  async function createLinkForEdition(
+    otherEdition: EditionRecord,
+    confidence: number,
+    matchType: string,
+  ): Promise<void> {
+    const ebookEditionId = isAudiobook ? otherEdition.id : myEdition.id;
+    const audioEditionId = isAudiobook ? myEdition.id : otherEdition.id;
+
+    const alreadyExists = await audioLinkPairExists(
+      ingestDb.audioLink,
+      ebookEditionId,
+      audioEditionId,
+    );
+    if (alreadyExists) return;
+
+    let finalConfidence = confidence;
+
+    // Filename similarity boost
+    const otherEditionFile = await ingestDb.editionFile.findFirst({
+      where: { editionId: otherEdition.id },
+    });
+    if (otherEditionFile) {
+      const otherFileAsset = await ingestDb.fileAsset.findUnique({
+        where: { id: otherEditionFile.fileAssetId },
+      });
+      if (otherFileAsset) {
+        const myBase = myFileAsset.basename.replace(/\.[^.]+$/, "").toLowerCase();
+        const otherBase = otherFileAsset.basename.replace(/\.[^.]+$/, "").toLowerCase();
+        if (normalizedSimilarity(myBase, otherBase) >= FILENAME_BOOST_THRESHOLD) {
+          finalConfidence += CONFIDENCE_BOOST;
+        }
+
+        // Folder proximity boost
+        const myDir = path.dirname(myFileAsset.absolutePath);
+        const otherDir = path.dirname(otherFileAsset.absolutePath);
+        if (myDir === otherDir || path.dirname(myDir) === path.dirname(otherDir)) {
+          finalConfidence += CONFIDENCE_BOOST;
+        }
+      }
+    }
+
+    finalConfidence = Math.min(finalConfidence, 1.0);
+
+    await ingestDb.audioLink.create({
+      data: {
+        ebookEditionId,
+        audioEditionId,
+        matchType,
+        confidence: finalConfidence,
+      },
+    });
+    linksCreated += 1;
+  }
+
+  // Check same-work editions of opposite format (SAME_WORK match type)
+  const myWorkMatches = await ingestDb.work.findMany({
+    where: { titleCanonical: work.titleCanonical },
+    include: { editions: { include: { contributors: { include: { contributor: true } } } } },
+  });
+  // The work is guaranteed to be in results since we queried by its own titleCanonical
+  const myWork = myWorkMatches.find((w) => w.id === work.id) as typeof myWorkMatches[number];
+  const myAuthors = getAuthorCanonicalsForWork(myWork);
+
+  const sameWorkOpposite = myWork.editions.filter(
+    (e) => e.formatFamily === targetFormat && e.id !== edition.id,
+  );
+  for (const otherEdition of sameWorkOpposite) {
+    await createLinkForEdition(otherEdition, 1.0, "SAME_WORK");
+  }
+
+  // Check cross-work editions of opposite format (EXACT_METADATA match type)
+  const otherWorks = await ingestDb.work.findMany({
+    where: { NOT: { id: work.id } },
+    include: { editions: { include: { contributors: { include: { contributor: true } } } } },
+  });
+
+  for (const otherWork of otherWorks) {
+    if (!otherWork.titleCanonical) continue;
+
+    const titleSim = normalizedSimilarity(work.titleCanonical, otherWork.titleCanonical);
+    if (titleSim < SIMILARITY_THRESHOLD) continue;
+
+    const otherAuthors = getAuthorCanonicalsForWork(otherWork);
+    if (myAuthors.length === 0 && otherAuthors.length === 0) continue;
+
+    const authorSim = computeAuthorSimilarity(myAuthors, otherAuthors);
+    if (authorSim < SIMILARITY_THRESHOLD) continue;
+
+    const oppositeEditions = otherWork.editions.filter((e) => e.formatFamily === targetFormat);
+
+    for (const otherEdition of oppositeEditions) {
+      await createLinkForEdition(otherEdition, Math.min(titleSim, authorSim), "EXACT_METADATA");
+    }
+  }
+
+  return { fileAssetId: input.fileAssetId, skipped: false, linksCreated };
 }
 
 export function createIngestServices(
@@ -1556,6 +1747,7 @@ export function createIngestServices(
     const result = await matchFileAssetToEditionCore(input);
     if (!result.skipped) {
       await enqueueJob(LIBRARY_JOB_NAMES.DETECT_DUPLICATES, { fileAssetId: input.fileAssetId });
+      await enqueueJob(LIBRARY_JOB_NAMES.MATCH_AUDIO, { fileAssetId: input.fileAssetId });
     }
     return result;
   }
@@ -1869,9 +2061,16 @@ export function createIngestServices(
     return detectDuplicatesImpl(input, ingestDb);
   }
 
+  async function matchAudio(
+    input: MatchAudioInput,
+  ): Promise<MatchAudioResult> {
+    return matchAudioImpl(input, ingestDb);
+  }
+
   return {
     detectDuplicates,
     hashFileAsset,
+    matchAudio,
     matchFileAssetToEdition,
     parseFileAssetMetadata,
     scanLibraryRoot,
@@ -1882,6 +2081,7 @@ const services = createIngestServices();
 
 export const scanLibraryRoot = services.scanLibraryRoot;
 export const hashFileAsset = services.hashFileAsset;
+export const matchAudio = services.matchAudio;
 export const matchFileAssetToEdition = services.matchFileAssetToEdition;
 export const parseFileAssetMetadata = services.parseFileAssetMetadata;
 export const detectDuplicates = services.detectDuplicates;

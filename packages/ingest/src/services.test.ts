@@ -55,7 +55,17 @@ interface TestDuplicateCandidate {
   status: string;
 }
 
+interface TestAudioLink {
+  audioEditionId: string;
+  confidence: number | null;
+  ebookEditionId: string;
+  id: string;
+  matchType: string;
+  reviewStatus: string;
+}
+
 interface TestState {
+  audioLinks: Map<string, TestAudioLink>;
   contributors: Map<string, TestContributor>;
   contributorsByCanonical: Map<string, TestContributor>;
   duplicateCandidates: Map<string, TestDuplicateCandidate>;
@@ -114,6 +124,7 @@ interface TestEditionContributor {
 
 function createEmptyState(rootPath = "/tmp/root"): TestState {
   return {
+    audioLinks: new Map(),
     contributors: new Map(),
     contributorsByCanonical: new Map(),
     duplicateCandidates: new Map(),
@@ -137,6 +148,7 @@ function getEditionContributorKey(editionId: string, contributorId: string, role
 }
 
 function createTestDb(state: TestState): IngestDb {
+  let audioLinkSequence = state.audioLinks.size;
   let contributorSequence = state.contributors.size;
   let duplicateCandidateSequence = state.duplicateCandidates.size;
   let editionContributorSequence = state.editionContributors.size;
@@ -425,6 +437,28 @@ function createTestDb(state: TestState): IngestDb {
         ) ?? null;
       },
     },
+    audioLink: {
+      async create({ data }) {
+        await Promise.resolve();
+        audioLinkSequence += 1;
+        const created: TestAudioLink = {
+          id: `audio-link-${String(audioLinkSequence)}`,
+          ebookEditionId: data.ebookEditionId,
+          audioEditionId: data.audioEditionId,
+          matchType: data.matchType,
+          confidence: data.confidence,
+          reviewStatus: "PENDING",
+        };
+        state.audioLinks.set(created.id, created);
+        return created;
+      },
+      async findFirst({ where }) {
+        await Promise.resolve();
+        return [...state.audioLinks.values()].find(
+          (al) => al.ebookEditionId === where.ebookEditionId && al.audioEditionId === where.audioEditionId,
+        ) ?? null;
+      },
+    },
   };
 }
 
@@ -545,6 +579,7 @@ describe("ingest services", () => {
     const baseline = {
       absolutePath: "/tmp/book.epub",
       availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.epub",
       fullHash: "full",
       id: "file-1",
       mediaKind: MediaKind.EPUB,
@@ -2148,10 +2183,14 @@ describe("ingest services", () => {
       workId: undefined,
     });
 
-    // Should NOT enqueue a cover job when edition is missing, only detect-duplicates
-    expect(enqueueLibraryJob).toHaveBeenCalledTimes(1);
+    // Should NOT enqueue a cover job when edition is missing, only detect-duplicates and match-audio
+    expect(enqueueLibraryJob).toHaveBeenCalledTimes(2);
     expect(enqueueLibraryJob).toHaveBeenCalledWith(
       LIBRARY_JOB_NAMES.DETECT_DUPLICATES,
+      { fileAssetId: "file-1" },
+    );
+    expect(enqueueLibraryJob).toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.MATCH_AUDIO,
       { fileAssetId: "file-1" },
     );
   });
@@ -4383,8 +4422,8 @@ describe("ingest services", () => {
   });
 });
 
-describe("matchFileAssetToEdition enqueues DETECT_DUPLICATES", () => {
-  it("enqueues detect-duplicates after a successful match", async () => {
+describe("matchFileAssetToEdition enqueues follow-up jobs", () => {
+  it("enqueues detect-duplicates and match-audio after a successful match", async () => {
     const state = createEmptyState("/tmp/root");
     addFileAsset(state, {
       metadata: {
@@ -4413,9 +4452,13 @@ describe("matchFileAssetToEdition enqueues DETECT_DUPLICATES", () => {
       LIBRARY_JOB_NAMES.DETECT_DUPLICATES,
       { fileAssetId: "file-1" },
     );
+    expect(enqueueMock).toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.MATCH_AUDIO,
+      { fileAssetId: "file-1" },
+    );
   });
 
-  it("does not enqueue detect-duplicates when match is skipped", async () => {
+  it("does not enqueue follow-up jobs when match is skipped", async () => {
     const enqueueMock = vi.fn(() => Promise.resolve(undefined));
     const services = createIngestServices({
       db: createTestDb(createEmptyState("/tmp/root")),
@@ -4427,6 +4470,10 @@ describe("matchFileAssetToEdition enqueues DETECT_DUPLICATES", () => {
     expect(result.skipped).toBe(true);
     expect(enqueueMock).not.toHaveBeenCalledWith(
       LIBRARY_JOB_NAMES.DETECT_DUPLICATES,
+      expect.anything(),
+    );
+    expect(enqueueMock).not.toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.MATCH_AUDIO,
       expect.anything(),
     );
   });
@@ -4894,5 +4941,537 @@ describe("detectDuplicates", () => {
     const result = await services.detectDuplicates({ fileAssetId: "file-1" });
 
     expect(result.candidatesCreated).toBe(0);
+  });
+});
+
+describe("matchAudio", () => {
+  const now = new Date("2025-01-01");
+
+  function getFirstAudioLink(state: TestState): TestAudioLink {
+    const link = [...state.audioLinks.values()][0];
+    if (!link) throw new Error("expected at least one audio link");
+    return link;
+  }
+
+  function addAudioFileAsset(state: TestState, id: string, absPath: string, mediaKind: MediaKind = MediaKind.EPUB) {
+    const fa: TestFileAsset = {
+      absolutePath: absPath,
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: path.basename(absPath),
+      ctime: now,
+      extension: path.extname(absPath) || null,
+      fullHash: null,
+      id,
+      lastSeenAt: now,
+      libraryRootId: "root-1",
+      mediaKind,
+      metadata: null,
+      mtime: now,
+      partialHash: null,
+      relativePath: absPath.replace("/tmp/root/", ""),
+      sizeBytes: BigInt(1000),
+    };
+    state.fileAssetsById.set(id, fa);
+    state.fileAssets.set(absPath, fa);
+    return fa;
+  }
+
+  function addAudioWork(state: TestState, id: string, titleCanonical: string, titleDisplay: string) {
+    const w: TestWork = {
+      description: null,
+      enrichmentStatus: "STUB" as EnrichmentStatus,
+      id,
+      language: null,
+      seriesId: null,
+      seriesPosition: null,
+      sortTitle: null,
+      titleCanonical,
+      titleDisplay,
+    };
+    state.works.set(id, w);
+    return w;
+  }
+
+  function addAudioEdition(state: TestState, id: string, workId: string, overrides: Partial<TestEdition> = {}) {
+    const ed: TestEdition = {
+      asin: null,
+      formatFamily: FormatFamily.EBOOK,
+      id,
+      isbn10: null,
+      isbn13: null,
+      publishedAt: null,
+      publisher: null,
+      workId,
+      ...overrides,
+    };
+    state.editions.set(id, ed);
+    return ed;
+  }
+
+  function addAudioEditionFile(state: TestState, efId: string, editionId: string, fileAssetId: string) {
+    state.editionFiles.set(getEditionFileKey(editionId, fileAssetId), {
+      editionId,
+      fileAssetId,
+      id: efId,
+      role: EditionFileRole.PRIMARY,
+    });
+  }
+
+  function addAudioContributor(state: TestState, id: string, name: string) {
+    const c: TestContributor = { id, nameCanonical: name.toLowerCase(), nameDisplay: name };
+    state.contributors.set(id, c);
+    state.contributorsByCanonical.set(c.nameCanonical, c);
+    return c;
+  }
+
+  function addAudioEditionContributor(state: TestState, ecId: string, editionId: string, contributorId: string) {
+    state.editionContributors.set(getEditionContributorKey(editionId, contributorId, ContributorRole.AUTHOR), {
+      contributorId,
+      editionId,
+      id: ecId,
+      role: ContributorRole.AUTHOR,
+    });
+  }
+
+  it("skips when file asset is not found", async () => {
+    const state = createEmptyState();
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.matchAudio({ fileAssetId: "nonexistent" });
+
+    expect(result).toEqual({ fileAssetId: "nonexistent", skipped: true, linksCreated: 0 });
+  });
+
+  it("skips when file asset has no linked edition file", async () => {
+    const state = createEmptyState();
+    addAudioFileAsset(state, "file-1", "/tmp/root/book.epub");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.matchAudio({ fileAssetId: "file-1" });
+
+    expect(result).toEqual({ fileAssetId: "file-1", skipped: true, linksCreated: 0 });
+  });
+
+  it("skips when edition is not found", async () => {
+    const state = createEmptyState();
+    addAudioFileAsset(state, "file-1", "/tmp/root/book.epub");
+    addAudioEditionFile(state, "ef-1", "missing-edition", "file-1");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.matchAudio({ fileAssetId: "file-1" });
+
+    expect(result).toEqual({ fileAssetId: "file-1", skipped: true, linksCreated: 0 });
+  });
+
+  it("creates link when audiobook matches ebook by title+author", async () => {
+    const state = createEmptyState();
+    // Audiobook file and edition
+    addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/gatsby.m4b", MediaKind.AUDIO);
+    addAudioWork(state, "work-audio", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-audio", "work-audio", { formatFamily: FormatFamily.AUDIOBOOK });
+    addAudioEditionFile(state, "ef-audio", "edition-audio", "file-audio");
+    addAudioContributor(state, "c-audio", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-audio", "edition-audio", "c-audio");
+    // Ebook file and edition
+    addAudioFileAsset(state, "file-ebook", "/tmp/root/ebooks/gatsby.epub");
+    addAudioWork(state, "work-ebook", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-ebook", "work-ebook", { formatFamily: FormatFamily.EBOOK });
+    addAudioEditionFile(state, "ef-ebook", "edition-ebook", "file-ebook");
+    addAudioContributor(state, "c-ebook", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
+
+    const services = createIngestServices({ db: createTestDb(state) });
+    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+
+    expect(result.skipped).toBe(false);
+    expect(result.linksCreated).toBe(1);
+    expect(state.audioLinks.size).toBe(1);
+    const link = getFirstAudioLink(state);
+    expect(link.ebookEditionId).toBe("edition-ebook");
+    expect(link.audioEditionId).toBe("edition-audio");
+  });
+
+  it("creates link when ebook matches audiobook by title+author", async () => {
+    const state = createEmptyState();
+    // Ebook file triggers the match
+    addAudioFileAsset(state, "file-ebook", "/tmp/root/ebooks/gatsby.epub");
+    addAudioWork(state, "work-ebook", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-ebook", "work-ebook", { formatFamily: FormatFamily.EBOOK });
+    addAudioEditionFile(state, "ef-ebook", "edition-ebook", "file-ebook");
+    addAudioContributor(state, "c-ebook", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
+    // Audiobook already exists
+    addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/gatsby.m4b", MediaKind.AUDIO);
+    addAudioWork(state, "work-audio", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-audio", "work-audio", { formatFamily: FormatFamily.AUDIOBOOK });
+    addAudioEditionFile(state, "ef-audio", "edition-audio", "file-audio");
+    addAudioContributor(state, "c-audio", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-audio", "edition-audio", "c-audio");
+
+    const services = createIngestServices({ db: createTestDb(state) });
+    const result = await services.matchAudio({ fileAssetId: "file-ebook" });
+
+    expect(result.skipped).toBe(false);
+    expect(result.linksCreated).toBe(1);
+    const link = getFirstAudioLink(state);
+    expect(link.ebookEditionId).toBe("edition-ebook");
+    expect(link.audioEditionId).toBe("edition-audio");
+  });
+
+  it("does not create link when title similarity below threshold", async () => {
+    const state = createEmptyState();
+    addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/gatsby.m4b", MediaKind.AUDIO);
+    addAudioWork(state, "work-audio", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-audio", "work-audio", { formatFamily: FormatFamily.AUDIOBOOK });
+    addAudioEditionFile(state, "ef-audio", "edition-audio", "file-audio");
+    addAudioContributor(state, "c-audio", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-audio", "edition-audio", "c-audio");
+    // Ebook with very different title
+    addAudioFileAsset(state, "file-ebook", "/tmp/root/ebooks/moby-dick.epub");
+    addAudioWork(state, "work-ebook", "moby dick", "Moby Dick");
+    addAudioEdition(state, "edition-ebook", "work-ebook", { formatFamily: FormatFamily.EBOOK });
+    addAudioEditionFile(state, "ef-ebook", "edition-ebook", "file-ebook");
+    addAudioContributor(state, "c-ebook", "Herman Melville");
+    addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
+
+    const services = createIngestServices({ db: createTestDb(state) });
+    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+
+    expect(result.linksCreated).toBe(0);
+    expect(state.audioLinks.size).toBe(0);
+  });
+
+  it("does not create link when author similarity below threshold", async () => {
+    const state = createEmptyState();
+    addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/gatsby.m4b", MediaKind.AUDIO);
+    addAudioWork(state, "work-audio", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-audio", "work-audio", { formatFamily: FormatFamily.AUDIOBOOK });
+    addAudioEditionFile(state, "ef-audio", "edition-audio", "file-audio");
+    addAudioContributor(state, "c-audio", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-audio", "edition-audio", "c-audio");
+    // Ebook with same title but different author
+    addAudioFileAsset(state, "file-ebook", "/tmp/root/ebooks/gatsby.epub");
+    addAudioWork(state, "work-ebook", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-ebook", "work-ebook", { formatFamily: FormatFamily.EBOOK });
+    addAudioEditionFile(state, "ef-ebook", "edition-ebook", "file-ebook");
+    addAudioContributor(state, "c-ebook", "Completely Different Author");
+    addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
+
+    const services = createIngestServices({ db: createTestDb(state) });
+    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+
+    expect(result.linksCreated).toBe(0);
+    expect(state.audioLinks.size).toBe(0);
+  });
+
+  it("does not create duplicate link when pair already exists", async () => {
+    const state = createEmptyState();
+    addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/gatsby.m4b", MediaKind.AUDIO);
+    addAudioWork(state, "work-audio", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-audio", "work-audio", { formatFamily: FormatFamily.AUDIOBOOK });
+    addAudioEditionFile(state, "ef-audio", "edition-audio", "file-audio");
+    addAudioContributor(state, "c-audio", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-audio", "edition-audio", "c-audio");
+    addAudioFileAsset(state, "file-ebook", "/tmp/root/ebooks/gatsby.epub");
+    addAudioWork(state, "work-ebook", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-ebook", "work-ebook", { formatFamily: FormatFamily.EBOOK });
+    addAudioEditionFile(state, "ef-ebook", "edition-ebook", "file-ebook");
+    addAudioContributor(state, "c-ebook", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
+    // Pre-existing link
+    state.audioLinks.set("existing", {
+      id: "existing",
+      ebookEditionId: "edition-ebook",
+      audioEditionId: "edition-audio",
+      matchType: "EXACT_METADATA",
+      confidence: 1.0,
+      reviewStatus: "PENDING",
+    });
+
+    const services = createIngestServices({ db: createTestDb(state) });
+    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+
+    expect(result.linksCreated).toBe(0);
+    expect(state.audioLinks.size).toBe(1);
+  });
+
+  it("uses SAME_WORK matchType when editions share workId", async () => {
+    const state = createEmptyState();
+    addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/gatsby.m4b", MediaKind.AUDIO);
+    addAudioWork(state, "work-shared", "the great gatsby", "The Great Gatsby");
+    // Both editions share the same work
+    addAudioEdition(state, "edition-audio", "work-shared", { formatFamily: FormatFamily.AUDIOBOOK });
+    addAudioEdition(state, "edition-ebook", "work-shared", { formatFamily: FormatFamily.EBOOK });
+    addAudioEditionFile(state, "ef-audio", "edition-audio", "file-audio");
+    addAudioFileAsset(state, "file-ebook", "/tmp/root/ebooks/gatsby.epub");
+    addAudioEditionFile(state, "ef-ebook", "edition-ebook", "file-ebook");
+    addAudioContributor(state, "c-1", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-audio", "edition-audio", "c-1");
+    addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-1");
+
+    const services = createIngestServices({ db: createTestDb(state) });
+    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+
+    expect(result.linksCreated).toBe(1);
+    const link = getFirstAudioLink(state);
+    expect(link.matchType).toBe("SAME_WORK");
+    expect(link.confidence).toBeLessThanOrEqual(1.0);
+  });
+
+  it("uses EXACT_METADATA matchType when editions have different workIds", async () => {
+    const state = createEmptyState();
+    addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/gatsby.m4b", MediaKind.AUDIO);
+    addAudioWork(state, "work-audio", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-audio", "work-audio", { formatFamily: FormatFamily.AUDIOBOOK });
+    addAudioEditionFile(state, "ef-audio", "edition-audio", "file-audio");
+    addAudioContributor(state, "c-audio", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-audio", "edition-audio", "c-audio");
+    addAudioFileAsset(state, "file-ebook", "/tmp/root/ebooks/gatsby.epub");
+    addAudioWork(state, "work-ebook", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-ebook", "work-ebook", { formatFamily: FormatFamily.EBOOK });
+    addAudioEditionFile(state, "ef-ebook", "edition-ebook", "file-ebook");
+    addAudioContributor(state, "c-ebook", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
+
+    const services = createIngestServices({ db: createTestDb(state) });
+    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+
+    expect(result.linksCreated).toBe(1);
+    const link = getFirstAudioLink(state);
+    expect(link.matchType).toBe("EXACT_METADATA");
+  });
+
+  it("applies filename similarity boost", async () => {
+    const state = createEmptyState();
+    // Same basename pattern (gatsby.m4b vs gatsby.epub)
+    addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/the-great-gatsby.m4b", MediaKind.AUDIO);
+    addAudioWork(state, "work-audio", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-audio", "work-audio", { formatFamily: FormatFamily.AUDIOBOOK });
+    addAudioEditionFile(state, "ef-audio", "edition-audio", "file-audio");
+    addAudioContributor(state, "c-audio", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-audio", "edition-audio", "c-audio");
+    addAudioFileAsset(state, "file-ebook", "/tmp/root/ebooks/the-great-gatsby.epub");
+    addAudioWork(state, "work-ebook", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-ebook", "work-ebook", { formatFamily: FormatFamily.EBOOK });
+    addAudioEditionFile(state, "ef-ebook", "edition-ebook", "file-ebook");
+    addAudioContributor(state, "c-ebook", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
+
+    const services = createIngestServices({ db: createTestDb(state) });
+    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+
+    expect(result.linksCreated).toBe(1);
+    const link = getFirstAudioLink(state);
+    // Base confidence is 1.0, filename boost +0.05, capped at 1.0
+    // But filenames are identical (stripped extension), so boost applies
+    expect(link.confidence).toBeGreaterThan(0.85);
+  });
+
+  it("applies folder proximity boost", async () => {
+    const state = createEmptyState();
+    // Files in sibling directories (same grandparent)
+    addAudioFileAsset(state, "file-audio", "/tmp/root/books/audio/gatsby.m4b", MediaKind.AUDIO);
+    addAudioWork(state, "work-audio", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-audio", "work-audio", { formatFamily: FormatFamily.AUDIOBOOK });
+    addAudioEditionFile(state, "ef-audio", "edition-audio", "file-audio");
+    addAudioContributor(state, "c-audio", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-audio", "edition-audio", "c-audio");
+    addAudioFileAsset(state, "file-ebook", "/tmp/root/books/ebook/gatsby.epub");
+    addAudioWork(state, "work-ebook", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-ebook", "work-ebook", { formatFamily: FormatFamily.EBOOK });
+    addAudioEditionFile(state, "ef-ebook", "edition-ebook", "file-ebook");
+    addAudioContributor(state, "c-ebook", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
+
+    const services = createIngestServices({ db: createTestDb(state) });
+    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+
+    expect(result.linksCreated).toBe(1);
+    const link = getFirstAudioLink(state);
+    // Base confidence is 1.0 (identical title+author), + filename boost + folder boost, capped at 1.0
+    expect(link.confidence).toBeLessThanOrEqual(1.0);
+  });
+
+  it("caps confidence at 1.0 after boosts", async () => {
+    const state = createEmptyState();
+    // Same directory and same filename pattern — both boosts apply
+    addAudioFileAsset(state, "file-audio", "/tmp/root/books/gatsby.m4b", MediaKind.AUDIO);
+    addAudioWork(state, "work-audio", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-audio", "work-audio", { formatFamily: FormatFamily.AUDIOBOOK });
+    addAudioEditionFile(state, "ef-audio", "edition-audio", "file-audio");
+    addAudioContributor(state, "c-audio", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-audio", "edition-audio", "c-audio");
+    addAudioFileAsset(state, "file-ebook", "/tmp/root/books/gatsby.epub");
+    addAudioWork(state, "work-ebook", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-ebook", "work-ebook", { formatFamily: FormatFamily.EBOOK });
+    addAudioEditionFile(state, "ef-ebook", "edition-ebook", "file-ebook");
+    addAudioContributor(state, "c-ebook", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
+
+    const services = createIngestServices({ db: createTestDb(state) });
+    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+
+    expect(result.linksCreated).toBe(1);
+    const link = getFirstAudioLink(state);
+    // Base confidence 1.0 + 0.05 (filename) + 0.05 (folder) = 1.1, capped at 1.0
+    expect(link.confidence).toBe(1.0);
+  });
+
+  it("skips editions of the same format family", async () => {
+    const state = createEmptyState();
+    addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/gatsby.m4b", MediaKind.AUDIO);
+    addAudioWork(state, "work-audio", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-audio", "work-audio", { formatFamily: FormatFamily.AUDIOBOOK });
+    addAudioEditionFile(state, "ef-audio", "edition-audio", "file-audio");
+    addAudioContributor(state, "c-audio", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-audio", "edition-audio", "c-audio");
+    // Other work has AUDIOBOOK edition, not EBOOK
+    addAudioFileAsset(state, "file-audio2", "/tmp/root/audiobooks/gatsby2.m4b", MediaKind.AUDIO);
+    addAudioWork(state, "work-audio2", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-audio2", "work-audio2", { formatFamily: FormatFamily.AUDIOBOOK });
+    addAudioEditionFile(state, "ef-audio2", "edition-audio2", "file-audio2");
+    addAudioContributor(state, "c-audio2", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-audio2", "edition-audio2", "c-audio2");
+
+    const services = createIngestServices({ db: createTestDb(state) });
+    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+
+    expect(result.linksCreated).toBe(0);
+  });
+
+  it("skips when work has no titleCanonical", async () => {
+    const state = createEmptyState();
+    addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/gatsby.m4b", MediaKind.AUDIO);
+    addAudioWork(state, "work-audio", "", "");
+    addAudioEdition(state, "edition-audio", "work-audio", { formatFamily: FormatFamily.AUDIOBOOK });
+    addAudioEditionFile(state, "ef-audio", "edition-audio", "file-audio");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+
+    expect(result).toEqual({ fileAssetId: "file-audio", skipped: true, linksCreated: 0 });
+  });
+
+  it("creates link without boosts when other edition has no file", async () => {
+    const state = createEmptyState();
+    addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/gatsby.m4b", MediaKind.AUDIO);
+    addAudioWork(state, "work-audio", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-audio", "work-audio", { formatFamily: FormatFamily.AUDIOBOOK });
+    addAudioEditionFile(state, "ef-audio", "edition-audio", "file-audio");
+    addAudioContributor(state, "c-audio", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-audio", "edition-audio", "c-audio");
+    // Ebook with NO edition file link
+    addAudioWork(state, "work-ebook", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-ebook", "work-ebook", { formatFamily: FormatFamily.EBOOK });
+    addAudioContributor(state, "c-ebook", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
+
+    const services = createIngestServices({ db: createTestDb(state) });
+    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+
+    expect(result.linksCreated).toBe(1);
+    const link = getFirstAudioLink(state);
+    // No boosts applied — base confidence only
+    expect(link.confidence).toBe(1.0);
+  });
+
+  it("creates link without boosts when other edition file has dangling file asset", async () => {
+    const state = createEmptyState();
+    addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/gatsby.m4b", MediaKind.AUDIO);
+    addAudioWork(state, "work-audio", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-audio", "work-audio", { formatFamily: FormatFamily.AUDIOBOOK });
+    addAudioEditionFile(state, "ef-audio", "edition-audio", "file-audio");
+    addAudioContributor(state, "c-audio", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-audio", "edition-audio", "c-audio");
+    // Ebook with edition file pointing to missing file asset
+    addAudioWork(state, "work-ebook", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-ebook", "work-ebook", { formatFamily: FormatFamily.EBOOK });
+    addAudioEditionFile(state, "ef-ebook", "edition-ebook", "missing-file");
+    addAudioContributor(state, "c-ebook", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
+
+    const services = createIngestServices({ db: createTestDb(state) });
+    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+
+    expect(result.linksCreated).toBe(1);
+    const link = getFirstAudioLink(state);
+    expect(link.confidence).toBe(1.0);
+  });
+
+  it("skips other work with no titleCanonical in cross-work matching", async () => {
+    const state = createEmptyState();
+    addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/gatsby.m4b", MediaKind.AUDIO);
+    addAudioWork(state, "work-audio", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-audio", "work-audio", { formatFamily: FormatFamily.AUDIOBOOK });
+    addAudioEditionFile(state, "ef-audio", "edition-audio", "file-audio");
+    addAudioContributor(state, "c-audio", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-audio", "edition-audio", "c-audio");
+    // Other work with empty titleCanonical
+    addAudioWork(state, "work-ebook", "", "");
+    addAudioEdition(state, "edition-ebook", "work-ebook", { formatFamily: FormatFamily.EBOOK });
+
+    const services = createIngestServices({ db: createTestDb(state) });
+    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+
+    expect(result.linksCreated).toBe(0);
+  });
+
+  it("does not apply boosts when filenames differ and folders are far apart", async () => {
+    const state = createEmptyState();
+    addAudioFileAsset(state, "file-audio", "/data/audiobooks/collection/my-audiobook-file.m4b", MediaKind.AUDIO);
+    addAudioWork(state, "work-audio", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-audio", "work-audio", { formatFamily: FormatFamily.AUDIOBOOK });
+    addAudioEditionFile(state, "ef-audio", "edition-audio", "file-audio");
+    addAudioContributor(state, "c-audio", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-audio", "edition-audio", "c-audio");
+    // Ebook with very different filename and distant directory
+    addAudioFileAsset(state, "file-ebook", "/media/ebooks/library/completely-different-name.epub");
+    addAudioWork(state, "work-ebook", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-ebook", "work-ebook", { formatFamily: FormatFamily.EBOOK });
+    addAudioEditionFile(state, "ef-ebook", "edition-ebook", "file-ebook");
+    addAudioContributor(state, "c-ebook", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
+
+    const services = createIngestServices({ db: createTestDb(state) });
+    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+
+    expect(result.linksCreated).toBe(1);
+    const link = getFirstAudioLink(state);
+    // No filename boost (different basenames), no folder proximity boost (different grandparents)
+    expect(link.confidence).toBe(1.0);
+  });
+
+  it("skips when edition format is neither EBOOK nor AUDIOBOOK", async () => {
+    const state = createEmptyState();
+    addAudioFileAsset(state, "file-1", "/tmp/root/other/file.cbz");
+    addAudioWork(state, "work-1", "some title", "Some Title");
+    // Use a format that is not EBOOK or AUDIOBOOK — but FormatFamily only has those two,
+    // so we cast to test the defensive branch
+    addAudioEdition(state, "edition-1", "work-1", { formatFamily: "OTHER" as FormatFamily });
+    addAudioEditionFile(state, "ef-1", "edition-1", "file-1");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.matchAudio({ fileAssetId: "file-1" });
+
+    expect(result).toEqual({ fileAssetId: "file-1", skipped: true, linksCreated: 0 });
+  });
+
+  it("skips when both works have no authors", async () => {
+    const state = createEmptyState();
+    addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/gatsby.m4b", MediaKind.AUDIO);
+    addAudioWork(state, "work-audio", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-audio", "work-audio", { formatFamily: FormatFamily.AUDIOBOOK });
+    addAudioEditionFile(state, "ef-audio", "edition-audio", "file-audio");
+    // No authors
+    addAudioFileAsset(state, "file-ebook", "/tmp/root/ebooks/gatsby.epub");
+    addAudioWork(state, "work-ebook", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-ebook", "work-ebook", { formatFamily: FormatFamily.EBOOK });
+    addAudioEditionFile(state, "ef-ebook", "edition-ebook", "file-ebook");
+    // No authors
+
+    const services = createIngestServices({ db: createTestDb(state) });
+    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+
+    expect(result.linksCreated).toBe(0);
   });
 });

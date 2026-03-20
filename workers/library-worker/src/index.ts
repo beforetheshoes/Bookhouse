@@ -2,11 +2,12 @@ import { pathToFileURL } from "node:url";
 import IORedis from "ioredis";
 import { type Job, Worker } from "bullmq";
 import { db } from "@bookhouse/db";
-import { hashFileAsset, matchFileAssetToEdition, parseFileAssetMetadata, processCoverForWorkDefault, scanLibraryRoot, type ScanProgressData, enrichWork, searchOpenLibrary, getOpenLibraryWork, RateLimiter, type EnrichWorkDeps, detectDuplicates } from "@bookhouse/ingest";
+import { hashFileAsset, matchAudio, matchFileAssetToEdition, parseFileAssetMetadata, processCoverForWorkDefault, scanLibraryRoot, type ScanProgressData, enrichWork, searchOpenLibrary, getOpenLibraryWork, RateLimiter, type EnrichWorkDeps, detectDuplicates } from "@bookhouse/ingest";
 import {
   LIBRARY_JOB_NAMES,
   type BaseJobPayload,
   type DetectDuplicatesJobPayload,
+  type MatchAudioJobPayload,
   type HashFileAssetJobPayload,
   type LibraryJobName,
   type LibraryJobPayload,
@@ -33,6 +34,7 @@ export interface LibraryWorkerHandlers {
   scanLibraryRoot: typeof scanLibraryRoot;
   enrichWork: typeof enrichWork;
   detectDuplicates: typeof detectDuplicates;
+  matchAudio: typeof matchAudio;
 }
 
 function dispatch(
@@ -72,6 +74,8 @@ function dispatch(
     }
     case LIBRARY_JOB_NAMES.DETECT_DUPLICATES:
       return handlers.detectDuplicates(job.data as DetectDuplicatesJobPayload);
+    case LIBRARY_JOB_NAMES.MATCH_AUDIO:
+      return handlers.matchAudio(job.data as MatchAudioJobPayload);
     case LIBRARY_JOB_NAMES.REFRESH_METADATA: {
       const refreshPayload = job.data as RefreshMetadataJobPayload;
       const deps: EnrichWorkDeps = {
@@ -119,6 +123,7 @@ export function createLibraryWorkerProcessor(
     scanLibraryRoot,
     enrichWork,
     detectDuplicates,
+    matchAudio,
   },
 ) {
   return async (
@@ -174,6 +179,7 @@ export function createLibraryWorker(
     scanLibraryRoot,
     enrichWork,
     detectDuplicates,
+    matchAudio,
   },
 ) {
   const connection = new IORedis(getQueueConnectionConfig());

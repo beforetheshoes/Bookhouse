@@ -3,6 +3,16 @@ import type * as TanstackRouter from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+interface MockAudioLink {
+  id: string;
+  audioEdition: { work: { titleDisplay: string } };
+}
+
+interface MockEbookLink {
+  id: string;
+  ebookEdition: { work: { titleDisplay: string } };
+}
+
 interface MockWork {
   id: string;
   titleDisplay: string;
@@ -31,6 +41,8 @@ interface MockWork {
         availabilityStatus: string;
       };
     }[];
+    ebookLinks: MockAudioLink[];
+    audioLinks: MockEbookLink[];
   }[];
 }
 
@@ -75,6 +87,8 @@ let mockLoaderData: { work: MockWork; progress: MockProgress[]; trackingMode: st
             },
           },
         ],
+        ebookLinks: [],
+        audioLinks: [],
       },
     ],
   },
@@ -150,6 +164,8 @@ describe("WorkDetailPage", () => {
                 },
               },
             ],
+            ebookLinks: [],
+            audioLinks: [],
           },
         ],
       },
@@ -380,6 +396,8 @@ describe("WorkDetailPage", () => {
         { role: "NARRATOR", contributor: { id: "contrib-2", nameDisplay: "Nick Podehl" } },
       ],
       editionFiles: [],
+      ebookLinks: [],
+      audioLinks: [],
     });
     const { Route } = await import("./library.$workId");
     const Page = Route.options.component as React.ComponentType;
@@ -464,6 +482,8 @@ describe("WorkDetailPage", () => {
       asin: null,
       contributors: [],
       editionFiles: [],
+      ebookLinks: [],
+      audioLinks: [],
     });
     mockLoaderData.progress = [
       { id: "rp1", editionId: "edition-1", progressKind: "EBOOK", percent: 30 },
@@ -489,6 +509,8 @@ describe("WorkDetailPage", () => {
       asin: null,
       contributors: [],
       editionFiles: [],
+      ebookLinks: [],
+      audioLinks: [],
     });
     mockLoaderData.progress = [
       { id: "rp1", editionId: "edition-1", progressKind: "EBOOK", percent: 30 },
@@ -518,5 +540,39 @@ describe("WorkDetailPage", () => {
     const Skeleton = Route.options.pendingComponent as React.ComponentType;
     render(<Skeleton />);
     expect(screen.getByTestId("work-detail-skeleton")).toBeTruthy();
+  });
+
+  it("renders linked formats section when edition has confirmed ebook links", async () => {
+    const edition = mockLoaderData.work.editions[0];
+    if (!edition) throw new Error("expected edition");
+    edition.ebookLinks = [
+      { id: "al-1", audioEdition: { work: { titleDisplay: "Audio Version" } } },
+    ];
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    expect(screen.getByRole("heading", { level: 2, name: "Linked Formats" })).toBeTruthy();
+    expect(screen.getByText("Audio Version")).toBeTruthy();
+    expect(screen.getByText("AUDIOBOOK")).toBeTruthy();
+  });
+
+  it("renders linked formats section when edition has confirmed audio links", async () => {
+    const edition = mockLoaderData.work.editions[0];
+    if (!edition) throw new Error("expected edition");
+    edition.audioLinks = [
+      { id: "al-2", ebookEdition: { work: { titleDisplay: "Ebook Version" } } },
+    ];
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    expect(screen.getByRole("heading", { level: 2, name: "Linked Formats" })).toBeTruthy();
+    expect(screen.getByText("Ebook Version")).toBeTruthy();
+  });
+
+  it("does not render linked formats section when no links exist", async () => {
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    expect(screen.queryByRole("heading", { level: 2, name: "Linked Formats" })).toBeNull();
   });
 });
