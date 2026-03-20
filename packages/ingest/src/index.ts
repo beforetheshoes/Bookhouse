@@ -51,7 +51,15 @@ export type { CoverDependencies, ProcessCoverInput, ProcessCoverResult } from ".
 export { PARTIAL_HASH_BYTES } from "./hashing";
 export { SCAN_PROGRESS_INTERVAL } from "./services";
 
+export { searchOpenLibrary, getOpenLibraryEdition, getOpenLibraryWork } from "./enrichment/open-library";
+export type { OLSearchResult, OLEdition, OLWork } from "./enrichment/open-library";
+export { RateLimiter } from "./enrichment/rate-limiter";
+export type { RateLimitResult } from "./enrichment/rate-limiter";
+export { enrichWork } from "./enrichment/enrich-work";
+export type { EnrichWorkDeps, EnrichWorkResult } from "./enrichment/enrich-work";
+
 export const INGEST_PUBLIC_API = [
+  "enrichWork",
   "classifyMediaKind",
   "createIdentifierMap",
   "createIngestServices",
@@ -62,6 +70,8 @@ export const INGEST_PUBLIC_API = [
   "canonicalizeContributorName",
   "canonicalizeContributorNames",
   "getFileExtension",
+  "getOpenLibraryEdition",
+  "getOpenLibraryWork",
   "hashFileAsset",
   "hashFileContents",
   "isFileChanged",
@@ -79,6 +89,7 @@ export const INGEST_PUBLIC_API = [
   "processCoverForWork",
   "processCoverForWorkDefault",
   "resizeCoverImage",
+  "searchOpenLibrary",
   "scanLibraryRoot",
   "walkRegularFiles",
 ] as const;

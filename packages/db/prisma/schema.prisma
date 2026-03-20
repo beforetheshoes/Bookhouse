@@ -241,6 +241,10 @@ model Edition {
 
   @@index([workId])
   @@index([isbn13])
+  @@index([isbn10])
+  @@index([asin])
+  @@index([formatFamily])
+  @@index([publisher])
 }
 
 model EditionFile {
@@ -283,6 +287,8 @@ model Series {
   name String
 
   works Work[]
+
+  @@index([name])
 }
 
 model Collection {

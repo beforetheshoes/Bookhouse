@@ -3,6 +3,7 @@ import type {
   HashFileAssetJobPayload,
   MatchFileAssetToEditionJobPayload,
   ParseFileAssetMetadataJobPayload,
+  RefreshMetadataJobPayload,
   ScanLibraryRootJobPayload,
 } from "./index";
 import {
@@ -30,6 +31,7 @@ describe("shared queue helpers", () => {
     expect(LIBRARY_JOB_NAMES.HASH_FILE_ASSET).toBe("hash-file-asset");
     expect(LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA).toBe("parse-file-asset-metadata");
     expect(LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION).toBe("match-file-asset-to-edition");
+    expect(LIBRARY_JOB_NAMES.REFRESH_METADATA).toBe("refresh-metadata");
   });
 
   it("parses redis connection details", () => {
@@ -119,6 +121,10 @@ describe("shared queue helpers", () => {
       fileAssetId: "file-1",
     };
 
+    const refreshPayload: RefreshMetadataJobPayload = {
+      workId: "work-1",
+    };
+    expect(refreshPayload).toEqual({ workId: "work-1" });
     expect(scanPayload).toEqual({ libraryRootId: "root-1" });
     expect(hashPayload).toEqual({
       fileAssetId: "file-1",

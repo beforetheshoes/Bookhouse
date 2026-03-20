@@ -8,14 +8,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
-import type { SortOption, ReadingFilter } from "~/lib/sort-filter-works";
+import type { ReadingFilter } from "~/lib/sort-filter-works";
 import type { LibraryView } from "~/hooks/use-library-view-preference";
+
+export type SortValue = "title-asc" | "title-desc" | "recent";
 
 interface LibraryToolbarProps {
   searchValue: string;
   onSearchChange: (value: string) => void;
-  sortValue: SortOption;
-  onSortChange: (value: SortOption) => void;
+  sortValue: SortValue;
+  onSortChange: (value: SortValue) => void;
   view: LibraryView;
   onViewChange: (view: LibraryView) => void;
   filterValue: ReadingFilter;
@@ -29,11 +31,9 @@ const FILTER_OPTIONS: { value: ReadingFilter; label: string }[] = [
   { value: "unread", label: "Unread" },
 ];
 
-const SORT_OPTIONS: { value: SortOption; label: string }[] = [
+const SORT_OPTIONS: { value: SortValue; label: string }[] = [
   { value: "title-asc", label: "Title A-Z" },
   { value: "title-desc", label: "Title Z-A" },
-  { value: "author-asc", label: "Author A-Z" },
-  { value: "author-desc", label: "Author Z-A" },
   { value: "recent", label: "Recently Added" },
 ];
 
@@ -80,7 +80,7 @@ export function LibraryToolbar({
             ))}
           </SelectContent>
         </Select>
-        <Select value={sortValue} onValueChange={(v) => { onSortChange(v as SortOption); }}>
+        <Select value={sortValue} onValueChange={(v) => { onSortChange(v as SortValue); }}>
           <SelectTrigger size="sm">
             <SelectValue />
           </SelectTrigger>
