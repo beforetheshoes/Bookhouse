@@ -417,6 +417,28 @@ describe("WorkDetailPage", () => {
     expect(screen.getByText("42%")).toBeTruthy();
   });
 
+  it("renders BY_WORK with null percent treated as 0", async () => {
+    mockLoaderData.progress = [
+      { id: "rp1", editionId: "edition-1", progressKind: "EBOOK", percent: null },
+    ];
+    mockLoaderData.trackingMode = "BY_WORK";
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    expect(screen.getByText("0%")).toBeTruthy();
+  });
+
+  it("renders BY_EDITION with null percent treated as 0", async () => {
+    mockLoaderData.progress = [
+      { id: "rp1", editionId: "edition-1", progressKind: "EBOOK", percent: null },
+    ];
+    mockLoaderData.trackingMode = "BY_EDITION";
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    expect(screen.getByText("0%")).toBeTruthy();
+  });
+
   it("shows no progress message when empty", async () => {
     mockLoaderData.progress = [];
     const { Route } = await import("./library.$workId");
