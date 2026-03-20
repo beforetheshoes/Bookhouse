@@ -1,5 +1,5 @@
 import path from "node:path";
-import { readFile, mkdir, writeFile } from "node:fs/promises";
+import { readFile, mkdir, writeFile, readdir } from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import sharp from "sharp";
 import { MediaKind } from "@bookhouse/domain";
@@ -170,7 +170,7 @@ export function processCoverForWorkDefault(db: CoverDb) {
       db,
       extractEpubCover,
       readFile,
-      detectAdjacentCover,
+      detectAdjacentCover: (directory) => detectAdjacentCover(directory, readdir),
       resizeCoverImage: (resizeInput) =>
         resizeCoverImage(resizeInput, { sharp: sharp as never, mkdir, writeFile }),
     });

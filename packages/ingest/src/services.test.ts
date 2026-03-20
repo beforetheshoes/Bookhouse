@@ -1030,9 +1030,8 @@ describe("ingest services", () => {
     expect(editionFiles).toHaveLength(2);
 
     // PROCESS_COVER should be enqueued immediately for each stub
-    const coverCalls = enqueueMock.mock.calls.filter(
-      ([name]: [string]) => name === LIBRARY_JOB_NAMES.PROCESS_COVER,
-    );
+    const allCalls = enqueueMock.mock.calls as unknown as [string, { workId: string; fileAssetId: string }][];
+    const coverCalls = allCalls.filter(([name]) => name === LIBRARY_JOB_NAMES.PROCESS_COVER);
     expect(coverCalls).toHaveLength(2);
     for (const work of works) {
       const fileAsset = [...state.fileAssetsById.values()].find((fa) =>
@@ -1043,10 +1042,7 @@ describe("ingest services", () => {
         ),
       );
       expect(
-        coverCalls.some(
-          ([, payload]: [string, { workId: string; fileAssetId: string }]) =>
-            payload.workId === work.id && payload.fileAssetId === fileAsset?.id,
-        ),
+        coverCalls.some(([, payload]) => payload.workId === work.id && payload.fileAssetId === fileAsset?.id),
       ).toBe(true);
     }
   });
@@ -1090,15 +1086,12 @@ describe("ingest services", () => {
     expect(editionFiles[0]?.editionId).toBe(editionFiles[1]?.editionId);
 
     // PROCESS_COVER should be enqueued once for the stub (using the first track's fileAssetId)
-    const coverCalls = enqueueMock.mock.calls.filter(
-      ([name]: [string]) => name === LIBRARY_JOB_NAMES.PROCESS_COVER,
-    );
+    const allAudioCalls = enqueueMock.mock.calls as unknown as [string, { workId: string; fileAssetId: string }][];
+    const coverCalls = allAudioCalls.filter(([name]) => name === LIBRARY_JOB_NAMES.PROCESS_COVER);
     expect(coverCalls).toHaveLength(1);
     const stubWork = works.at(0);
     expect(stubWork).toBeDefined();
-    const firstCoverCall = coverCalls.at(0);
-    expect(firstCoverCall).toBeDefined();
-    expect(firstCoverCall?.[1]).toMatchObject({ workId: stubWork?.id });
+    expect(coverCalls.at(0)?.[1]).toMatchObject({ workId: stubWork?.id });
   });
 
   it("skips stubs for COVER, SIDECAR, and OTHER media kinds during scan", async () => {
