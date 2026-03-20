@@ -4,6 +4,7 @@ export {
   canonicalizeContributorNames,
   classifyMediaKind,
   createIdentifierMap,
+  deriveFormatFamily,
   getFileExtension,
   hashFileContents,
   hashFileAsset,
@@ -45,7 +46,7 @@ export type {
 
 export { extractEpubCover } from "./epub";
 export type { EpubCoverResult } from "./epub";
-export { detectAdjacentCover, resizeCoverImage, processCoverForWork } from "./covers";
+export { detectAdjacentCover, resizeCoverImage, processCoverForWork, processCoverForWorkDefault } from "./covers";
 export type { CoverDependencies, ProcessCoverInput, ProcessCoverResult } from "./covers";
 export { PARTIAL_HASH_BYTES } from "./hashing";
 export { SCAN_PROGRESS_INTERVAL } from "./services";
@@ -54,6 +55,7 @@ export const INGEST_PUBLIC_API = [
   "classifyMediaKind",
   "createIdentifierMap",
   "createIngestServices",
+  "deriveFormatFamily",
   "detectAdjacentCover",
   "extractEpubCover",
   "canonicalizeBookTitle",
@@ -75,6 +77,7 @@ export const INGEST_PUBLIC_API = [
   "parseFileAssetMetadata",
   "parseOpfSidecar",
   "processCoverForWork",
+  "processCoverForWorkDefault",
   "resizeCoverImage",
   "scanLibraryRoot",
   "walkRegularFiles",

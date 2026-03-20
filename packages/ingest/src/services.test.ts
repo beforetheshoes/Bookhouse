@@ -7,6 +7,7 @@ import {
   AvailabilityStatus,
   ContributorRole,
   EditionFileRole,
+  type EnrichmentStatus,
   FormatFamily,
   type FileAsset,
   MediaKind,
@@ -58,6 +59,7 @@ interface TestState {
 
 interface TestWork {
   description: string | null;
+  enrichmentStatus: EnrichmentStatus;
   id: string;
   language: string | null;
   seriesId: string | null;
@@ -217,6 +219,7 @@ function createTestDb(state: TestState): IngestDb {
         workSequence += 1;
         const created: TestWork = {
           description: null,
+          enrichmentStatus: "ENRICHED",
           id: `work-${String(workSequence)}`,
           language: null,
           seriesId: null,
@@ -225,6 +228,10 @@ function createTestDb(state: TestState): IngestDb {
         };
         state.works.set(created.id, created);
         return created;
+      },
+      async delete({ where }) {
+        await Promise.resolve();
+        state.works.delete(where.id);
       },
       async findUnique({ where }) {
         await Promise.resolve();
@@ -383,6 +390,7 @@ function addFileAsset(state: TestState, overrides: Partial<TestFileAsset> = {}):
 function addWork(state: TestState, overrides: Partial<TestWork> = {}): TestWork {
   const work: TestWork = {
     description: null,
+    enrichmentStatus: "ENRICHED",
     id: "work-1",
     language: null,
     seriesId: null,
@@ -670,10 +678,15 @@ describe("ingest services", () => {
     expect(firstScan.enqueuedHashJobs).toHaveLength(2);
     expect(firstScan.missingFileAssetIds).toEqual([]);
     expect(firstScan.scannedFileAssetIds).toHaveLength(2);
+    const bookStubWork = [...state.works.values()][0]!;
     expect(enqueuedJobs).toEqual([
       {
         jobName: LIBRARY_JOB_NAMES.HASH_FILE_ASSET,
         payload: { fileAssetId: "file-1" },
+      },
+      {
+        jobName: LIBRARY_JOB_NAMES.PROCESS_COVER,
+        payload: { workId: bookStubWork.id, fileAssetId: "file-1" },
       },
       {
         jobName: LIBRARY_JOB_NAMES.HASH_FILE_ASSET,
@@ -973,6 +986,210 @@ describe("ingest services", () => {
     expect(calls.length).toBeGreaterThan(0);
     const lastCall = calls[calls.length - 1] as [Record<string, unknown>];
     expect(lastCall[0]).toMatchObject({ processedFiles: 2, errorCount: 1 });
+  });
+
+  it("creates stub works for new ebook files during scan", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-stub-"));
+    tempDirectories.push(directory);
+
+    await mkdir(path.join(directory, "author"));
+    await writeFile(path.join(directory, "author", "My Great Book.epub"), "epub-content");
+    await writeFile(path.join(directory, "author", "Another Book.pdf"), "pdf-content");
+
+    const state = createEmptyState(directory);
+    const enqueueMock = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: enqueueMock,
+    });
+
+    const result = await services.scanLibraryRoot({
+      libraryRootId: "root-1",
+    });
+
+    expect(result.createdStubWorkIds).toHaveLength(2);
+
+    // Check stub works were created
+    const works = [...state.works.values()];
+    expect(works).toHaveLength(2);
+    const workTitles = works.map((w) => w.titleDisplay).sort();
+    expect(workTitles).toEqual(["Another Book", "My Great Book"]);
+    for (const work of works) {
+      expect(work.enrichmentStatus).toBe("STUB");
+    }
+
+    // Check editions were created
+    const editions = [...state.editions.values()];
+    expect(editions).toHaveLength(2);
+    expect(editions[0]).toMatchObject({ formatFamily: FormatFamily.EBOOK });
+    expect(editions[1]).toMatchObject({ formatFamily: FormatFamily.EBOOK });
+
+    // Check edition files were linked
+    const editionFiles = [...state.editionFiles.values()];
+    expect(editionFiles).toHaveLength(2);
+
+    // PROCESS_COVER should be enqueued immediately for each stub
+    const coverCalls = enqueueMock.mock.calls.filter(
+      ([name]: [string]) => name === LIBRARY_JOB_NAMES.PROCESS_COVER,
+    );
+    expect(coverCalls).toHaveLength(2);
+    for (const work of works) {
+      const fileAsset = [...state.fileAssetsById.values()].find((fa) =>
+        [...state.editionFiles.values()].some(
+          (ef) =>
+            ef.fileAssetId === fa.id &&
+            [...state.editions.values()].find((e) => e.id === ef.editionId)?.workId === work.id,
+        ),
+      );
+      expect(
+        coverCalls.some(
+          ([, payload]: [string, { workId: string; fileAssetId: string }]) =>
+            payload.workId === work.id && payload.fileAssetId === fileAsset?.id,
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it("creates one stub per audiobook directory during scan", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-stub-audio-"));
+    tempDirectories.push(directory);
+
+    await mkdir(path.join(directory, "Author", "Book Title"), { recursive: true });
+    await writeFile(path.join(directory, "Author", "Book Title", "01-chapter.mp3"), "audio1");
+    await writeFile(path.join(directory, "Author", "Book Title", "02-chapter.mp3"), "audio2");
+
+    const state = createEmptyState(directory);
+    const enqueueMock = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: enqueueMock,
+    });
+
+    const result = await services.scanLibraryRoot({
+      libraryRootId: "root-1",
+    });
+
+    // Only one stub work for the directory, not per track
+    expect(result.createdStubWorkIds).toHaveLength(1);
+    const works = [...state.works.values()];
+    expect(works).toHaveLength(1);
+    expect(works[0]).toMatchObject({
+      enrichmentStatus: "STUB",
+      titleDisplay: "Book Title",
+    });
+
+    // One edition with AUDIOBOOK format family
+    const editions = [...state.editions.values()];
+    expect(editions).toHaveLength(1);
+    expect(editions[0]).toMatchObject({ formatFamily: FormatFamily.AUDIOBOOK });
+
+    // Both audio tracks linked to the same edition
+    const editionFiles = [...state.editionFiles.values()];
+    expect(editionFiles).toHaveLength(2);
+    expect(editionFiles[0]?.editionId).toBe(editionFiles[1]?.editionId);
+
+    // PROCESS_COVER should be enqueued once for the stub (using the first track's fileAssetId)
+    const coverCalls = enqueueMock.mock.calls.filter(
+      ([name]: [string]) => name === LIBRARY_JOB_NAMES.PROCESS_COVER,
+    );
+    expect(coverCalls).toHaveLength(1);
+    const stubWork = works[0]!;
+    expect(coverCalls[0]![1]).toMatchObject({ workId: stubWork.id });
+  });
+
+  it("skips stubs for COVER, SIDECAR, and OTHER media kinds during scan", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-stub-skip-"));
+    tempDirectories.push(directory);
+
+    await writeFile(path.join(directory, "cover.jpg"), "image");
+    await writeFile(path.join(directory, "metadata.opf"), "xml");
+    await writeFile(path.join(directory, "readme.bin"), "binary");
+
+    const state = createEmptyState(directory);
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.scanLibraryRoot({
+      libraryRootId: "root-1",
+    });
+
+    expect(result.createdStubWorkIds).toHaveLength(0);
+    expect(state.works.size).toBe(0);
+  });
+
+  it("skips stubs for files that already have an edition file link", async () => {
+    const state = createEmptyState("/tmp/root");
+    // Pre-populate a work/edition/edition-file that references a file-asset-id
+    // that will be created during scan — simulates a file whose EditionFile was
+    // created out-of-band before the scan discovers it as new
+    const existingWork = addWork(state, { id: "existing-work-1" });
+    addEdition(state, { id: "existing-edition-1", workId: existingWork.id });
+    addEditionFile(state, {
+      editionId: "existing-edition-1",
+      fileAssetId: "file-1", // will match the first upserted file asset
+    });
+
+    const listDirectory = (() =>
+      Promise.resolve([
+        { isDirectory: () => false, isFile: () => true, isSymbolicLink: () => false, name: "book.epub" },
+      ] as never)) as ReaddirFn;
+    const readStats = vi.fn(() =>
+      Promise.resolve({
+        isDirectory: () => false,
+        isFile: () => true,
+        isSymbolicLink: () => false,
+        ctime: new Date("2024-01-01T00:00:00.000Z"),
+        mtime: new Date("2024-01-01T00:00:00.000Z"),
+        size: 100,
+      } as never),
+    ) as unknown as LstatFn;
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      listDirectory,
+      readStats,
+    });
+
+    const result = await services.scanLibraryRoot({
+      libraryRootId: "root-1",
+    });
+
+    // File already had an edition file link, so no stub created
+    expect(result.createdStubWorkIds).toHaveLength(0);
+    // Only the pre-existing work
+    expect(state.works.size).toBe(1);
+  });
+
+  it("skips stubs for existing unchanged files", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-stub-unchanged-"));
+    tempDirectories.push(directory);
+
+    await writeFile(path.join(directory, "book.epub"), "epub-content");
+
+    const state = createEmptyState(directory);
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    // First scan
+    const firstResult = await services.scanLibraryRoot({
+      libraryRootId: "root-1",
+    });
+
+    expect(firstResult.createdStubWorkIds).toHaveLength(1);
+
+    // Second scan — file hasn't changed, no new stubs
+    const secondResult = await services.scanLibraryRoot({
+      libraryRootId: "root-1",
+    });
+
+    expect(secondResult.createdStubWorkIds).toHaveLength(0);
+    // Still only 1 work total
+    expect(state.works.size).toBe(1);
   });
 
   it("throws when the library root does not exist", async () => {
@@ -1443,6 +1660,7 @@ describe("ingest services", () => {
       createdEdition: false,
       createdEditionFile: false,
       createdWork: false,
+      enrichedExistingWork: false,
       enqueuedCoverJob: false,
       fileAssetId: "missing-file",
       skipped: true,
@@ -1608,6 +1826,7 @@ describe("ingest services", () => {
         createdEditionFile: true,
         createdWork: false,
         editionId: "edition-1",
+        enrichedExistingWork: false,
         enqueuedCoverJob: true,
         fileAssetId: "file-1",
         skipped: false,
@@ -1618,6 +1837,7 @@ describe("ingest services", () => {
         createdEditionFile: false,
         createdWork: false,
         editionId: "edition-1",
+        enrichedExistingWork: false,
         enqueuedCoverJob: true,
         fileAssetId: "file-1",
         skipped: false,
@@ -1669,6 +1889,7 @@ describe("ingest services", () => {
       createdEditionFile: true,
       createdWork: false,
       editionId: "edition-2",
+      enrichedExistingWork: false,
       enqueuedCoverJob: true,
       fileAssetId: "file-1",
       skipped: false,
@@ -1716,6 +1937,7 @@ describe("ingest services", () => {
       createdEditionFile: true,
       createdWork: true,
       editionId: "edition-1",
+      enrichedExistingWork: false,
       enqueuedCoverJob: true,
       fileAssetId: "file-1",
       skipped: false,
@@ -1723,6 +1945,7 @@ describe("ingest services", () => {
     });
     expect(state.works.get("work-1")).toEqual({
       description: null,
+      enrichmentStatus: "ENRICHED",
       id: "work-1",
       language: null,
       seriesId: null,
@@ -1816,6 +2039,7 @@ describe("ingest services", () => {
       createdEditionFile: false,
       createdWork: false,
       editionId: "edition-1",
+      enrichedExistingWork: false,
       enqueuedCoverJob: true,
       fileAssetId: "file-1",
       skipped: false,
@@ -1855,6 +2079,7 @@ describe("ingest services", () => {
       createdEditionFile: false,
       createdWork: false,
       editionId: undefined,
+      enrichedExistingWork: false,
       enqueuedCoverJob: false,
       fileAssetId: "file-1",
       skipped: false,
@@ -1863,6 +2088,313 @@ describe("ingest services", () => {
 
     // Should NOT enqueue a cover job when edition is missing
     expect(enqueueLibraryJob).not.toHaveBeenCalled();
+  });
+
+  it("enriches an existing stub work with parsed metadata", async () => {
+    const state = createEmptyState("/tmp/root");
+    const stubWork = addWork(state, {
+      enrichmentStatus: "STUB",
+      titleCanonical: "my great book",
+      titleDisplay: "My Great Book",
+    });
+    const edition = addEdition(state, { workId: stubWork.id });
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/book.epub",
+      basename: "book.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      metadata: {
+        source: "epub",
+        status: "parsed",
+        version: 1,
+        normalized: {
+          title: "The Fifth Season",
+          authors: ["N. K. Jemisin"],
+          identifiers: { isbn13: "9780316229296" },
+        },
+      },
+    });
+    addEditionFile(state, {
+      editionId: edition.id,
+      fileAssetId: "file-1",
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-1" });
+
+    expect(result.enrichedExistingWork).toBe(true);
+    expect(result.mergedIntoWorkId).toBeUndefined();
+    expect(state.works.get("work-1")).toMatchObject({
+      enrichmentStatus: "ENRICHED",
+      titleCanonical: "the fifth season",
+      titleDisplay: "The Fifth Season",
+    });
+    // Edition should have identifiers
+    expect(state.editions.get("edition-1")).toMatchObject({
+      isbn13: "9780316229296",
+    });
+    // Contributors should be created
+    expect([...state.editionContributors.values()].length).toBeGreaterThan(0);
+  });
+
+  it("merges a stub work into an existing enriched work when title and authors match", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    // Existing enriched work with contributor
+    const enrichedWork = addWork(state, {
+      id: "enriched-work",
+      enrichmentStatus: "ENRICHED",
+      titleCanonical: "the fifth season",
+      titleDisplay: "The Fifth Season",
+    });
+    const enrichedEdition = addEdition(state, {
+      id: "enriched-edition",
+      workId: enrichedWork.id,
+    });
+    const author = addContributor(state, {
+      id: "author-1",
+      nameCanonical: "n k jemisin",
+      nameDisplay: "N. K. Jemisin",
+    });
+    addEditionContributor(state, {
+      editionId: enrichedEdition.id,
+      contributorId: author.id,
+      role: ContributorRole.AUTHOR,
+    });
+
+    // Stub work from scan
+    const stubWork = addWork(state, {
+      id: "stub-work",
+      enrichmentStatus: "STUB",
+      titleCanonical: "my great book",
+      titleDisplay: "My Great Book",
+    });
+    const stubEdition = addEdition(state, {
+      id: "stub-edition",
+      workId: stubWork.id,
+    });
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/book.epub",
+      basename: "book.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      metadata: {
+        source: "epub",
+        status: "parsed",
+        version: 1,
+        normalized: {
+          title: "The Fifth Season",
+          authors: ["N. K. Jemisin"],
+          identifiers: {},
+        },
+      },
+    });
+    addEditionFile(state, {
+      editionId: stubEdition.id,
+      fileAssetId: "file-1",
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-1" });
+
+    expect(result.enrichedExistingWork).toBe(true);
+    expect(result.mergedIntoWorkId).toBe("enriched-work");
+    // Stub work should be deleted
+    expect(state.works.get("stub-work")).toBeUndefined();
+    // Edition should be re-linked to the enriched work
+    expect(state.editions.get("stub-edition")?.workId).toBe("enriched-work");
+  });
+
+  it("merges a stub work when ISBN matches an existing edition on a different work", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    // Existing work with edition that has matching ISBN
+    const existingWork = addWork(state, {
+      id: "existing-work",
+      enrichmentStatus: "ENRICHED",
+      titleCanonical: "the fifth season",
+      titleDisplay: "The Fifth Season",
+    });
+    addEdition(state, {
+      id: "existing-edition",
+      workId: existingWork.id,
+      isbn13: "9780316229296",
+    });
+
+    // Stub work from scan
+    const stubWork = addWork(state, {
+      id: "stub-work",
+      enrichmentStatus: "STUB",
+      titleCanonical: "my great book",
+      titleDisplay: "My Great Book",
+    });
+    const stubEdition = addEdition(state, {
+      id: "stub-edition",
+      workId: stubWork.id,
+    });
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/book.epub",
+      basename: "book.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      metadata: {
+        source: "epub",
+        status: "parsed",
+        version: 1,
+        normalized: {
+          title: "The Fifth Season",
+          authors: ["N. K. Jemisin"],
+          identifiers: { isbn13: "9780316229296" },
+        },
+      },
+    });
+    addEditionFile(state, {
+      editionId: stubEdition.id,
+      fileAssetId: "file-1",
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-1" });
+
+    expect(result.enrichedExistingWork).toBe(true);
+    expect(result.mergedIntoWorkId).toBe("existing-work");
+    // Stub work deleted
+    expect(state.works.get("stub-work")).toBeUndefined();
+    // Edition re-linked
+    expect(state.editions.get("stub-edition")?.workId).toBe("existing-work");
+  });
+
+  it("enriches a stub work in place when its canonical title matches metadata and no other work matches", async () => {
+    const state = createEmptyState("/tmp/root");
+    const stubWork = addWork(state, {
+      enrichmentStatus: "STUB",
+      titleCanonical: "the fifth season",
+      titleDisplay: "the fifth season",
+    });
+    const edition = addEdition(state, { workId: stubWork.id });
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/book.epub",
+      basename: "book.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      metadata: {
+        source: "epub",
+        status: "parsed",
+        version: 1,
+        normalized: {
+          title: "The Fifth Season",
+          authors: ["N. K. Jemisin"],
+          identifiers: { asin: "B00H25FCSQ" },
+        },
+      },
+    });
+    addEditionFile(state, {
+      editionId: edition.id,
+      fileAssetId: "file-1",
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-1" });
+
+    expect(result.enrichedExistingWork).toBe(true);
+    expect(result.mergedIntoWorkId).toBeUndefined();
+    expect(state.works.get("work-1")).toMatchObject({
+      enrichmentStatus: "ENRICHED",
+      titleDisplay: "The Fifth Season",
+    });
+    expect(state.editions.get("edition-1")).toMatchObject({
+      asin: "B00H25FCSQ",
+      isbn13: null,
+      isbn10: null,
+    });
+  });
+
+  it("skips enrichment of a stub work when file has no parsed metadata", async () => {
+    const state = createEmptyState("/tmp/root");
+    const stubWork = addWork(state, {
+      enrichmentStatus: "STUB",
+      titleCanonical: "my great book",
+      titleDisplay: "My Great Book",
+    });
+    const edition = addEdition(state, { workId: stubWork.id });
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/book.epub",
+      basename: "book.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      metadata: null,
+    });
+    addEditionFile(state, {
+      editionId: edition.id,
+      fileAssetId: "file-1",
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-1" });
+
+    expect(result.enrichedExistingWork).toBe(false);
+    expect(state.works.get("work-1")?.enrichmentStatus).toBe("STUB");
+  });
+
+  it("does not re-enrich already enriched works on the existing edition path", async () => {
+    const state = createEmptyState("/tmp/root");
+    const work = addWork(state, {
+      enrichmentStatus: "ENRICHED",
+      titleCanonical: "the fifth season",
+      titleDisplay: "The Fifth Season",
+    });
+    const edition = addEdition(state, { workId: work.id });
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/book.epub",
+      basename: "book.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      metadata: {
+        source: "epub",
+        status: "parsed",
+        version: 1,
+        normalized: {
+          title: "Some Other Title",
+          authors: ["Different Author"],
+          identifiers: { isbn13: "9781234567890" },
+        },
+      },
+    });
+    addEditionFile(state, {
+      editionId: edition.id,
+      fileAssetId: "file-1",
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-1" });
+
+    expect(result.enrichedExistingWork).toBe(false);
+    // Work title unchanged
+    expect(state.works.get("work-1")?.titleDisplay).toBe("The Fifth Season");
   });
 
   it("throws when metadata parsing is requested for an unknown file asset", async () => {

@@ -1,5 +1,5 @@
 import path from "node:path";
-import { MediaKind } from "@bookhouse/domain";
+import { FormatFamily, MediaKind } from "@bookhouse/domain";
 
 const AUDIO_EXTENSIONS = new Set([
   "aac",
@@ -40,6 +40,12 @@ export function normalizeRelativePath(rootPath: string, absolutePath: string): s
 export function getFileExtension(filePath: string): string | null {
   const extension = path.extname(filePath).slice(1).toLowerCase();
   return extension === "" ? null : extension;
+}
+
+export function deriveFormatFamily(mediaKind: MediaKind): FormatFamily | null {
+  if (mediaKind === MediaKind.EPUB || mediaKind === MediaKind.PDF || mediaKind === MediaKind.CBZ) return FormatFamily.EBOOK;
+  if (mediaKind === MediaKind.AUDIO) return FormatFamily.AUDIOBOOK;
+  return null;
 }
 
 export function classifyMediaKind(filePath: string): MediaKind {

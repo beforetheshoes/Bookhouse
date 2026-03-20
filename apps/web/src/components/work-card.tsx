@@ -7,12 +7,13 @@ export interface WorkCardProps {
   id: string;
   title: string;
   authors: string;
+  enrichmentStatus?: string;
   formats: string[];
   series?: string | null;
   coverPath?: string | null;
 }
 
-export function WorkCard({ id, title, authors, formats, series, coverPath }: WorkCardProps) {
+export function WorkCard({ id, title, authors, enrichmentStatus, formats, series, coverPath }: WorkCardProps) {
   const [imgFailed, setImgFailed] = useState(false);
   const showPlaceholder = !coverPath || imgFailed;
 
@@ -45,6 +46,11 @@ export function WorkCard({ id, title, authors, formats, series, coverPath }: Wor
           {series && (
             <Badge data-testid="series-badge" variant="outline" className="px-1.5 py-0 text-[10px]">
               {series}
+            </Badge>
+          )}
+          {enrichmentStatus === "STUB" && (
+            <Badge variant="outline" className="animate-pulse px-1.5 py-0 text-[10px]">
+              Processing&hellip;
             </Badge>
           )}
         </div>

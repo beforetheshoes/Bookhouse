@@ -88,6 +88,11 @@ enum AudioLinkMatchType {
   EXACT_METADATA
 }
 
+enum EnrichmentStatus {
+  STUB
+  ENRICHED
+}
+
 enum ImportJobKind {
   SCAN_ROOT
   HASH_FILE
@@ -196,9 +201,10 @@ model Work {
   description    String?
   language       String?
   coverPath      String?
-  seriesId       String?
-  seriesPosition Float?
-  createdAt      DateTime @default(now())
+  seriesId         String?
+  seriesPosition   Float?
+  enrichmentStatus EnrichmentStatus @default(ENRICHED)
+  createdAt        DateTime         @default(now())
   updatedAt      DateTime @updatedAt
 
   series   Series?   @relation(fields: [seriesId], references: [id])

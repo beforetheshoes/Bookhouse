@@ -100,6 +100,7 @@ export function LibraryGrid({ works }: LibraryGridProps) {
                     id={work.id}
                     title={work.titleDisplay}
                     authors={getAuthors(work)}
+                    enrichmentStatus={work.enrichmentStatus}
                     formats={getFormats(work)}
                     series={work.series?.name}
                     coverPath={work.coverPath}

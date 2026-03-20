@@ -47,8 +47,13 @@ const columns: ColumnDef<LibraryWork>[] = [
       <DataTableColumnHeader column={column} title="Title" />
     ),
     cell: ({ row }) => (
-      <Link to="/library/$workId" params={{ workId: row.original.id }}>
+      <Link to="/library/$workId" params={{ workId: row.original.id }} className="flex items-center gap-2">
         {row.original.titleDisplay}
+        {row.original.enrichmentStatus === "STUB" && (
+          <Badge variant="outline" className="animate-pulse px-1.5 py-0 text-[10px]">
+            Processing&hellip;
+          </Badge>
+        )}
       </Link>
     ),
   },
