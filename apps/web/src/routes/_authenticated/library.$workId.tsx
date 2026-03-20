@@ -188,6 +188,8 @@ function WorkDetailPage() {
         ))}
       </div>
 
+      <LinkedFormats editions={work.editions} />
+
       <div className="space-y-4">
         <h2 className="text-lg font-semibold">Reading Progress</h2>
         {progress.length === 0 ? (
@@ -198,6 +200,30 @@ function WorkDetailPage() {
           <EditionProgress progress={progress} editions={work.editions} />
         )}
       </div>
+    </div>
+  );
+}
+
+function LinkedFormats({ editions }: { editions: WorkDetail["editions"] }) {
+  const links: { id: string; title: string; format: string }[] = [];
+  for (const edition of editions) {
+    for (const el of edition.ebookLinks) {
+      links.push({ id: el.id, title: el.audioEdition.work.titleDisplay, format: "AUDIOBOOK" });
+    }
+    for (const al of edition.audioLinks) {
+      links.push({ id: al.id, title: al.ebookEdition.work.titleDisplay, format: "EBOOK" });
+    }
+  }
+  if (links.length === 0) return null;
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-semibold">Linked Formats</h2>
+      {links.map((link) => (
+        <div key={link.id} className="flex items-center gap-2">
+          <Badge variant="secondary">{link.format}</Badge>
+          <span>{link.title}</span>
+        </div>
+      ))}
     </div>
   );
 }

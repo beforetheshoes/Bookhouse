@@ -16,6 +16,7 @@ const processCoverForWorkMock = vi.fn();
 const scanLibraryRootMock = vi.fn();
 const enrichWorkMock = vi.fn();
 const detectDuplicatesMock = vi.fn();
+const matchAudioMock = vi.fn();
 const importJobUpdateMock = vi.fn();
 
 vi.mock("ioredis", () => ({
@@ -68,6 +69,7 @@ vi.mock("@bookhouse/ingest", () => ({
   scanLibraryRoot: scanLibraryRootMock,
   enrichWork: enrichWorkMock,
   detectDuplicates: detectDuplicatesMock,
+  matchAudio: matchAudioMock,
   searchOpenLibrary: vi.fn(),
   getOpenLibraryWork: vi.fn(),
   RateLimiter: class { check = () => ({ allowed: true }); },
@@ -87,6 +89,7 @@ vi.mock("@bookhouse/shared", async () => {
 beforeEach(() => {
   addMock.mockReset();
   detectDuplicatesMock.mockReset();
+  matchAudioMock.mockReset();
   enrichWorkMock.mockReset();
   hashFileAssetMock.mockReset();
   importJobUpdateMock.mockReset();
@@ -116,6 +119,7 @@ describe("library worker", () => {
       scanLibraryRoot: scanLibraryRootMock,
       enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
+      matchAudio: matchAudioMock,
     });
 
     scanLibraryRootMock.mockResolvedValueOnce("scan-result");
@@ -171,6 +175,15 @@ describe("library worker", () => {
       } as never),
     ).resolves.toBe("detect-result");
 
+    matchAudioMock.mockResolvedValueOnce("match-audio-result");
+    await expect(
+      processor({
+        data: { fileAssetId: "file-1" },
+        name: "match-audio",
+      } as never),
+    ).resolves.toBe("match-audio-result");
+
+    expect(matchAudioMock).toHaveBeenCalledWith({ fileAssetId: "file-1" });
     expect(detectDuplicatesMock).toHaveBeenCalledWith({ fileAssetId: "file-1" });
     expect(scanLibraryRootMock).toHaveBeenCalledWith({ libraryRootId: "root-1" });
     expect(hashFileAssetMock).toHaveBeenCalledWith({ fileAssetId: "file-1" });
@@ -193,6 +206,7 @@ describe("library worker", () => {
       scanLibraryRoot: scanLibraryRootMock,
       enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
+      matchAudio: matchAudioMock,
     });
 
     scanLibraryRootMock.mockResolvedValueOnce("scan-result");
@@ -224,6 +238,7 @@ describe("library worker", () => {
       scanLibraryRoot: scanLibraryRootMock,
       enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
+      matchAudio: matchAudioMock,
     });
 
     scanLibraryRootMock.mockRejectedValueOnce(new Error("Disk full"));
@@ -258,6 +273,7 @@ describe("library worker", () => {
       scanLibraryRoot: scanLibraryRootMock,
       enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
+      matchAudio: matchAudioMock,
     });
 
     scanLibraryRootMock.mockRejectedValueOnce("plain string error");
@@ -291,6 +307,7 @@ describe("library worker", () => {
       scanLibraryRoot: scanLibraryRootMock,
       enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
+      matchAudio: matchAudioMock,
     });
 
     scanLibraryRootMock.mockResolvedValueOnce("scan-result");
@@ -314,6 +331,7 @@ describe("library worker", () => {
       scanLibraryRoot: scanLibraryRootMock,
       enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
+      matchAudio: matchAudioMock,
     });
 
     const updateProgressMock = vi.fn();
@@ -356,6 +374,7 @@ describe("library worker", () => {
       scanLibraryRoot: scanLibraryRootMock,
       enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
+      matchAudio: matchAudioMock,
     });
 
     scanLibraryRootMock.mockResolvedValueOnce("scan-result");
@@ -380,6 +399,7 @@ describe("library worker", () => {
       scanLibraryRoot: scanLibraryRootMock,
       enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
+      matchAudio: matchAudioMock,
     });
 
     enrichWorkMock.mockResolvedValueOnce({ status: "enriched", workOlid: "OL123W" });
@@ -466,6 +486,7 @@ describe("library worker", () => {
       scanLibraryRoot: scanLibraryRootMock,
       enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
+      matchAudio: matchAudioMock,
     });
 
     await expect(

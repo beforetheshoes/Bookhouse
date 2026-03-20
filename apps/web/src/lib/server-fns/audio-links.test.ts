@@ -15,15 +15,17 @@ vi.mock("@tanstack/react-start", () => ({
 }));
 
 const findManyMock = vi.fn();
+const updateMock = vi.fn();
 vi.mock("@bookhouse/db", () => ({
-  db: { audioLink: { findMany: findManyMock } },
+  db: { audioLink: { findMany: findManyMock, update: updateMock } },
 }));
 
-import { getAudioLinksServerFn } from "./audio-links";
+import { getAudioLinksServerFn, confirmAudioLinkServerFn, ignoreAudioLinkServerFn } from "./audio-links";
 
 describe("getAudioLinksServerFn", () => {
   beforeEach(() => {
     findManyMock.mockReset();
+    updateMock.mockReset();
   });
 
   it("calls db.audioLink.findMany with correct includes and orderBy confidence desc", async () => {
@@ -53,5 +55,37 @@ describe("getAudioLinksServerFn", () => {
     findManyMock.mockResolvedValue(fakeData);
     const result = await getAudioLinksServerFn();
     expect(result).toBe(fakeData);
+  });
+});
+
+describe("confirmAudioLinkServerFn", () => {
+  beforeEach(() => {
+    updateMock.mockReset();
+  });
+
+  it("updates reviewStatus to CONFIRMED", async () => {
+    updateMock.mockResolvedValue({});
+    const result = await confirmAudioLinkServerFn({ data: { id: "al-1" } });
+    expect(updateMock).toHaveBeenCalledWith({
+      where: { id: "al-1" },
+      data: { reviewStatus: "CONFIRMED" },
+    });
+    expect(result).toEqual({ success: true });
+  });
+});
+
+describe("ignoreAudioLinkServerFn", () => {
+  beforeEach(() => {
+    updateMock.mockReset();
+  });
+
+  it("updates reviewStatus to IGNORED", async () => {
+    updateMock.mockResolvedValue({});
+    const result = await ignoreAudioLinkServerFn({ data: { id: "al-1" } });
+    expect(updateMock).toHaveBeenCalledWith({
+      where: { id: "al-1" },
+      data: { reviewStatus: "IGNORED" },
+    });
+    expect(result).toEqual({ success: true });
   });
 });
