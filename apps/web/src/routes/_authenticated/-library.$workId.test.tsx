@@ -38,7 +38,7 @@ interface MockProgress {
   id: string;
   editionId: string;
   progressKind: string;
-  percent: number;
+  percent: number | null;
 }
 
 let mockLoaderData: { work: MockWork; progress: MockProgress[]; trackingMode: string } = {
