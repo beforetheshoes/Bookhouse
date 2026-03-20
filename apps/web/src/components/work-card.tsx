@@ -20,7 +20,7 @@ export function WorkCard({ id, title, authors, enrichmentStatus, formats, series
   const showPlaceholder = !coverPath || imgFailed;
 
   return (
-    <Link to="/library/$workId" params={{ workId: id }} className="flex flex-col overflow-hidden rounded-lg border bg-card">
+    <Link to="/library/$workId" params={{ workId: id }} search={{ page: 1, pageSize: 50, sort: "title-asc" as const }} className="flex flex-col overflow-hidden rounded-lg border bg-card">
       <div className="aspect-[2/3] bg-muted">
         {showPlaceholder ? (
           <div className="flex size-full items-center justify-center text-muted-foreground">

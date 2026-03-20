@@ -4,30 +4,55 @@ import type * as TanstackRouter from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+const defaultFacetCounts = {
+  format: [
+    { formatFamily: "EBOOK", _count: { _all: 1 } },
+  ],
+  hasCover: { withCover: 0, withoutCover: 1 },
+  series: 0,
+};
+
 let mockLoaderData: {
-  works: {
-    id: string;
-    titleDisplay: string;
-    sortTitle: string;
-    coverPath: string | null;
-    createdAt: Date;
-    enrichmentStatus: string;
-    series: { id: string; name: string } | null;
-    editions: {
-      formatFamily: string;
-      publisher: string;
-      isbn13: string | null;
-      isbn10: string | null;
-      contributors: { role: string; contributor: { nameDisplay: string } }[];
+  libraryResult: {
+    works: {
+      id: string;
+      titleDisplay: string;
+      titleCanonical: string;
+      sortTitle: string;
+      coverPath: string | null;
+      createdAt: Date;
+      enrichmentStatus: string;
+      series: { id: string; name: string } | null;
+      seriesPosition: number | null;
+      editions: {
+        formatFamily: string;
+        publisher: string;
+        isbn13: string | null;
+        isbn10: string | null;
+        contributors: { role: string; contributor: { nameDisplay: string } }[];
+      }[];
     }[];
-  }[];
+    totalCount: number;
+    facetCounts: typeof defaultFacetCounts;
+  };
   activeJobCount: number;
   progressMap: Record<string, number>;
 } = {
-  works: [],
+  libraryResult: {
+    works: [],
+    totalCount: 0,
+    facetCounts: defaultFacetCounts,
+  },
   activeJobCount: 0,
   progressMap: {},
 };
+
+let mockSearch = { page: 1, pageSize: 50, sort: "title-asc" as const };
+const mockNavigate = vi.fn().mockImplementation((opts: { search?: (prev: Record<string, unknown>) => unknown }) => {
+  if (typeof opts.search === "function") {
+    opts.search({});
+  }
+});
 
 vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
@@ -43,12 +68,23 @@ vi.mock("@tanstack/react-router", async () => {
       return <a href={href} {...props}>{children}</a>;
     },
     useRouter: () => ({ invalidate: vi.fn(), navigate: vi.fn() }),
-    createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
-      ...opts,
-      options: opts,
-      useLoaderData: () => mockLoaderData,
-      useRouteContext: () => ({}),
-    }),
+    useNavigate: () => mockNavigate,
+    createFileRoute: (_path: string) => (opts: Record<string, unknown>) => {
+      // Call validateSearch and loaderDeps to exercise those branches
+      if (typeof opts.validateSearch === "function") {
+        (opts.validateSearch as (s: unknown) => unknown)({});
+      }
+      if (typeof opts.loaderDeps === "function") {
+        (opts.loaderDeps as (s: { search: unknown }) => unknown)({ search: {} });
+      }
+      return {
+        ...opts,
+        options: opts,
+        useLoaderData: () => mockLoaderData,
+        useSearch: () => mockSearch,
+        useRouteContext: () => ({}),
+      };
+    },
   };
 });
 
@@ -56,9 +92,9 @@ vi.mock("~/hooks/use-sse", () => ({
   useSSE: vi.fn(),
 }));
 
-const getLibraryWorksServerFnMock = vi.fn();
+const getFilteredLibraryWorksServerFnMock = vi.fn();
 vi.mock("~/lib/server-fns/library", () => ({
-  getLibraryWorksServerFn: getLibraryWorksServerFnMock,
+  getFilteredLibraryWorksServerFn: getFilteredLibraryWorksServerFnMock,
 }));
 
 const getActiveJobCountServerFnMock = vi.fn();
@@ -83,10 +119,34 @@ vi.mock("~/components/library-grid", () => ({
   ),
 }));
 
+let capturedToolbarProps: Record<string, unknown> = {};
 vi.mock("~/components/library-toolbar", () => ({
-  LibraryToolbar: (props: Record<string, unknown>) => (
-    <div data-testid="library-toolbar" data-view={props.view as string} data-filter={props.filterValue as string} />
-  ),
+  LibraryToolbar: (props: Record<string, unknown>) => {
+    capturedToolbarProps = props;
+    return (
+      <div data-testid="library-toolbar" data-view={props.view as string} data-filter={props.filterValue as string} />
+    );
+  },
+}));
+
+let capturedFiltersProps: Record<string, unknown> = {};
+vi.mock("~/components/library-filters", () => ({
+  LibraryFilters: (props: Record<string, unknown>) => {
+    capturedFiltersProps = props;
+    return (
+      <div data-testid="library-filters" data-filters={JSON.stringify(props.filters)} />
+    );
+  },
+}));
+
+let capturedPaginationProps: Record<string, unknown> = {};
+vi.mock("~/components/library-pagination", () => ({
+  LibraryPagination: (props: Record<string, unknown>) => {
+    capturedPaginationProps = props;
+    return (
+      <div data-testid="library-pagination" data-page={String(props.page)} data-total={String(props.totalCount)} />
+    );
+  },
 }));
 
 // Use real data-table so column cell renderers execute
@@ -113,14 +173,20 @@ vi.mock("@tanstack/react-virtual", () => ({
   }),
 }));
 
+vi.mock("~/lib/library-search-schema", () => ({
+  librarySearchSchema: { parse: (v: unknown) => v },
+}));
+
 const makeWork = (title: string, authors: string[] = [], formats: string[] = [], enrichmentStatus = "ENRICHED") => ({
   id: `work-${title.toLowerCase().replace(/\s/g, "-")}`,
   titleDisplay: title,
+  titleCanonical: title.toLowerCase(),
   sortTitle: title.toLowerCase(),
   coverPath: null,
   createdAt: new Date("2025-01-01"),
   enrichmentStatus,
   series: null,
+  seriesPosition: null,
   editions: [
     {
       formatFamily: formats[0] ?? "EBOOK",
@@ -137,25 +203,46 @@ const makeWork = (title: string, authors: string[] = [], formats: string[] = [],
 
 describe("LibraryPage", () => {
   beforeEach(() => {
-    mockLoaderData = { works: [], activeJobCount: 0, progressMap: {} };
+    mockLoaderData = {
+      libraryResult: {
+        works: [],
+        totalCount: 0,
+        facetCounts: defaultFacetCounts,
+      },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    mockSearch = { page: 1, pageSize: 50, sort: "title-asc" };
     mockView = "grid";
+    capturedToolbarProps = {};
+    capturedFiltersProps = {};
+    capturedPaginationProps = {};
     vi.clearAllMocks();
   });
 
-  it("loader calls getLibraryWorksServerFn, getActiveJobCountServerFn, and getBulkReadingProgressServerFn", async () => {
-    getLibraryWorksServerFnMock.mockResolvedValueOnce([]);
+  it("loader calls getFilteredLibraryWorksServerFn, getActiveJobCountServerFn, and getBulkReadingProgressServerFn", async () => {
+    getFilteredLibraryWorksServerFnMock.mockResolvedValueOnce({ works: [], totalCount: 0, facetCounts: defaultFacetCounts });
     getActiveJobCountServerFnMock.mockResolvedValueOnce(0);
     getBulkReadingProgressServerFnMock.mockResolvedValueOnce({});
     const { Route } = await import("./library");
-    const result = await (Route.options.loader as (args: Record<string, unknown>) => Promise<unknown>)({});
-    expect(getLibraryWorksServerFnMock).toHaveBeenCalled();
+    const deps = { page: 1, pageSize: 50, sort: "title-asc" };
+    const result = await (Route.options.loader as unknown as (args: Record<string, unknown>) => Promise<unknown>)({ deps });
+    expect(getFilteredLibraryWorksServerFnMock).toHaveBeenCalledWith({ data: deps });
     expect(getActiveJobCountServerFnMock).toHaveBeenCalled();
     expect(getBulkReadingProgressServerFnMock).toHaveBeenCalled();
-    expect(result).toEqual({ works: [], activeJobCount: 0, progressMap: {} });
+    expect(result).toEqual({
+      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    });
   });
 
   it("renders 'Library' heading", async () => {
-    mockLoaderData = { works: [makeWork("Test")], activeJobCount: 0, progressMap: {} };
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
     const { Route } = await import("./library");
     const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
@@ -165,7 +252,11 @@ describe("LibraryPage", () => {
   it("renders grid view by default", async () => {
     mockView = "grid";
     mockLoaderData = {
-      works: [makeWork("The Great Gatsby", ["F. Scott Fitzgerald"], ["EBOOK"])],
+      libraryResult: {
+        works: [makeWork("The Great Gatsby", ["F. Scott Fitzgerald"], ["EBOOK"])],
+        totalCount: 1,
+        facetCounts: defaultFacetCounts,
+      },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -178,14 +269,17 @@ describe("LibraryPage", () => {
   it("renders table view with real DataTable when preference is table", async () => {
     mockView = "table";
     mockLoaderData = {
-      works: [makeWork("The Great Gatsby", ["F. Scott Fitzgerald"], ["EBOOK"]), makeWork("Moby Dick", [], [])],
+      libraryResult: {
+        works: [makeWork("The Great Gatsby", ["F. Scott Fitzgerald"], ["EBOOK"]), makeWork("Moby Dick", [], [])],
+        totalCount: 2,
+        facetCounts: defaultFacetCounts,
+      },
       activeJobCount: 0,
       progressMap: {},
     };
     const { Route } = await import("./library");
     const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
-    // Real DataTable exercises getAuthors, getFormats, column accessors
     expect(screen.getByText("The Great Gatsby")).toBeTruthy();
     expect(screen.getByText("Moby Dick")).toBeTruthy();
     expect(screen.getByText("F. Scott Fitzgerald")).toBeTruthy();
@@ -194,7 +288,11 @@ describe("LibraryPage", () => {
   it("renders title as link to work detail in table view", async () => {
     mockView = "table";
     mockLoaderData = {
-      works: [makeWork("The Great Gatsby", ["F. Scott Fitzgerald"], ["EBOOK"])],
+      libraryResult: {
+        works: [makeWork("The Great Gatsby", ["F. Scott Fitzgerald"], ["EBOOK"])],
+        totalCount: 1,
+        facetCounts: defaultFacetCounts,
+      },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -209,7 +307,11 @@ describe("LibraryPage", () => {
   it("renders work with no authors showing dash in table view", async () => {
     mockView = "table";
     mockLoaderData = {
-      works: [makeWork("Unknown Author Book", [])],
+      libraryResult: {
+        works: [makeWork("Unknown Author Book", [])],
+        totalCount: 1,
+        facetCounts: defaultFacetCounts,
+      },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -223,16 +325,22 @@ describe("LibraryPage", () => {
   it("renders work with no editions showing dash for publisher/isbn in table view", async () => {
     mockView = "table";
     mockLoaderData = {
-      works: [{
-        id: "work-no-editions",
-        titleDisplay: "No Editions",
-        sortTitle: "no editions",
-        coverPath: null,
-        createdAt: new Date("2025-01-01"),
-        enrichmentStatus: "ENRICHED",
-        series: null,
-        editions: [],
-      }],
+      libraryResult: {
+        works: [{
+          id: "work-no-editions",
+          titleDisplay: "No Editions",
+          titleCanonical: "no editions",
+          sortTitle: "no editions",
+          coverPath: null,
+          createdAt: new Date("2025-01-01"),
+          enrichmentStatus: "ENRICHED",
+          series: null,
+          seriesPosition: null,
+          editions: [],
+        }],
+        totalCount: 1,
+        facetCounts: defaultFacetCounts,
+      },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -245,7 +353,11 @@ describe("LibraryPage", () => {
   it("renders format badges in table view", async () => {
     mockView = "table";
     mockLoaderData = {
-      works: [makeWork("Test Book", ["Author"], ["AUDIOBOOK"])],
+      libraryResult: {
+        works: [makeWork("Test Book", ["Author"], ["AUDIOBOOK"])],
+        totalCount: 1,
+        facetCounts: defaultFacetCounts,
+      },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -256,15 +368,47 @@ describe("LibraryPage", () => {
   });
 
   it("renders LibraryToolbar", async () => {
-    mockLoaderData = { works: [makeWork("Test")], activeJobCount: 0, progressMap: {} };
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
     const { Route } = await import("./library");
     const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
     expect(screen.getByTestId("library-toolbar")).toBeTruthy();
   });
 
-  it("shows empty state when no works and not scanning", async () => {
-    mockLoaderData = { works: [], activeJobCount: 0, progressMap: {} };
+  it("renders LibraryFilters", async () => {
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.getByTestId("library-filters")).toBeTruthy();
+  });
+
+  it("renders LibraryPagination", async () => {
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.getByTestId("library-pagination")).toBeTruthy();
+  });
+
+  it("shows empty state when no works and not scanning with no filters", async () => {
+    mockLoaderData = {
+      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
     const { Route } = await import("./library");
     const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
@@ -273,7 +417,11 @@ describe("LibraryPage", () => {
   });
 
   it("empty state links to settings/libraries", async () => {
-    mockLoaderData = { works: [], activeJobCount: 0, progressMap: {} };
+    mockLoaderData = {
+      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
     const { Route } = await import("./library");
     const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
@@ -282,7 +430,11 @@ describe("LibraryPage", () => {
   });
 
   it("does not show empty state when scanning with no works", async () => {
-    mockLoaderData = { works: [], activeJobCount: 1, progressMap: {} };
+    mockLoaderData = {
+      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts },
+      activeJobCount: 1,
+      progressMap: {},
+    };
     const { Route } = await import("./library");
     const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
@@ -290,17 +442,34 @@ describe("LibraryPage", () => {
     expect(screen.getByText(/Scanning/)).toBeTruthy();
   });
 
+  it("does not show empty state when filters are active and results are empty", async () => {
+    mockSearch = { ...mockSearch, q: "something" } as typeof mockSearch;
+    mockLoaderData = {
+      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.queryByText("No works yet")).toBeNull();
+  });
+
   it("shows scanning indicator when activeJobCount > 0", async () => {
-    mockLoaderData = { works: [makeWork("Test")], activeJobCount: 2, progressMap: {} };
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      activeJobCount: 2,
+      progressMap: {},
+    };
     const { Route } = await import("./library");
     const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
     expect(screen.getByText(/Scanning/)).toBeTruthy();
   });
 
-  it("shows scanning indicator with new count when works.length > prevCount", async () => {
+  it("shows scanning indicator with new count when totalCount > prevCount", async () => {
     mockLoaderData = {
-      works: [makeWork("Old Book")],
+      libraryResult: { works: [makeWork("Old Book")], totalCount: 1, facetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -311,7 +480,7 @@ describe("LibraryPage", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     mockLoaderData = {
-      works: [makeWork("Old Book"), makeWork("New Book")],
+      libraryResult: { works: [makeWork("Old Book"), makeWork("New Book")], totalCount: 2, facetCounts: defaultFacetCounts },
       activeJobCount: 1,
       progressMap: {},
     };
@@ -323,7 +492,11 @@ describe("LibraryPage", () => {
   it("shows processing badge for stub works in table view", async () => {
     mockView = "table";
     mockLoaderData = {
-      works: [makeWork("Stub Book", ["Author"], ["EBOOK"], "STUB")],
+      libraryResult: {
+        works: [makeWork("Stub Book", ["Author"], ["EBOOK"], "STUB")],
+        totalCount: 1,
+        facetCounts: defaultFacetCounts,
+      },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -336,7 +509,11 @@ describe("LibraryPage", () => {
   it("does not show processing badge for enriched works in table view", async () => {
     mockView = "table";
     mockLoaderData = {
-      works: [makeWork("Enriched Book", ["Author"], ["EBOOK"], "ENRICHED")],
+      libraryResult: {
+        works: [makeWork("Enriched Book", ["Author"], ["EBOOK"], "ENRICHED")],
+        totalCount: 1,
+        facetCounts: defaultFacetCounts,
+      },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -349,7 +526,7 @@ describe("LibraryPage", () => {
   it("passes progressMap to LibraryGrid", async () => {
     mockView = "grid";
     mockLoaderData = {
-      works: [makeWork("Test")],
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: { "work-test": 42 },
     };
@@ -361,10 +538,249 @@ describe("LibraryPage", () => {
   });
 
   it("does not show scanning indicator when activeJobCount is 0", async () => {
-    mockLoaderData = { works: [makeWork("Test")], activeJobCount: 0, progressMap: {} };
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
     const { Route } = await import("./library");
     const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
     expect(screen.queryByText(/Scanning/)).toBeNull();
+  });
+
+  it("navigates with search text when onSearchChange is called", async () => {
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    const onSearchChange = capturedToolbarProps.onSearchChange as (v: string) => void;
+    onSearchChange("hello");
+    expect(mockNavigate).toHaveBeenCalledWith(expect.objectContaining({
+      to: ".",
+      replace: true,
+    }));
+  });
+
+  it("navigates with empty q when search is cleared", async () => {
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    const onSearchChange = capturedToolbarProps.onSearchChange as (v: string) => void;
+    onSearchChange("");
+    expect(mockNavigate).toHaveBeenCalled();
+  });
+
+  it("navigates with sort when onSortChange is called", async () => {
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    const onSortChange = capturedToolbarProps.onSortChange as (v: string) => void;
+    onSortChange("title-desc");
+    expect(mockNavigate).toHaveBeenCalled();
+  });
+
+  it("navigates with filters when onFiltersChange is called", async () => {
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    const onFiltersChange = capturedFiltersProps.onFiltersChange as (v: Record<string, unknown>) => void;
+    onFiltersChange({ format: ["EBOOK"] });
+    expect(mockNavigate).toHaveBeenCalled();
+  });
+
+  it("navigates with page when onPageChange is called", async () => {
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 100, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    const onPageChange = capturedPaginationProps.onPageChange as (v: number) => void;
+    onPageChange(2);
+    expect(mockNavigate).toHaveBeenCalled();
+  });
+
+  it("filters works by reading status", async () => {
+    mockView = "grid";
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Unread"), makeWork("Reading"), makeWork("Done")],
+        totalCount: 3,
+        facetCounts: defaultFacetCounts,
+      },
+      activeJobCount: 0,
+      progressMap: { "work-reading": 50, "work-done": 100 },
+    };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    const { rerender } = render(<LibraryPage />);
+
+    // Initially shows all
+    expect(screen.getByText("Grid: 3 works")).toBeTruthy();
+
+    // Switch to reading filter
+    const onFilterChange = capturedToolbarProps.onFilterChange as (v: string) => void;
+    onFilterChange("reading");
+    rerender(<LibraryPage />);
+    expect(screen.getByText("Grid: 1 works")).toBeTruthy();
+  });
+
+  it("shows finished works when reading filter is finished", async () => {
+    mockView = "grid";
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Unread"), makeWork("Done")],
+        totalCount: 2,
+        facetCounts: defaultFacetCounts,
+      },
+      activeJobCount: 0,
+      progressMap: { "work-done": 100 },
+    };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    const onFilterChange = capturedToolbarProps.onFilterChange as (v: string) => void;
+    onFilterChange("finished");
+    const { rerender } = render(<LibraryPage />);
+    rerender(<LibraryPage />);
+    expect(screen.getAllByText(/Grid:/).length).toBeGreaterThan(0);
+  });
+
+  it("shows unread works when reading filter is unread", async () => {
+    mockView = "grid";
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Unread"), makeWork("Done")],
+        totalCount: 2,
+        facetCounts: defaultFacetCounts,
+      },
+      activeJobCount: 0,
+      progressMap: { "work-done": 100 },
+    };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    const onFilterChange = capturedToolbarProps.onFilterChange as (v: string) => void;
+    onFilterChange("unread");
+    const { rerender } = render(<LibraryPage />);
+    rerender(<LibraryPage />);
+    expect(screen.getAllByText(/Grid:/).length).toBeGreaterThan(0);
+  });
+
+  it("does not show empty state when format filter is active", async () => {
+    mockSearch = { ...mockSearch, format: ["EBOOK"] } as unknown as typeof mockSearch;
+    mockLoaderData = {
+      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.queryByText("No works yet")).toBeNull();
+  });
+
+  it("does not show empty state when authorId filter is active", async () => {
+    mockSearch = { ...mockSearch, authorId: ["a1"] } as unknown as typeof mockSearch;
+    mockLoaderData = {
+      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.queryByText("No works yet")).toBeNull();
+  });
+
+  it("does not show empty state when seriesId filter is active", async () => {
+    mockSearch = { ...mockSearch, seriesId: ["s1"] } as unknown as typeof mockSearch;
+    mockLoaderData = {
+      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.queryByText("No works yet")).toBeNull();
+  });
+
+  it("does not show empty state when publisher filter is active", async () => {
+    mockSearch = { ...mockSearch, publisher: ["Penguin"] } as unknown as typeof mockSearch;
+    mockLoaderData = {
+      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.queryByText("No works yet")).toBeNull();
+  });
+
+  it("does not show empty state when hasCover filter is active", async () => {
+    mockSearch = { ...mockSearch, hasCover: true } as unknown as typeof mockSearch;
+    mockLoaderData = {
+      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.queryByText("No works yet")).toBeNull();
+  });
+
+  it("passes search params as toolbar search value", async () => {
+    mockSearch = { ...mockSearch, q: "test query" } as unknown as typeof mockSearch;
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(capturedToolbarProps.searchValue).toBe("test query");
+  });
+
+  it("passes current filters from search to LibraryFilters", async () => {
+    mockSearch = { ...mockSearch, format: ["EBOOK"], hasCover: true } as unknown as typeof mockSearch;
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    const filters = capturedFiltersProps.filters as Record<string, unknown>;
+    expect(filters.format).toEqual(["EBOOK"]);
+    expect(filters.hasCover).toBe(true);
   });
 });

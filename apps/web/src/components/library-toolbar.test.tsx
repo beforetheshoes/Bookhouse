@@ -2,14 +2,14 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
-import { LibraryToolbar } from "./library-toolbar";
-import type { SortOption, ReadingFilter } from "~/lib/sort-filter-works";
+import { LibraryToolbar, type SortValue } from "./library-toolbar";
+import type { ReadingFilter } from "~/lib/sort-filter-works";
 import type { LibraryView } from "~/hooks/use-library-view-preference";
 
 const defaultProps = {
   searchValue: "",
   onSearchChange: vi.fn(),
-  sortValue: "title-asc" as SortOption,
+  sortValue: "title-asc" as SortValue,
   onSortChange: vi.fn(),
   view: "grid" as LibraryView,
   onViewChange: vi.fn(),

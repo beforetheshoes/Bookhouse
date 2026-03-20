@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useSSE } from "~/hooks/use-sse";
 import { useLibraryViewPreference } from "~/hooks/use-library-view-preference";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -9,22 +9,27 @@ import { Badge } from "~/components/ui/badge";
 import { GridPageSkeleton } from "~/components/skeletons/grid-page-skeleton";
 import { LibraryToolbar } from "~/components/library-toolbar";
 import { LibraryGrid } from "~/components/library-grid";
-import { sortAndFilterWorks, type SortOption, type ReadingFilter } from "~/lib/sort-filter-works";
+import { LibraryFilters, type LibraryFilterValues } from "~/components/library-filters";
+import { LibraryPagination } from "~/components/library-pagination";
+import { librarySearchSchema } from "~/lib/library-search-schema";
+import type { ReadingFilter } from "~/lib/sort-filter-works";
 import {
-  getLibraryWorksServerFn,
+  getFilteredLibraryWorksServerFn,
   type LibraryWork,
 } from "~/lib/server-fns/library";
 import { getActiveJobCountServerFn } from "~/lib/server-fns/import-jobs";
 import { getBulkReadingProgressServerFn } from "~/lib/server-fns/reading-progress";
 
 export const Route = createFileRoute("/_authenticated/library")({
-  loader: async () => {
-    const [works, activeJobCount, progressMap] = await Promise.all([
-      getLibraryWorksServerFn(),
+  validateSearch: (search) => librarySearchSchema.parse(search),
+  loaderDeps: ({ search }) => search,
+  loader: async ({ deps }) => {
+    const [libraryResult, activeJobCount, progressMap] = await Promise.all([
+      getFilteredLibraryWorksServerFn({ data: deps }),
       getActiveJobCountServerFn(),
       getBulkReadingProgressServerFn(),
     ]);
-    return { works, activeJobCount, progressMap };
+    return { libraryResult, activeJobCount, progressMap };
   },
   pendingComponent: GridPageSkeleton,
   component: LibraryPage,
@@ -49,7 +54,7 @@ const columns: ColumnDef<LibraryWork>[] = [
       <DataTableColumnHeader column={column} title="Title" />
     ),
     cell: ({ row }) => (
-      <Link to="/library/$workId" params={{ workId: row.original.id }} className="flex items-center gap-2">
+      <Link to="/library/$workId" params={{ workId: row.original.id }} search={{ page: 1, pageSize: 50, sort: "title-asc" as const }} className="flex items-center gap-2">
         {row.original.titleDisplay}
         {row.original.enrichmentStatus === "STUB" && (
           <Badge variant="outline" className="animate-pulse px-1.5 py-0 text-[10px]">
@@ -91,31 +96,108 @@ const columns: ColumnDef<LibraryWork>[] = [
   },
 ];
 
+function filterByReadingStatus(
+  works: LibraryWork[],
+  readingFilter: ReadingFilter,
+  progressMap: Record<string, number>,
+): LibraryWork[] {
+  if (readingFilter === "all") return works;
+  return works.filter((w) => {
+    const pct = progressMap[w.id] ?? 0;
+    switch (readingFilter) {
+      case "reading":
+        return pct > 0 && pct < 100;
+      case "finished":
+        return pct >= 100;
+      case "unread":
+        return pct === 0;
+    }
+  });
+}
+
 function LibraryPage() {
-  const { works, activeJobCount, progressMap } = Route.useLoaderData();
+  const { libraryResult, activeJobCount, progressMap } = Route.useLoaderData();
+  const { works, totalCount, facetCounts } = libraryResult;
+  const search = Route.useSearch();
+  const navigate = useNavigate();
   const [view, setView] = useLibraryViewPreference();
-  const [search, setSearch] = useState("");
-  const [sort, setSort] = useState<SortOption>("title-asc");
   const [readingFilter, setReadingFilter] = useState<ReadingFilter>("all");
-  const [prevCount, setPrevCount] = useState(works.length);
+  const [prevCount, setPrevCount] = useState(totalCount);
 
   const isScanning = activeJobCount > 0;
-  const newCount = works.length - prevCount;
+  const newCount = totalCount - prevCount;
 
   useSSE({ enabled: isScanning });
 
   useEffect(() => {
     if (!isScanning) {
-      setPrevCount(works.length);
+      setPrevCount(totalCount);
     }
-  }, [isScanning, works.length]);
+  }, [isScanning, totalCount]);
 
-  const filteredAndSorted = useMemo(
-    () => sortAndFilterWorks(works, search, sort, readingFilter, progressMap),
-    [works, search, sort, readingFilter, progressMap],
+  const updateSearch = useCallback(
+    (updates: Record<string, unknown>) => {
+      void navigate({
+        to: ".",
+        search: ((prev: Record<string, unknown>) => ({
+          ...prev,
+          ...updates,
+          page: updates.page ?? 1,
+        })) as unknown as Record<string, unknown>,
+        replace: true,
+      });
+    },
+    [navigate],
   );
 
-  if (works.length === 0 && !isScanning) {
+  const handleFiltersChange = useCallback(
+    (filters: LibraryFilterValues) => {
+      updateSearch({
+        format: filters.format,
+        authorId: filters.authorId,
+        seriesId: filters.seriesId,
+        publisher: filters.publisher,
+        hasCover: filters.hasCover,
+      });
+    },
+    [updateSearch],
+  );
+
+  const handleSearchChange = useCallback(
+    (q: string) => {
+      updateSearch({ q: q || undefined });
+    },
+    [updateSearch],
+  );
+
+  const handleSortChange = useCallback(
+    (sort: string) => {
+      updateSearch({ sort });
+    },
+    [updateSearch],
+  );
+
+  const handlePageChange = useCallback(
+    (page: number) => {
+      updateSearch({ page });
+    },
+    [updateSearch],
+  );
+
+  const filteredByReading = useMemo(
+    () => filterByReadingStatus(works, readingFilter, progressMap),
+    [works, readingFilter, progressMap],
+  );
+
+  const currentFilters: LibraryFilterValues = {
+    format: search.format,
+    authorId: search.authorId,
+    seriesId: search.seriesId,
+    publisher: search.publisher,
+    hasCover: search.hasCover,
+  };
+
+  if (totalCount === 0 && !isScanning && !search.q && !search.format && !search.authorId && !search.seriesId && !search.publisher && search.hasCover === undefined) {
     return (
       <div>
         <h1 className="text-2xl font-bold">Library</h1>
@@ -152,22 +234,37 @@ function LibraryPage() {
           </div>
         )}
       </div>
-      <div className="space-y-4">
-        <LibraryToolbar
-          searchValue={search}
-          onSearchChange={setSearch}
-          sortValue={sort}
-          onSortChange={setSort}
-          view={view}
-          onViewChange={setView}
-          filterValue={readingFilter}
-          onFilterChange={setReadingFilter}
-        />
-        {view === "grid" ? (
-          <LibraryGrid works={filteredAndSorted} progressMap={progressMap} />
-        ) : (
-          <VirtualizedDataTable columns={columns} data={filteredAndSorted} />
-        )}
+      <div className="flex gap-6">
+        <aside className="w-56 shrink-0">
+          <LibraryFilters
+            facetCounts={facetCounts}
+            filters={currentFilters}
+            onFiltersChange={handleFiltersChange}
+          />
+        </aside>
+        <div className="flex-1 space-y-4">
+          <LibraryToolbar
+            searchValue={search.q ?? ""}
+            onSearchChange={handleSearchChange}
+            sortValue={search.sort}
+            onSortChange={handleSortChange}
+            view={view}
+            onViewChange={setView}
+            filterValue={readingFilter}
+            onFilterChange={setReadingFilter}
+          />
+          {view === "grid" ? (
+            <LibraryGrid works={filteredByReading} progressMap={progressMap} />
+          ) : (
+            <VirtualizedDataTable columns={columns} data={filteredByReading} />
+          )}
+          <LibraryPagination
+            page={search.page}
+            pageSize={search.pageSize}
+            totalCount={totalCount}
+            onPageChange={handlePageChange}
+          />
+        </div>
       </div>
     </div>
   );
