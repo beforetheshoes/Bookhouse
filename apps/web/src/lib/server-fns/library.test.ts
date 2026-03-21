@@ -393,6 +393,83 @@ describe("getFilteredLibraryWorksServerFn", () => {
     expect(result.facetCounts.hasCover.withoutCover).toBeGreaterThanOrEqual(0);
   });
 
+  it("scopes cover facet counts to active search filter (excludes hasCover)", async () => {
+    findManyMock.mockResolvedValue([]);
+    editionGroupByMock.mockResolvedValue([]);
+    seriesCountMock.mockResolvedValue(0);
+    countMock.mockResolvedValue(5);
+
+    await getFilteredLibraryWorksServerFn({ data: { q: "wind" } });
+
+    // Cover count queries should include the search filter but NOT hasCover
+    // countMock calls: [0] = totalCount, [1] = withCover, [2] = withoutCover
+    expect(countMock).toHaveBeenNthCalledWith(2, {
+      where: {
+        OR: [
+          { titleDisplay: { contains: "wind", mode: "insensitive" } },
+          { titleCanonical: { contains: "wind", mode: "insensitive" } },
+        ],
+        coverPath: { not: null },
+      },
+    });
+    expect(countMock).toHaveBeenNthCalledWith(3, {
+      where: {
+        OR: [
+          { titleDisplay: { contains: "wind", mode: "insensitive" } },
+          { titleCanonical: { contains: "wind", mode: "insensitive" } },
+        ],
+        coverPath: null,
+      },
+    });
+  });
+
+  it("scopes format facet counts to active search filter (excludes format)", async () => {
+    findManyMock.mockResolvedValue([]);
+    countMock.mockResolvedValue(0);
+    editionGroupByMock.mockResolvedValue([]);
+    seriesCountMock.mockResolvedValue(0);
+
+    await getFilteredLibraryWorksServerFn({ data: { q: "wind" } });
+
+    expect(editionGroupByMock).toHaveBeenCalledWith({
+      by: ["formatFamily"],
+      _count: { _all: true },
+      where: {
+        work: {
+          OR: [
+            { titleDisplay: { contains: "wind", mode: "insensitive" } },
+            { titleCanonical: { contains: "wind", mode: "insensitive" } },
+          ],
+        },
+      },
+    });
+  });
+
+  it("cover facet counts exclude hasCover filter but include format filter", async () => {
+    findManyMock.mockResolvedValue([]);
+    editionGroupByMock.mockResolvedValue([]);
+    seriesCountMock.mockResolvedValue(0);
+    countMock.mockResolvedValue(5);
+
+    await getFilteredLibraryWorksServerFn({
+      data: { format: ["EBOOK"], hasCover: false },
+    });
+
+    // Cover count queries should include format but NOT hasCover
+    expect(countMock).toHaveBeenNthCalledWith(2, {
+      where: {
+        editions: { some: { formatFamily: { in: ["EBOOK"] } } },
+        coverPath: { not: null },
+      },
+    });
+    expect(countMock).toHaveBeenNthCalledWith(3, {
+      where: {
+        editions: { some: { formatFamily: { in: ["EBOOK"] } } },
+        coverPath: null,
+      },
+    });
+  });
+
   it("returns series count in facet counts", async () => {
     findManyMock.mockResolvedValue([]);
     countMock.mockResolvedValue(0);
