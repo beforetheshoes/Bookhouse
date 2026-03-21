@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { AlertCircle, FolderOpen, Loader2, Play, Trash2 } from "lucide-react";
+import { AlertCircle, AlertTriangle, FolderOpen, Loader2, Play, Trash2 } from "lucide-react";
 import { useSSE } from "~/hooks/use-sse";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -179,10 +179,17 @@ function LibraryRootCard({ root }: { root: LibraryRootWithExtras }) {
                 disabled={scanning || root.scanProgress !== null}
               >
                 {root.scanProgress ? (
-                  <>
-                    <Loader2 className="size-4 animate-spin" />
-                    Scanning...
-                  </>
+                  root.scanProgress.stale ? (
+                    <>
+                      <AlertTriangle className="size-4 text-amber-600" />
+                      Scan Stalled
+                    </>
+                  ) : (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      Scanning...
+                    </>
+                  )
                 ) : scanning ? (
                   <>
                     <Loader2 className="size-4 animate-spin" />
@@ -236,10 +243,17 @@ function LibraryRootCard({ root }: { root: LibraryRootWithExtras }) {
                 value={root.scanProgress.processedFiles ?? 0}
                 max={root.scanProgress.totalFiles ?? 1}
               />
-              <p className="text-xs text-muted-foreground">
-                Scanning... {root.scanProgress.processedFiles ?? 0} / {root.scanProgress.totalFiles ?? "?"} files
-                {root.scanProgress.errorCount ? ` (${String(root.scanProgress.errorCount)} errors)` : ""}
-              </p>
+              {root.scanProgress.stale ? (
+                <p className="text-xs text-amber-600 flex items-center gap-1">
+                  <AlertTriangle className="size-3.5" />
+                  Scan appears stalled — no progress updates received
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Scanning... {root.scanProgress.processedFiles ?? 0} / {root.scanProgress.totalFiles ?? "?"} files
+                  {root.scanProgress.errorCount ? ` (${String(root.scanProgress.errorCount)} errors)` : ""}
+                </p>
+              )}
             </div>
           )}
         </CardContent>

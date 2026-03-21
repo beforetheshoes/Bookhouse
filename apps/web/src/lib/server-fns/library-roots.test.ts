@@ -247,12 +247,13 @@ describe("getScanProgressServerFn", () => {
     importJobFindFirstMock.mockReset();
   });
 
-  it("returns progress data for an active scan", async () => {
+  it("returns progress data with stale: false for a recent scan", async () => {
     importJobFindFirstMock.mockResolvedValue({
       status: "RUNNING",
       totalFiles: 100,
       processedFiles: 42,
       errorCount: 2,
+      updatedAt: new Date(),
     });
 
     const result = await getScanProgressServerFn({
@@ -270,6 +271,7 @@ describe("getScanProgressServerFn", () => {
         totalFiles: true,
         processedFiles: true,
         errorCount: true,
+        updatedAt: true,
       },
       orderBy: { createdAt: "desc" },
     });
@@ -278,6 +280,30 @@ describe("getScanProgressServerFn", () => {
       totalFiles: 100,
       processedFiles: 42,
       errorCount: 2,
+      stale: false,
+    });
+  });
+
+  it("returns stale: true when updatedAt exceeds threshold", async () => {
+    const sixMinutesAgo = new Date(Date.now() - 6 * 60 * 1000);
+    importJobFindFirstMock.mockResolvedValue({
+      status: "RUNNING",
+      totalFiles: 500,
+      processedFiles: 200,
+      errorCount: 0,
+      updatedAt: sixMinutesAgo,
+    });
+
+    const result = await getScanProgressServerFn({
+      data: { libraryRootId: "root-1" },
+    });
+
+    expect(result).toEqual({
+      status: "RUNNING",
+      totalFiles: 500,
+      processedFiles: 200,
+      errorCount: 0,
+      stale: true,
     });
   });
 
