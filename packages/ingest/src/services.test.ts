@@ -12,7 +12,7 @@ import {
   type FileAsset,
   MediaKind,
 } from "@bookhouse/domain";
-import { LIBRARY_JOB_NAMES } from "@bookhouse/shared";
+import { LIBRARY_JOB_NAMES, type LibraryJobName, type LibraryJobPayloads } from "@bookhouse/shared";
 import {
   canonicalizeBookTitle,
   canonicalizeContributorNames,
@@ -80,6 +80,7 @@ interface TestState {
 }
 
 interface TestWork {
+  coverPath: string | null;
   description: string | null;
   enrichmentStatus: EnrichmentStatus;
   id: string;
@@ -251,6 +252,7 @@ function createTestDb(state: TestState): IngestDb {
         await Promise.resolve();
         workSequence += 1;
         const created: TestWork = {
+          coverPath: null,
           description: null,
           enrichmentStatus: "ENRICHED",
           id: `work-${String(workSequence)}`,
@@ -488,6 +490,7 @@ function addFileAsset(state: TestState, overrides: Partial<TestFileAsset> = {}):
 
 function addWork(state: TestState, overrides: Partial<TestWork> = {}): TestWork {
   const work: TestWork = {
+    coverPath: null,
     description: null,
     enrichmentStatus: "ENRICHED",
     id: "work-1",
@@ -1289,6 +1292,691 @@ describe("ingest services", () => {
     expect(state.works.size).toBe(1);
   });
 
+  it("re-enqueues PARSE for existing unchanged EPUB with hashes but no metadata and no EditionFile link", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-recovery-parse-"));
+    tempDirectories.push(directory);
+
+    await writeFile(path.join(directory, "book.epub"), "epub");
+
+    const state = createEmptyState(directory);
+    const enqueuedJobs: Array<{ jobName: LibraryJobName; payload: LibraryJobPayloads[LibraryJobName] }> = [];
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: (jobName, payload) => {
+        enqueuedJobs.push({ jobName, payload });
+        return Promise.resolve(undefined);
+      },
+    });
+
+    await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    const fileAsset = state.fileAssets.get(path.join(directory, "book.epub"));
+    if (!fileAsset) throw new Error("expected fileAsset");
+    fileAsset.partialHash = "partial";
+    fileAsset.fullHash = "full";
+
+    // Remove EditionFile link so recovery checks metadata (early-pipeline recovery)
+    for (const [key, ef] of state.editionFiles) {
+      if (ef.fileAssetId === fileAsset.id) {
+        state.editionFiles.delete(key);
+      }
+    }
+
+    enqueuedJobs.length = 0;
+
+    const result = await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    expect(result.enqueuedRecoveryJobs).toEqual([fileAsset.id]);
+    expect(result.enqueuedHashJobs).toEqual([]);
+    expect(enqueuedJobs).toContainEqual({
+      jobName: LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA,
+      payload: { fileAssetId: fileAsset.id },
+    });
+  });
+
+  it("re-enqueues MATCH for existing unchanged EPUB with parsed metadata but no EditionFile link", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-recovery-match-"));
+    tempDirectories.push(directory);
+
+    await writeFile(path.join(directory, "book.epub"), "epub");
+
+    const state = createEmptyState(directory);
+    const enqueuedJobs: Array<{ jobName: LibraryJobName; payload: LibraryJobPayloads[LibraryJobName] }> = [];
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: (jobName, payload) => {
+        enqueuedJobs.push({ jobName, payload });
+        return Promise.resolve(undefined);
+      },
+    });
+
+    await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    const fileAsset = state.fileAssets.get(path.join(directory, "book.epub"));
+    if (!fileAsset) throw new Error("expected fileAsset");
+    fileAsset.partialHash = "partial";
+    fileAsset.fullHash = "full";
+    fileAsset.metadata = {
+      normalized: { title: "Book", authors: ["Author"] },
+      parsedAt: "2025-01-01T00:00:00.000Z",
+      parserVersion: 1,
+      source: "epub",
+      status: "parsed",
+      warnings: [],
+    };
+
+    for (const [key, ef] of state.editionFiles) {
+      if (ef.fileAssetId === fileAsset.id) {
+        state.editionFiles.delete(key);
+      }
+    }
+
+    enqueuedJobs.length = 0;
+
+    const result = await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    expect(result.enqueuedRecoveryJobs).toEqual([fileAsset.id]);
+    expect(enqueuedJobs).toContainEqual({
+      jobName: LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION,
+      payload: { fileAssetId: fileAsset.id },
+    });
+  });
+
+  it("re-enqueues MATCH for existing file linked to STUB work", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-recovery-stub-"));
+    tempDirectories.push(directory);
+
+    await writeFile(path.join(directory, "book.epub"), "epub");
+
+    const state = createEmptyState(directory);
+    const enqueuedJobs: Array<{ jobName: LibraryJobName; payload: LibraryJobPayloads[LibraryJobName] }> = [];
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: (jobName, payload) => {
+        enqueuedJobs.push({ jobName, payload });
+        return Promise.resolve(undefined);
+      },
+    });
+
+    await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    const fileAsset = state.fileAssets.get(path.join(directory, "book.epub"));
+    if (!fileAsset) throw new Error("expected fileAsset");
+    fileAsset.partialHash = "partial";
+    fileAsset.fullHash = "full";
+    fileAsset.metadata = {
+      normalized: { title: "Book", authors: ["Author"] },
+      parsedAt: "2025-01-01T00:00:00.000Z",
+      parserVersion: 1,
+      source: "epub",
+      status: "parsed",
+      warnings: [],
+    };
+
+    const work = [...state.works.values()][0];
+    if (!work) throw new Error("expected work");
+    expect(work.enrichmentStatus).toBe("STUB");
+
+    enqueuedJobs.length = 0;
+
+    const result = await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    expect(result.enqueuedRecoveryJobs).toEqual([fileAsset.id]);
+    expect(enqueuedJobs).toContainEqual({
+      jobName: LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION,
+      payload: { fileAssetId: fileAsset.id },
+    });
+  });
+
+  it("also enqueues PROCESS_COVER for STUB work with null coverPath during recovery", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-recovery-stub-cover-"));
+    tempDirectories.push(directory);
+
+    await writeFile(path.join(directory, "book.epub"), "epub");
+
+    const state = createEmptyState(directory);
+    const enqueuedJobs: Array<{ jobName: LibraryJobName; payload: LibraryJobPayloads[LibraryJobName] }> = [];
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: (jobName, payload) => {
+        enqueuedJobs.push({ jobName, payload });
+        return Promise.resolve(undefined);
+      },
+    });
+
+    await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    const fileAsset = state.fileAssets.get(path.join(directory, "book.epub"));
+    if (!fileAsset) throw new Error("expected fileAsset");
+    fileAsset.partialHash = "partial";
+    fileAsset.fullHash = "full";
+
+    const work = [...state.works.values()][0];
+    if (!work) throw new Error("expected work");
+    expect(work.enrichmentStatus).toBe("STUB");
+    expect(work.coverPath).toBeNull();
+
+    enqueuedJobs.length = 0;
+
+    await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    // Should enqueue both MATCH (for enrichment) and PROCESS_COVER (for missing cover)
+    expect(enqueuedJobs).toContainEqual({
+      jobName: LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION,
+      payload: { fileAssetId: fileAsset.id },
+    });
+    expect(enqueuedJobs).toContainEqual({
+      jobName: LIBRARY_JOB_NAMES.PROCESS_COVER,
+      payload: { workId: work.id, fileAssetId: fileAsset.id },
+    });
+  });
+
+  it("re-enqueues PROCESS_COVER for existing file linked to enriched work with no cover", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-recovery-cover-"));
+    tempDirectories.push(directory);
+
+    await writeFile(path.join(directory, "book.epub"), "epub");
+
+    const state = createEmptyState(directory);
+    const enqueuedJobs: Array<{ jobName: LibraryJobName; payload: LibraryJobPayloads[LibraryJobName] }> = [];
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: (jobName, payload) => {
+        enqueuedJobs.push({ jobName, payload });
+        return Promise.resolve(undefined);
+      },
+    });
+
+    await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    const fileAsset = state.fileAssets.get(path.join(directory, "book.epub"));
+    if (!fileAsset) throw new Error("expected fileAsset");
+    fileAsset.partialHash = "partial";
+    fileAsset.fullHash = "full";
+    fileAsset.metadata = {
+      normalized: { title: "Book", authors: ["Author"] },
+      parsedAt: "2025-01-01T00:00:00.000Z",
+      parserVersion: 1,
+      source: "epub",
+      status: "parsed",
+      warnings: [],
+    };
+
+    const work = [...state.works.values()][0];
+    if (!work) throw new Error("expected work");
+    work.enrichmentStatus = "ENRICHED";
+    work.coverPath = null;
+
+    enqueuedJobs.length = 0;
+
+    const result = await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    expect(result.enqueuedRecoveryJobs).toEqual([fileAsset.id]);
+    expect(enqueuedJobs).toContainEqual({
+      jobName: LIBRARY_JOB_NAMES.PROCESS_COVER,
+      payload: { workId: work.id, fileAssetId: fileAsset.id },
+    });
+  });
+
+  it("does not enqueue recovery jobs for fully processed files", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-recovery-none-"));
+    tempDirectories.push(directory);
+
+    await writeFile(path.join(directory, "book.epub"), "epub");
+
+    const state = createEmptyState(directory);
+    const enqueuedJobs: Array<{ jobName: LibraryJobName; payload: LibraryJobPayloads[LibraryJobName] }> = [];
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: (jobName, payload) => {
+        enqueuedJobs.push({ jobName, payload });
+        return Promise.resolve(undefined);
+      },
+    });
+
+    await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    const fileAsset = state.fileAssets.get(path.join(directory, "book.epub"));
+    if (!fileAsset) throw new Error("expected fileAsset");
+    fileAsset.partialHash = "partial";
+    fileAsset.fullHash = "full";
+    fileAsset.metadata = {
+      normalized: { title: "Book", authors: ["Author"] },
+      parsedAt: "2025-01-01T00:00:00.000Z",
+      parserVersion: 1,
+      source: "epub",
+      status: "parsed",
+      warnings: [],
+    };
+
+    const work = [...state.works.values()][0];
+    if (!work) throw new Error("expected work");
+    work.enrichmentStatus = "ENRICHED";
+    work.coverPath = "/covers/book.webp";
+
+    enqueuedJobs.length = 0;
+
+    const result = await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    expect(result.enqueuedRecoveryJobs).toEqual([]);
+    expect(result.enqueuedHashJobs).toEqual([]);
+    expect(enqueuedJobs).toEqual([]);
+  });
+
+  it("skips recovery when edition link exists but edition is missing", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-recovery-orphan-"));
+    tempDirectories.push(directory);
+
+    await writeFile(path.join(directory, "book.epub"), "epub");
+
+    const state = createEmptyState(directory);
+    const enqueuedJobs: Array<{ jobName: LibraryJobName; payload: LibraryJobPayloads[LibraryJobName] }> = [];
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: (jobName, payload) => {
+        enqueuedJobs.push({ jobName, payload });
+        return Promise.resolve(undefined);
+      },
+    });
+
+    await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    const fileAsset = state.fileAssets.get(path.join(directory, "book.epub"));
+    if (!fileAsset) throw new Error("expected fileAsset");
+    fileAsset.partialHash = "partial";
+    fileAsset.fullHash = "full";
+    fileAsset.metadata = {
+      normalized: { title: "Book", authors: ["Author"] },
+      parsedAt: "2025-01-01T00:00:00.000Z",
+      parserVersion: 1,
+      source: "epub",
+      status: "parsed",
+      warnings: [],
+    };
+
+    state.editions.clear();
+
+    enqueuedJobs.length = 0;
+
+    const result = await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    expect(result.enqueuedRecoveryJobs).toEqual([]);
+    expect(enqueuedJobs).toEqual([]);
+  });
+
+  it("does not enqueue PARSE recovery for PDF files with no metadata and no EditionFile link", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-recovery-pdf-"));
+    tempDirectories.push(directory);
+
+    await writeFile(path.join(directory, "doc.pdf"), "pdf-content");
+
+    const state = createEmptyState(directory);
+    const enqueuedJobs: Array<{ jobName: LibraryJobName; payload: LibraryJobPayloads[LibraryJobName] }> = [];
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: (jobName, payload) => {
+        enqueuedJobs.push({ jobName, payload });
+        return Promise.resolve(undefined);
+      },
+    });
+
+    // First scan
+    await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    // Simulate completed HASH but no metadata (PDFs are not parseable)
+    const fileAsset = state.fileAssets.get(path.join(directory, "doc.pdf"));
+    if (!fileAsset) throw new Error("expected fileAsset");
+    fileAsset.partialHash = "partial";
+    fileAsset.fullHash = "full";
+
+    // Remove EditionFile link to test early-pipeline recovery (no link, no metadata)
+    for (const [key, ef] of state.editionFiles) {
+      if (ef.fileAssetId === fileAsset.id) {
+        state.editionFiles.delete(key);
+      }
+    }
+
+    enqueuedJobs.length = 0;
+
+    const result = await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    // PDFs are not parseable, so PARSE should not be enqueued
+    expect(result.enqueuedRecoveryJobs).toEqual([]);
+    expect(enqueuedJobs).toEqual([]);
+  });
+
+  it("re-enqueues PARSE for existing unchanged AUDIO file with hashes but no metadata and no EditionFile link", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-recovery-audio-"));
+    tempDirectories.push(directory);
+
+    await mkdir(path.join(directory, "audiobook"));
+    await writeFile(path.join(directory, "audiobook", "chapter1.mp3"), "audio");
+
+    const state = createEmptyState(directory);
+    const enqueuedJobs: Array<{ jobName: LibraryJobName; payload: LibraryJobPayloads[LibraryJobName] }> = [];
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: (jobName, payload) => {
+        enqueuedJobs.push({ jobName, payload });
+        return Promise.resolve(undefined);
+      },
+    });
+
+    await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    const fileAsset = state.fileAssets.get(path.join(directory, "audiobook", "chapter1.mp3"));
+    if (!fileAsset) throw new Error("expected fileAsset");
+    fileAsset.partialHash = "partial";
+    fileAsset.fullHash = "full";
+
+    // Remove EditionFile link so recovery checks metadata (early-pipeline recovery)
+    for (const [key, ef] of state.editionFiles) {
+      if (ef.fileAssetId === fileAsset.id) {
+        state.editionFiles.delete(key);
+      }
+    }
+
+    enqueuedJobs.length = 0;
+
+    const result = await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    expect(result.enqueuedRecoveryJobs).toEqual([fileAsset.id]);
+    expect(enqueuedJobs).toContainEqual({
+      jobName: LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA,
+      payload: { fileAssetId: fileAsset.id },
+    });
+  });
+
+  it("re-enqueues PROCESS_COVER for EPUB with unparseable metadata but existing EditionFile link", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-recovery-unparseable-cover-"));
+    tempDirectories.push(directory);
+
+    await writeFile(path.join(directory, "book.epub"), "epub");
+
+    const state = createEmptyState(directory);
+    const enqueuedJobs: Array<{ jobName: LibraryJobName; payload: LibraryJobPayloads[LibraryJobName] }> = [];
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: (jobName, payload) => {
+        enqueuedJobs.push({ jobName, payload });
+        return Promise.resolve(undefined);
+      },
+    });
+
+    // First scan creates stub
+    await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    // Simulate: HASH succeeded, PARSE failed (unparseable), but stub already created EditionFile link
+    const fileAsset = state.fileAssets.get(path.join(directory, "book.epub"));
+    if (!fileAsset) throw new Error("expected fileAsset");
+    fileAsset.partialHash = "partial";
+    fileAsset.fullHash = "full";
+    fileAsset.metadata = {
+      parsedAt: "2025-01-01T00:00:00.000Z",
+      parserVersion: 1,
+      source: "epub",
+      status: "unparseable",
+      warnings: ["Failed to parse EPUB"],
+    };
+
+    const work = [...state.works.values()][0];
+    if (!work) throw new Error("expected work");
+    work.enrichmentStatus = "ENRICHED";
+    work.coverPath = null;
+
+    enqueuedJobs.length = 0;
+
+    const result = await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    expect(result.enqueuedRecoveryJobs).toEqual([fileAsset.id]);
+    expect(enqueuedJobs).toContainEqual({
+      jobName: LIBRARY_JOB_NAMES.PROCESS_COVER,
+      payload: { workId: work.id, fileAssetId: fileAsset.id },
+    });
+    // Should NOT re-enqueue PARSE since EditionFile link already exists
+    expect(enqueuedJobs).not.toContainEqual(
+      expect.objectContaining({ jobName: LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA }),
+    );
+  });
+
+  it("re-enqueues PROCESS_COVER for PDF with null metadata but existing EditionFile link", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-recovery-pdf-cover-"));
+    tempDirectories.push(directory);
+
+    await writeFile(path.join(directory, "doc.pdf"), "pdf-content");
+
+    const state = createEmptyState(directory);
+    const enqueuedJobs: Array<{ jobName: LibraryJobName; payload: LibraryJobPayloads[LibraryJobName] }> = [];
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: (jobName, payload) => {
+        enqueuedJobs.push({ jobName, payload });
+        return Promise.resolve(undefined);
+      },
+    });
+
+    // First scan creates stub with EditionFile link
+    await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    // Simulate: HASH succeeded, metadata never set (PDFs aren't parseable), PROCESS_COVER failed
+    const fileAsset = state.fileAssets.get(path.join(directory, "doc.pdf"));
+    if (!fileAsset) throw new Error("expected fileAsset");
+    fileAsset.partialHash = "partial";
+    fileAsset.fullHash = "full";
+
+    const work = [...state.works.values()][0];
+    if (!work) throw new Error("expected work");
+    work.enrichmentStatus = "ENRICHED";
+    work.coverPath = null;
+
+    enqueuedJobs.length = 0;
+
+    const result = await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    expect(result.enqueuedRecoveryJobs).toEqual([fileAsset.id]);
+    expect(enqueuedJobs).toContainEqual({
+      jobName: LIBRARY_JOB_NAMES.PROCESS_COVER,
+      payload: { workId: work.id, fileAssetId: fileAsset.id },
+    });
+  });
+
+  it("re-enqueues PARSE for existing unchanged OPF sidecar with fullHash but no metadata", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-recovery-opf-"));
+    tempDirectories.push(directory);
+
+    await writeFile(path.join(directory, "metadata.opf"), "<package/>");
+
+    const state = createEmptyState(directory);
+    const enqueuedJobs: Array<{ jobName: LibraryJobName; payload: LibraryJobPayloads[LibraryJobName] }> = [];
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: (jobName, payload) => {
+        enqueuedJobs.push({ jobName, payload });
+        return Promise.resolve(undefined);
+      },
+    });
+
+    // First scan creates the file asset
+    await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    const fileAsset = state.fileAssets.get(path.join(directory, "metadata.opf"));
+    if (!fileAsset) throw new Error("expected fileAsset");
+    // Simulate: HASH succeeded but PARSE failed
+    fileAsset.partialHash = "partial";
+    fileAsset.fullHash = "full";
+    fileAsset.metadata = null;
+
+    enqueuedJobs.length = 0;
+
+    const result = await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    expect(result.enqueuedRecoveryJobs).toContainEqual(fileAsset.id);
+    expect(enqueuedJobs).toContainEqual({
+      jobName: LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA,
+      payload: { fileAssetId: fileAsset.id },
+    });
+  });
+
+  it("does NOT re-enqueue PARSE for OPF sidecar with already-parsed metadata", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-recovery-opf-parsed-"));
+    tempDirectories.push(directory);
+
+    await writeFile(path.join(directory, "metadata.opf"), "<package/>");
+
+    const state = createEmptyState(directory);
+    const enqueuedJobs: Array<{ jobName: LibraryJobName; payload: LibraryJobPayloads[LibraryJobName] }> = [];
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: (jobName, payload) => {
+        enqueuedJobs.push({ jobName, payload });
+        return Promise.resolve(undefined);
+      },
+    });
+
+    await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    const fileAsset = state.fileAssets.get(path.join(directory, "metadata.opf"));
+    if (!fileAsset) throw new Error("expected fileAsset");
+    fileAsset.partialHash = "partial";
+    fileAsset.fullHash = "full";
+    fileAsset.metadata = {
+      normalized: { authors: [], identifiers: { unknown: [] } },
+      parsedAt: "2025-01-01T00:00:00.000Z",
+      parserVersion: 1,
+      raw: {},
+      source: "opf-sidecar",
+      status: "parsed",
+      warnings: [],
+    } as TestFileAsset["metadata"];
+
+    enqueuedJobs.length = 0;
+
+    await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    const opfRecoveryJobs = enqueuedJobs.filter(
+      (j) => j.jobName === LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA &&
+        "fileAssetId" in j.payload && j.payload.fileAssetId === fileAsset.id,
+    );
+    expect(opfRecoveryJobs).toHaveLength(0);
+  });
+
+  it("re-enqueues OPF PARSE for PDF linked to STUB work when OPF sibling exists", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-recovery-pdf-opf-"));
+    tempDirectories.push(directory);
+
+    await writeFile(path.join(directory, "book.pdf"), "pdf-content");
+    await writeFile(path.join(directory, "metadata.opf"), "<package/>");
+
+    const state = createEmptyState(directory);
+    const enqueuedJobs: Array<{ jobName: LibraryJobName; payload: LibraryJobPayloads[LibraryJobName] }> = [];
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: (jobName, payload) => {
+        enqueuedJobs.push({ jobName, payload });
+        return Promise.resolve(undefined);
+      },
+    });
+
+    await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    const pdfAsset = state.fileAssets.get(path.join(directory, "book.pdf"));
+    if (!pdfAsset) throw new Error("expected pdfAsset");
+    pdfAsset.partialHash = "partial";
+    pdfAsset.fullHash = "full";
+
+    const opfAsset = state.fileAssets.get(path.join(directory, "metadata.opf"));
+    if (!opfAsset) throw new Error("expected opfAsset");
+    opfAsset.partialHash = "opf-partial";
+    opfAsset.fullHash = "opf-full";
+
+    const work = [...state.works.values()][0];
+    if (!work) throw new Error("expected work");
+    work.enrichmentStatus = "STUB";
+
+    enqueuedJobs.length = 0;
+
+    await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    expect(enqueuedJobs).toContainEqual({
+      jobName: LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA,
+      payload: { fileAssetId: opfAsset.id },
+    });
+  });
+
+  it("falls back to MATCH for PDF linked to STUB work when no OPF sibling exists", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-recovery-pdf-no-opf-"));
+    tempDirectories.push(directory);
+
+    await writeFile(path.join(directory, "book.pdf"), "pdf-content");
+
+    const state = createEmptyState(directory);
+    const enqueuedJobs: Array<{ jobName: LibraryJobName; payload: LibraryJobPayloads[LibraryJobName] }> = [];
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: (jobName, payload) => {
+        enqueuedJobs.push({ jobName, payload });
+        return Promise.resolve(undefined);
+      },
+    });
+
+    await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    const pdfAsset = state.fileAssets.get(path.join(directory, "book.pdf"));
+    if (!pdfAsset) throw new Error("expected pdfAsset");
+    pdfAsset.partialHash = "partial";
+    pdfAsset.fullHash = "full";
+
+    const work = [...state.works.values()][0];
+    if (!work) throw new Error("expected work");
+    work.enrichmentStatus = "STUB";
+
+    enqueuedJobs.length = 0;
+
+    await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    expect(enqueuedJobs).toContainEqual({
+      jobName: LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION,
+      payload: { fileAssetId: pdfAsset.id },
+    });
+  });
+
+  it("re-enqueues MATCH for EPUB linked to STUB work (unchanged behavior)", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-recovery-epub-stub-"));
+    tempDirectories.push(directory);
+
+    await writeFile(path.join(directory, "book.epub"), "epub-content");
+
+    const state = createEmptyState(directory);
+    const enqueuedJobs: Array<{ jobName: LibraryJobName; payload: LibraryJobPayloads[LibraryJobName] }> = [];
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: (jobName, payload) => {
+        enqueuedJobs.push({ jobName, payload });
+        return Promise.resolve(undefined);
+      },
+    });
+
+    await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    const epubAsset = state.fileAssets.get(path.join(directory, "book.epub"));
+    if (!epubAsset) throw new Error("expected epubAsset");
+    epubAsset.partialHash = "partial";
+    epubAsset.fullHash = "full";
+
+    const work = [...state.works.values()][0];
+    if (!work) throw new Error("expected work");
+    work.enrichmentStatus = "STUB";
+
+    enqueuedJobs.length = 0;
+
+    await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    expect(enqueuedJobs).toContainEqual({
+      jobName: LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION,
+      payload: { fileAssetId: epubAsset.id },
+    });
+  });
+
   it("throws when the library root does not exist", async () => {
     const services = createIngestServices({
       db: createTestDb(createEmptyState("/tmp/root")),
@@ -2041,6 +2729,7 @@ describe("ingest services", () => {
       workId: "work-1",
     });
     expect(state.works.get("work-1")).toEqual({
+      coverPath: null,
       description: null,
       enrichmentStatus: "ENRICHED",
       id: "work-1",
@@ -3310,6 +3999,409 @@ describe("ingest services", () => {
     expect(state.editions.get("edition-1")).toMatchObject({ publisher: "DAW Books" });
   });
 
+  it("OPF sidecar enrichment transitions STUB work to ENRICHED with title and authors", async () => {
+    const state = createEmptyState("/tmp/root");
+    const opfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.opf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.opf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "opf",
+      fullHash: "hash",
+      id: "file-opf",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/metadata.opf",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(opfAsset.absolutePath, opfAsset);
+    state.fileAssetsById.set(opfAsset.id, opfAsset);
+
+    const pdfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/book.pdf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.pdf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "pdf",
+      fullHash: "pdf-hash",
+      id: "file-pdf",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.PDF,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "pdf-phash",
+      relativePath: "Author/Book/book.pdf",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(pdfAsset.absolutePath, pdfAsset);
+    state.fileAssetsById.set(pdfAsset.id, pdfAsset);
+
+    addWork(state, {
+      id: "work-1",
+      enrichmentStatus: "STUB",
+      titleDisplay: "Book",
+      titleCanonical: "book",
+      coverPath: null,
+    });
+    addEdition(state, { id: "edition-1", workId: "work-1", publisher: null, publishedAt: null });
+    addEditionFile(state, { editionId: "edition-1", fileAssetId: "file-pdf" });
+
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+      parseOpf: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          authors: [{ name: "Patrick Rothfuss" }],
+          identifiers: [{ value: "9780756404741", scheme: "ISBN" }],
+          subjects: [],
+          title: "The Name of the Wind",
+          publisher: "DAW Books",
+          description: "A story.",
+          language: "en",
+        };
+      }),
+    });
+
+    await services.parseFileAssetMetadata({
+      fileAssetId: "file-opf",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    const work = state.works.get("work-1");
+    expect(work).toMatchObject({
+      enrichmentStatus: "ENRICHED",
+      titleDisplay: "The Name of the Wind",
+      titleCanonical: "the name of the wind",
+    });
+
+    // Authors should be added as contributors
+    const editionContributors = [...state.editionContributors.values()].filter(
+      (ec) => ec.editionId === "edition-1" && ec.role === ContributorRole.AUTHOR,
+    );
+    expect(editionContributors).toHaveLength(1);
+    const firstContributor = editionContributors[0];
+    if (!firstContributor) throw new Error("expected edition contributor");
+    const contributor = state.contributors.get(firstContributor.contributorId);
+    expect(contributor?.nameDisplay).toBe("Patrick Rothfuss");
+
+    // Edition ISBN should be updated
+    expect(state.editions.get("edition-1")?.isbn13).toBe("9780756404741");
+
+    // PROCESS_COVER should be enqueued for coverless work
+    expect(enqueueLibraryJob).toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.PROCESS_COVER,
+      { workId: "work-1", fileAssetId: "file-pdf" },
+    );
+  });
+
+  it("OPF sidecar enrichment does NOT override title on ENRICHED work", async () => {
+    const state = createEmptyState("/tmp/root");
+    const opfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.opf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.opf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "opf",
+      fullHash: "hash",
+      id: "file-opf",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/metadata.opf",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(opfAsset.absolutePath, opfAsset);
+    state.fileAssetsById.set(opfAsset.id, opfAsset);
+
+    const epubAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/book.epub",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.epub",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "epub",
+      fullHash: "epub-hash",
+      id: "file-epub",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.EPUB,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "epub-phash",
+      relativePath: "Author/Book/book.epub",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(epubAsset.absolutePath, epubAsset);
+    state.fileAssetsById.set(epubAsset.id, epubAsset);
+
+    addWork(state, {
+      id: "work-1",
+      enrichmentStatus: "ENRICHED",
+      titleDisplay: "Original Title",
+      titleCanonical: "original title",
+    });
+    addEdition(state, { id: "edition-1", workId: "work-1", publisher: null, publishedAt: null });
+    addEditionFile(state, { editionId: "edition-1", fileAssetId: "file-epub" });
+
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+      parseOpf: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          authors: [{ name: "Some Author" }],
+          identifiers: [],
+          subjects: [],
+          title: "Different Title",
+        };
+      }),
+    });
+
+    await services.parseFileAssetMetadata({
+      fileAssetId: "file-opf",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(state.works.get("work-1")).toMatchObject({
+      enrichmentStatus: "ENRICHED",
+      titleDisplay: "Original Title",
+      titleCanonical: "original title",
+    });
+  });
+
+  it("OPF sidecar enrichment does NOT enqueue PROCESS_COVER when work has cover", async () => {
+    const state = createEmptyState("/tmp/root");
+    const opfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.opf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.opf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "opf",
+      fullHash: "hash",
+      id: "file-opf",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/metadata.opf",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(opfAsset.absolutePath, opfAsset);
+    state.fileAssetsById.set(opfAsset.id, opfAsset);
+
+    const pdfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/book.pdf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.pdf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "pdf",
+      fullHash: "pdf-hash",
+      id: "file-pdf",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.PDF,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "pdf-phash",
+      relativePath: "Author/Book/book.pdf",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(pdfAsset.absolutePath, pdfAsset);
+    state.fileAssetsById.set(pdfAsset.id, pdfAsset);
+
+    addWork(state, {
+      id: "work-1",
+      enrichmentStatus: "STUB",
+      titleDisplay: "Book",
+      titleCanonical: "book",
+      coverPath: "work-1",
+    });
+    addEdition(state, { id: "edition-1", workId: "work-1", publisher: null, publishedAt: null });
+    addEditionFile(state, { editionId: "edition-1", fileAssetId: "file-pdf" });
+
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+      parseOpf: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          authors: [],
+          identifiers: [],
+          subjects: [],
+          title: "The Name of the Wind",
+        };
+      }),
+    });
+
+    await services.parseFileAssetMetadata({
+      fileAssetId: "file-opf",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(enqueueLibraryJob).not.toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.PROCESS_COVER,
+      expect.anything(),
+    );
+  });
+
+  it("OPF sidecar enrichment updates edition isbn10 and asin from OPF identifiers", async () => {
+    const state = createEmptyState("/tmp/root");
+    const opfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.opf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.opf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "opf",
+      fullHash: "hash",
+      id: "file-opf",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/metadata.opf",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(opfAsset.absolutePath, opfAsset);
+    state.fileAssetsById.set(opfAsset.id, opfAsset);
+
+    const pdfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/book.pdf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.pdf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "pdf",
+      fullHash: "pdf-hash",
+      id: "file-pdf",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.PDF,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "pdf-phash",
+      relativePath: "Author/Book/book.pdf",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(pdfAsset.absolutePath, pdfAsset);
+    state.fileAssetsById.set(pdfAsset.id, pdfAsset);
+
+    addWork(state, { id: "work-1", enrichmentStatus: "STUB", titleDisplay: "Book", titleCanonical: "book" });
+    addEdition(state, { id: "edition-1", workId: "work-1", publisher: null, publishedAt: null });
+    addEditionFile(state, { editionId: "edition-1", fileAssetId: "file-pdf" });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      parseOpf: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          authors: [],
+          identifiers: [
+            { value: "0756404746", scheme: "ISBN" },
+            { value: "B000FBJCJE", scheme: "AMAZON" },
+          ],
+          subjects: [],
+          title: "The Name of the Wind",
+        };
+      }),
+    });
+
+    await services.parseFileAssetMetadata({
+      fileAssetId: "file-opf",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(state.editions.get("edition-1")?.isbn10).toBe("0756404746");
+    expect(state.editions.get("edition-1")?.asin).toBe("B000FBJCJE");
+  });
+
+  it("OPF sidecar enrichment does NOT override existing edition ISBN", async () => {
+    const state = createEmptyState("/tmp/root");
+    const opfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.opf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.opf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "opf",
+      fullHash: "hash",
+      id: "file-opf",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/metadata.opf",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(opfAsset.absolutePath, opfAsset);
+    state.fileAssetsById.set(opfAsset.id, opfAsset);
+
+    const pdfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/book.pdf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.pdf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "pdf",
+      fullHash: "pdf-hash",
+      id: "file-pdf",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.PDF,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "pdf-phash",
+      relativePath: "Author/Book/book.pdf",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(pdfAsset.absolutePath, pdfAsset);
+    state.fileAssetsById.set(pdfAsset.id, pdfAsset);
+
+    addWork(state, {
+      id: "work-1",
+      enrichmentStatus: "STUB",
+      titleDisplay: "Book",
+      titleCanonical: "book",
+    });
+    addEdition(state, { id: "edition-1", workId: "work-1", isbn13: "9781234567890", publisher: null, publishedAt: null });
+    addEditionFile(state, { editionId: "edition-1", fileAssetId: "file-pdf" });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      parseOpf: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          authors: [],
+          identifiers: [{ value: "9780756404741", scheme: "ISBN" }],
+          subjects: [],
+          title: "The Name of the Wind",
+        };
+      }),
+    });
+
+    await services.parseFileAssetMetadata({
+      fileAssetId: "file-opf",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(state.editions.get("edition-1")?.isbn13).toBe("9781234567890");
+  });
+
   // ── Audiobook tests ──────────────────────────────────────────────────
 
   it("enqueues metadata parsing after hashing AUDIO files", async () => {
@@ -4523,6 +5615,7 @@ describe("detectDuplicates", () => {
 
   function addDetectWork(state: TestState, id: string, titleCanonical: string, titleDisplay: string) {
     const w: TestWork = {
+      coverPath: null,
       description: null,
       enrichmentStatus: "STUB" as EnrichmentStatus,
       id,
@@ -4978,6 +6071,7 @@ describe("matchAudio", () => {
 
   function addAudioWork(state: TestState, id: string, titleCanonical: string, titleDisplay: string) {
     const w: TestWork = {
+      coverPath: null,
       description: null,
       enrichmentStatus: "STUB" as EnrichmentStatus,
       id,

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { AlertCircle, FolderOpen, Play, Trash2 } from "lucide-react";
+import { AlertCircle, FolderOpen, Loader2, Play, Trash2 } from "lucide-react";
 import { useSSE } from "~/hooks/use-sse";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -125,6 +125,7 @@ function LibraryRootCard({ root }: { root: LibraryRootWithExtras }) {
           },
         },
       });
+      void router.invalidate();
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to start scan",
@@ -175,10 +176,24 @@ function LibraryRootCard({ root }: { root: LibraryRootWithExtras }) {
                 variant="outline"
                 size="sm"
                 onClick={() => { void handleScan(); }}
-                disabled={scanning}
+                disabled={scanning || root.scanProgress !== null}
               >
-                <Play className="size-4" />
-                {scanning ? "Starting..." : "Scan Now"}
+                {root.scanProgress ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Scanning...
+                  </>
+                ) : scanning ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Starting...
+                  </>
+                ) : (
+                  <>
+                    <Play className="size-4" />
+                    Scan Now
+                  </>
+                )}
               </Button>
               <Button
                 variant="outline"

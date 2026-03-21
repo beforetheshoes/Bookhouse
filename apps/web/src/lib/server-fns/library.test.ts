@@ -354,15 +354,14 @@ describe("getFilteredLibraryWorksServerFn", () => {
 
   it("returns facet counts for hasCover", async () => {
     findManyMock.mockResolvedValue([]);
-    countMock.mockResolvedValue(10);
     editionGroupByMock.mockResolvedValue([]);
     seriesCountMock.mockResolvedValue(0);
 
-    // countMock is called twice: once for totalCount, once for withCover
-    // We need to be specific about which calls return what
+    // countMock is called three times: totalCount, withCover, withoutCover
     countMock
       .mockResolvedValueOnce(10)  // totalCount
-      .mockResolvedValueOnce(7);  // withCover
+      .mockResolvedValueOnce(7)   // withCover
+      .mockResolvedValueOnce(3);  // withoutCover
 
     const result = await getFilteredLibraryWorksServerFn({ data: {} });
 
@@ -370,6 +369,28 @@ describe("getFilteredLibraryWorksServerFn", () => {
       withCover: 7,
       withoutCover: 3,
     });
+  });
+
+  it("returns correct hasCover facet counts when hasCover filter is active", async () => {
+    findManyMock.mockResolvedValue([]);
+    editionGroupByMock.mockResolvedValue([]);
+    seriesCountMock.mockResolvedValue(0);
+
+    // When hasCover=false is active:
+    // totalCount (filtered, coverPath=null) = 343
+    // withCoverCount (coverPath not null) = 347
+    // withoutCoverCount (coverPath null) = 343
+    countMock
+      .mockResolvedValueOnce(343)  // totalCount (filtered by hasCover=false)
+      .mockResolvedValueOnce(347)  // withCoverCount
+      .mockResolvedValueOnce(343); // withoutCoverCount
+
+    const result = await getFilteredLibraryWorksServerFn({ data: { hasCover: false } });
+
+    // Facet counts must not go negative
+    expect(result.facetCounts.hasCover.withCover).toBe(347);
+    expect(result.facetCounts.hasCover.withoutCover).toBe(343);
+    expect(result.facetCounts.hasCover.withoutCover).toBeGreaterThanOrEqual(0);
   });
 
   it("returns series count in facet counts", async () => {

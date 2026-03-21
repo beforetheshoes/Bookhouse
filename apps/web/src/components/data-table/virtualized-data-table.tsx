@@ -2,8 +2,10 @@ import { useRef, useState } from "react";
 import {
   type ColumnDef,
   type ColumnFiltersState,
+  type OnChangeFn,
   type RowSelectionState,
   type SortingState,
+  type VisibilityState,
   flexRender,
   getCoreRowModel,
   getFilteredRowModel,
@@ -33,6 +35,10 @@ interface VirtualizedDataTableProps<TData, TValue> {
   estimateRowHeight?: number;
   containerHeight?: string;
   rowSelection?: RowSelectionState;
+  showPagination?: boolean;
+  columnVisibility?: VisibilityState;
+  onColumnVisibilityChange?: OnChangeFn<VisibilityState>;
+  textOverflow?: "wrap" | "truncate";
 }
 
 export function VirtualizedDataTable<TData, TValue>({
@@ -44,6 +50,10 @@ export function VirtualizedDataTable<TData, TValue>({
   estimateRowHeight = 48,
   containerHeight = "70vh",
   rowSelection,
+  showPagination = true,
+  columnVisibility,
+  onColumnVisibilityChange,
+  textOverflow = "truncate",
 }: VirtualizedDataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -55,18 +65,20 @@ export function VirtualizedDataTable<TData, TValue>({
     state: {
       sorting,
       columnFilters,
+      ...(columnVisibility !== undefined ? { columnVisibility } : {}),
       ...(rowSelection !== undefined ? { rowSelection } : {}),
     },
     enableRowSelection: rowSelection !== undefined,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
+    onColumnVisibilityChange,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     initialState: {
       pagination: {
-        pageSize,
+        pageSize: showPagination ? pageSize : Number.MAX_SAFE_INTEGER,
       },
     },
   });
@@ -95,12 +107,12 @@ export function VirtualizedDataTable<TData, TValue>({
         className="rounded-md border overflow-auto"
         style={{ maxHeight: containerHeight }}
       >
-        <Table>
+        <Table className="table-fixed">
           <TableHeader className="sticky top-0 z-10 bg-background">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id}>
+                  <TableHead key={header.id} style={{ width: header.getSize() }}>
                     {header.isPlaceholder
                       ? null
                       : flexRender(
@@ -128,7 +140,14 @@ export function VirtualizedDataTable<TData, TValue>({
                       data-state={row.getIsSelected() && "selected"}
                     >
                       {row.getVisibleCells().map((cell) => (
-                        <TableCell key={cell.id}>
+                        <TableCell
+                          key={cell.id}
+                          className={
+                            textOverflow === "wrap"
+                              ? "whitespace-normal break-words"
+                              : "overflow-hidden text-ellipsis"
+                          }
+                        >
                           {flexRender(
                             cell.column.columnDef.cell,
                             cell.getContext(),
@@ -158,7 +177,7 @@ export function VirtualizedDataTable<TData, TValue>({
           </TableBody>
         </Table>
       </div>
-      <DataTablePagination table={table} />
+      {showPagination && <DataTablePagination table={table} />}
     </div>
   );
 }
