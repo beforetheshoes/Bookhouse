@@ -103,6 +103,10 @@ export const getFilteredLibraryWorksServerFn = createServerFn({
     const where = buildWhere(parsed);
     const orderBy = buildOrderBy(parsed.sort);
 
+    // Facet counts exclude their own filter to show meaningful counts
+    const whereForCoverFacets = buildWhere({ ...parsed, hasCover: undefined });
+    const whereForFormatFacets = buildWhere({ ...parsed, format: undefined });
+
     const [works, totalCount, formatCounts, withCoverCount, withoutCoverCount, seriesCount] =
       await Promise.all([
         db.work.findMany({
@@ -116,9 +120,10 @@ export const getFilteredLibraryWorksServerFn = createServerFn({
         db.edition.groupBy({
           by: ["formatFamily"],
           _count: { _all: true },
+          where: { work: whereForFormatFacets },
         }),
-        db.work.count({ where: { coverPath: { not: null } } }),
-        db.work.count({ where: { coverPath: null } }),
+        db.work.count({ where: { ...whereForCoverFacets, coverPath: { not: null } } }),
+        db.work.count({ where: { ...whereForCoverFacets, coverPath: null } }),
         db.series.count(),
       ]);
 
