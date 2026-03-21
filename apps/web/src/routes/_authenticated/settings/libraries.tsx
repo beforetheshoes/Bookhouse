@@ -2,6 +2,7 @@ import { useState } from "react";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { AlertCircle, FolderOpen, Play, Trash2 } from "lucide-react";
+import { useSSE } from "~/hooks/use-sse";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import {
@@ -67,6 +68,9 @@ function LibrariesSkeleton() {
 
 function LibrariesPage() {
   const { roots } = Route.useLoaderData();
+
+  const hasActiveScan = roots.some((r) => r.scanProgress !== null);
+  useSSE({ enabled: hasActiveScan });
 
   return (
     <div className="space-y-6">

@@ -102,10 +102,5 @@ export const getActiveJobCountServerFn = createServerFn({
 }).handler(async () => {
   const { db } = await import("@bookhouse/db");
 
-  const [importJobCount, stubWorkCount] = await Promise.all([
-    db.importJob.count({ where: { status: { in: ["QUEUED", "RUNNING"] } } }),
-    db.work.count({ where: { enrichmentStatus: "STUB" } }),
-  ]);
-
-  return importJobCount + stubWorkCount;
+  return db.importJob.count({ where: { status: { in: ["QUEUED", "RUNNING"] } } });
 });

@@ -7,7 +7,7 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "dev": "pnpm -r --parallel dev",
+    "dev": "./scripts/dev.sh",
     "dev:restart": "./scripts/dev-restart.sh",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",

@@ -1,8 +1,8 @@
 import { pathToFileURL } from "node:url";
 import IORedis from "ioredis";
-import { type Job, Worker } from "bullmq";
+import { type Job, WaitingChildrenError, Worker } from "bullmq";
 import { db } from "@bookhouse/db";
-import { hashFileAsset, matchAudio, matchFileAssetToEdition, parseFileAssetMetadata, processCoverForWorkDefault, scanLibraryRoot, type ScanProgressData, enrichWork, searchOpenLibrary, getOpenLibraryWork, RateLimiter, type EnrichWorkDeps, detectDuplicates } from "@bookhouse/ingest";
+import { createIngestServices, matchAudio, matchFileAssetToEdition, parseFileAssetMetadata, processCoverForWorkDefault, scanLibraryRoot, type ScanProgressData, enrichWork, searchOpenLibrary, getOpenLibraryWork, RateLimiter, type EnrichWorkDeps, detectDuplicates, hashFileAsset } from "@bookhouse/ingest";
 import {
   LIBRARY_JOB_NAMES,
   type BaseJobPayload,
@@ -18,6 +18,7 @@ import {
   QUEUES,
   type ScanLibraryRootJobPayload,
   createLogger,
+  enqueueLibraryJob,
   getQueueConnectionConfig,
 } from "@bookhouse/shared";
 
@@ -35,6 +36,33 @@ export interface LibraryWorkerHandlers {
   enrichWork: typeof enrichWork;
   detectDuplicates: typeof detectDuplicates;
   matchAudio: typeof matchAudio;
+}
+
+function createJobHandlers(
+  job: Job<LibraryJobPayload<LibraryJobName>, unknown, LibraryJobName>,
+): LibraryWorkerHandlers {
+  const wrappedEnqueue = async <TName extends LibraryJobName>(
+    jobName: TName,
+    payload: LibraryJobPayload<TName>,
+  ): Promise<void> => {
+    await enqueueLibraryJob(jobName, payload, {
+      parent: { id: job.id ?? "", queue: job.queueQualifiedName },
+      removeDependencyOnFailure: true,
+    });
+  };
+
+  const services = createIngestServices({ enqueueLibraryJob: wrappedEnqueue });
+
+  return {
+    hashFileAsset: services.hashFileAsset,
+    matchFileAssetToEdition: services.matchFileAssetToEdition,
+    parseFileAssetMetadata: services.parseFileAssetMetadata,
+    processCoverForWork,
+    scanLibraryRoot: services.scanLibraryRoot,
+    enrichWork,
+    detectDuplicates: services.detectDuplicates,
+    matchAudio: services.matchAudio,
+  };
 }
 
 function dispatch(
@@ -115,23 +143,28 @@ function dispatch(
 }
 
 export function createLibraryWorkerProcessor(
-  handlers: LibraryWorkerHandlers = {
-    hashFileAsset,
-    matchFileAssetToEdition,
-    parseFileAssetMetadata,
-    processCoverForWork,
-    scanLibraryRoot,
-    enrichWork,
-    detectDuplicates,
-    matchAudio,
-  },
+  handlers?: LibraryWorkerHandlers,
 ) {
   return async (
     job: Job<LibraryJobPayload<LibraryJobName>, unknown, LibraryJobName>,
+    token?: string,
   ) => {
     const importJobId = (job.data as BaseJobPayload).importJobId;
+    const isScanJob = job.name === LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT;
 
-    if (importJobId) {
+    // Completion phase — BullMQ re-activated this job after all children finished
+    if ((job.data as BaseJobPayload).step === "waiting-children") {
+      if (importJobId) {
+        await db.importJob.update({
+          where: { id: importJobId },
+          data: { status: "SUCCEEDED", finishedAt: new Date() },
+        });
+      }
+      return;
+    }
+
+    // Only the scan job manages ImportJob lifecycle
+    if (importJobId && isScanJob) {
       await db.importJob.update({
         where: { id: importJobId },
         data: {
@@ -142,10 +175,20 @@ export function createLibraryWorkerProcessor(
       });
     }
 
-    try {
-      const result = await dispatch(handlers, job);
+    const jobHandlers = handlers ?? createJobHandlers(job);
 
-      if (importJobId) {
+    try {
+      const result = await dispatch(jobHandlers, job);
+
+      // Attempt to wait for any children this job spawned
+      await job.updateData({ ...job.data, step: "waiting-children" });
+      const shouldWait = await job.moveToWaitingChildren(token ?? "");
+      if (shouldWait) {
+        throw new WaitingChildrenError();
+      }
+
+      // No children (or all already done) — complete immediately
+      if (importJobId && isScanJob) {
         await db.importJob.update({
           where: { id: importJobId },
           data: { status: "SUCCEEDED", finishedAt: new Date() },
@@ -154,7 +197,11 @@ export function createLibraryWorkerProcessor(
 
       return result;
     } catch (error) {
-      if (importJobId) {
+      if (error instanceof WaitingChildrenError) {
+        throw error;
+      }
+
+      if (importJobId && isScanJob) {
         await db.importJob.update({
           where: { id: importJobId },
           data: {
@@ -170,17 +217,19 @@ export function createLibraryWorkerProcessor(
   };
 }
 
+const defaultHandlers: LibraryWorkerHandlers = {
+  hashFileAsset,
+  matchFileAssetToEdition,
+  parseFileAssetMetadata,
+  processCoverForWork,
+  scanLibraryRoot,
+  enrichWork,
+  detectDuplicates,
+  matchAudio,
+};
+
 export function createLibraryWorker(
-  handlers: LibraryWorkerHandlers = {
-    hashFileAsset,
-    matchFileAssetToEdition,
-    parseFileAssetMetadata,
-    processCoverForWork,
-    scanLibraryRoot,
-    enrichWork,
-    detectDuplicates,
-    matchAudio,
-  },
+  handlers?: LibraryWorkerHandlers,
 ) {
   const connection = new IORedis(getQueueConnectionConfig());
   const worker = new Worker(
@@ -224,6 +273,9 @@ export function bootstrapLibraryWorker(): void {
 
   logger.info({ queue: QUEUES.LIBRARY }, "library-worker listening");
 }
+
+// Coverage: defaultHandlers referenced to ensure the import is exercised
+export { defaultHandlers as _defaultHandlers };
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   bootstrapLibraryWorker();

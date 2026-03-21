@@ -136,6 +136,48 @@ describe("enqueueLibraryJob", () => {
     expect(jobId).toBe("unknown");
   });
 
+  it("passes parent and removeDependencyOnFailure options to Queue.add", async () => {
+    addMock.mockResolvedValueOnce({ id: "child-1" });
+    const { enqueueLibraryJob, LIBRARY_JOB_NAMES, RETRY_CONFIG } = await import("./index");
+
+    await enqueueLibraryJob(
+      LIBRARY_JOB_NAMES.HASH_FILE_ASSET,
+      { fileAssetId: "file-1" },
+      {
+        parent: { id: "parent-job-1", queue: "bull:library" },
+        removeDependencyOnFailure: true,
+      },
+    );
+
+    const config = RETRY_CONFIG[LIBRARY_JOB_NAMES.HASH_FILE_ASSET];
+    expect(addMock).toHaveBeenCalledWith(
+      "hash-file-asset",
+      { fileAssetId: "file-1" },
+      {
+        attempts: config.attempts,
+        backoff: config.backoff,
+        parent: { id: "parent-job-1", queue: "bull:library" },
+        removeDependencyOnFailure: true,
+      },
+    );
+  });
+
+  it("omits parent options when not provided", async () => {
+    addMock.mockResolvedValueOnce({ id: "job-7" });
+    const { enqueueLibraryJob, LIBRARY_JOB_NAMES, RETRY_CONFIG } = await import("./index");
+
+    await enqueueLibraryJob(LIBRARY_JOB_NAMES.HASH_FILE_ASSET, {
+      fileAssetId: "file-1",
+    });
+
+    const config = RETRY_CONFIG[LIBRARY_JOB_NAMES.HASH_FILE_ASSET];
+    expect(addMock).toHaveBeenCalledWith(
+      "hash-file-asset",
+      { fileAssetId: "file-1" },
+      { attempts: config.attempts, backoff: config.backoff },
+    );
+  });
+
   it("wraps queue errors in QueueError", async () => {
     addMock.mockRejectedValueOnce(new Error("Redis down"));
     const { enqueueLibraryJob, LIBRARY_JOB_NAMES, QueueError } = await import("./index");

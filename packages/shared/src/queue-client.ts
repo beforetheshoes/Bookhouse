@@ -24,9 +24,15 @@ function getQueue(): Queue {
   return queueSingleton.queue;
 }
 
+export interface EnqueueJobOpts {
+  parent?: { id: string; queue: string };
+  removeDependencyOnFailure?: boolean;
+}
+
 export async function enqueueLibraryJob<TName extends LibraryJobName>(
   jobName: TName,
   payload: LibraryJobPayload<TName>,
+  opts?: EnqueueJobOpts,
 ): Promise<string> {
   try {
     const queue = getQueue();
@@ -34,6 +40,7 @@ export async function enqueueLibraryJob<TName extends LibraryJobName>(
     const job = await queue.add(jobName, payload, {
       attempts: retryConfig.attempts,
       backoff: retryConfig.backoff,
+      ...opts,
     });
     const jobId = job.id ?? "unknown";
     logger.info({ jobName, jobId }, "Job enqueued");

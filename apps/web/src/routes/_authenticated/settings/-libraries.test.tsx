@@ -59,6 +59,8 @@ vi.mock("@tanstack/react-router", async () => {
   };
 });
 
+vi.mock("~/hooks/use-sse", () => ({ useSSE: vi.fn() }));
+
 const mockToast = { success: vi.fn(), error: vi.fn() };
 vi.mock("sonner", () => ({ toast: mockToast }));
 
