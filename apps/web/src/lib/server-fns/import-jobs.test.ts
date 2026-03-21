@@ -204,25 +204,14 @@ describe("getActiveJobCountServerFn", () => {
     });
   });
 
-  it("calls db.work.count for STUB works", async () => {
-    countMock.mockResolvedValue(0);
-    workCountMock.mockResolvedValue(5);
-    await getActiveJobCountServerFn();
-    expect(workCountMock).toHaveBeenCalledWith({
-      where: { enrichmentStatus: "STUB" },
-    });
-  });
-
-  it("returns sum of active import jobs and stub works", async () => {
-    countMock.mockResolvedValue(2);
-    workCountMock.mockResolvedValue(5);
+  it("returns count of active import jobs only", async () => {
+    countMock.mockResolvedValue(3);
     const result = await getActiveJobCountServerFn();
-    expect(result).toBe(7);
+    expect(result).toBe(3);
   });
 
-  it("returns 0 when no active jobs and no stubs", async () => {
+  it("returns 0 when no active jobs", async () => {
     countMock.mockResolvedValue(0);
-    workCountMock.mockResolvedValue(0);
     const result = await getActiveJobCountServerFn();
     expect(result).toBe(0);
   });

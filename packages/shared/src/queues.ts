@@ -15,6 +15,7 @@ export const LIBRARY_JOB_NAMES = {
 
 export interface BaseJobPayload {
   importJobId?: string;
+  step?: string;
 }
 
 export interface ScanLibraryRootJobPayload extends BaseJobPayload {

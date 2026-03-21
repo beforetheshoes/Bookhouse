@@ -13,6 +13,7 @@ import {
   QUEUES,
   RETRY_CONFIG,
   ValidationError,
+  WaitingChildrenError,
   getQueueConnectionConfig,
   getQueueUrl,
   __loaded,
@@ -106,6 +107,12 @@ describe("shared queue helpers", () => {
     expect(err.statusCode).toBe(400);
     expect(err.message).toBe("invalid input");
     expect(err.context).toBeUndefined();
+  });
+
+  it("re-exports WaitingChildrenError from bullmq", () => {
+    expect(WaitingChildrenError).toBeDefined();
+    const err = new WaitingChildrenError();
+    expect(err).toBeInstanceOf(Error);
   });
 
   it("defines typed queue payload shapes for library jobs", () => {
