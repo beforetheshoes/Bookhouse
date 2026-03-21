@@ -20,9 +20,12 @@
     "queue:test": "pnpm --filter @bookhouse/library-worker enqueue-test",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
+    "e2e": "playwright test",
+    "test:all": "pnpm test && ./scripts/e2e.sh",
     "clean": "pnpm -r exec rm -rf dist node_modules/.cache .output"
   },
   "devDependencies": {
+    "@bookhouse/db": "workspace:*",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.58.2",
     "@testing-library/react": "^16.3.2",
@@ -31,7 +34,9 @@
     "@vitest/coverage-v8": "^4.1.0",
     "eslint": "^10.0.3",
     "happy-dom": "^20.8.4",
+    "oidc-provider": "^9.7.1",
     "typescript-eslint": "^8.57.1",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.0",
+    "wait-on": "^9.0.4"
   }
 }

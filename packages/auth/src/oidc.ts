@@ -31,16 +31,32 @@ export async function getOidcConfiguration(
     return cached;
   }
 
-  const configurationPromise = oidc.discovery(
-    new URL(config.issuer),
-    config.clientId,
-    {
-      client_secret: config.clientSecret,
-      redirect_uris: [getOidcCallbackUrl(config)],
-      response_types: ["code"],
-    },
-    oidc.ClientSecretPost(config.clientSecret),
-  );
+  const issuerUrl = new URL(config.issuer);
+  const isHttp = issuerUrl.protocol === "http:";
+
+  const configurationPromise = isHttp
+    ? oidc.discovery(
+        issuerUrl,
+        config.clientId,
+        {
+          client_secret: config.clientSecret,
+          redirect_uris: [getOidcCallbackUrl(config)],
+          response_types: ["code"],
+        },
+        oidc.ClientSecretPost(config.clientSecret),
+        // eslint-disable-next-line @typescript-eslint/no-deprecated
+        { execute: [oidc.allowInsecureRequests] },
+      )
+    : oidc.discovery(
+        issuerUrl,
+        config.clientId,
+        {
+          client_secret: config.clientSecret,
+          redirect_uris: [getOidcCallbackUrl(config)],
+          response_types: ["code"],
+        },
+        oidc.ClientSecretPost(config.clientSecret),
+      );
 
   configurationCache.set(cacheKey, configurationPromise);
 

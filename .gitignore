@@ -38,3 +38,8 @@ AGENTS.md
 CLAUDE.md
 apps/web/.tanstack/tmp/*
 covers/
+
+# Playwright
+e2e/.auth/
+test-results/
+playwright-report/

@@ -131,3 +131,88 @@ jobs:
           AUTH_OIDC_CLIENT_ID: placeholder
           AUTH_OIDC_CLIENT_SECRET: placeholder
           APP_URL: http://localhost:3000
+
+  e2e:
+    name: E2E
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: bookhouse
+          POSTGRES_PASSWORD: bookhouse
+          POSTGRES_DB: bookhouse
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U bookhouse"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=5
+      valkey:
+        image: valkey/valkey:8
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="valkey-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      DATABASE_URL: postgresql://bookhouse:bookhouse@localhost:5432/bookhouse
+      QUEUE_URL: redis://localhost:6379
+      AUTH_SECRET: e2e-test-secret-at-least-32-chars!!
+      AUTH_OIDC_ISSUER: http://localhost:9090
+      AUTH_OIDC_CLIENT_ID: e2e-client
+      AUTH_OIDC_CLIENT_SECRET: e2e-secret
+      APP_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Run database migrations
+        run: pnpm db:migrate
+
+      - name: Build
+        run: pnpm build
+
+      - name: Link Prisma client into server output
+        run: |
+          mkdir -p apps/web/.output/server/node_modules/@prisma
+          ln -sfn "$(pwd)/packages/db/node_modules/@prisma/client" apps/web/.output/server/node_modules/@prisma/client
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Start app and worker
+        run: |
+          node apps/web/.output/server/index.mjs &
+          pnpm --filter @bookhouse/library-worker exec tsx src/index.ts &
+
+      - name: Wait for app
+        run: pnpm exec wait-on http://localhost:3000 --timeout 30000
+
+      - name: Run E2E tests
+        run: pnpm e2e
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: test-results/
+          retention-days: 7

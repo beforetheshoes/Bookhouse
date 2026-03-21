@@ -127,7 +127,7 @@ function LibraryPage() {
   const isScanning = activeJobCount > 0;
   const newCount = totalCount - prevCount;
 
-  useSSE({ enabled: isScanning });
+  useSSE();
 
   useEffect(() => {
     if (!isScanning) {
