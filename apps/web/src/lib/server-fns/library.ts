@@ -103,7 +103,7 @@ export const getFilteredLibraryWorksServerFn = createServerFn({
     const where = buildWhere(parsed);
     const orderBy = buildOrderBy(parsed.sort);
 
-    const [works, totalCount, formatCounts, withCoverCount, seriesCount] =
+    const [works, totalCount, formatCounts, withCoverCount, withoutCoverCount, seriesCount] =
       await Promise.all([
         db.work.findMany({
           where,
@@ -118,6 +118,7 @@ export const getFilteredLibraryWorksServerFn = createServerFn({
           _count: { _all: true },
         }),
         db.work.count({ where: { coverPath: { not: null } } }),
+        db.work.count({ where: { coverPath: null } }),
         db.series.count(),
       ]);
 
@@ -128,7 +129,7 @@ export const getFilteredLibraryWorksServerFn = createServerFn({
         format: formatCounts,
         hasCover: {
           withCover: withCoverCount,
-          withoutCover: totalCount - withCoverCount,
+          withoutCover: withoutCoverCount,
         },
         series: seriesCount,
       },

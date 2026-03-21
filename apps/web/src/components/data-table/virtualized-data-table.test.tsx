@@ -100,6 +100,16 @@ describe("VirtualizedDataTable", () => {
     expect(screen.getByText(/row\(s\) total/)).toBeTruthy();
   });
 
+  it("hides built-in pagination when showPagination is false", () => {
+    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => unknown; estimateSize: () => number }) => {
+      getScrollElement();
+      estimateSize();
+      return makeVirtualizer(count);
+    });
+    render(<VirtualizedDataTable columns={columns} data={data} showPagination={false} />);
+    expect(screen.queryByText(/row\(s\) total/)).toBeNull();
+  });
+
   it("renders with custom pageSize and containerHeight", () => {
     useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => unknown; estimateSize: () => number }) => {
       getScrollElement();
@@ -156,6 +166,101 @@ describe("VirtualizedDataTable", () => {
     });
     const { container } = render(<VirtualizedDataTable columns={columns} data={data} />);
     expect(container).toBeTruthy();
+  });
+
+  it("hides a column when columnVisibility marks it false", () => {
+    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => unknown; estimateSize: () => number }) => {
+      getScrollElement();
+      estimateSize();
+      return makeVirtualizer(count);
+    });
+    const multiColumns: ColumnDef<{ name: string; age: string }>[] = [
+      { accessorKey: "name", header: "Name" },
+      { accessorKey: "age", header: "Age" },
+    ];
+    render(
+      <VirtualizedDataTable
+        columns={multiColumns}
+        data={[{ name: "Alice", age: "30" }]}
+        columnVisibility={{ age: false }}
+      />
+    );
+    expect(screen.getByText("Name")).toBeTruthy();
+    expect(screen.queryByText("Age")).toBeNull();
+    expect(screen.queryByText("30")).toBeNull();
+  });
+
+  it("applies whitespace-normal class when textOverflow is 'wrap'", () => {
+    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => unknown; estimateSize: () => number }) => {
+      getScrollElement();
+      estimateSize();
+      return makeVirtualizer(count);
+    });
+    render(
+      <VirtualizedDataTable
+        columns={columns}
+        data={data}
+        textOverflow="wrap"
+      />
+    );
+    const cell = screen.getByText("Alice").closest("td");
+    expect(cell?.className).toContain("whitespace-normal");
+    expect(cell?.className).toContain("break-words");
+  });
+
+  it("applies overflow-hidden and text-ellipsis when textOverflow is 'truncate'", () => {
+    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => unknown; estimateSize: () => number }) => {
+      getScrollElement();
+      estimateSize();
+      return makeVirtualizer(count);
+    });
+    render(
+      <VirtualizedDataTable
+        columns={columns}
+        data={data}
+        textOverflow="truncate"
+      />
+    );
+    const cell = screen.getByText("Alice").closest("td");
+    expect(cell?.className).toContain("overflow-hidden");
+    expect(cell?.className).toContain("text-ellipsis");
+  });
+
+  it("defaults textOverflow to 'truncate' (no explicit prop)", () => {
+    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => unknown; estimateSize: () => number }) => {
+      getScrollElement();
+      estimateSize();
+      return makeVirtualizer(count);
+    });
+    render(<VirtualizedDataTable columns={columns} data={data} />);
+    const cell = screen.getByText("Alice").closest("td");
+    expect(cell?.className).toContain("overflow-hidden");
+    expect(cell?.className).toContain("text-ellipsis");
+  });
+
+  it("applies table-fixed class to the table element", () => {
+    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => unknown; estimateSize: () => number }) => {
+      getScrollElement();
+      estimateSize();
+      return makeVirtualizer(count);
+    });
+    const { container } = render(<VirtualizedDataTable columns={columns} data={data} />);
+    const table = container.querySelector("table");
+    expect(table?.className).toContain("table-fixed");
+  });
+
+  it("applies column width style from column size definition", () => {
+    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => unknown; estimateSize: () => number }) => {
+      getScrollElement();
+      estimateSize();
+      return makeVirtualizer(count);
+    });
+    const sizedColumns: ColumnDef<TestRow>[] = [
+      { accessorKey: "name", header: "Name", size: 200 },
+    ];
+    render(<VirtualizedDataTable columns={sizedColumns} data={data} />);
+    const th = screen.getByText("Name").closest("th");
+    expect(th?.style.width).toBe("200px");
   });
 
   it("renders selected row (getIsSelected=true branch covers && 'selected')", () => {

@@ -16,6 +16,7 @@ import {
 } from "@bookhouse/domain";
 import { db, type EditionContributor } from "@bookhouse/db";
 import {
+  createLogger,
   LIBRARY_JOB_NAMES,
   type HashFileAssetJobPayload,
   type LibraryJobName,
@@ -71,7 +72,7 @@ type FileAssetRecord = Pick<
 >;
 
 type LibraryRootRecord = Pick<LibraryRoot, "id" | "lastScannedAt" | "path">;
-type WorkRecord = Pick<Work, "description" | "enrichmentStatus" | "id" | "language" | "seriesId" | "seriesPosition" | "sortTitle" | "titleCanonical" | "titleDisplay">;
+type WorkRecord = Pick<Work, "coverPath" | "description" | "enrichmentStatus" | "id" | "language" | "seriesId" | "seriesPosition" | "sortTitle" | "titleCanonical" | "titleDisplay">;
 type EditionRecord = Pick<
   Edition,
   "asin" | "formatFamily" | "id" | "isbn10" | "isbn13" | "publishedAt" | "publisher" | "workId"
@@ -273,7 +274,7 @@ export interface IngestDb {
     delete(args: { where: { id: string } }): Promise<void>;
     findMany(args: WorkFindManyArgs): Promise<WorkMatchRecord[]>;
     findUnique(args: { where: { id: string } }): Promise<WorkRecord | null>;
-    update(args: { where: { id: string }; data: Partial<Pick<Work, "description" | "enrichmentStatus" | "language" | "seriesId" | "seriesPosition" | "sortTitle" | "titleCanonical" | "titleDisplay">> }): Promise<WorkRecord>;
+    update(args: { where: { id: string }; data: Partial<Pick<Work, "coverPath" | "description" | "enrichmentStatus" | "language" | "seriesId" | "seriesPosition" | "sortTitle" | "titleCanonical" | "titleDisplay">> }): Promise<WorkRecord>;
   };
   edition: {
     create(args: EditionCreateArgs): Promise<EditionRecord>;
@@ -307,6 +308,10 @@ export interface IngestDb {
   };
 }
 
+export interface IngestLogger {
+  info(obj: Record<string, unknown>, msg: string): void;
+}
+
 export interface IngestDependencies {
   db: IngestDb;
   enqueueLibraryJob<TName extends LibraryJobName>(
@@ -314,6 +319,7 @@ export interface IngestDependencies {
     payload: LibraryJobPayload<TName>,
   ): Promise<void>;
   listDirectory: ListDirectoryFn;
+  logger: IngestLogger;
   readStats: ReadStatsFn;
   hashFile: typeof hashFileContents;
   parseEpub: typeof parseEpubMetadata;
@@ -338,6 +344,7 @@ export interface ScanLibraryRootResult {
   createdStubWorkIds: string[];
   discoveredPaths: string[];
   enqueuedHashJobs: string[];
+  enqueuedRecoveryJobs: string[];
   missingFileAssetIds: string[];
   scannedFileAssetIds: string[];
 }
@@ -669,7 +676,7 @@ function createDefaultIngestDb(): IngestDb {
     },
     work: {
       ...(prisma.work as unknown as Omit<IngestDb["work"], "update">),
-      async update(args: { where: { id: string }; data: Partial<Pick<Work, "description" | "enrichmentStatus" | "language" | "seriesId" | "seriesPosition" | "sortTitle" | "titleCanonical" | "titleDisplay">> }) {
+      async update(args: { where: { id: string }; data: Partial<Pick<Work, "coverPath" | "description" | "enrichmentStatus" | "language" | "seriesId" | "seriesPosition" | "sortTitle" | "titleCanonical" | "titleDisplay">> }) {
         return prisma.work.update(args) as unknown as Promise<WorkRecord>;
       },
     },
@@ -1019,6 +1026,7 @@ export function createIngestServices(
   const parseAudioJson = dependencies.parseAudiobookJson ?? parseAudiobookMetadataJson;
   const parseAudioId3 = dependencies.parseAudioId3 ?? parseAudioId3Tags;
   const enqueueJob = dependencies.enqueueLibraryJob ?? enqueueLibraryJob;
+  const logger = dependencies.logger ?? createLogger("ingest");
 
   async function scanLibraryRoot(input: ScanLibraryRootInput): Promise<ScanLibraryRootResult> {
     const now = input.now ?? new Date();
@@ -1035,6 +1043,7 @@ export function createIngestServices(
     const seenPaths = new Set<string>();
     const scannedFileAssetIds: string[] = [];
     const enqueuedHashJobs: string[] = [];
+    const enqueuedRecoveryJobs: string[] = [];
     const createdStubWorkIds: string[] = [];
     const seenAudioDirs = new Map<string, { workId: string; editionId: string }>();
 
@@ -1111,6 +1120,113 @@ export function createIngestServices(
           fileAssetId: upsertedFileAsset.id,
         });
         enqueuedHashJobs.push(upsertedFileAsset.id);
+      } else {
+        // Recovery: re-enqueue jobs for existing unchanged files with incomplete processing
+        const recoveryFormatFamily = deriveFormatFamily(upsertedFileAsset.mediaKind);
+        if (recoveryFormatFamily !== null && upsertedFileAsset.fullHash !== null) {
+          // Check EditionFile link FIRST — if matched, skip metadata check and go to work/cover recovery
+          const editionFileLink = await ingestDb.editionFile.findFirst({
+            where: { fileAssetId: upsertedFileAsset.id },
+          });
+
+          if (editionFileLink !== null) {
+            // Already linked to an edition — check work status and cover
+            const edition = await ingestDb.edition.findUnique({
+              where: { id: editionFileLink.editionId },
+            });
+            if (edition) {
+              const work = await ingestDb.work.findUnique({
+                where: { id: edition.workId },
+              });
+              if (work && work.enrichmentStatus === "STUB") {
+                // Work stuck at STUB — for PDF/CBZ, look for OPF sidecar to trigger enrichment
+                if (
+                  upsertedFileAsset.mediaKind === MediaKind.PDF ||
+                  upsertedFileAsset.mediaKind === MediaKind.CBZ
+                ) {
+                  const directory = path.dirname(upsertedFileAsset.absolutePath);
+                  const sidecarSiblings = await ingestDb.fileAsset.findByDirectory({
+                    directoryPath: directory,
+                    mediaKinds: [MediaKind.SIDECAR],
+                  });
+                  const opfSibling = sidecarSiblings.find(
+                    (fa) => getFileExtension(fa.absolutePath) === "opf",
+                  );
+                  if (opfSibling && opfSibling.fullHash !== null) {
+                    logger.info({ fileAssetId: upsertedFileAsset.id, opfFileAssetId: opfSibling.id, workId: work.id, reason: "STUB work with OPF sibling" }, "Recovery: re-enqueueing OPF PARSE");
+                    await enqueueJob(LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA, {
+                      fileAssetId: opfSibling.id,
+                    });
+                    enqueuedRecoveryJobs.push(upsertedFileAsset.id);
+                  } else {
+                    // No OPF sidecar — fall back to MATCH
+                    logger.info({ fileAssetId: upsertedFileAsset.id, workId: work.id, reason: "work stuck at STUB (no OPF)" }, "Recovery: re-enqueueing MATCH");
+                    await enqueueJob(LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, {
+                      fileAssetId: upsertedFileAsset.id,
+                    });
+                    enqueuedRecoveryJobs.push(upsertedFileAsset.id);
+                  }
+                } else {
+                  // EPUB/AUDIO — MATCH can use their own parsed metadata
+                  logger.info({ fileAssetId: upsertedFileAsset.id, workId: work.id, reason: "work stuck at STUB" }, "Recovery: re-enqueueing MATCH");
+                  await enqueueJob(LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, {
+                    fileAssetId: upsertedFileAsset.id,
+                  });
+                  enqueuedRecoveryJobs.push(upsertedFileAsset.id);
+                }
+              }
+              // Separately check for missing covers — runs for both STUB and ENRICHED works
+              if (work && work.coverPath === null) {
+                logger.info({ fileAssetId: upsertedFileAsset.id, workId: work.id, reason: "missing cover" }, "Recovery: re-enqueueing PROCESS_COVER");
+                await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
+                  workId: work.id,
+                  fileAssetId: upsertedFileAsset.id,
+                });
+                if (!enqueuedRecoveryJobs.includes(upsertedFileAsset.id)) {
+                  enqueuedRecoveryJobs.push(upsertedFileAsset.id);
+                }
+              }
+            }
+          } else {
+            // Not linked to an edition — recover from earlier in the pipeline
+            const parsedMeta = parseStoredMetadata(upsertedFileAsset.metadata);
+
+            if (!parsedMeta || parsedMeta.status !== "parsed") {
+              // Missing or failed metadata parse — only EPUB and AUDIO are parseable
+              if (
+                upsertedFileAsset.mediaKind === MediaKind.EPUB ||
+                upsertedFileAsset.mediaKind === MediaKind.AUDIO
+              ) {
+                logger.info({ fileAssetId: upsertedFileAsset.id, reason: "missing or failed metadata" }, "Recovery: re-enqueueing PARSE");
+                await enqueueJob(LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA, {
+                  fileAssetId: upsertedFileAsset.id,
+                });
+                enqueuedRecoveryJobs.push(upsertedFileAsset.id);
+              }
+            } else {
+              // Parsed but not matched to edition
+              logger.info({ fileAssetId: upsertedFileAsset.id, reason: "parsed but unmatched" }, "Recovery: re-enqueueing MATCH");
+              await enqueueJob(LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, {
+                fileAssetId: upsertedFileAsset.id,
+              });
+              enqueuedRecoveryJobs.push(upsertedFileAsset.id);
+            }
+          }
+        }
+
+        // Recovery for OPF sidecars: re-enqueue PARSE if hashed but not parsed
+        const isOpfSidecar = upsertedFileAsset.mediaKind === MediaKind.SIDECAR
+          && getFileExtension(upsertedFileAsset.absolutePath) === "opf";
+        if (isOpfSidecar && upsertedFileAsset.fullHash !== null) {
+          const opfMeta = parseStoredMetadata(upsertedFileAsset.metadata);
+          if (!opfMeta || opfMeta.status !== "parsed") {
+            logger.info({ fileAssetId: upsertedFileAsset.id, reason: "OPF hashed but not parsed" }, "Recovery: re-enqueueing OPF PARSE");
+            await enqueueJob(LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA, {
+              fileAssetId: upsertedFileAsset.id,
+            });
+            enqueuedRecoveryJobs.push(upsertedFileAsset.id);
+          }
+        }
       }
 
       // Create stub Work/Edition/EditionFile for new files with a content format
@@ -1245,6 +1361,7 @@ export function createIngestServices(
       createdStubWorkIds,
       discoveredPaths,
       enqueuedHashJobs,
+      enqueuedRecoveryJobs,
       missingFileAssetIds,
       scannedFileAssetIds,
     };
@@ -1378,6 +1495,9 @@ export function createIngestServices(
             const parsedDate = new Date(normalized.date);
             if (!isNaN(parsedDate.getTime())) editionUpdates.publishedAt = parsedDate;
           }
+          if (!edition.isbn13 && normalized.identifiers.isbn13) editionUpdates.isbn13 = normalized.identifiers.isbn13;
+          if (!edition.isbn10 && normalized.identifiers.isbn10) editionUpdates.isbn10 = normalized.identifiers.isbn10;
+          if (!edition.asin && normalized.identifiers.asin) editionUpdates.asin = normalized.identifiers.asin;
 
           if (Object.keys(editionUpdates).length > 0) {
             await ingestDb.edition.update({
@@ -1407,10 +1527,30 @@ export function createIngestServices(
             }
           }
 
+          // Transition STUB works to ENRICHED with title from OPF
+          if (work.enrichmentStatus === "STUB" && normalized.title) {
+            workUpdates.titleDisplay = normalized.title;
+            workUpdates.titleCanonical = canonicalizeBookTitle(normalized.title);
+            workUpdates.enrichmentStatus = "ENRICHED";
+          }
+
           if (Object.keys(workUpdates).length > 0) {
             await ingestDb.work.update({
               where: { id: work.id },
               data: workUpdates,
+            });
+          }
+
+          // Add authors from OPF metadata for STUB works being enriched
+          if (work.enrichmentStatus === "STUB" && normalized.authors.length > 0) {
+            await ensureContributors(ingestDb, editionFile.editionId, normalized.authors, ContributorRole.AUTHOR);
+          }
+
+          // Enqueue cover processing for works without covers
+          if (work.coverPath === null) {
+            await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
+              workId: work.id,
+              fileAssetId: sibling.id,
             });
           }
         }

@@ -2,10 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useSSE } from "~/hooks/use-sse";
 import { useLibraryViewPreference } from "~/hooks/use-library-view-preference";
+import { useLibraryTablePreferences } from "~/hooks/use-library-table-preferences";
 import type { ColumnDef } from "@tanstack/react-table";
-import { BookOpen, Loader2 } from "lucide-react";
+import { AlignJustify, BookOpen, Loader2, WrapText } from "lucide-react";
 import { VirtualizedDataTable, DataTableColumnHeader } from "~/components/data-table";
+import { DataTableColumnPicker } from "~/components/data-table/data-table-column-picker";
 import { Badge } from "~/components/ui/badge";
+import { Button } from "~/components/ui/button";
 import { GridPageSkeleton } from "~/components/skeletons/grid-page-skeleton";
 import { LibraryToolbar } from "~/components/library-toolbar";
 import { LibraryGrid } from "~/components/library-grid";
@@ -47,6 +50,13 @@ function getFormats(work: LibraryWork): string[] {
   return [...new Set(work.editions.map((e) => e.formatFamily))];
 }
 
+const COLUMN_PICKER_ITEMS = [
+  { id: "authors", label: "Author(s)" },
+  { id: "formats", label: "Format" },
+  { id: "publisher", label: "Publisher" },
+  { id: "isbn", label: "ISBN" },
+];
+
 const columns: ColumnDef<LibraryWork>[] = [
   {
     accessorKey: "titleDisplay",
@@ -63,6 +73,8 @@ const columns: ColumnDef<LibraryWork>[] = [
         )}
       </Link>
     ),
+    size: 300,
+    enableHiding: false,
   },
   {
     id: "authors",
@@ -70,6 +82,7 @@ const columns: ColumnDef<LibraryWork>[] = [
       <DataTableColumnHeader column={column} title="Author(s)" />
     ),
     accessorFn: (row) => getAuthors(row),
+    size: 200,
   },
   {
     id: "formats",
@@ -80,6 +93,7 @@ const columns: ColumnDef<LibraryWork>[] = [
           {f}
         </Badge>
       )),
+    size: 80,
   },
   {
     id: "publisher",
@@ -87,12 +101,14 @@ const columns: ColumnDef<LibraryWork>[] = [
       <DataTableColumnHeader column={column} title="Publisher" />
     ),
     accessorFn: (row) => row.editions[0]?.publisher ?? "—",
+    size: 150,
   },
   {
     id: "isbn",
     header: "ISBN",
     accessorFn: (row) =>
       row.editions[0]?.isbn13 ?? row.editions[0]?.isbn10 ?? "—",
+    size: 120,
   },
 ];
 
@@ -121,6 +137,7 @@ function LibraryPage() {
   const search = Route.useSearch();
   const navigate = useNavigate();
   const [view, setView] = useLibraryViewPreference();
+  const [tablePrefs, setTablePrefs] = useLibraryTablePreferences();
   const [readingFilter, setReadingFilter] = useState<ReadingFilter>("all");
   const [prevCount, setPrevCount] = useState(totalCount);
 
@@ -184,6 +201,31 @@ function LibraryPage() {
     [updateSearch],
   );
 
+  const handlePageSizeChange = useCallback(
+    (pageSize: number) => {
+      updateSearch({ pageSize, page: 1 });
+    },
+    [updateSearch],
+  );
+
+  const handleColumnToggle = useCallback(
+    (columnId: string) => {
+      const current = tablePrefs.columnVisibility[columnId] !== false;
+      setTablePrefs({
+        ...tablePrefs,
+        columnVisibility: { ...tablePrefs.columnVisibility, [columnId]: !current },
+      });
+    },
+    [tablePrefs, setTablePrefs],
+  );
+
+  const handleTextOverflowToggle = useCallback(() => {
+    setTablePrefs({
+      ...tablePrefs,
+      textOverflow: tablePrefs.textOverflow === "truncate" ? "wrap" : "truncate",
+    });
+  }, [tablePrefs, setTablePrefs]);
+
   const filteredByReading = useMemo(
     () => filterByReadingStatus(works, readingFilter, progressMap),
     [works, readingFilter, progressMap],
@@ -242,7 +284,7 @@ function LibraryPage() {
             onFiltersChange={handleFiltersChange}
           />
         </aside>
-        <div className="flex-1 space-y-4">
+        <div className="flex-1 min-w-0 space-y-4">
           <LibraryToolbar
             searchValue={search.q ?? ""}
             onSearchChange={handleSearchChange}
@@ -253,16 +295,45 @@ function LibraryPage() {
             filterValue={readingFilter}
             onFilterChange={setReadingFilter}
           />
+          {view === "table" && (
+            <div className="flex items-center gap-2 justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleTextOverflowToggle}
+                aria-label={tablePrefs.textOverflow === "truncate" ? "Wrap text" : "Truncate text"}
+              >
+                {tablePrefs.textOverflow === "truncate" ? (
+                  <WrapText className="mr-2 h-4 w-4" />
+                ) : (
+                  <AlignJustify className="mr-2 h-4 w-4" />
+                )}
+                {tablePrefs.textOverflow === "truncate" ? "Wrap" : "Truncate"}
+              </Button>
+              <DataTableColumnPicker
+                columns={COLUMN_PICKER_ITEMS}
+                columnVisibility={tablePrefs.columnVisibility}
+                onToggle={handleColumnToggle}
+              />
+            </div>
+          )}
           {view === "grid" ? (
             <LibraryGrid works={filteredByReading} progressMap={progressMap} />
           ) : (
-            <VirtualizedDataTable columns={columns} data={filteredByReading} />
+            <VirtualizedDataTable
+              columns={columns}
+              data={filteredByReading}
+              showPagination={false}
+              columnVisibility={tablePrefs.columnVisibility}
+              textOverflow={tablePrefs.textOverflow}
+            />
           )}
           <LibraryPagination
             page={search.page}
             pageSize={search.pageSize}
             totalCount={totalCount}
             onPageChange={handlePageChange}
+            onPageSizeChange={handlePageSizeChange}
           />
         </div>
       </div>

@@ -265,6 +265,32 @@ describe("processCoverForWork", () => {
     expect(result.updated).toBe(false);
   });
 
+  it("falls back to adjacent cover when extractEpubCover throws", async () => {
+    const workUpdate = vi.fn().mockResolvedValue({});
+    const deps = createMockDeps({
+      extractEpubCover: vi.fn().mockRejectedValue(new Error('EPUB entry "cover.jpg" was not found')),
+      detectAdjacentCover: vi.fn().mockResolvedValue("/books/author/title/cover.jpg"),
+      db: {
+        fileAsset: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: "fa-1",
+            absolutePath: "/books/author/title/book.epub",
+            mediaKind: MediaKind.EPUB,
+          }),
+        },
+        work: { update: workUpdate },
+      },
+    });
+
+    const result = await processCoverForWork(createInput(), deps);
+
+    expect(deps.extractEpubCover).toHaveBeenCalled();
+    expect(deps.detectAdjacentCover).toHaveBeenCalled();
+    expect(deps.readFile).toHaveBeenCalledWith("/books/author/title/cover.jpg");
+    expect(result.source).toBe("adjacent");
+    expect(result.updated).toBe(true);
+  });
+
   it("throws when file asset is not found", async () => {
     const deps = createMockDeps({
       db: {

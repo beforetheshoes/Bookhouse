@@ -3,6 +3,7 @@ import { readFile, mkdir, writeFile, readdir } from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import sharp from "sharp";
 import { MediaKind } from "@bookhouse/domain";
+import { createLogger } from "@bookhouse/shared";
 import { classifyMediaKind } from "./classification";
 import { extractEpubCover, type EpubCoverResult } from "./epub";
 
@@ -43,12 +44,17 @@ export interface ResizeCoverDeps {
   writeFile: WriteFileFn;
 }
 
+export interface CoverLogger {
+  info(obj: Record<string, unknown>, msg: string): void;
+}
+
 export interface CoverDependencies {
   extractEpubCover: (absolutePath: string) => Promise<EpubCoverResult | null>;
   readFile: ReadFileFn;
   detectAdjacentCover: (directory: string, listDirectory?: ListDirectoryFn) => Promise<string | null>;
   resizeCoverImage: (input: { imageBuffer: Buffer; outputDir: string }, deps: ResizeCoverDeps) => Promise<{ thumbPath: string; mediumPath: string }>;
   db: CoverDb;
+  logger?: CoverLogger;
 }
 
 export async function detectAdjacentCover(
@@ -132,10 +138,15 @@ export async function processCoverForWork(
 
   // Try EPUB embedded cover first
   if (fileAsset.mediaKind === MediaKind.EPUB) {
-    const epubCover = await deps.extractEpubCover(fileAsset.absolutePath);
-    if (epubCover !== null) {
-      imageBuffer = epubCover.buffer;
-      source = "epub";
+    try {
+      const epubCover = await deps.extractEpubCover(fileAsset.absolutePath);
+      if (epubCover !== null) {
+        imageBuffer = epubCover.buffer;
+        source = "epub";
+      }
+    } catch {
+      // EPUB cover extraction failed (e.g., missing zip entry) — fall through to adjacent cover
+      deps.logger?.info({ workId: input.workId, fileAssetId: input.fileAssetId }, "EPUB cover extraction failed, trying adjacent cover");
     }
   }
 
@@ -150,6 +161,7 @@ export async function processCoverForWork(
   }
 
   if (imageBuffer === null) {
+    deps.logger?.info({ workId: input.workId, fileAssetId: input.fileAssetId, mediaKind: fileAsset.mediaKind, directory: path.dirname(fileAsset.absolutePath) }, "No cover found for work");
     return { source: "none", updated: false };
   }
 
@@ -161,14 +173,17 @@ export async function processCoverForWork(
     data: { coverPath: input.workId },
   });
 
+  deps.logger?.info({ workId: input.workId, source }, "Cover processed successfully");
   return { source, updated: true };
 }
 
 export function processCoverForWorkDefault(db: CoverDb) {
+  const logger = createLogger("process-cover");
   return (input: ProcessCoverInput) =>
     processCoverForWork(input, {
       db,
       extractEpubCover,
+      logger,
       readFile,
       detectAdjacentCover: (directory) => detectAdjacentCover(directory, readdir),
       resizeCoverImage: (resizeInput) =>

@@ -113,6 +113,12 @@ vi.mock("~/hooks/use-library-view-preference", () => ({
   useLibraryViewPreference: () => [mockView, mockSetView],
 }));
 
+let mockTablePrefs: { columnVisibility: Record<string, boolean>; textOverflow: "wrap" | "truncate" } = { columnVisibility: {}, textOverflow: "truncate" };
+const mockSetTablePrefs = vi.fn();
+vi.mock("~/hooks/use-library-table-preferences", () => ({
+  useLibraryTablePreferences: () => [mockTablePrefs, mockSetTablePrefs],
+}));
+
 vi.mock("~/components/library-grid", () => ({
   LibraryGrid: ({ works, progressMap }: { works: unknown[]; progressMap?: Record<string, number> }) => (
     <div data-testid="library-grid" data-progress-map={progressMap ? JSON.stringify(progressMap) : undefined}>Grid: {String(works.length)} works</div>
@@ -146,6 +152,14 @@ vi.mock("~/components/library-pagination", () => ({
     return (
       <div data-testid="library-pagination" data-page={String(props.page)} data-total={String(props.totalCount)} />
     );
+  },
+}));
+
+let capturedColumnPickerProps: Record<string, unknown> = {};
+vi.mock("~/components/data-table/data-table-column-picker", () => ({
+  DataTableColumnPicker: (props: Record<string, unknown>) => {
+    capturedColumnPickerProps = props;
+    return <div data-testid="column-picker" />;
   },
 }));
 
@@ -214,9 +228,11 @@ describe("LibraryPage", () => {
     };
     mockSearch = { page: 1, pageSize: 50, sort: "title-asc" };
     mockView = "grid";
+    mockTablePrefs = { columnVisibility: {}, textOverflow: "truncate" };
     capturedToolbarProps = {};
     capturedFiltersProps = {};
     capturedPaginationProps = {};
+    capturedColumnPickerProps = {};
     vi.clearAllMocks();
   });
 
@@ -622,6 +638,20 @@ describe("LibraryPage", () => {
     expect(mockNavigate).toHaveBeenCalled();
   });
 
+  it("navigates with pageSize and page 1 when onPageSizeChange is called", async () => {
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 100, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    const onPageSizeChange = capturedPaginationProps.onPageSizeChange as (v: number) => void;
+    onPageSizeChange(20);
+    expect(mockNavigate).toHaveBeenCalled();
+  });
+
   it("filters works by reading status", async () => {
     mockView = "grid";
     mockLoaderData = {
@@ -782,5 +812,107 @@ describe("LibraryPage", () => {
     const filters = capturedFiltersProps.filters as Record<string, unknown>;
     expect(filters.format).toEqual(["EBOOK"]);
     expect(filters.hasCover).toBe(true);
+  });
+
+  it("renders column picker and text overflow toggle in table view", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.getByTestId("column-picker")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /wrap text/i })).toBeTruthy();
+  });
+
+  it("does not render column picker or text overflow toggle in grid view", async () => {
+    mockView = "grid";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.queryByTestId("column-picker")).toBeNull();
+    expect(screen.queryByRole("button", { name: /wrap text/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /truncate text/i })).toBeNull();
+  });
+
+  it("passes columnVisibility from preferences to column picker", async () => {
+    mockView = "table";
+    mockTablePrefs = { columnVisibility: { isbn: false }, textOverflow: "truncate" };
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(capturedColumnPickerProps.columnVisibility).toEqual({ isbn: false });
+  });
+
+  it("calls setTablePrefs when column is toggled", async () => {
+    mockView = "table";
+    mockTablePrefs = { columnVisibility: {}, textOverflow: "truncate" };
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    const onToggle = capturedColumnPickerProps.onToggle as (id: string) => void;
+    onToggle("isbn");
+    expect(mockSetTablePrefs).toHaveBeenCalledWith({
+      columnVisibility: { isbn: false },
+      textOverflow: "truncate",
+    });
+  });
+
+  it("calls setTablePrefs when text overflow toggle is clicked", async () => {
+    mockView = "table";
+    mockTablePrefs = { columnVisibility: {}, textOverflow: "truncate" };
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    const { fireEvent } = await import("@testing-library/react");
+    fireEvent.click(screen.getByRole("button", { name: /wrap text/i }));
+    expect(mockSetTablePrefs).toHaveBeenCalledWith({
+      columnVisibility: {},
+      textOverflow: "wrap",
+    });
+  });
+
+  it("shows 'Truncate' label when textOverflow is 'wrap' and toggles back to truncate", async () => {
+    mockView = "table";
+    mockTablePrefs = { columnVisibility: {}, textOverflow: "wrap" };
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    const btn = screen.getByRole("button", { name: /truncate text/i });
+    expect(btn).toBeTruthy();
+    const { fireEvent } = await import("@testing-library/react");
+    fireEvent.click(btn);
+    expect(mockSetTablePrefs).toHaveBeenCalledWith({
+      columnVisibility: {},
+      textOverflow: "truncate",
+    });
   });
 });
