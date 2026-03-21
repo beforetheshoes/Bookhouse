@@ -12,7 +12,7 @@ let mockLoaderData: {
     scanMode: string;
     isEnabled: boolean;
     lastScannedAt: string | null;
-    scanProgress: { status: string; totalFiles: number | null; processedFiles: number | null; errorCount: number | null } | null;
+    scanProgress: { status: string; totalFiles: number | null; processedFiles: number | null; errorCount: number | null; stale: boolean } | null;
     issueCount: number;
   }[]
 } = { roots: [] };
@@ -72,7 +72,7 @@ const makeRoot = (overrides: Partial<{
   scanMode: string;
   isEnabled: boolean;
   lastScannedAt: string | null;
-  scanProgress: { status: string; totalFiles: number | null; processedFiles: number | null; errorCount: number | null } | null;
+  scanProgress: { status: string; totalFiles: number | null; processedFiles: number | null; errorCount: number | null; stale: boolean } | null;
   issueCount: number;
 }> = {}) => ({
   id: "root-1",
@@ -383,7 +383,7 @@ describe("LibrariesPage", () => {
   it("shows progress bar when scan is active", async () => {
     mockLoaderData = {
       roots: [makeRoot({
-        scanProgress: { status: "RUNNING", totalFiles: 100, processedFiles: 42, errorCount: 2 },
+        scanProgress: { status: "RUNNING", totalFiles: 100, processedFiles: 42, errorCount: 2, stale: false },
       })],
     };
     const { Route } = await import("./libraries");
@@ -430,7 +430,7 @@ describe("LibrariesPage", () => {
   it("shows progress with null processedFiles and totalFiles", async () => {
     mockLoaderData = {
       roots: [makeRoot({
-        scanProgress: { status: "QUEUED", totalFiles: null, processedFiles: null, errorCount: null },
+        scanProgress: { status: "QUEUED", totalFiles: null, processedFiles: null, errorCount: null, stale: false },
       })],
     };
     const { Route } = await import("./libraries");
@@ -443,13 +443,40 @@ describe("LibrariesPage", () => {
   it("shows progress without error count when errorCount is 0", async () => {
     mockLoaderData = {
       roots: [makeRoot({
-        scanProgress: { status: "RUNNING", totalFiles: 50, processedFiles: 10, errorCount: 0 },
+        scanProgress: { status: "RUNNING", totalFiles: 50, processedFiles: 10, errorCount: 0, stale: false },
       })],
     };
     const { Route } = await import("./libraries");
     const LibrariesPage = (Route.options.component as React.ComponentType);
     render(<LibrariesPage />);
     expect(screen.getByText("Scanning... 10 / 50 files")).toBeTruthy();
+  });
+
+  it("shows stalled warning when scan is stale", async () => {
+    mockLoaderData = {
+      roots: [makeRoot({
+        scanProgress: { status: "RUNNING", totalFiles: 500, processedFiles: 200, errorCount: 0, stale: true },
+      })],
+    };
+    const { Route } = await import("./libraries");
+    const LibrariesPage = (Route.options.component as React.ComponentType);
+    render(<LibrariesPage />);
+    expect(screen.getByText("Scan Stalled")).toBeTruthy();
+    expect(screen.getByText(/Scan appears stalled/)).toBeTruthy();
+  });
+
+  it("shows normal scanning state when scan is not stale", async () => {
+    mockLoaderData = {
+      roots: [makeRoot({
+        scanProgress: { status: "RUNNING", totalFiles: 100, processedFiles: 42, errorCount: 0, stale: false },
+      })],
+    };
+    const { Route } = await import("./libraries");
+    const LibrariesPage = (Route.options.component as React.ComponentType);
+    render(<LibrariesPage />);
+    expect(screen.getByText("Scanning... 42 / 100 files")).toBeTruthy();
+    expect(screen.queryByText("Scan Stalled")).toBeNull();
+    expect(screen.queryByText(/Scan appears stalled/)).toBeNull();
   });
 
   it("toast success action navigates to job detail", async () => {

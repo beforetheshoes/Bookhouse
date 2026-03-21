@@ -77,13 +77,15 @@ const libraryRootIdSchema = z.object({
   libraryRootId: z.string().min(1),
 });
 
+export const STALE_SCAN_THRESHOLD_MS = 5 * 60 * 1000;
+
 export const getScanProgressServerFn = createServerFn({
   method: "GET",
 })
   .inputValidator(libraryRootIdSchema)
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
-    return db.importJob.findFirst({
+    const job = await db.importJob.findFirst({
       where: {
         libraryRootId: data.libraryRootId,
         kind: "SCAN_ROOT",
@@ -94,9 +96,16 @@ export const getScanProgressServerFn = createServerFn({
         totalFiles: true,
         processedFiles: true,
         errorCount: true,
+        updatedAt: true,
       },
       orderBy: { createdAt: "desc" },
     });
+    if (!job) return null;
+    const { updatedAt, ...rest } = job;
+    return {
+      ...rest,
+      stale: Date.now() - updatedAt.getTime() > STALE_SCAN_THRESHOLD_MS,
+    };
   });
 
 export const getLibraryIssueCountServerFn = createServerFn({
