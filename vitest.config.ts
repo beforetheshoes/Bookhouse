@@ -11,7 +11,7 @@ export default defineConfig({
     environment: "node",
     globals: true,
     testTimeout: 30000,
-    exclude: [".claude/**", "**/node_modules/**", "**/.output/**"],
+    exclude: [".claude/**", "**/node_modules/**", "**/.output/**", "e2e/**"],
     environmentMatchGlobs: [
       ["apps/web/src/**/*.test.{ts,tsx}", "happy-dom"],
     ],

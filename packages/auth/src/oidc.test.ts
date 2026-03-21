@@ -10,6 +10,7 @@ const buildAuthorizationUrlMock = vi.fn();
 const authorizationCodeGrantMock = vi.fn();
 const fetchUserInfoMock = vi.fn();
 const clientSecretPostMock = vi.fn();
+const allowInsecureRequestsMock = vi.fn();
 
 vi.mock("openid-client", () => ({
   discovery: discoveryMock,
@@ -21,6 +22,7 @@ vi.mock("openid-client", () => ({
   authorizationCodeGrant: authorizationCodeGrantMock,
   fetchUserInfo: fetchUserInfoMock,
   ClientSecretPost: clientSecretPostMock,
+  allowInsecureRequests: allowInsecureRequestsMock,
 }));
 
 const authConfig: AuthConfig = {
@@ -60,6 +62,12 @@ describe("oidc helpers", () => {
 
     expect(discoveryMock).toHaveBeenCalledTimes(1);
     expect(clientSecretPostMock).toHaveBeenCalledWith("secret");
+    expect(discoveryMock).toHaveBeenCalledWith(
+      new URL("https://issuer.example.com"),
+      "bookhouse",
+      expect.objectContaining({ client_secret: "secret" }),
+      "post-auth",
+    );
     expect(buildAuthorizationUrlMock).toHaveBeenCalledWith(fakeConfiguration, {
       redirect_uri: "http://localhost:3000/auth/callback",
       response_type: "code",
@@ -74,6 +82,39 @@ describe("oidc helpers", () => {
     );
     expect(first.login.returnTo).toBe("/books");
     expect(second.login.codeVerifier).toBe("verifier");
+  });
+
+  it("passes allowInsecureRequests to discovery when the issuer uses HTTP", async () => {
+    const fakeConfiguration = {};
+    discoveryMock.mockResolvedValue(fakeConfiguration);
+    clientSecretPostMock.mockReturnValue("post-auth");
+    randomPKCECodeVerifierMock.mockReturnValue("verifier");
+    calculatePKCECodeChallengeMock.mockResolvedValue("challenge");
+    randomStateMock.mockReturnValue("state");
+    randomNonceMock.mockReturnValue("nonce");
+    buildAuthorizationUrlMock.mockReturnValue(
+      new URL("http://localhost:9090/auth"),
+    );
+
+    const { clearOidcConfigurationCache, createAuthorizationRequest } =
+      await import("./oidc");
+
+    clearOidcConfigurationCache();
+
+    const httpConfig: AuthConfig = {
+      ...authConfig,
+      issuer: "http://localhost:9090",
+    };
+
+    await createAuthorizationRequest(httpConfig, "/books");
+
+    expect(discoveryMock).toHaveBeenCalledWith(
+      new URL("http://localhost:9090"),
+      "bookhouse",
+      expect.objectContaining({ client_secret: "secret" }),
+      "post-auth",
+      { execute: [allowInsecureRequestsMock] },
+    );
   });
 
   it("normalizes claims and exchanges the authorization code", async () => {
