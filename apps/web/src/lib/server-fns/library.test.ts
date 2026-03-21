@@ -37,10 +37,21 @@ describe("getLibraryWorksServerFn", () => {
     findManyMock.mockReset();
   });
 
-  it("calls db.work.findMany with correct include options", async () => {
+  it("calls db.work.findMany with correct include and availability filter", async () => {
     findManyMock.mockResolvedValue([]);
     await getLibraryWorksServerFn();
     expect(findManyMock).toHaveBeenCalledWith({
+      where: {
+        editions: {
+          some: {
+            editionFiles: {
+              some: {
+                fileAsset: { availabilityStatus: "PRESENT" },
+              },
+            },
+          },
+        },
+      },
       include: {
         series: true,
         editions: {
@@ -403,12 +414,26 @@ describe("getFilteredLibraryWorksServerFn", () => {
 
     // Cover count queries should include the search filter but NOT hasCover
     // countMock calls: [0] = totalCount, [1] = withCover, [2] = withoutCover
+    const availabilityAnd = [
+      {
+        editions: {
+          some: {
+            editionFiles: {
+              some: {
+                fileAsset: { availabilityStatus: "PRESENT" },
+              },
+            },
+          },
+        },
+      },
+    ];
     expect(countMock).toHaveBeenNthCalledWith(2, {
       where: {
         OR: [
           { titleDisplay: { contains: "wind", mode: "insensitive" } },
           { titleCanonical: { contains: "wind", mode: "insensitive" } },
         ],
+        AND: availabilityAnd,
         coverPath: { not: null },
       },
     });
@@ -418,6 +443,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
           { titleDisplay: { contains: "wind", mode: "insensitive" } },
           { titleCanonical: { contains: "wind", mode: "insensitive" } },
         ],
+        AND: availabilityAnd,
         coverPath: null,
       },
     });
@@ -440,6 +466,19 @@ describe("getFilteredLibraryWorksServerFn", () => {
             { titleDisplay: { contains: "wind", mode: "insensitive" } },
             { titleCanonical: { contains: "wind", mode: "insensitive" } },
           ],
+          AND: [
+            {
+              editions: {
+                some: {
+                  editionFiles: {
+                    some: {
+                      fileAsset: { availabilityStatus: "PRESENT" },
+                    },
+                  },
+                },
+              },
+            },
+          ],
         },
       },
     });
@@ -456,15 +495,30 @@ describe("getFilteredLibraryWorksServerFn", () => {
     });
 
     // Cover count queries should include format but NOT hasCover
+    const availabilityAnd = [
+      {
+        editions: {
+          some: {
+            editionFiles: {
+              some: {
+                fileAsset: { availabilityStatus: "PRESENT" },
+              },
+            },
+          },
+        },
+      },
+    ];
     expect(countMock).toHaveBeenNthCalledWith(2, {
       where: {
         editions: { some: { formatFamily: { in: ["EBOOK"] } } },
+        AND: availabilityAnd,
         coverPath: { not: null },
       },
     });
     expect(countMock).toHaveBeenNthCalledWith(3, {
       where: {
         editions: { some: { formatFamily: { in: ["EBOOK"] } } },
+        AND: availabilityAnd,
         coverPath: null,
       },
     });
@@ -479,6 +533,34 @@ describe("getFilteredLibraryWorksServerFn", () => {
     const result = await getFilteredLibraryWorksServerFn({ data: {} });
 
     expect(result.facetCounts.series).toBe(5);
+  });
+
+  it("always includes availability filter in where clause", async () => {
+    findManyMock.mockResolvedValue([]);
+    countMock.mockResolvedValue(0);
+    editionGroupByMock.mockResolvedValue([]);
+    seriesCountMock.mockResolvedValue(0);
+
+    await getFilteredLibraryWorksServerFn({ data: {} });
+
+    const call = (findManyMock.mock.calls[0] as unknown[])[0] as { where: Record<string, unknown> };
+    expect(call.where).toEqual(
+      expect.objectContaining({
+        AND: [
+          {
+            editions: {
+              some: {
+                editionFiles: {
+                  some: {
+                    fileAsset: { availabilityStatus: "PRESENT" },
+                  },
+                },
+              },
+            },
+          },
+        ],
+      }),
+    );
   });
 
   it("includes standard includes in findMany", async () => {

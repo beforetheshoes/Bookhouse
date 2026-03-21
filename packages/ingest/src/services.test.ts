@@ -370,6 +370,22 @@ function createTestDb(state: TestState): IngestDb {
           (where.fileAssetId === undefined || editionFile.fileAssetId === where.fileAssetId),
         ) ?? null;
       },
+      async findMany({ where }) {
+        await Promise.resolve();
+        return [...state.editionFiles.values()].filter(
+          (editionFile) => editionFile.fileAssetId === where.fileAssetId,
+        );
+      },
+      async update({ where, data }) {
+        await Promise.resolve();
+        const existing = [...state.editionFiles.values()].find((ef) => ef.id === where.id);
+        if (!existing) throw new Error(`Unknown edition file: ${where.id}`);
+        // Remove old key
+        state.editionFiles.delete(getEditionFileKey(existing.editionId, existing.fileAssetId));
+        const updated = { ...existing, ...data };
+        state.editionFiles.set(getEditionFileKey(updated.editionId, updated.fileAssetId), updated);
+        return updated;
+      },
     },
     contributor: {
       async create({ data }) {
@@ -2235,6 +2251,286 @@ describe("ingest services", () => {
       LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA,
       { fileAssetId: "file-1" },
     );
+  });
+
+  it("detects moved file by fullHash and transfers edition links from MISSING asset", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    // Old file at old path — MISSING, with hash, linked to an enriched work
+    const oldFile = addFileAsset(state, {
+      absolutePath: "/tmp/root/old-folder/book.epub",
+      availabilityStatus: AvailabilityStatus.MISSING,
+      basename: "book.epub",
+      fullHash: "same-hash-abc",
+      id: "old-file",
+      relativePath: "old-folder/book.epub",
+    });
+    const oldWork = addWork(state, {
+      enrichmentStatus: "ENRICHED",
+      id: "old-work",
+      titleCanonical: "the fifth season",
+      titleDisplay: "The Fifth Season",
+    });
+    const oldEdition = addEdition(state, {
+      id: "old-edition",
+      workId: oldWork.id,
+    });
+    addEditionFile(state, {
+      editionId: oldEdition.id,
+      fileAssetId: oldFile.id,
+      id: "old-edition-file",
+    });
+
+    // New file at new path — PRESENT, no hash yet, with a stub work
+    const newFile = addFileAsset(state, {
+      absolutePath: "/tmp/root/new-folder/book.epub",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.epub",
+      fullHash: null,
+      id: "new-file",
+      partialHash: null,
+      relativePath: "new-folder/book.epub",
+    });
+    const stubWork = addWork(state, {
+      enrichmentStatus: "STUB",
+      id: "stub-work",
+      titleCanonical: "book",
+      titleDisplay: "book",
+    });
+    const stubEdition = addEdition(state, {
+      id: "stub-edition",
+      workId: stubWork.id,
+    });
+    addEditionFile(state, {
+      editionId: stubEdition.id,
+      fileAssetId: newFile.id,
+      id: "stub-edition-file",
+    });
+
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+      hashFile: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          fullHash: "same-hash-abc",
+          mtime: new Date("2025-01-01T00:00:00.000Z"),
+          partialHash: "partial-abc",
+          sizeBytes: 100n,
+        };
+      }),
+    });
+
+    const result = await services.hashFileAsset({
+      fileAssetId: "new-file",
+      now: new Date("2025-01-01T01:00:00.000Z"),
+    });
+
+    // Should detect move and return movedFromFileAssetId
+    expect(result).toEqual({
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      fileAssetId: "new-file",
+      fullHash: "same-hash-abc",
+      movedFromFileAssetId: "old-file",
+      partialHash: "partial-abc",
+    });
+
+    // Old edition file should now point to new file
+    const transferredEditionFile = [...state.editionFiles.values()].find(
+      (ef) => ef.id === "old-edition-file",
+    );
+    expect(transferredEditionFile?.fileAssetId).toBe("new-file");
+
+    // Stub work should be deleted
+    expect(state.works.has("stub-work")).toBe(false);
+
+    // Should NOT enqueue parse job (old edition already has metadata)
+    expect(enqueueLibraryJob).not.toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA,
+      expect.anything(),
+    );
+  });
+
+  it("skips move detection when edition for current file is not found", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    const file = addFileAsset(state, {
+      absolutePath: "/tmp/root/book.epub",
+      fullHash: null,
+      id: "file-1",
+    });
+    // EditionFile points to a non-existent edition (orphaned link)
+    addEditionFile(state, {
+      editionId: "missing-edition",
+      fileAssetId: file.id,
+      id: "ef-1",
+    });
+
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+      hashFile: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          fullHash: "hash-abc",
+          mtime: new Date("2025-01-01T00:00:00.000Z"),
+          partialHash: "partial-abc",
+          sizeBytes: 100n,
+        };
+      }),
+    });
+
+    const result = await services.hashFileAsset({ fileAssetId: "file-1" });
+
+    expect(result.movedFromFileAssetId).toBeUndefined();
+    expect(enqueueLibraryJob).toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA,
+      { fileAssetId: "file-1" },
+    );
+  });
+
+  it("skips move detection when current work is ENRICHED", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    // File with an ENRICHED work — should NOT trigger move detection
+    const file = addFileAsset(state, {
+      absolutePath: "/tmp/root/book.epub",
+      fullHash: null,
+      id: "file-1",
+    });
+    const work = addWork(state, {
+      enrichmentStatus: "ENRICHED",
+      id: "work-1",
+    });
+    addEdition(state, { id: "edition-1", workId: work.id });
+    addEditionFile(state, {
+      editionId: "edition-1",
+      fileAssetId: file.id,
+      id: "ef-1",
+    });
+
+    // A MISSING file with same hash exists
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/old/book.epub",
+      availabilityStatus: AvailabilityStatus.MISSING,
+      fullHash: "hash-xyz",
+      id: "old-file",
+      relativePath: "old/book.epub",
+    });
+
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+      hashFile: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          fullHash: "hash-xyz",
+          mtime: new Date("2025-01-01T00:00:00.000Z"),
+          partialHash: "partial-xyz",
+          sizeBytes: 100n,
+        };
+      }),
+    });
+
+    const result = await services.hashFileAsset({ fileAssetId: "file-1" });
+
+    // Should NOT detect a move — work is ENRICHED
+    expect(result.movedFromFileAssetId).toBeUndefined();
+    // Should enqueue parse job as normal (EPUB)
+    expect(enqueueLibraryJob).toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA,
+      { fileAssetId: "file-1" },
+    );
+  });
+
+  it("skips move detection when no MISSING file matches the hash", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    const file = addFileAsset(state, {
+      absolutePath: "/tmp/root/book.epub",
+      fullHash: null,
+      id: "file-1",
+    });
+    addWork(state, { enrichmentStatus: "STUB", id: "work-1" });
+    addEdition(state, { id: "edition-1", workId: "work-1" });
+    addEditionFile(state, {
+      editionId: "edition-1",
+      fileAssetId: file.id,
+      id: "ef-1",
+    });
+
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+      hashFile: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          fullHash: "unique-hash",
+          mtime: new Date("2025-01-01T00:00:00.000Z"),
+          partialHash: "partial",
+          sizeBytes: 100n,
+        };
+      }),
+    });
+
+    const result = await services.hashFileAsset({ fileAssetId: "file-1" });
+
+    expect(result.movedFromFileAssetId).toBeUndefined();
+    expect(enqueueLibraryJob).toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA,
+      { fileAssetId: "file-1" },
+    );
+  });
+
+  it("skips move detection when MISSING hash match has no edition file links", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    const file = addFileAsset(state, {
+      absolutePath: "/tmp/root/book.epub",
+      fullHash: null,
+      id: "file-1",
+    });
+    addWork(state, { enrichmentStatus: "STUB", id: "work-1" });
+    addEdition(state, { id: "edition-1", workId: "work-1" });
+    addEditionFile(state, {
+      editionId: "edition-1",
+      fileAssetId: file.id,
+      id: "ef-1",
+    });
+
+    // MISSING file with same hash but no EditionFile links (orphaned)
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/orphan.epub",
+      availabilityStatus: AvailabilityStatus.MISSING,
+      fullHash: "same-hash",
+      id: "orphan-file",
+      relativePath: "orphan.epub",
+    });
+
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+      hashFile: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          fullHash: "same-hash",
+          mtime: new Date("2025-01-01T00:00:00.000Z"),
+          partialHash: "partial",
+          sizeBytes: 100n,
+        };
+      }),
+    });
+
+    const result = await services.hashFileAsset({ fileAssetId: "file-1" });
+
+    expect(result.movedFromFileAssetId).toBeUndefined();
+    // Stub work should still exist
+    expect(state.works.has("work-1")).toBe(true);
   });
 
   it("parses EPUB metadata and persists normalized results", async () => {

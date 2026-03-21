@@ -236,6 +236,15 @@ interface EditionFileCreateArgs {
   data: Pick<EditionFileRecord, "editionId" | "fileAssetId" | "role">;
 }
 
+interface EditionFileFindManyArgs {
+  where: { fileAssetId: string };
+}
+
+interface EditionFileUpdateArgs {
+  where: { id: string };
+  data: { fileAssetId: string };
+}
+
 interface ContributorFindManyArgs {
   where: { nameCanonical: { in: string[] } };
 }
@@ -289,6 +298,8 @@ export interface IngestDb {
   editionFile: {
     create(args: EditionFileCreateArgs): Promise<EditionFileRecord>;
     findFirst(args: EditionFileFindFirstArgs): Promise<EditionFileRecord | null>;
+    findMany(args: EditionFileFindManyArgs): Promise<EditionFileRecord[]>;
+    update(args: EditionFileUpdateArgs): Promise<EditionFileRecord>;
   };
   contributor: {
     create(args: ContributorCreateArgs): Promise<ContributorRecord>;
@@ -357,6 +368,7 @@ export interface HashFileAssetResult {
   availabilityStatus: AvailabilityStatus;
   fileAssetId: string;
   fullHash?: string;
+  movedFromFileAssetId?: string;
   partialHash?: string;
 }
 
@@ -1390,6 +1402,54 @@ export function createIngestServices(
           sizeBytes: hashes.sizeBytes,
         },
       });
+
+      // Move detection: check if a MISSING file has the same hash
+      const currentEditionFile = await ingestDb.editionFile.findFirst({
+        where: { fileAssetId: fileAsset.id },
+      });
+      if (currentEditionFile !== null) {
+        const currentEdition = await ingestDb.edition.findUnique({
+          where: { id: currentEditionFile.editionId },
+        });
+        if (currentEdition !== null) {
+          const currentWork = await ingestDb.work.findUnique({
+            where: { id: currentEdition.workId },
+          });
+          if (currentWork !== null && currentWork.enrichmentStatus === "STUB") {
+            const hashMatches = await ingestDb.fileAsset.findMany({
+              where: { fullHash: hashes.fullHash, NOT: { id: fileAsset.id } },
+            });
+            const missingMatch = hashMatches.find(
+              (fa) => fa.availabilityStatus === AvailabilityStatus.MISSING,
+            );
+            if (missingMatch) {
+              const missingEditionFiles = await ingestDb.editionFile.findMany({
+                where: { fileAssetId: missingMatch.id },
+              });
+              if (missingEditionFiles.length > 0) {
+                for (const ef of missingEditionFiles) {
+                  await ingestDb.editionFile.update({
+                    where: { id: ef.id },
+                    data: { fileAssetId: fileAsset.id },
+                  });
+                }
+                await ingestDb.work.delete({ where: { id: currentWork.id } });
+                logger.info(
+                  { fromFileAssetId: missingMatch.id, toFileAssetId: fileAsset.id },
+                  "Move detected: transferred edition links",
+                );
+                return {
+                  availabilityStatus: AvailabilityStatus.PRESENT,
+                  fileAssetId: fileAsset.id,
+                  fullHash: hashes.fullHash,
+                  movedFromFileAssetId: missingMatch.id,
+                  partialHash: hashes.partialHash,
+                };
+              }
+            }
+          }
+        }
+      }
 
       if (
         fileAsset.mediaKind === MediaKind.EPUB ||
