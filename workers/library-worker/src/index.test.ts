@@ -704,6 +704,35 @@ describe("library worker", () => {
     );
   });
 
+  it("wrapped enqueue falls back to empty string when job.id is undefined", async () => {
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const { enqueueLibraryJob: enqueueLibraryJobMock } = await import("@bookhouse/shared");
+    const processor = createLibraryWorkerProcessor();
+
+    scanLibraryRootMock.mockResolvedValueOnce("scan-result");
+
+    await processor(createMockJob({
+      data: { libraryRootId: "root-1" },
+      name: "scan-library-root",
+      id: undefined,
+      queueQualifiedName: "bull:library",
+    }) as never);
+
+    const createArgs = createIngestServicesMock.mock.calls[0] as [{ enqueueLibraryJob: (name: string, payload: unknown) => Promise<void> }];
+    const wrappedEnqueue = createArgs[0].enqueueLibraryJob;
+
+    await wrappedEnqueue("hash-file-asset", { fileAssetId: "file-1" });
+
+    expect(enqueueLibraryJobMock).toHaveBeenCalledWith(
+      "hash-file-asset",
+      { fileAssetId: "file-1" },
+      {
+        parent: { id: "", queue: "bull:library" },
+        removeDependencyOnFailure: true,
+      },
+    );
+  });
+
   it("calls moveToWaitingChildren and updateData after dispatch", async () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
