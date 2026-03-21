@@ -16,7 +16,20 @@ export const getLibraryWorksServerFn = createServerFn({
   method: "GET",
 }).handler(async () => {
   const { db } = await import("@bookhouse/db");
-  return db.work.findMany({ include: WORK_INCLUDE });
+  return db.work.findMany({
+    where: {
+      editions: {
+        some: {
+          editionFiles: {
+            some: {
+              fileAsset: { availabilityStatus: "PRESENT" },
+            },
+          },
+        },
+      },
+    },
+    include: WORK_INCLUDE,
+  });
 });
 
 export type LibraryWork = Awaited<
@@ -77,6 +90,20 @@ function buildWhere(data: z.infer<typeof filterSchema>): WhereClause {
   } else if (data.hasCover === false) {
     where.coverPath = null;
   }
+
+  where.AND = [
+    {
+      editions: {
+        some: {
+          editionFiles: {
+            some: {
+              fileAsset: { availabilityStatus: "PRESENT" },
+            },
+          },
+        },
+      },
+    },
+  ];
 
   return where;
 }
