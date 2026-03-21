@@ -190,6 +190,11 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Link Prisma client into server output
+        run: |
+          mkdir -p apps/web/.output/server/node_modules/@prisma
+          ln -sfn "$(pwd)/packages/db/node_modules/@prisma/client" apps/web/.output/server/node_modules/@prisma/client
+
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium
 
