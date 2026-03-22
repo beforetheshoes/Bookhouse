@@ -43,18 +43,9 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: "date-asc", label: "Oldest first" },
 ];
 
-interface AudioLinkWithEditions {
-  id: string;
-  matchType: string;
-  confidence: number | null;
-  ebookEdition: EditionWithRelations;
-  audioEdition: EditionWithRelations;
-  reviewStatus: string;
-}
-
-function sortLinks(links: AudioLinkWithEditions[], sort: SortOption): AudioLinkWithEditions[] {
+function sortLinks(links: AudioLinkRow[], sort: SortOption): AudioLinkRow[] {
   const sorted = [...links];
-  sorted.sort((a: AudioLinkWithEditions, b: AudioLinkWithEditions) => {
+  sorted.sort((a: AudioLinkRow, b: AudioLinkRow) => {
     switch (sort) {
       case "title-asc":
         return a.ebookEdition.work.titleDisplay.localeCompare(b.ebookEdition.work.titleDisplay);
@@ -90,29 +81,16 @@ const statusVariant: Record<string, "default" | "secondary" | "destructive" | "o
   CONFIRMED: "default",
 };
 
-interface EditionContributor {
-  role: string;
-  contributor: { nameDisplay: string };
-}
+type Edition = AudioLinkRow["ebookEdition"];
 
-interface EditionFileWithAsset {
-  fileAsset: { absolutePath: string; mediaKind: string };
-}
-
-interface EditionWithRelations {
-  contributors: EditionContributor[];
-  editionFiles: EditionFileWithAsset[];
-  work: { titleDisplay: string; createdAt: Date };
-}
-
-function getContributorsByRole(edition: EditionWithRelations, role: string): string {
+function getContributorsByRole(edition: Edition, role: string): string {
   return edition.contributors
-    .filter((c: EditionContributor) => c.role === role)
-    .map((c: EditionContributor) => c.contributor.nameDisplay)
+    .filter((c) => c.role === role)
+    .map((c) => c.contributor.nameDisplay)
     .join(", ");
 }
 
-function getAudiobookFolder(edition: EditionWithRelations): string | null {
+function getAudiobookFolder(edition: Edition): string | null {
   const anyFile = edition.editionFiles[0];
   if (!anyFile) return null;
   const parts = anyFile.fileAsset.absolutePath.split("/");
@@ -120,9 +98,9 @@ function getAudiobookFolder(edition: EditionWithRelations): string | null {
   return parts.join("/");
 }
 
-function getAudioTrackCount(edition: EditionWithRelations): number {
+function getAudioTrackCount(edition: Edition): number {
   return edition.editionFiles.filter(
-    (ef: EditionFileWithAsset) => ef.fileAsset.mediaKind === "AUDIO",
+    (ef) => ef.fileAsset.mediaKind === "AUDIO",
   ).length;
 }
 
@@ -208,7 +186,7 @@ function AudioLinksPage() {
   const filtered = sortLinks(
     activeTab === "ALL"
       ? audioLinks
-      : audioLinks.filter((l: AudioLinkRow) => l.reviewStatus === activeTab),
+      : audioLinks.filter((l) => l.reviewStatus === activeTab),
     sort,
   );
 
@@ -236,7 +214,7 @@ function AudioLinksPage() {
       <div className="flex items-center justify-between">
         <Tabs
           value={activeTab}
-          onValueChange={(v: string) => { setActiveTab(v as StatusTab); }}
+          onValueChange={(v) => { setActiveTab(v as StatusTab); }}
         >
           <TabsList>
             {STATUS_TABS.map((tab) => (
@@ -246,7 +224,7 @@ function AudioLinksPage() {
             ))}
           </TabsList>
         </Tabs>
-        <Select value={sort} onValueChange={(v: string) => { setSort(v as SortOption); }}>
+        <Select value={sort} onValueChange={(v) => { setSort(v as SortOption); }}>
           <SelectTrigger className="w-40">
             <SelectValue />
           </SelectTrigger>

@@ -34,6 +34,7 @@ export interface CoverDb {
     findUnique(args: { where: { id: string } }): Promise<FileAssetRecord | null>;
   };
   work: {
+    findUnique(args: { where: { id: string } }): Promise<{ id: string } | null>;
     update(args: { where: { id: string }; data: { coverPath: string } }): Promise<unknown>;
   };
 }

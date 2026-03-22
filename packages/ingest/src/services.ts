@@ -322,6 +322,7 @@ export interface IngestDb {
 
 export interface IngestLogger {
   info(obj: Record<string, unknown>, msg: string): void;
+  warn(obj: Record<string, unknown>, msg: string): void;
 }
 
 export interface IngestDependencies {
