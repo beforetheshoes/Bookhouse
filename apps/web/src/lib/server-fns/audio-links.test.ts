@@ -80,7 +80,7 @@ describe("getAudioLinksServerFn", () => {
     findManyMock.mockResolvedValue(fakeData);
     const result = await getAudioLinksServerFn();
     expect(result).toHaveLength(1);
-    expect(result[0].id).toBe("al-1");
+    expect((result[0] as { id: string }).id).toBe("al-1");
   });
 
   it("returns empty array when all links are sidecar-only", async () => {

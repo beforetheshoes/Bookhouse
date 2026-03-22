@@ -109,12 +109,13 @@ describe("AudioLinksPage", () => {
     expect(screen.getByText("Audio Title")).toBeTruthy();
   });
 
-  it("renders authors for both editions", async () => {
+  it("renders authors and narrators", async () => {
     mockLoaderData = { audioLinks: [makeAudioLink()] };
     const { Route } = await import("./audio-links");
     const AudioLinksPage = (Route.options.component as React.ComponentType);
     render(<AudioLinksPage />);
-    expect(screen.getByText("Author Name")).toBeTruthy();
+    expect(screen.getAllByText("Author Name").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/Narrator Name/)).toBeTruthy();
   });
 
   it("renders Merge and Ignore buttons for PENDING status", async () => {
