@@ -161,6 +161,47 @@ describe("AudioLinksPage", () => {
     expect(screen.getByText("—")).toBeTruthy();
   });
 
+  it("renders without folder when audio edition has no files", async () => {
+    mockLoaderData = {
+      audioLinks: [makeAudioLink({
+        audioEdition: makeEdition("Audio Title", [{ role: "AUTHOR", name: "Author" }], []),
+      })],
+    };
+    const { Route } = await import("./audio-links");
+    const AudioLinksPage = (Route.options.component as React.ComponentType);
+    render(<AudioLinksPage />);
+    expect(screen.getByText("Audio Title")).toBeTruthy();
+    // No folder path or track count rendered
+    expect(screen.queryByText(/audio file/)).toBeNull();
+  });
+
+  it("renders singular 'file' when audio edition has exactly 1 audio track", async () => {
+    mockLoaderData = {
+      audioLinks: [makeAudioLink({
+        audioEdition: makeEdition("Audio Title", [{ role: "AUTHOR", name: "Author" }], [{ path: "/audio/track.mp3", kind: "AUDIO" }]),
+      })],
+    };
+    const { Route } = await import("./audio-links");
+    const AudioLinksPage = (Route.options.component as React.ComponentType);
+    render(<AudioLinksPage />);
+    expect(screen.getByText("1 audio file")).toBeTruthy();
+  });
+
+  it("renders plural 'files' when audio edition has multiple audio tracks", async () => {
+    mockLoaderData = {
+      audioLinks: [makeAudioLink({
+        audioEdition: makeEdition("Audio Title", [{ role: "AUTHOR", name: "Author" }], [
+          { path: "/audio/track1.mp3", kind: "AUDIO" },
+          { path: "/audio/track2.mp3", kind: "AUDIO" },
+        ]),
+      })],
+    };
+    const { Route } = await import("./audio-links");
+    const AudioLinksPage = (Route.options.component as React.ComponentType);
+    render(<AudioLinksPage />);
+    expect(screen.getByText("2 audio files")).toBeTruthy();
+  });
+
   it("renders matchType badge", async () => {
     mockLoaderData = { audioLinks: [makeAudioLink({ matchType: "EXACT_METADATA" })] };
     const { Route } = await import("./audio-links");
@@ -221,5 +262,170 @@ describe("AudioLinksPage", () => {
     render(<AudioLinksPage />);
     await userEvent.click(screen.getByText("Ignore"));
     expect(ignoreAudioLinkServerFnMock).toHaveBeenCalledWith({ data: { id: "al-1" } });
+  });
+
+  describe("sort options", () => {
+    const setupSortableLinks = () => {
+      mockLoaderData = {
+        audioLinks: [
+          makeAudioLink({
+            id: "al-1",
+            ebookEdition: makeEdition(
+              "Alpha Book",
+              [{ role: "AUTHOR", name: "Charlie Author" }],
+              [{ path: "/books/alpha.epub", kind: "EPUB" }],
+            ),
+            audioEdition: makeEdition(
+              "Alpha Audio",
+              [{ role: "AUTHOR", name: "Charlie Author" }],
+              [{ path: "/audio/alpha.mp3", kind: "AUDIO" }],
+            ),
+          }),
+          makeAudioLink({
+            id: "al-2",
+            ebookEdition: {
+              work: { titleDisplay: "Bravo Book", createdAt: new Date("2025-06-01") },
+              contributors: [{ role: "AUTHOR", contributor: { nameDisplay: "Alice Author" } }],
+              editionFiles: [{ fileAsset: { absolutePath: "/books/bravo.epub", mediaKind: "EPUB" } }],
+            },
+            audioEdition: makeEdition(
+              "Bravo Audio",
+              [{ role: "AUTHOR", name: "Alice Author" }],
+              [{ path: "/audio/bravo.mp3", kind: "AUDIO" }],
+            ),
+          }),
+        ],
+      };
+    };
+
+    const selectSortOption = async (user: ReturnType<typeof userEvent.setup>, label: string) => {
+      const combobox = screen.getByRole("combobox");
+      await user.click(combobox);
+      await user.click(screen.getByText(label));
+    };
+
+    const getCardTitles = () => {
+      // Each card has two titles (ebook + audio); grab the ebook titles
+      return screen.getAllByText(/Book$/).map((el) => el.textContent);
+    };
+
+    it("sorts by title Z–A", async () => {
+      setupSortableLinks();
+      const user = userEvent.setup();
+      const { Route } = await import("./audio-links");
+      const AudioLinksPage = (Route.options.component as React.ComponentType);
+      render(<AudioLinksPage />);
+      await selectSortOption(user, "Title Z\u2013A");
+      const titles = getCardTitles();
+      expect(titles).toEqual(["Bravo Book", "Alpha Book"]);
+    });
+
+    it("sorts by author A–Z", async () => {
+      setupSortableLinks();
+      const user = userEvent.setup();
+      const { Route } = await import("./audio-links");
+      const AudioLinksPage = (Route.options.component as React.ComponentType);
+      render(<AudioLinksPage />);
+      await selectSortOption(user, "Author A\u2013Z");
+      const titles = getCardTitles();
+      // Alice Author < Charlie Author
+      expect(titles).toEqual(["Bravo Book", "Alpha Book"]);
+    });
+
+    it("sorts by author A–Z with missing author uses fallback", async () => {
+      mockLoaderData = {
+        audioLinks: [
+          makeAudioLink({
+            id: "al-1",
+            ebookEdition: makeEdition("No Author Book", [], [{ path: "/books/no-author.epub", kind: "EPUB" }]),
+            audioEdition: makeEdition("No Author Audio", [], [{ path: "/audio/no-author.mp3", kind: "AUDIO" }]),
+          }),
+          makeAudioLink({
+            id: "al-2",
+            ebookEdition: makeEdition("Has Author Book", [{ role: "AUTHOR", name: "Zach" }], [{ path: "/books/has-author.epub", kind: "EPUB" }]),
+            audioEdition: makeEdition("Has Author Audio", [{ role: "AUTHOR", name: "Zach" }], [{ path: "/audio/has-author.mp3", kind: "AUDIO" }]),
+          }),
+          makeAudioLink({
+            id: "al-3",
+            ebookEdition: makeEdition("Also No Author Book", [], [{ path: "/books/also-no-author.epub", kind: "EPUB" }]),
+            audioEdition: makeEdition("Also No Author Audio", [], [{ path: "/audio/also-no-author.mp3", kind: "AUDIO" }]),
+          }),
+        ],
+      };
+      const user = userEvent.setup();
+      const { Route } = await import("./audio-links");
+      const AudioLinksPage = (Route.options.component as React.ComponentType);
+      render(<AudioLinksPage />);
+      await selectSortOption(user, "Author A\u2013Z");
+      const titles = getCardTitles();
+      // "Zach" < \uffff fallback, so Has Author comes first; two no-author items sort by fallback
+      expect(titles[0]).toBe("Has Author Book");
+    });
+
+    it("sorts by author Z–A with missing author uses fallback", async () => {
+      mockLoaderData = {
+        audioLinks: [
+          makeAudioLink({
+            id: "al-1",
+            ebookEdition: makeEdition("No Author Book", [], [{ path: "/books/no-author.epub", kind: "EPUB" }]),
+            audioEdition: makeEdition("No Author Audio", [], [{ path: "/audio/no-author.mp3", kind: "AUDIO" }]),
+          }),
+          makeAudioLink({
+            id: "al-2",
+            ebookEdition: makeEdition("Has Author Book", [{ role: "AUTHOR", name: "Zach" }], [{ path: "/books/has-author.epub", kind: "EPUB" }]),
+            audioEdition: makeEdition("Has Author Audio", [{ role: "AUTHOR", name: "Zach" }], [{ path: "/audio/has-author.mp3", kind: "AUDIO" }]),
+          }),
+          makeAudioLink({
+            id: "al-3",
+            ebookEdition: makeEdition("Also No Author Book", [], [{ path: "/books/also-no-author.epub", kind: "EPUB" }]),
+            audioEdition: makeEdition("Also No Author Audio", [], [{ path: "/audio/also-no-author.mp3", kind: "AUDIO" }]),
+          }),
+        ],
+      };
+      const user = userEvent.setup();
+      const { Route } = await import("./audio-links");
+      const AudioLinksPage = (Route.options.component as React.ComponentType);
+      render(<AudioLinksPage />);
+      await selectSortOption(user, "Author Z\u2013A");
+      const titles = getCardTitles();
+      // "Zach" > "" fallback, so Has Author comes first
+      expect(titles[0]).toBe("Has Author Book");
+    });
+
+    it("sorts by author Z–A", async () => {
+      setupSortableLinks();
+      const user = userEvent.setup();
+      const { Route } = await import("./audio-links");
+      const AudioLinksPage = (Route.options.component as React.ComponentType);
+      render(<AudioLinksPage />);
+      await selectSortOption(user, "Author Z\u2013A");
+      const titles = getCardTitles();
+      // Charlie Author > Alice Author
+      expect(titles).toEqual(["Alpha Book", "Bravo Book"]);
+    });
+
+    it("sorts by newest first", async () => {
+      setupSortableLinks();
+      const user = userEvent.setup();
+      const { Route } = await import("./audio-links");
+      const AudioLinksPage = (Route.options.component as React.ComponentType);
+      render(<AudioLinksPage />);
+      await selectSortOption(user, "Newest first");
+      const titles = getCardTitles();
+      // Bravo (2025-06-01) > Alpha (2025-01-01)
+      expect(titles).toEqual(["Bravo Book", "Alpha Book"]);
+    });
+
+    it("sorts by oldest first", async () => {
+      setupSortableLinks();
+      const user = userEvent.setup();
+      const { Route } = await import("./audio-links");
+      const AudioLinksPage = (Route.options.component as React.ComponentType);
+      render(<AudioLinksPage />);
+      await selectSortOption(user, "Oldest first");
+      const titles = getCardTitles();
+      // Alpha (2025-01-01) < Bravo (2025-06-01)
+      expect(titles).toEqual(["Alpha Book", "Bravo Book"]);
+    });
   });
 });

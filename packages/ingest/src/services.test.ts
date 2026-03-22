@@ -5756,6 +5756,125 @@ describe("ingest services", () => {
     expect(narratorLinks).toHaveLength(0);
   });
 
+  it("enriches existing audiobook stub edition via title-based fallback when sidecar is in a different directory", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    // Pre-existing stub work (created by SCAN) with no authors
+    addWork(state, {
+      enrichmentStatus: "STUB",
+      id: "stub-work",
+      titleCanonical: "project hail mary",
+      titleDisplay: "Project Hail Mary",
+    });
+    addEdition(state, {
+      formatFamily: FormatFamily.AUDIOBOOK,
+      id: "stub-edition",
+      workId: "stub-work",
+    });
+
+    // Audio file linked to the stub edition — in directory A
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Audiobooks/Project Hail Mary/book.m4b",
+      basename: "book.m4b",
+      extension: "m4b",
+      fullHash: "audiohash",
+      id: "file-audio",
+      mediaKind: MediaKind.AUDIO,
+      relativePath: "Audiobooks/Project Hail Mary/book.m4b",
+    });
+    addEditionFile(state, {
+      editionId: "stub-edition",
+      fileAssetId: "file-audio",
+      id: "ef-audio",
+      role: EditionFileRole.AUDIO_TRACK,
+    });
+
+    // metadata.json sidecar in directory B (different from audio file)
+    // The directory-based lookup won't find sibling audio files here
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Sidecars/Project Hail Mary/metadata.json",
+      basename: "metadata.json",
+      extension: "json",
+      id: "file-sidecar",
+      mediaKind: MediaKind.SIDECAR,
+      relativePath: "Sidecars/Project Hail Mary/metadata.json",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          narrators: ["Ray Porter"],
+          identifiers: { asin: "B08G9PRS1K", unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "audiobook-json",
+        status: "parsed",
+        warnings: [],
+      } as unknown as FileAsset["metadata"],
+    });
+
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-sidecar" });
+
+    // Should reuse existing stub work and edition (title-based fallback)
+    expect(result).toMatchObject({
+      createdEdition: false,
+      createdEditionFile: true,
+      createdWork: false,
+      enrichedExistingWork: true,
+      enqueuedCoverJob: true,
+      skipped: false,
+    });
+    expect(result.workId).toBe("stub-work");
+    expect(result.editionId).toBe("stub-edition");
+
+    // Stub should be enriched
+    const enrichedWork = state.works.get("stub-work");
+    expect(enrichedWork?.enrichmentStatus).toBe("ENRICHED");
+    expect(enrichedWork?.titleDisplay).toBe("Project Hail Mary");
+
+    // Edition should have ASIN from sidecar
+    const enrichedEdition = state.editions.get("stub-edition");
+    expect(enrichedEdition?.asin).toBe("B08G9PRS1K");
+
+    // Should NOT create a second edition
+    const editions = [...state.editions.values()].filter((e) => e.workId === "stub-work");
+    expect(editions).toHaveLength(1);
+
+    // Sidecar should be linked to the existing stub edition
+    const sidecarLink = [...state.editionFiles.values()].find(
+      (ef) => ef.fileAssetId === "file-sidecar" && ef.editionId === "stub-edition",
+    );
+    expect(sidecarLink).toBeDefined();
+
+    // Authors from sidecar should be on the existing edition
+    const authorLinks = [...state.editionContributors.values()].filter(
+      (ec) => ec.editionId === "stub-edition" && ec.role === ContributorRole.AUTHOR,
+    );
+    expect(authorLinks).toHaveLength(1);
+    const authorContributor = state.contributors.get(authorLinks[0]?.contributorId ?? "");
+    expect(authorContributor?.nameDisplay).toBe("Andy Weir");
+
+    // Narrators from sidecar should be on the existing edition
+    const narratorLinks2 = [...state.editionContributors.values()].filter(
+      (ec) => ec.editionId === "stub-edition" && ec.role === ContributorRole.NARRATOR,
+    );
+    expect(narratorLinks2).toHaveLength(1);
+    const narratorContributor = state.contributors.get(narratorLinks2[0]?.contributorId ?? "");
+    expect(narratorContributor?.nameDisplay).toBe("Ray Porter");
+
+    // Cover job should be enqueued
+    expect(enqueueLibraryJob).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ workId: "stub-work", fileAssetId: "file-sidecar" }),
+    );
+  });
+
   it("creates new ebook edition on stub work without checking for existing editions", async () => {
     const state = createEmptyState("/tmp/root");
 
