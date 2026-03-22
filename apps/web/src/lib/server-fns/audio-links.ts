@@ -5,23 +5,43 @@ export const getAudioLinksServerFn = createServerFn({
   method: "GET",
 }).handler(async () => {
   const { db } = await import("@bookhouse/db");
-  return db.audioLink.findMany({
+  const links = await db.audioLink.findMany({
     include: {
       ebookEdition: {
         include: {
           work: true,
           contributors: { include: { contributor: true } },
+          editionFiles: {
+            include: {
+              fileAsset: {
+                select: { absolutePath: true, mediaKind: true },
+              },
+            },
+          },
         },
       },
       audioEdition: {
         include: {
           work: true,
           contributors: { include: { contributor: true } },
+          editionFiles: {
+            include: {
+              fileAsset: {
+                select: { absolutePath: true, mediaKind: true },
+              },
+            },
+          },
         },
       },
     },
     orderBy: { confidence: "desc" },
   });
+
+  // Filter out links where the audio edition has no actual audio files
+  // (e.g., sidecar-only editions from the duplicate edition bug)
+  return links.filter((link) =>
+    link.audioEdition.editionFiles.some((ef) => ef.fileAsset.mediaKind === "AUDIO"),
+  );
 });
 
 export type AudioLinkRow = Awaited<

@@ -3,6 +3,7 @@ import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader } from "~/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { TablePageSkeleton } from "~/components/skeletons/table-page-skeleton";
 import { runMutation } from "~/lib/mutation";
@@ -31,6 +32,53 @@ const STATUS_TABS: { value: StatusTab; label: string }[] = [
   { value: "IGNORED", label: "Ignored" },
 ];
 
+type SortOption = "title-asc" | "title-desc" | "author-asc" | "author-desc" | "date-desc" | "date-asc";
+
+const SORT_OPTIONS: { value: SortOption; label: string }[] = [
+  { value: "title-asc", label: "Title A–Z" },
+  { value: "title-desc", label: "Title Z–A" },
+  { value: "author-asc", label: "Author A–Z" },
+  { value: "author-desc", label: "Author Z–A" },
+  { value: "date-desc", label: "Newest first" },
+  { value: "date-asc", label: "Oldest first" },
+];
+
+interface AudioLinkWithEditions {
+  id: string;
+  matchType: string;
+  confidence: number | null;
+  ebookEdition: EditionWithRelations;
+  audioEdition: EditionWithRelations;
+  reviewStatus: string;
+}
+
+function sortLinks(links: AudioLinkWithEditions[], sort: SortOption): AudioLinkWithEditions[] {
+  const sorted = [...links];
+  sorted.sort((a: AudioLinkWithEditions, b: AudioLinkWithEditions) => {
+    switch (sort) {
+      case "title-asc":
+        return a.ebookEdition.work.titleDisplay.localeCompare(b.ebookEdition.work.titleDisplay);
+      case "title-desc":
+        return b.ebookEdition.work.titleDisplay.localeCompare(a.ebookEdition.work.titleDisplay);
+      case "author-asc": {
+        const authA = getContributorsByRole(a.ebookEdition, "AUTHOR") || "\uffff";
+        const authB = getContributorsByRole(b.ebookEdition, "AUTHOR") || "\uffff";
+        return authA.localeCompare(authB);
+      }
+      case "author-desc": {
+        const authA = getContributorsByRole(a.ebookEdition, "AUTHOR") || "";
+        const authB = getContributorsByRole(b.ebookEdition, "AUTHOR") || "";
+        return authB.localeCompare(authA);
+      }
+      case "date-desc":
+        return new Date(b.ebookEdition.work.createdAt).getTime() - new Date(a.ebookEdition.work.createdAt).getTime();
+      case "date-asc":
+        return new Date(a.ebookEdition.work.createdAt).getTime() - new Date(b.ebookEdition.work.createdAt).getTime();
+    }
+  });
+  return sorted;
+}
+
 function formatConfidence(val: number | null): string {
   if (val == null) return "—";
   return `${String(Math.round(val * 100))}%`;
@@ -42,18 +90,40 @@ const statusVariant: Record<string, "default" | "secondary" | "destructive" | "o
   CONFIRMED: "default",
 };
 
-function getAuthors(edition: AudioLinkRow["ebookEdition"]): string {
-  if (edition.contributors.length === 0) return "";
-  return edition.contributors.map((c) => c.contributor.nameDisplay).join(", ");
+interface EditionContributor {
+  role: string;
+  contributor: { nameDisplay: string };
 }
 
-function SidePanel({ label, authors }: { label: string; authors: string }) {
-  return (
-    <div>
-      <p className="font-medium">{label}</p>
-      {authors && <p className="text-sm text-muted-foreground">{authors}</p>}
-    </div>
-  );
+interface EditionFileWithAsset {
+  fileAsset: { absolutePath: string; mediaKind: string };
+}
+
+interface EditionWithRelations {
+  contributors: EditionContributor[];
+  editionFiles: EditionFileWithAsset[];
+  work: { titleDisplay: string; createdAt: Date };
+}
+
+function getContributorsByRole(edition: EditionWithRelations, role: string): string {
+  return edition.contributors
+    .filter((c: EditionContributor) => c.role === role)
+    .map((c: EditionContributor) => c.contributor.nameDisplay)
+    .join(", ");
+}
+
+function getAudiobookFolder(edition: EditionWithRelations): string | null {
+  const anyFile = edition.editionFiles[0];
+  if (!anyFile) return null;
+  const parts = anyFile.fileAsset.absolutePath.split("/");
+  parts.pop();
+  return parts.join("/");
+}
+
+function getAudioTrackCount(edition: EditionWithRelations): number {
+  return edition.editionFiles.filter(
+    (ef: EditionFileWithAsset) => ef.fileAsset.mediaKind === "AUDIO",
+  ).length;
 }
 
 function AudioLinkCard({
@@ -66,6 +136,15 @@ function AudioLinkCard({
   onIgnore: (id: string) => void;
 }) {
   const isPending = link.reviewStatus === "PENDING";
+
+  const workTitle = link.ebookEdition.work.titleDisplay;
+  const workAuthors = getContributorsByRole(link.ebookEdition, "AUTHOR");
+
+  const audioTitle = link.audioEdition.work.titleDisplay;
+  const audioAuthors = getContributorsByRole(link.audioEdition, "AUTHOR");
+  const audioNarrators = getContributorsByRole(link.audioEdition, "NARRATOR");
+  const audioFolder = getAudiobookFolder(link.audioEdition);
+  const trackCount = getAudioTrackCount(link.audioEdition);
 
   return (
     <Card>
@@ -81,20 +160,34 @@ function AudioLinkCard({
         </Badge>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-2 gap-4">
-          <SidePanel
-            label={link.ebookEdition.work.titleDisplay}
-            authors={getAuthors(link.ebookEdition)}
-          />
-          <SidePanel
-            label={link.audioEdition.work.titleDisplay}
-            authors={getAuthors(link.audioEdition)}
-          />
+        <div className="grid grid-cols-2 gap-6">
+          <div>
+            <p className="text-lg font-medium">{workTitle}</p>
+            {workAuthors && <p className="text-sm text-muted-foreground">{workAuthors}</p>}
+          </div>
+          <div>
+            <p className="text-lg font-medium">{audioTitle}</p>
+            {audioAuthors && <p className="text-sm text-muted-foreground">{audioAuthors}</p>}
+            {audioNarrators && (
+              <p className="text-sm text-muted-foreground">
+                <span className="text-muted-foreground/60">Narrated by </span>
+                {audioNarrators}
+              </p>
+            )}
+            {trackCount > 0 && (
+              <p className="mt-1 text-xs text-muted-foreground/60">
+                {String(trackCount)} audio {trackCount === 1 ? "file" : "files"}
+              </p>
+            )}
+            {audioFolder && (
+              <p className="mt-0.5 break-all text-xs text-muted-foreground/60">{audioFolder}</p>
+            )}
+          </div>
         </div>
         {isPending && (
           <div className="mt-4 flex gap-2">
             <Button variant="outline" size="sm" onClick={() => { onConfirm(link.id); }}>
-              Confirm
+              Merge
             </Button>
             <Button variant="outline" size="sm" onClick={() => { onIgnore(link.id); }}>
               Ignore
@@ -110,15 +203,18 @@ function AudioLinksPage() {
   const { audioLinks } = Route.useLoaderData();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<StatusTab>("ALL");
+  const [sort, setSort] = useState<SortOption>("title-asc");
 
-  const filtered =
+  const filtered = sortLinks(
     activeTab === "ALL"
       ? audioLinks
-      : audioLinks.filter((l) => l.reviewStatus === activeTab);
+      : audioLinks.filter((l: AudioLinkRow) => l.reviewStatus === activeTab),
+    sort,
+  );
 
   async function handleConfirm(id: string) {
     await runMutation(() => confirmAudioLinkServerFn({ data: { id } }), {
-      success: "Audio link confirmed",
+      success: "Audiobook merged into work",
     });
     void router.invalidate();
   }
@@ -134,21 +230,35 @@ function AudioLinksPage() {
     <div>
       <h1 className="text-2xl font-bold">Audio Links</h1>
       <p className="mb-6 mt-2 text-muted-foreground">
-        Review ebook-to-audiobook matches.
+        Merge audiobooks into existing works.
       </p>
 
-      <Tabs
-        value={activeTab}
-        onValueChange={(v) => { setActiveTab(v as StatusTab); }}
-      >
-        <TabsList>
-          {STATUS_TABS.map((tab) => (
-            <TabsTrigger key={tab.value} value={tab.value}>
-              {tab.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
+      <div className="flex items-center justify-between">
+        <Tabs
+          value={activeTab}
+          onValueChange={(v: string) => { setActiveTab(v as StatusTab); }}
+        >
+          <TabsList>
+            {STATUS_TABS.map((tab) => (
+              <TabsTrigger key={tab.value} value={tab.value}>
+                {tab.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+        <Select value={sort} onValueChange={(v: string) => { setSort(v as SortOption); }}>
+          <SelectTrigger className="w-40">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SORT_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
       <div className="mt-4">
         {filtered.length === 0 ? (
