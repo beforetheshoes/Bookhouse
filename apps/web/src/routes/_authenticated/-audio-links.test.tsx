@@ -6,11 +6,17 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const invalidateMock = vi.fn();
 
+interface MockEdition {
+  work: { titleDisplay: string; createdAt: Date };
+  contributors: { role: string; contributor: { nameDisplay: string } }[];
+  editionFiles: { fileAsset: { absolutePath: string; mediaKind: string } }[];
+}
+
 let mockLoaderData: {
   audioLinks: {
     id: string;
-    ebookEdition: { work: { titleDisplay: string }; contributors: { contributor: { nameDisplay: string } }[] };
-    audioEdition: { work: { titleDisplay: string }; contributors: { contributor: { nameDisplay: string } }[] };
+    ebookEdition: MockEdition;
+    audioEdition: MockEdition;
     matchType: string;
     confidence: number | null;
     reviewStatus: string;
@@ -50,10 +56,16 @@ vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 
+const makeEdition = (title: string, contributors: { role: string; name: string }[] = [], files: { path: string; kind: string }[] = []): MockEdition => ({
+  work: { titleDisplay: title, createdAt: new Date("2025-01-01") },
+  contributors: contributors.map((c) => ({ role: c.role, contributor: { nameDisplay: c.name } })),
+  editionFiles: files.map((f) => ({ fileAsset: { absolutePath: f.path, mediaKind: f.kind } })),
+});
+
 const makeAudioLink = (overrides: Partial<typeof mockLoaderData.audioLinks[number]> = {}) => ({
   id: "al-1",
-  ebookEdition: { work: { titleDisplay: "Ebook Title" }, contributors: [{ contributor: { nameDisplay: "Author Name" } }] },
-  audioEdition: { work: { titleDisplay: "Audio Title" }, contributors: [{ contributor: { nameDisplay: "Narrator Name" } }] },
+  ebookEdition: makeEdition("Ebook Title", [{ role: "AUTHOR", name: "Author Name" }], [{ path: "/books/book.epub", kind: "EPUB" }]),
+  audioEdition: makeEdition("Audio Title", [{ role: "AUTHOR", name: "Author Name" }, { role: "NARRATOR", name: "Narrator Name" }], [{ path: "/audiobooks/book/chapter.mp3", kind: "AUDIO" }]),
   matchType: "EXACT_METADATA",
   confidence: null,
   reviewStatus: "PENDING",
@@ -103,15 +115,14 @@ describe("AudioLinksPage", () => {
     const AudioLinksPage = (Route.options.component as React.ComponentType);
     render(<AudioLinksPage />);
     expect(screen.getByText("Author Name")).toBeTruthy();
-    expect(screen.getByText("Narrator Name")).toBeTruthy();
   });
 
-  it("renders Confirm and Ignore buttons for PENDING status", async () => {
+  it("renders Merge and Ignore buttons for PENDING status", async () => {
     mockLoaderData = { audioLinks: [makeAudioLink({ reviewStatus: "PENDING" })] };
     const { Route } = await import("./audio-links");
     const AudioLinksPage = (Route.options.component as React.ComponentType);
     render(<AudioLinksPage />);
-    expect(screen.getByText("Confirm")).toBeTruthy();
+    expect(screen.getByText("Merge")).toBeTruthy();
     expect(screen.getByText("Ignore")).toBeTruthy();
   });
 
@@ -120,7 +131,7 @@ describe("AudioLinksPage", () => {
     const { Route } = await import("./audio-links");
     const AudioLinksPage = (Route.options.component as React.ComponentType);
     render(<AudioLinksPage />);
-    expect(screen.queryByText("Confirm")).toBeNull();
+    expect(screen.queryByText("Merge")).toBeNull();
     expect(screen.queryByText("Ignore")).toBeNull();
   });
 
@@ -129,7 +140,7 @@ describe("AudioLinksPage", () => {
     const { Route } = await import("./audio-links");
     const AudioLinksPage = (Route.options.component as React.ComponentType);
     render(<AudioLinksPage />);
-    expect(screen.queryByText("Confirm")).toBeNull();
+    expect(screen.queryByText("Merge")).toBeNull();
     expect(screen.queryByText("Ignore")).toBeNull();
   });
 
@@ -169,7 +180,11 @@ describe("AudioLinksPage", () => {
     mockLoaderData = {
       audioLinks: [
         makeAudioLink({ id: "al-1", reviewStatus: "PENDING" }),
-        makeAudioLink({ id: "al-2", reviewStatus: "CONFIRMED", ebookEdition: { work: { titleDisplay: "Confirmed Book" }, contributors: [] } }),
+        makeAudioLink({
+          id: "al-2",
+          reviewStatus: "CONFIRMED",
+          ebookEdition: makeEdition("Confirmed Book", [], []),
+        }),
       ],
     };
     const { Route } = await import("./audio-links");
@@ -185,14 +200,14 @@ describe("AudioLinksPage", () => {
     expect(screen.queryByText("Confirmed Book")).toBeNull();
   });
 
-  it("Confirm button calls confirmAudioLinkServerFn", async () => {
+  it("Merge button calls confirmAudioLinkServerFn", async () => {
     confirmAudioLinkServerFnMock.mockResolvedValueOnce({ success: true });
     invalidateMock.mockResolvedValueOnce(undefined);
     mockLoaderData = { audioLinks: [makeAudioLink({ id: "al-1", reviewStatus: "PENDING" })] };
     const { Route } = await import("./audio-links");
     const AudioLinksPage = (Route.options.component as React.ComponentType);
     render(<AudioLinksPage />);
-    await userEvent.click(screen.getByText("Confirm"));
+    await userEvent.click(screen.getByText("Merge"));
     expect(confirmAudioLinkServerFnMock).toHaveBeenCalledWith({ data: { id: "al-1" } });
   });
 

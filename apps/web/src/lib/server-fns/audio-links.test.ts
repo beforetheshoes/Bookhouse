@@ -37,12 +37,26 @@ describe("getAudioLinksServerFn", () => {
           include: {
             work: true,
             contributors: { include: { contributor: true } },
+            editionFiles: {
+              include: {
+                fileAsset: {
+                  select: { absolutePath: true, mediaKind: true },
+                },
+              },
+            },
           },
         },
         audioEdition: {
           include: {
             work: true,
             contributors: { include: { contributor: true } },
+            editionFiles: {
+              include: {
+                fileAsset: {
+                  select: { absolutePath: true, mediaKind: true },
+                },
+              },
+            },
           },
         },
       },
@@ -50,11 +64,34 @@ describe("getAudioLinksServerFn", () => {
     });
   });
 
-  it("returns the result from findMany", async () => {
-    const fakeData = [{ id: "al-1", confidence: 0.95 }];
+  it("returns only links where audio edition has audio files", async () => {
+    const fakeData = [
+      {
+        id: "al-1",
+        confidence: 0.95,
+        audioEdition: { editionFiles: [{ fileAsset: { mediaKind: "AUDIO" } }] },
+      },
+      {
+        id: "al-2",
+        confidence: 0.90,
+        audioEdition: { editionFiles: [{ fileAsset: { mediaKind: "SIDECAR" } }] },
+      },
+    ];
     findManyMock.mockResolvedValue(fakeData);
     const result = await getAudioLinksServerFn();
-    expect(result).toBe(fakeData);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("al-1");
+  });
+
+  it("returns empty array when all links are sidecar-only", async () => {
+    findManyMock.mockResolvedValue([
+      {
+        id: "al-1",
+        audioEdition: { editionFiles: [{ fileAsset: { mediaKind: "SIDECAR" } }] },
+      },
+    ]);
+    const result = await getAudioLinksServerFn();
+    expect(result).toHaveLength(0);
   });
 });
 
