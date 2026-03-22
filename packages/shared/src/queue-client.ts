@@ -2,7 +2,7 @@ import IORedis from "ioredis";
 import { Queue } from "bullmq";
 import { QUEUES, getQueueConnectionConfig } from "./queues.js";
 import type { LibraryJobName, LibraryJobPayload } from "./queues.js";
-import { RETRY_CONFIG } from "./queues.js";
+import { JOB_PRIORITY, RETRY_CONFIG } from "./queues.js";
 import { QueueError } from "./errors.js";
 import { createLogger } from "./logger.js";
 
@@ -29,6 +29,21 @@ export interface EnqueueJobOpts {
   removeDependencyOnFailure?: boolean;
 }
 
+export async function obliterateLibraryQueue(): Promise<void> {
+  // Use flushdb instead of queue.obliterate() — obliterate can't keep up
+  // when the worker is processing jobs faster than they can be removed
+  const connection = getQueueConnection();
+  await connection.flushdb();
+  logger.info("Library queue obliterated via FLUSHDB");
+}
+
+function getQueueConnection(): IORedis {
+  if (queueSingleton === undefined) {
+    getQueue();
+  }
+  return (queueSingleton as NonNullable<typeof queueSingleton>).connection;
+}
+
 export async function enqueueLibraryJob<TName extends LibraryJobName>(
   jobName: TName,
   payload: LibraryJobPayload<TName>,
@@ -40,6 +55,7 @@ export async function enqueueLibraryJob<TName extends LibraryJobName>(
     const job = await queue.add(jobName, payload, {
       attempts: retryConfig.attempts,
       backoff: retryConfig.backoff,
+      priority: JOB_PRIORITY[jobName],
       ...opts,
     });
     const jobId = job.id ?? "unknown";

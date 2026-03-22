@@ -165,6 +165,12 @@ export async function processCoverForWork(
     return { source: "none", updated: false };
   }
 
+  const work = await deps.db.work.findUnique({ where: { id: input.workId } });
+  if (work === null) {
+    deps.logger?.info({ workId: input.workId }, "Work no longer exists, skipping cover processing");
+    return { source: "none", updated: false };
+  }
+
   const outputDir = path.join(input.coverCacheDir, input.workId);
   await deps.resizeCoverImage({ imageBuffer, outputDir }, {} as ResizeCoverDeps);
 

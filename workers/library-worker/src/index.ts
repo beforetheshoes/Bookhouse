@@ -228,6 +228,9 @@ const defaultHandlers: LibraryWorkerHandlers = {
   matchAudio,
 };
 
+const DEFAULT_WORKER_CONCURRENCY = 5;
+const CONCURRENCY_POLL_INTERVAL_MS = 10_000;
+
 export function createLibraryWorker(
   handlers?: LibraryWorkerHandlers,
 ) {
@@ -237,24 +240,46 @@ export function createLibraryWorker(
     createLibraryWorkerProcessor(handlers),
     {
       connection,
+      concurrency: DEFAULT_WORKER_CONCURRENCY,
       removeOnComplete: { count: 1000 },
       removeOnFail: { count: 5000 },
     },
   );
 
-  return { connection, worker };
+  const pollInterval = setInterval(() => {
+    void pollConcurrency(worker);
+  }, CONCURRENCY_POLL_INTERVAL_MS);
+
+  return { connection, pollInterval, worker };
+}
+
+async function pollConcurrency(worker: Pick<Worker, "concurrency">): Promise<void> {
+  try {
+    const setting = await db.appSetting.findUnique({ where: { key: "workerConcurrency" } });
+    const desired = setting ? Number(setting.value) : DEFAULT_WORKER_CONCURRENCY;
+    if (!Number.isNaN(desired) && desired >= 1 && desired <= 20 && worker.concurrency !== desired) {
+      worker.concurrency = desired;
+      logger.info({ concurrency: desired }, "Worker concurrency updated");
+    }
+  } catch {
+    // DB unavailable — keep current concurrency
+  }
 }
 
 export async function shutdownLibraryWorker(
   worker: Pick<Worker, "close">,
   connection: Pick<IORedis, "quit">,
+  pollInterval?: ReturnType<typeof setInterval>,
 ): Promise<void> {
+  if (pollInterval !== undefined) {
+    clearInterval(pollInterval);
+  }
   await worker.close();
   await connection.quit();
 }
 
 export function bootstrapLibraryWorker(): void {
-  const { connection, worker } = createLibraryWorker();
+  const { connection, pollInterval, worker } = createLibraryWorker();
 
   worker.on("ready", () => { logger.info("Worker ready, waiting for jobs"); });
   worker.on("completed", (job) => { logger.info({ jobId: job.id, jobName: job.name }, "Job completed"); });
@@ -264,7 +289,7 @@ export function bootstrapLibraryWorker(): void {
 
   const shutdown = async () => {
     logger.info("Shutting down worker");
-    await shutdownLibraryWorker(worker, connection);
+    await shutdownLibraryWorker(worker, connection, pollInterval);
     process.exit(0);
   };
 

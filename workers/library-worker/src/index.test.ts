@@ -18,6 +18,7 @@ const enrichWorkMock = vi.fn();
 const detectDuplicatesMock = vi.fn();
 const matchAudioMock = vi.fn();
 const importJobUpdateMock = vi.fn();
+const appSettingFindUniqueMock = vi.fn();
 const moveToWaitingChildrenMock = vi.fn();
 const updateDataMock = vi.fn();
 
@@ -40,6 +41,8 @@ class FakeWaitingChildrenError extends Error {
 
 vi.mock("bullmq", () => ({
   Worker: class FakeWorker {
+    concurrency = 5;
+
     constructor(...args: unknown[]) {
       workerConstructorMock(...args);
     }
@@ -61,6 +64,9 @@ const externalLinkUpsertMock = vi.fn();
 
 vi.mock("@bookhouse/db", () => ({
   db: {
+    appSetting: {
+      findUnique: (...args: unknown[]): unknown => appSettingFindUniqueMock(...args),
+    },
     importJob: {
       update: importJobUpdateMock,
     },
@@ -800,12 +806,13 @@ describe("library worker", () => {
       expect.any(Function),
       {
         connection: expect.any(Object) as unknown,
+        concurrency: 5,
         removeOnComplete: { count: 1000 },
         removeOnFail: { count: 5000 },
       },
     );
 
-    await shutdownLibraryWorker(created.worker, created.connection);
+    await shutdownLibraryWorker(created.worker, created.connection, created.pollInterval);
 
     expect(workerCloseMock).toHaveBeenCalledTimes(1);
     expect(quitMock).toHaveBeenCalledTimes(1);
@@ -850,6 +857,61 @@ describe("library worker", () => {
 
     processOnSpy.mockRestore();
     processExitSpy.mockRestore();
+  });
+
+  it("polls DB for concurrency and updates worker", async () => {
+    vi.useFakeTimers();
+    appSettingFindUniqueMock.mockResolvedValue({ key: "workerConcurrency", value: "10" });
+    const { createLibraryWorker, shutdownLibraryWorker } = await import("./index");
+    const created = createLibraryWorker();
+
+    // Advance past the poll interval (10s)
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(appSettingFindUniqueMock).toHaveBeenCalledWith({ where: { key: "workerConcurrency" } });
+    expect(created.worker.concurrency).toBe(10);
+
+    await shutdownLibraryWorker(created.worker, created.connection, created.pollInterval);
+    vi.useRealTimers();
+  });
+
+  it("uses default concurrency when no setting exists in DB", async () => {
+    vi.useFakeTimers();
+    appSettingFindUniqueMock.mockResolvedValue(null);
+    const { createLibraryWorker, shutdownLibraryWorker } = await import("./index");
+    const created = createLibraryWorker();
+
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    // Should stay at default (5)
+    expect(created.worker.concurrency).toBe(5);
+
+    await shutdownLibraryWorker(created.worker, created.connection, created.pollInterval);
+    vi.useRealTimers();
+  });
+
+  it("shuts down cleanly without pollInterval", async () => {
+    const { shutdownLibraryWorker } = await import("./index");
+
+    await shutdownLibraryWorker({ close: workerCloseMock }, { quit: quitMock } as never);
+
+    expect(workerCloseMock).toHaveBeenCalled();
+    expect(quitMock).toHaveBeenCalled();
+  });
+
+  it("keeps current concurrency when DB is unavailable", async () => {
+    vi.useFakeTimers();
+    appSettingFindUniqueMock.mockRejectedValue(new Error("DB down"));
+    const { createLibraryWorker, shutdownLibraryWorker } = await import("./index");
+    const created = createLibraryWorker();
+
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    // Should still be default concurrency
+    expect(created.worker.concurrency).toBe(5);
+
+    await shutdownLibraryWorker(created.worker, created.connection, created.pollInterval);
+    vi.useRealTimers();
   });
 
   it("boots automatically when imported as the entrypoint script", async () => {

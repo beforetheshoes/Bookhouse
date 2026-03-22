@@ -17,6 +17,7 @@ vi.mock("@tanstack/react-start", () => ({
 const findManyMock = vi.fn();
 const countMock = vi.fn();
 const findUniqueMock = vi.fn();
+const updateManyMock = vi.fn();
 const workCountMock = vi.fn();
 vi.mock("@bookhouse/db", () => ({
   db: {
@@ -24,6 +25,7 @@ vi.mock("@bookhouse/db", () => ({
       findMany: findManyMock,
       count: countMock,
       findUnique: findUniqueMock,
+      updateMany: updateManyMock,
     },
     work: {
       count: workCountMock,
@@ -41,14 +43,18 @@ class MockNotFoundError extends Error {
   }
 }
 
+const obliterateLibraryQueueMock = vi.fn().mockResolvedValue(undefined);
+
 vi.mock("@bookhouse/shared", () => ({
   NotFoundError: MockNotFoundError,
+  obliterateLibraryQueue: (...args: unknown[]): unknown => obliterateLibraryQueueMock(...args),
 }));
 
 import {
   getImportJobsServerFn,
   getImportJobDetailServerFn,
   getActiveJobCountServerFn,
+  stopAllJobsServerFn,
 } from "./import-jobs";
 
 describe("getImportJobsServerFn", () => {
@@ -214,5 +220,25 @@ describe("getActiveJobCountServerFn", () => {
     countMock.mockResolvedValue(0);
     const result = await getActiveJobCountServerFn();
     expect(result).toBe(0);
+  });
+});
+
+describe("stopAllJobsServerFn", () => {
+  beforeEach(() => {
+    obliterateLibraryQueueMock.mockClear();
+    updateManyMock.mockReset();
+  });
+
+  it("obliterates queue and marks active jobs as FAILED", async () => {
+    updateManyMock.mockResolvedValue({ count: 5 });
+
+    const result = await stopAllJobsServerFn({} as never);
+
+    expect(obliterateLibraryQueueMock).toHaveBeenCalledTimes(1);
+    expect(updateManyMock).toHaveBeenCalledWith({
+      where: { status: { in: ["QUEUED", "RUNNING"] } },
+      data: { status: "FAILED", error: "Stopped by user", finishedAt: expect.any(Date) as unknown },
+    });
+    expect(result).toEqual({ stoppedCount: 5 });
   });
 });

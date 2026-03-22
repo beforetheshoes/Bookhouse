@@ -106,6 +106,18 @@ export const RETRY_CONFIG: Record<LibraryJobName, JobRetryConfig> = {
   },
 };
 
+// Lower number = higher priority. BullMQ processes prioritized jobs before non-prioritized ones.
+export const JOB_PRIORITY: Record<LibraryJobName, number> = {
+  [LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT]: 1,
+  [LIBRARY_JOB_NAMES.MATCH_AUDIO]: 2,
+  [LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION]: 2,
+  [LIBRARY_JOB_NAMES.DETECT_DUPLICATES]: 3,
+  [LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA]: 4,
+  [LIBRARY_JOB_NAMES.REFRESH_METADATA]: 5,
+  [LIBRARY_JOB_NAMES.PROCESS_COVER]: 6,
+  [LIBRARY_JOB_NAMES.HASH_FILE_ASSET]: 7,
+};
+
 export function getQueueUrl(): string {
   const url = process.env.QUEUE_URL;
   if (!url) {
