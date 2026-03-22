@@ -293,6 +293,32 @@ describe("processCoverForWork", () => {
     expect(result.updated).toBe(true);
   });
 
+  it("skips when cover found but work was deleted", async () => {
+    const workUpdate = vi.fn();
+    const deps = createMockDeps({
+      db: {
+        fileAsset: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: "fa-1",
+            absolutePath: "/books/author/title/book.epub",
+            mediaKind: MediaKind.EPUB,
+          }),
+        },
+        work: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          update: workUpdate,
+        },
+      },
+      extractEpubCover: vi.fn().mockResolvedValue({ buffer: Buffer.from("cover-data") }),
+    });
+
+    const result = await processCoverForWork(createInput(), deps);
+
+    expect(result).toEqual({ source: "none", updated: false });
+    expect(workUpdate).not.toHaveBeenCalled();
+    expect(deps.resizeCoverImage).not.toHaveBeenCalled();
+  });
+
   it("throws when file asset is not found", async () => {
     const deps = createMockDeps({
       db: {
