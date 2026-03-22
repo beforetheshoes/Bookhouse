@@ -142,6 +142,7 @@ describe("processCoverForWork", () => {
           }),
         },
         work: {
+          findUnique: vi.fn().mockResolvedValue({ id: "w-1" }),
           update: vi.fn().mockResolvedValue({}),
         },
       },
@@ -173,7 +174,7 @@ describe("processCoverForWork", () => {
             mediaKind: MediaKind.EPUB,
           }),
         },
-        work: { update: workUpdate },
+        work: { findUnique: vi.fn().mockResolvedValue({ id: "w-1" }), update: workUpdate },
       },
     });
 
@@ -202,7 +203,7 @@ describe("processCoverForWork", () => {
             mediaKind: MediaKind.EPUB,
           }),
         },
-        work: { update: workUpdate },
+        work: { findUnique: vi.fn().mockResolvedValue({ id: "w-1" }), update: workUpdate },
       },
     });
 
@@ -228,6 +229,7 @@ describe("processCoverForWork", () => {
           }),
         },
         work: {
+          findUnique: vi.fn().mockResolvedValue({ id: "w-1" }),
           update: vi.fn().mockResolvedValue({}),
         },
       },
@@ -253,7 +255,7 @@ describe("processCoverForWork", () => {
             mediaKind: MediaKind.EPUB,
           }),
         },
-        work: { update: workUpdate },
+        work: { findUnique: vi.fn().mockResolvedValue({ id: "w-1" }), update: workUpdate },
       },
     });
 
@@ -278,7 +280,7 @@ describe("processCoverForWork", () => {
             mediaKind: MediaKind.EPUB,
           }),
         },
-        work: { update: workUpdate },
+        work: { findUnique: vi.fn().mockResolvedValue({ id: "w-1" }), update: workUpdate },
       },
     });
 
@@ -291,6 +293,32 @@ describe("processCoverForWork", () => {
     expect(result.updated).toBe(true);
   });
 
+  it("skips when cover found but work was deleted", async () => {
+    const workUpdate = vi.fn();
+    const deps = createMockDeps({
+      db: {
+        fileAsset: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: "fa-1",
+            absolutePath: "/books/author/title/book.epub",
+            mediaKind: MediaKind.EPUB,
+          }),
+        },
+        work: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          update: workUpdate,
+        },
+      },
+      extractEpubCover: vi.fn().mockResolvedValue({ buffer: Buffer.from("cover-data") }),
+    });
+
+    const result = await processCoverForWork(createInput(), deps);
+
+    expect(result).toEqual({ source: "none", updated: false });
+    expect(workUpdate).not.toHaveBeenCalled();
+    expect(deps.resizeCoverImage).not.toHaveBeenCalled();
+  });
+
   it("throws when file asset is not found", async () => {
     const deps = createMockDeps({
       db: {
@@ -298,6 +326,7 @@ describe("processCoverForWork", () => {
           findUnique: vi.fn().mockResolvedValue(null),
         },
         work: {
+          findUnique: vi.fn().mockResolvedValue({ id: "w-1" }),
           update: vi.fn().mockResolvedValue({}),
         },
       },
@@ -313,7 +342,7 @@ describe("processCoverForWorkDefault", () => {
   it("throws when file asset is not found", async () => {
     const db = {
       fileAsset: { findUnique: vi.fn().mockResolvedValue(null) },
-      work: { update: vi.fn().mockResolvedValue({}) },
+      work: { findUnique: vi.fn().mockResolvedValue({ id: "w-1" }), update: vi.fn().mockResolvedValue({}) },
     };
     const handler = processCoverForWorkDefault(db);
     await expect(handler({ workId: "w-1", fileAssetId: "fa-missing", coverCacheDir: "/tmp" })).rejects.toThrow(
@@ -333,7 +362,7 @@ describe("processCoverForWorkDefault", () => {
           mediaKind: "AUDIO",
         }),
       },
-      work: { update: vi.fn().mockResolvedValue({}) },
+      work: { findUnique: vi.fn().mockResolvedValue({ id: "w-1" }), update: vi.fn().mockResolvedValue({}) },
     };
     const handler = processCoverForWorkDefault(db);
     const result = await handler({ workId: "w-1", fileAssetId: "fa-1", coverCacheDir: dir });
@@ -356,11 +385,31 @@ describe("processCoverForWorkDefault", () => {
           mediaKind: "AUDIO",
         }),
       },
-      work: { update: vi.fn().mockResolvedValue({}) },
+      work: { findUnique: vi.fn().mockResolvedValue({ id: "w-1" }), update: vi.fn().mockResolvedValue({}) },
     };
     const handler = processCoverForWorkDefault(db);
     const result = await handler({ workId: "w-1", fileAssetId: "fa-1", coverCacheDir: dir });
     expect(result).toEqual({ source: "adjacent", updated: true });
     expect(db.work.update).toHaveBeenCalledWith({ where: { id: "w-1" }, data: { coverPath: "w-1" } });
+  });
+
+  it("skips cover processing when work no longer exists", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "bookhouse-covers-deleted-"));
+    await fsWriteFile(path.join(dir, "track.mp3"), "audio");
+    const workUpdate = vi.fn();
+    const db = {
+      fileAsset: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "fa-1",
+          absolutePath: path.join(dir, "track.mp3"),
+          mediaKind: "AUDIO",
+        }),
+      },
+      work: { findUnique: vi.fn().mockResolvedValue(null), update: workUpdate },
+    };
+    const handler = processCoverForWorkDefault(db);
+    const result = await handler({ workId: "w-1", fileAssetId: "fa-1", coverCacheDir: dir });
+    expect(result).toEqual({ source: "none", updated: false });
+    expect(workUpdate).not.toHaveBeenCalled();
   });
 });

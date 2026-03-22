@@ -15,7 +15,8 @@ let mockLoaderData: {
     libraryRoot: { name: string } | null;
   }[];
   totalCount: number;
-} = { jobs: [], totalCount: 0 };
+  concurrency: number;
+} = { jobs: [], totalCount: 0, concurrency: 5 };
 
 vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
@@ -38,6 +39,16 @@ vi.mock("~/hooks/use-sse", () => ({
 
 vi.mock("~/lib/server-fns/import-jobs", () => ({
   getImportJobsServerFn: vi.fn(),
+  stopAllJobsServerFn: vi.fn().mockResolvedValue({ stoppedCount: 0 }),
+}));
+
+vi.mock("~/lib/server-fns/app-settings", () => ({
+  getWorkerConcurrencyServerFn: vi.fn().mockResolvedValue(5),
+  setWorkerConcurrencyServerFn: vi.fn().mockResolvedValue({ concurrency: 5 }),
+}));
+
+vi.mock("~/lib/mutation", () => ({
+  runMutation: vi.fn(async (fn: () => Promise<unknown>) => fn()),
 }));
 
 vi.mock("~/components/skeletons/table-page-skeleton", () => ({
@@ -86,7 +97,7 @@ const makeJob = (overrides: Partial<{
 
 describe("JobsPage", () => {
   beforeEach(() => {
-    mockLoaderData = { jobs: [], totalCount: 0 };
+    mockLoaderData = { jobs: [], totalCount: 0, concurrency: 5 };
   });
 
   it("renders 'Import Jobs' heading", () => {
@@ -98,6 +109,7 @@ describe("JobsPage", () => {
     mockLoaderData = {
       jobs: [makeJob({ status: "RUNNING" })],
       totalCount: 1,
+      concurrency: 5,
     };
     render(<JobsPage />);
     expect(screen.getAllByText("Auto-refreshing...").length).toBeGreaterThan(0);
@@ -107,6 +119,7 @@ describe("JobsPage", () => {
     mockLoaderData = {
       jobs: [makeJob({ status: "SUCCEEDED" })],
       totalCount: 1,
+      concurrency: 5,
     };
     render(<JobsPage />);
     expect(screen.queryByText("Auto-refreshing...")).toBeNull();
@@ -116,6 +129,7 @@ describe("JobsPage", () => {
     mockLoaderData = {
       jobs: [makeJob({ status: "SUCCEEDED" })],
       totalCount: 42,
+      concurrency: 5,
     };
     render(<JobsPage />);
     expect(screen.getByText("42 total jobs")).toBeTruthy();
@@ -125,6 +139,7 @@ describe("JobsPage", () => {
     mockLoaderData = {
       jobs: [makeJob({ startedAt: null })],
       totalCount: 1,
+      concurrency: 5,
     };
     render(<JobsPage />);
     const dashes = screen.getAllByText("—");
@@ -137,6 +152,7 @@ describe("JobsPage", () => {
     mockLoaderData = {
       jobs: [makeJob({ startedAt: start, finishedAt: end })],
       totalCount: 1,
+      concurrency: 5,
     };
     render(<JobsPage />);
     const durationEls = screen.queryAllByText(/ms$/);
@@ -149,6 +165,7 @@ describe("JobsPage", () => {
     mockLoaderData = {
       jobs: [makeJob({ startedAt: start, finishedAt: end })],
       totalCount: 1,
+      concurrency: 5,
     };
     render(<JobsPage />);
     const durationEls = screen.queryAllByText(/^\d+\.\d+s$/);
@@ -161,6 +178,7 @@ describe("JobsPage", () => {
     mockLoaderData = {
       jobs: [makeJob({ startedAt: start, finishedAt: end })],
       totalCount: 1,
+      concurrency: 5,
     };
     render(<JobsPage />);
     const durationEls = screen.queryAllByText(/m$/);
@@ -171,6 +189,7 @@ describe("JobsPage", () => {
     mockLoaderData = {
       jobs: [makeJob({ kind: "SCAN_LIBRARY" })],
       totalCount: 1,
+      concurrency: 5,
     };
     render(<JobsPage />);
     expect(screen.getByText("SCAN LIBRARY")).toBeTruthy();
@@ -180,16 +199,20 @@ describe("JobsPage", () => {
     mockLoaderData = {
       jobs: [makeJob({ status: "SUCCEEDED" })],
       totalCount: 1,
+      concurrency: 5,
     };
     render(<JobsPage />);
     expect(screen.getByText("1 total job")).toBeTruthy();
   });
 
-  it("loader calls getImportJobsServerFn", async () => {
+  it("loader calls getImportJobsServerFn and getWorkerConcurrencyServerFn", async () => {
     vi.mocked(getImportJobsServerFn).mockResolvedValueOnce({ jobs: [], totalCount: 0, page: 1, pageSize: 20 });
+    const { getWorkerConcurrencyServerFn } = await import("~/lib/server-fns/app-settings");
+    vi.mocked(getWorkerConcurrencyServerFn).mockResolvedValueOnce(5);
     const result = await (Route.options.loader as (args: Record<string, unknown>) => Promise<unknown>)({});
     expect(getImportJobsServerFn).toHaveBeenCalled();
-    expect(result).toEqual({ jobs: [], totalCount: 0, page: 1, pageSize: 20 });
+    expect(getWorkerConcurrencyServerFn).toHaveBeenCalled();
+    expect(result).toEqual({ jobs: [], totalCount: 0, page: 1, pageSize: 20, concurrency: 5 });
   });
 
   it("renders duration using Date.now() when startedAt set but finishedAt is null", () => {
@@ -197,6 +220,7 @@ describe("JobsPage", () => {
     mockLoaderData = {
       jobs: [makeJob({ startedAt: start, finishedAt: null })],
       totalCount: 1,
+      concurrency: 5,
     };
     render(<JobsPage />);
     // Duration should show in seconds (since 2s elapsed)
@@ -208,6 +232,7 @@ describe("JobsPage", () => {
     mockLoaderData = {
       jobs: [makeJob({ status: "UNKNOWN_STATUS" })],
       totalCount: 1,
+      concurrency: 5,
     };
     render(<JobsPage />);
     expect(screen.getByText("UNKNOWN_STATUS")).toBeTruthy();
@@ -220,6 +245,7 @@ describe("JobsPage", () => {
         makeJob({ id: "job-b", createdAt: new Date(Date.now() - 2000).toISOString() }),
       ],
       totalCount: 2,
+      concurrency: 5,
     };
     render(<JobsPage />);
     // Click the "Created" column sort button to trigger accessorFn calls
@@ -227,5 +253,66 @@ describe("JobsPage", () => {
     fireEvent.click(createdBtn);
     // Just verify no crash; accessorFn is now exercised
     expect(createdBtn).toBeTruthy();
+  });
+
+  it("renders Stop All Jobs button", () => {
+    render(<JobsPage />);
+    expect(screen.getByText("Stop All Jobs")).toBeTruthy();
+  });
+
+  it("calls stopAllJobsServerFn when Stop All Jobs is clicked and confirmed", async () => {
+    window.confirm = vi.fn().mockReturnValue(true);
+    const { stopAllJobsServerFn } = await import("~/lib/server-fns/import-jobs");
+    vi.mocked(stopAllJobsServerFn).mockResolvedValueOnce({ stoppedCount: 3 });
+
+    render(<JobsPage />);
+    const btn = screen.getByText("Stop All Jobs");
+    fireEvent.click(btn);
+
+    await vi.waitFor(() => {
+      expect(stopAllJobsServerFn).toHaveBeenCalled();
+    });
+  });
+
+  it("does not call stopAllJobsServerFn when confirm is cancelled", async () => {
+    window.confirm = vi.fn().mockReturnValue(false);
+    const { stopAllJobsServerFn } = await import("~/lib/server-fns/import-jobs");
+    vi.mocked(stopAllJobsServerFn).mockClear();
+
+    render(<JobsPage />);
+    const btn = screen.getByText("Stop All Jobs");
+    fireEvent.click(btn);
+
+    expect(stopAllJobsServerFn).not.toHaveBeenCalled();
+  });
+
+  it("renders concurrency input with loader value", () => {
+    mockLoaderData = { jobs: [], totalCount: 0, concurrency: 8 };
+    render(<JobsPage />);
+    const input = screen.getByDisplayValue("8");
+    expect(input).toBeTruthy();
+  });
+
+  it("shows Save button when concurrency is changed", () => {
+    mockLoaderData = { jobs: [], totalCount: 0, concurrency: 5 };
+    render(<JobsPage />);
+    const input = screen.getByDisplayValue("5");
+    fireEvent.change(input, { target: { value: "10" } });
+    expect(screen.getByText("Save")).toBeTruthy();
+  });
+
+  it("calls setWorkerConcurrencyServerFn when Save is clicked", async () => {
+    mockLoaderData = { jobs: [], totalCount: 0, concurrency: 5 };
+    const { setWorkerConcurrencyServerFn } = await import("~/lib/server-fns/app-settings");
+
+    render(<JobsPage />);
+    const input = screen.getByDisplayValue("5");
+    fireEvent.change(input, { target: { value: "10" } });
+    const saveBtn = screen.getByText("Save");
+    fireEvent.click(saveBtn);
+
+    await vi.waitFor(() => {
+      expect(setWorkerConcurrencyServerFn).toHaveBeenCalledWith({ data: { concurrency: 10 } });
+    });
   });
 });

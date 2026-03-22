@@ -291,6 +291,7 @@ export interface IngestDb {
     findMany(args: EditionFindManyArgs): Promise<EditionRecord[]>;
     findUnique(args: { where: { id: string } }): Promise<EditionRecord | null>;
     update(args: { where: { id: string }; data: Partial<Pick<Edition, "asin" | "isbn10" | "isbn13" | "publisher" | "publishedAt" | "workId">> }): Promise<EditionRecord>;
+    updateMany(args: { where: { workId: string }; data: { workId: string } }): Promise<{ count: number }>;
   };
   series: {
     upsert(args: { name: string }): Promise<{ id: string; name: string }>;
@@ -321,6 +322,7 @@ export interface IngestDb {
 
 export interface IngestLogger {
   info(obj: Record<string, unknown>, msg: string): void;
+  warn(obj: Record<string, unknown>, msg: string): void;
 }
 
 export interface IngestDependencies {
@@ -418,6 +420,7 @@ export interface MatchAudioResult {
   fileAssetId: string;
   skipped: boolean;
   linksCreated: number;
+  mergedWorkIds: Array<{ losingWorkId: string; survivingWorkId: string }>;
 }
 
 const EPUB_PARSER_VERSION = 1;
@@ -890,40 +893,68 @@ async function audioLinkPairExists(
 const FILENAME_BOOST_THRESHOLD = 0.8;
 const CONFIDENCE_BOOST = 0.05;
 
+const MERGE_METADATA_FIELDS = ["description", "language", "coverPath", "seriesId", "seriesPosition", "sortTitle"] as const;
+
+async function mergeWorks(
+  ingestDb: IngestDb,
+  survivingWork: WorkRecord,
+  losingWork: WorkRecord,
+): Promise<void> {
+  // Reconcile metadata: fill nulls on surviving work from losing work
+  const updates: Partial<Pick<WorkRecord, typeof MERGE_METADATA_FIELDS[number]>> = {};
+  let hasUpdates = false;
+  for (const field of MERGE_METADATA_FIELDS) {
+    if (survivingWork[field] === null && losingWork[field] !== null) {
+      (updates as Record<string, unknown>)[field] = losingWork[field];
+      hasUpdates = true;
+    }
+  }
+  if (hasUpdates) {
+    await ingestDb.work.update({ where: { id: survivingWork.id }, data: updates });
+  }
+
+  // Move all editions from losing work to surviving work
+  await ingestDb.edition.updateMany({ where: { workId: losingWork.id }, data: { workId: survivingWork.id } });
+
+  // Delete losing work (cascades CollectionItems, WorkProgressPreferences)
+  await ingestDb.work.delete({ where: { id: losingWork.id } });
+}
+
 async function matchAudioImpl(
   input: MatchAudioInput,
   ingestDb: IngestDb,
 ): Promise<MatchAudioResult> {
   const fileAsset = await ingestDb.fileAsset.findUnique({ where: { id: input.fileAssetId } });
   if (fileAsset === null) {
-    return { fileAssetId: input.fileAssetId, skipped: true, linksCreated: 0 };
+    return { fileAssetId: input.fileAssetId, skipped: true, linksCreated: 0, mergedWorkIds: [] };
   }
 
   const editionFile = await ingestDb.editionFile.findFirst({
     where: { fileAssetId: fileAsset.id },
   });
   if (editionFile === null) {
-    return { fileAssetId: input.fileAssetId, skipped: true, linksCreated: 0 };
+    return { fileAssetId: input.fileAssetId, skipped: true, linksCreated: 0, mergedWorkIds: [] };
   }
 
   const edition = await ingestDb.edition.findUnique({ where: { id: editionFile.editionId } });
   if (edition === null) {
-    return { fileAssetId: input.fileAssetId, skipped: true, linksCreated: 0 };
+    return { fileAssetId: input.fileAssetId, skipped: true, linksCreated: 0, mergedWorkIds: [] };
   }
 
   const work = await ingestDb.work.findUnique({ where: { id: edition.workId } });
   if (!work || !work.titleCanonical) {
-    return { fileAssetId: input.fileAssetId, skipped: true, linksCreated: 0 };
+    return { fileAssetId: input.fileAssetId, skipped: true, linksCreated: 0, mergedWorkIds: [] };
   }
 
   const isAudiobook = edition.formatFamily === "AUDIOBOOK";
   const isEbook = edition.formatFamily === "EBOOK";
   if (!isAudiobook && !isEbook) {
-    return { fileAssetId: input.fileAssetId, skipped: true, linksCreated: 0 };
+    return { fileAssetId: input.fileAssetId, skipped: true, linksCreated: 0, mergedWorkIds: [] };
   }
 
   const targetFormat = isAudiobook ? "EBOOK" : "AUDIOBOOK";
   let linksCreated = 0;
+  const mergedWorkIds: Array<{ losingWorkId: string; survivingWorkId: string }> = [];
 
   const myEdition = edition;
   const myFileAsset = fileAsset;
@@ -998,9 +1029,10 @@ async function matchAudioImpl(
     await createLinkForEdition(otherEdition, 1.0, "SAME_WORK");
   }
 
-  // Check cross-work editions of opposite format (EXACT_METADATA match type)
+  // Check cross-work editions of opposite format — merge matching works
+  let currentWorkId = work.id;
   const otherWorks = await ingestDb.work.findMany({
-    where: { NOT: { id: work.id } },
+    where: { NOT: { id: currentWorkId } },
     include: { editions: { include: { contributors: { include: { contributor: true } } } } },
   });
 
@@ -1013,17 +1045,39 @@ async function matchAudioImpl(
     const otherAuthors = getAuthorCanonicalsForWork(otherWork);
     if (myAuthors.length === 0 && otherAuthors.length === 0) continue;
 
-    const authorSim = computeAuthorSimilarity(myAuthors, otherAuthors);
-    if (authorSim < SIMILARITY_THRESHOLD) continue;
+    let matchConfidence: number;
+    let matchType: string;
 
+    if (myAuthors.length === 0 || otherAuthors.length === 0) {
+      // Title-only: require exact canonical title match when one side has no authors
+      if (work.titleCanonical !== otherWork.titleCanonical) continue;
+      matchConfidence = titleSim;
+      matchType = "TITLE_ONLY";
+    } else {
+      const authorSim = computeAuthorSimilarity(myAuthors, otherAuthors);
+      if (authorSim < SIMILARITY_THRESHOLD) continue;
+      matchConfidence = Math.min(titleSim, authorSim);
+      matchType = "SAME_WORK";
+    }
+
+    // Merge: ebook work survives, audiobook work is absorbed
+    const survivingWorkId = isAudiobook ? otherWork.id : currentWorkId;
+    const losingWorkId = isAudiobook ? currentWorkId : otherWork.id;
+    const survivingWorkRecord = isAudiobook ? otherWork : work;
+    const losingWorkRecord = isAudiobook ? work : otherWork;
+    await mergeWorks(ingestDb, survivingWorkRecord, losingWorkRecord);
+    mergedWorkIds.push({ losingWorkId, survivingWorkId });
+    currentWorkId = survivingWorkId;
+
+    // After merge, editions are on the same work — create links
     const oppositeEditions = otherWork.editions.filter((e) => e.formatFamily === targetFormat);
 
     for (const otherEdition of oppositeEditions) {
-      await createLinkForEdition(otherEdition, Math.min(titleSim, authorSim), "EXACT_METADATA");
+      await createLinkForEdition(otherEdition, matchConfidence, matchType);
     }
   }
 
-  return { fileAssetId: input.fileAssetId, skipped: false, linksCreated };
+  return { fileAssetId: input.fileAssetId, skipped: false, linksCreated, mergedWorkIds };
 }
 
 export function createIngestServices(
@@ -1487,6 +1541,25 @@ export function createIngestServices(
         };
       }
 
+      if (errorCode === "EPERM" || errorCode === "EACCES") {
+        logger.warn(
+          { fileAssetId: fileAsset.id, path: fileAsset.absolutePath, errorCode },
+          "Permission denied reading file, marking as inaccessible",
+        );
+        await ingestDb.fileAsset.update({
+          where: { id: fileAsset.id },
+          data: {
+            availabilityStatus: AvailabilityStatus.MISSING,
+            lastSeenAt: now,
+          },
+        });
+
+        return {
+          availabilityStatus: AvailabilityStatus.MISSING,
+          fileAssetId: fileAsset.id,
+        };
+      }
+
       throw error;
     }
   }
@@ -1812,6 +1885,12 @@ export function createIngestServices(
           await enqueueJob(LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, {
             fileAssetId: fileAsset.id,
           });
+        } else {
+          // Audiobook lacks full metadata — skip edition matching but still attempt
+          // cross-format audio linking using the stub's directory-derived title
+          await enqueueJob(LIBRARY_JOB_NAMES.MATCH_AUDIO, {
+            fileAssetId: fileAsset.id,
+          });
         }
 
         return {
@@ -2119,6 +2198,88 @@ export function createIngestServices(
       };
     }
 
+    // For audiobook sidecars, first check for an existing audiobook edition in the
+    // same directory. This handles the common case where the sidecar's metadata title
+    // differs from the directory-derived title (e.g., "The One Device: The Secret
+    // History of the iPhone" vs "The One Device - The Secret History of the iPhone").
+    if (isAudiobook && fileAsset.mediaKind === MediaKind.SIDECAR) {
+      const sidecarDir = path.dirname(fileAsset.absolutePath);
+      const siblingAudioFiles = await ingestDb.fileAsset.findByDirectory({
+        directoryPath: sidecarDir,
+        mediaKinds: [MediaKind.AUDIO],
+      });
+
+      if (siblingAudioFiles.length > 0) {
+        // Find the edition that any sibling audio file is linked to
+        for (const sibling of siblingAudioFiles) {
+          const siblingLink = await ingestDb.editionFile.findFirst({
+            where: { fileAssetId: sibling.id },
+          });
+          if (siblingLink !== null) {
+            const siblingEdition = await ingestDb.edition.findUnique({
+              where: { id: siblingLink.editionId },
+            });
+            if (siblingEdition && siblingEdition.formatFamily === FormatFamily.AUDIOBOOK) {
+              const siblingWork = await ingestDb.work.findUnique({ where: { id: siblingEdition.workId } });
+              if (!siblingWork) continue;
+
+              const identifiers = storedMetadata.normalized?.identifiers;
+
+              // Enrich the work
+              if (siblingWork.enrichmentStatus === "STUB") {
+                await ingestDb.work.update({
+                  where: { id: siblingEdition.workId },
+                  data: {
+                    description: storedMetadata.normalized?.description ?? null,
+                    enrichmentStatus: "ENRICHED",
+                    language: storedMetadata.normalized?.language ?? null,
+                    sortTitle: null,
+                    titleCanonical: matchableMetadata.titleCanonical,
+                    titleDisplay: matchableMetadata.title,
+                  },
+                });
+              }
+
+              // Enrich the edition
+              await ingestDb.edition.update({
+                where: { id: siblingEdition.id },
+                data: {
+                  asin: identifiers?.asin ?? siblingEdition.asin,
+                  isbn10: identifiers?.isbn10 ?? siblingEdition.isbn10,
+                  isbn13: identifiers?.isbn13 ?? siblingEdition.isbn13,
+                },
+              });
+
+              await ensureContributors(ingestDb, siblingEdition.id, matchableMetadata.authors, ContributorRole.AUTHOR);
+
+              if (storedMetadata.normalized?.narrators && storedMetadata.normalized.narrators.length > 0) {
+                await ensureContributors(ingestDb, siblingEdition.id, storedMetadata.normalized.narrators, ContributorRole.NARRATOR);
+              }
+
+              await ensureEditionFileLink(ingestDb, siblingEdition.id, fileAsset.id);
+
+              await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
+                workId: siblingEdition.workId,
+                fileAssetId: fileAsset.id,
+              });
+
+              return {
+                createdEdition: false,
+                createdEditionFile: true,
+                createdWork: false,
+                editionId: siblingEdition.id,
+                enrichedExistingWork: true,
+                enqueuedCoverJob: true,
+                fileAssetId: fileAsset.id,
+                skipped: false,
+                workId: siblingEdition.workId,
+              };
+            }
+          }
+        }
+      }
+    }
+
     const identifiers = storedMetadata.normalized?.identifiers;
     const editionMatch =
       (identifiers?.isbn13
@@ -2166,12 +2327,20 @@ export function createIngestServices(
       },
       where: { titleCanonical: matchableMetadata.titleCanonical },
     });
-    const matchingWork = matchingWorks.find((work) => {
+    let matchingWork = matchingWorks.find((work) => {
       const existingAuthors = getAuthorCanonicalsForWork(work);
       return existingAuthors.length > 0 &&
         existingAuthors.length === matchableMetadata.authorCanonicals.length &&
         existingAuthors.every((author, index) => author === matchableMetadata.authorCanonicals[index]);
     });
+
+    // Fallback for audiobook stubs: match by title when stub has no authors
+    if (matchingWork === undefined && isAudiobook) {
+      matchingWork = matchingWorks.find((work) =>
+        work.enrichmentStatus === "STUB" &&
+        getAuthorCanonicalsForWork(work).length === 0,
+      );
+    }
 
     let workId: string;
     let createdWork = false;
@@ -2188,6 +2357,66 @@ export function createIngestServices(
       createdWork = true;
     } else {
       workId = matchingWork.id;
+
+      // Enrich stub work with sidecar metadata
+      if (matchingWork.enrichmentStatus === "STUB") {
+        await ingestDb.work.update({
+          where: { id: matchingWork.id },
+          data: {
+            description: storedMetadata.normalized?.description ?? null,
+            enrichmentStatus: "ENRICHED",
+            language: storedMetadata.normalized?.language ?? null,
+            sortTitle: null,
+            titleCanonical: matchableMetadata.titleCanonical,
+            titleDisplay: matchableMetadata.title,
+          },
+        });
+
+        // Check if the stub work already has an audiobook edition we should enrich
+        // instead of creating a new one (e.g., SCAN created a stub edition from the .m4b)
+        if (isAudiobook) {
+          const existingAudioEdition = matchingWork.editions.find(
+            (e) => e.formatFamily === FormatFamily.AUDIOBOOK,
+          );
+
+          if (existingAudioEdition) {
+            // Enrich existing edition with sidecar metadata
+            await ingestDb.edition.update({
+              where: { id: existingAudioEdition.id },
+              data: {
+                asin: identifiers?.asin ?? existingAudioEdition.asin,
+                isbn10: identifiers?.isbn10 ?? existingAudioEdition.isbn10,
+                isbn13: identifiers?.isbn13 ?? existingAudioEdition.isbn13,
+              },
+            });
+
+            await ensureContributors(ingestDb, existingAudioEdition.id, matchableMetadata.authors, ContributorRole.AUTHOR);
+
+            if (storedMetadata.normalized?.narrators && storedMetadata.normalized.narrators.length > 0) {
+              await ensureContributors(ingestDb, existingAudioEdition.id, storedMetadata.normalized.narrators, ContributorRole.NARRATOR);
+            }
+
+            await ensureEditionFileLink(ingestDb, existingAudioEdition.id, fileAsset.id);
+
+            await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
+              workId,
+              fileAssetId: fileAsset.id,
+            });
+
+            return {
+              createdEdition: false,
+              createdEditionFile: true,
+              createdWork: false,
+              editionId: existingAudioEdition.id,
+              enrichedExistingWork: true,
+              enqueuedCoverJob: true,
+              fileAssetId: fileAsset.id,
+              skipped: false,
+              workId,
+            };
+          }
+        }
+      }
     }
 
     const formatFamily = isAudiobook ? FormatFamily.AUDIOBOOK : FormatFamily.EBOOK;

@@ -104,3 +104,19 @@ export const getActiveJobCountServerFn = createServerFn({
 
   return db.importJob.count({ where: { status: { in: ["QUEUED", "RUNNING"] } } });
 });
+
+export const stopAllJobsServerFn = createServerFn({
+  method: "POST",
+}).handler(async () => {
+  const { db } = await import("@bookhouse/db");
+  const { obliterateLibraryQueue } = await import("@bookhouse/shared");
+
+  await obliterateLibraryQueue();
+
+  const result = await db.importJob.updateMany({
+    where: { status: { in: ["QUEUED", "RUNNING"] } },
+    data: { status: "FAILED", error: "Stopped by user", finishedAt: new Date() },
+  });
+
+  return { stoppedCount: result.count };
+});

@@ -1,23 +1,32 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState } from "react";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import { formatDistanceToNow } from "date-fns";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, OctagonX } from "lucide-react";
 import { VirtualizedDataTable, DataTableColumnHeader } from "~/components/data-table";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import { Input } from "~/components/ui/input";
 import { TablePageSkeleton } from "~/components/skeletons/table-page-skeleton";
 import {
   getImportJobsServerFn,
+  stopAllJobsServerFn,
   type ImportJobRow,
 } from "~/lib/server-fns/import-jobs";
+import {
+  getWorkerConcurrencyServerFn,
+  setWorkerConcurrencyServerFn,
+} from "~/lib/server-fns/app-settings";
+import { runMutation } from "~/lib/mutation";
 import { useSSE } from "~/hooks/use-sse";
 
 export const Route = createFileRoute("/_authenticated/settings/jobs/")({
   loader: async () => {
-    const result = await getImportJobsServerFn({
-      data: { page: 1, pageSize: 100 },
-    });
-    return result;
+    const [result, concurrency] = await Promise.all([
+      getImportJobsServerFn({ data: { page: 1, pageSize: 100 } }),
+      getWorkerConcurrencyServerFn(),
+    ]);
+    return { ...result, concurrency };
   },
   pendingComponent: TablePageSkeleton,
   component: JobsPage,
@@ -108,7 +117,12 @@ const columns: ColumnDef<ImportJobRow>[] = [
 ];
 
 function JobsPage() {
-  const { jobs, totalCount } = Route.useLoaderData();
+  const { jobs, totalCount, concurrency: initialConcurrency } = Route.useLoaderData();
+  const router = useRouter();
+  const [stopping, setStopping] = useState(false);
+  const [concurrency, setConcurrency] = useState(initialConcurrency);
+  const [savingConcurrency, setSavingConcurrency] = useState(false);
+  const concurrencyChanged = concurrency !== initialConcurrency;
 
   const hasActiveJobs = jobs.some(
     (j) => j.status === "QUEUED" || j.status === "RUNNING",
@@ -116,18 +130,65 @@ function JobsPage() {
 
   useSSE({ enabled: hasActiveJobs });
 
+  async function handleStopAll() {
+    if (!window.confirm("Stop all running and queued jobs? This cannot be undone.")) return;
+    setStopping(true);
+    await runMutation(() => stopAllJobsServerFn(), { success: "All jobs stopped" });
+    setStopping(false);
+    void router.invalidate();
+  }
+
+  async function handleSaveConcurrency() {
+    setSavingConcurrency(true);
+    await runMutation(
+      () => setWorkerConcurrencyServerFn({ data: { concurrency } }),
+      { success: `Worker concurrency set to ${String(concurrency)}` },
+    );
+    setSavingConcurrency(false);
+    void router.invalidate();
+  }
+
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold">Import Jobs</h1>
-        <p className="mt-2 text-muted-foreground">
-          Monitor the status of library import and processing jobs.
-          {hasActiveJobs && (
-            <span className="ml-2 text-sm text-blue-600">
-              Auto-refreshing...
-            </span>
-          )}
-        </p>
+      <div className="mb-6 flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Import Jobs</h1>
+          <p className="mt-2 text-muted-foreground">
+            Monitor the status of library import and processing jobs.
+            {hasActiveJobs && (
+              <span className="ml-2 text-sm text-blue-600">
+                Auto-refreshing...
+              </span>
+            )}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-muted-foreground whitespace-nowrap">Concurrency:</label>
+            <Input
+              type="number"
+              min={1}
+              max={20}
+              value={concurrency}
+              onChange={(e) => { setConcurrency(Number(e.target.value)); }}
+              className="w-20"
+            />
+            {concurrencyChanged && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void handleSaveConcurrency()}
+                disabled={savingConcurrency}
+              >
+                Save
+              </Button>
+            )}
+          </div>
+          <Button variant="destructive" size="sm" onClick={() => void handleStopAll()} disabled={stopping}>
+            <OctagonX className="mr-2 size-4" />
+            Stop All Jobs
+          </Button>
+        </div>
       </div>
       <VirtualizedDataTable
         columns={columns}

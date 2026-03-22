@@ -345,6 +345,17 @@ function createTestDb(state: TestState): IngestDb {
         state.editions.set(updated.id, updated);
         return updated;
       },
+      async updateMany({ data, where }) {
+        await Promise.resolve();
+        let count = 0;
+        for (const [id, edition] of state.editions) {
+          if (edition.workId === where.workId) {
+            state.editions.set(id, { ...edition, ...data });
+            count += 1;
+          }
+        }
+        return { count };
+      },
     },
     series: {
       async upsert({ name }) {
@@ -2116,6 +2127,53 @@ describe("ingest services", () => {
       availabilityStatus: AvailabilityStatus.MISSING,
       fullHash: "next-full",
       partialHash: "next-partial",
+    });
+  });
+
+  it("marks file as MISSING when hash fails with EPERM", async () => {
+    const state = createEmptyState("/tmp/root");
+    const existing: TestFileAsset = {
+      absolutePath: "/tmp/root/book.epub",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.epub",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "epub",
+      fullHash: null,
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.EPUB,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: null,
+      relativePath: "book.epub",
+      sizeBytes: 4n,
+    };
+    state.fileAssets.set(existing.absolutePath, existing);
+    state.fileAssetsById.set(existing.id, existing);
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      hashFile: vi.fn(async () => {
+        await Promise.resolve();
+        const error = new Error("permission denied") as NodeJS.ErrnoException;
+        error.code = "EPERM";
+        throw error;
+      }),
+    });
+
+    const result = await services.hashFileAsset({
+      fileAssetId: "file-1",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(result).toEqual({
+      availabilityStatus: AvailabilityStatus.MISSING,
+      fileAssetId: "file-1",
+    });
+    expect(state.fileAssetsById.get("file-1")).toMatchObject({
+      availabilityStatus: AvailabilityStatus.MISSING,
     });
   });
 
@@ -5269,7 +5327,7 @@ describe("ingest services", () => {
     });
   });
 
-  it("does not enqueue MATCH_FILE_ASSET_TO_EDITION for AUDIO without enough metadata", async () => {
+  it("enqueues MATCH_AUDIO directly when audio ID3 has no title and no authors", async () => {
     const state = createEmptyState("/tmp/root");
     const audioAsset: TestFileAsset = {
       absolutePath: "/tmp/root/Author/Book/chapter01.mp3",
@@ -5323,6 +5381,67 @@ describe("ingest services", () => {
     expect(enqueueLibraryJob).not.toHaveBeenCalledWith(
       LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION,
       expect.anything(),
+    );
+    expect(enqueueLibraryJob).toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.MATCH_AUDIO,
+      { fileAssetId: "file-1" },
+    );
+  });
+
+  it("enqueues MATCH_AUDIO directly when audio ID3 has title but no authors", async () => {
+    const state = createEmptyState("/tmp/root");
+    const audioAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/chapter01.mp3",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "chapter01.mp3",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "mp3",
+      fullHash: "hash",
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.AUDIO,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/chapter01.mp3",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(audioAsset.absolutePath, audioAsset);
+    state.fileAssetsById.set(audioAsset.id, audioAsset);
+
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+      parseAudioId3: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          title: undefined,
+          album: "Project Hail Mary",
+          artist: undefined,
+          albumArtist: undefined,
+          year: undefined,
+          genres: [],
+          comment: undefined,
+          trackNumber: undefined,
+          trackTotal: undefined,
+        };
+      }),
+    });
+
+    await services.parseFileAssetMetadata({
+      fileAssetId: "file-1",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(enqueueLibraryJob).not.toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION,
+      expect.anything(),
+    );
+    expect(enqueueLibraryJob).toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.MATCH_AUDIO,
+      { fileAssetId: "file-1" },
     );
   });
 
@@ -5406,6 +5525,941 @@ describe("ingest services", () => {
     );
     expect(audioTrackLinks).toHaveLength(1);
     expect(audioTrackLinks[0]?.fileAssetId).toBe("file-audio");
+  });
+
+  it("reuses existing audiobook stub work when sidecar matches by title but stub has no authors", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    // Pre-existing stub work (created by SCAN) with no authors
+    addWork(state, {
+      enrichmentStatus: "STUB",
+      id: "stub-work",
+      titleCanonical: "project hail mary",
+      titleDisplay: "Project Hail Mary",
+    });
+    addEdition(state, {
+      formatFamily: FormatFamily.AUDIOBOOK,
+      id: "stub-edition",
+      workId: "stub-work",
+    });
+
+    // Audio file already linked to the stub edition (created during SCAN)
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Book/book.m4b",
+      basename: "book.m4b",
+      extension: "m4b",
+      fullHash: "audiohash",
+      id: "file-audio",
+      mediaKind: MediaKind.AUDIO,
+      relativePath: "Author/Book/book.m4b",
+    });
+    addEditionFile(state, {
+      editionId: "stub-edition",
+      fileAssetId: "file-audio",
+      id: "ef-audio",
+      role: EditionFileRole.AUDIO_TRACK,
+    });
+
+    // metadata.json sidecar with full metadata
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Book/metadata.json",
+      basename: "metadata.json",
+      extension: "json",
+      id: "file-sidecar",
+      mediaKind: MediaKind.SIDECAR,
+      relativePath: "Author/Book/metadata.json",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          narrators: ["Ray Porter"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "audiobook-json",
+        status: "parsed",
+        warnings: [],
+      } as unknown as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-sidecar" });
+
+    // Should reuse existing stub work, not create a new one
+    expect(result).toMatchObject({
+      createdEdition: false,
+      createdWork: false,
+      skipped: false,
+    });
+    expect(result.workId).toBe("stub-work");
+    expect(result.editionId).toBe("stub-edition");
+
+    // Stub should be enriched
+    const enrichedWork = state.works.get("stub-work");
+    expect(enrichedWork?.enrichmentStatus).toBe("ENRICHED");
+    expect(enrichedWork?.titleDisplay).toBe("Project Hail Mary");
+
+    // Should NOT create a second edition — should enrich the existing stub edition
+    const editions = [...state.editions.values()].filter((e) => e.workId === "stub-work");
+    expect(editions).toHaveLength(1);
+    expect(editions[0]?.id).toBe("stub-edition");
+
+    // Sidecar should be linked to the existing stub edition
+    const sidecarLink = [...state.editionFiles.values()].find(
+      (ef) => ef.fileAssetId === "file-sidecar" && ef.editionId === "stub-edition",
+    );
+    expect(sidecarLink).toBeDefined();
+
+    // Existing stub edition should have authors from sidecar
+    const authorLinks = [...state.editionContributors.values()].filter(
+      (ec) => ec.editionId === "stub-edition" && ec.role === ContributorRole.AUTHOR,
+    );
+    expect(authorLinks).toHaveLength(1);
+    const firstAuthor = authorLinks[0];
+    expect(firstAuthor).toBeDefined();
+    const authorContributor = state.contributors.get(firstAuthor?.contributorId ?? "");
+    expect(authorContributor?.nameDisplay).toBe("Andy Weir");
+
+    // Existing stub edition should have narrators from sidecar
+    const narratorLinks = [...state.editionContributors.values()].filter(
+      (ec) => ec.editionId === "stub-edition" && ec.role === ContributorRole.NARRATOR,
+    );
+    expect(narratorLinks).toHaveLength(1);
+    const firstNarrator = narratorLinks[0];
+    expect(firstNarrator).toBeDefined();
+    const narratorContributor = state.contributors.get(firstNarrator?.contributorId ?? "");
+    expect(narratorContributor?.nameDisplay).toBe("Ray Porter");
+  });
+
+  it("enriches existing audiobook stub edition when sidecar title differs from directory-derived title", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    // Pre-existing stub work created by SCAN with directory-derived title
+    // Directory is "The One Device - The Secret History of the iPhone"
+    // but metadata.json says "The One Device: The Secret History of the iPhone"
+    addWork(state, {
+      enrichmentStatus: "STUB",
+      id: "stub-work",
+      titleCanonical: "one device secret history of iphone",
+      titleDisplay: "The One Device - The Secret History of the iPhone",
+    });
+    addEdition(state, {
+      formatFamily: FormatFamily.AUDIOBOOK,
+      id: "stub-edition",
+      workId: "stub-work",
+    });
+
+    // Audio file already linked to the stub edition (created during SCAN)
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Brian Merchant/The One Device - The Secret History of the iPhone/book.m4b",
+      basename: "book.m4b",
+      extension: "m4b",
+      fullHash: "audiohash",
+      id: "file-audio",
+      mediaKind: MediaKind.AUDIO,
+      relativePath: "Brian Merchant/The One Device - The Secret History of the iPhone/book.m4b",
+    });
+    addEditionFile(state, {
+      editionId: "stub-edition",
+      fileAssetId: "file-audio",
+      id: "ef-audio",
+      role: EditionFileRole.AUDIO_TRACK,
+    });
+
+    // metadata.json sidecar with DIFFERENT title than directory
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Brian Merchant/The One Device - The Secret History of the iPhone/metadata.json",
+      basename: "metadata.json",
+      extension: "json",
+      id: "file-sidecar",
+      mediaKind: MediaKind.SIDECAR,
+      relativePath: "Brian Merchant/The One Device - The Secret History of the iPhone/metadata.json",
+      metadata: {
+        normalized: {
+          authors: ["Brian Merchant"],
+          narrators: ["Foster Jones"],
+          identifiers: { unknown: [] },
+          title: "The One Device: The Secret History of the iPhone",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "audiobook-json",
+        status: "parsed",
+        warnings: [],
+      } as unknown as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-sidecar" });
+
+    // Should reuse existing stub work, not create a new one
+    expect(result).toMatchObject({
+      createdEdition: false,
+      createdWork: false,
+      skipped: false,
+    });
+    expect(result.workId).toBe("stub-work");
+    expect(result.editionId).toBe("stub-edition");
+
+    // Should NOT create a second edition
+    const editions = [...state.editions.values()].filter((e) => e.workId === "stub-work");
+    expect(editions).toHaveLength(1);
+
+    // Stub should be enriched with sidecar's better title
+    const enrichedWork = state.works.get("stub-work");
+    expect(enrichedWork?.enrichmentStatus).toBe("ENRICHED");
+
+    // Sidecar should be linked to the existing stub edition
+    const sidecarLink = [...state.editionFiles.values()].find(
+      (ef) => ef.fileAssetId === "file-sidecar" && ef.editionId === "stub-edition",
+    );
+    expect(sidecarLink).toBeDefined();
+
+    // Authors and narrators from sidecar should be on the existing edition
+    const authorLinks = [...state.editionContributors.values()].filter(
+      (ec) => ec.editionId === "stub-edition" && ec.role === ContributorRole.AUTHOR,
+    );
+    expect(authorLinks).toHaveLength(1);
+
+    const narratorLinks = [...state.editionContributors.values()].filter(
+      (ec) => ec.editionId === "stub-edition" && ec.role === ContributorRole.NARRATOR,
+    );
+    expect(narratorLinks).toHaveLength(1);
+  });
+
+  it("enriches existing audiobook edition via directory match when work is already ENRICHED", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    addWork(state, {
+      enrichmentStatus: "ENRICHED",
+      id: "enriched-work",
+      titleCanonical: "some book",
+      titleDisplay: "Some Book",
+    });
+    addEdition(state, {
+      formatFamily: FormatFamily.AUDIOBOOK,
+      id: "audio-edition",
+      workId: "enriched-work",
+    });
+
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Some Book/book.m4b",
+      basename: "book.m4b",
+      extension: "m4b",
+      fullHash: "audiohash",
+      id: "file-audio",
+      mediaKind: MediaKind.AUDIO,
+      relativePath: "Author/Some Book/book.m4b",
+    });
+    addEditionFile(state, {
+      editionId: "audio-edition",
+      fileAssetId: "file-audio",
+      id: "ef-audio",
+      role: EditionFileRole.AUDIO_TRACK,
+    });
+
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Some Book/metadata.json",
+      basename: "metadata.json",
+      extension: "json",
+      id: "file-sidecar",
+      mediaKind: MediaKind.SIDECAR,
+      relativePath: "Author/Some Book/metadata.json",
+      metadata: {
+        normalized: {
+          authors: ["Author Name"],
+          narrators: [],
+          identifiers: { asin: "B001234" },
+          title: "Some Book",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "audiobook-json",
+        status: "parsed",
+        warnings: [],
+      } as unknown as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-sidecar" });
+
+    expect(result).toMatchObject({
+      createdEdition: false,
+      createdWork: false,
+      skipped: false,
+      editionId: "audio-edition",
+      workId: "enriched-work",
+    });
+
+    // Work should still be ENRICHED, not changed
+    const work = state.works.get("enriched-work");
+    expect(work?.enrichmentStatus).toBe("ENRICHED");
+
+    // Edition should have the ASIN from the sidecar
+    const edition = state.editions.get("audio-edition");
+    expect(edition?.asin).toBe("B001234");
+  });
+
+  it("falls through directory match when sibling edition is not AUDIOBOOK", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    // A stub audiobook work that the sidecar should find via title fallback
+    addWork(state, {
+      enrichmentStatus: "STUB",
+      id: "stub-work",
+      titleCanonical: "some book",
+      titleDisplay: "Some Book",
+    });
+    addEdition(state, {
+      formatFamily: FormatFamily.AUDIOBOOK,
+      id: "audio-edition",
+      workId: "stub-work",
+    });
+
+    // An EBOOK edition also linked to an audio file in the same directory as the sidecar.
+    // This simulates a non-AUDIOBOOK edition being found by the directory lookup.
+    addWork(state, {
+      enrichmentStatus: "ENRICHED",
+      id: "ebook-work",
+      titleCanonical: "other book",
+      titleDisplay: "Other Book",
+    });
+    addEdition(state, {
+      formatFamily: FormatFamily.EBOOK,
+      id: "ebook-edition",
+      workId: "ebook-work",
+    });
+
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Some Book/book.mp3",
+      basename: "book.mp3",
+      extension: "mp3",
+      fullHash: "audiohash",
+      id: "file-audio",
+      mediaKind: MediaKind.AUDIO,
+      relativePath: "Author/Some Book/book.mp3",
+    });
+    // Link the audio file to the EBOOK edition (not AUDIOBOOK) — triggers the branch
+    addEditionFile(state, {
+      editionId: "ebook-edition",
+      fileAssetId: "file-audio",
+      id: "ef-audio",
+      role: EditionFileRole.AUDIO_TRACK,
+    });
+
+    // Sidecar in the same directory as the audio file
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Some Book/metadata.json",
+      basename: "metadata.json",
+      extension: "json",
+      id: "file-sidecar",
+      mediaKind: MediaKind.SIDECAR,
+      relativePath: "Author/Some Book/metadata.json",
+      metadata: {
+        normalized: {
+          authors: ["Author Name"],
+          narrators: [],
+          identifiers: { unknown: [] },
+          title: "Some Book",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "audiobook-json",
+        status: "parsed",
+        warnings: [],
+      } as unknown as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-sidecar" });
+
+    // Directory lookup found the audio file but its edition is EBOOK, not AUDIOBOOK.
+    // Falls through to title-based match, which finds stub-work and enriches it.
+    expect(result.skipped).toBe(false);
+    expect(result.createdEdition).toBe(false);
+    expect(result.workId).toBe("stub-work");
+    expect(result.editionId).toBe("audio-edition");
+  });
+
+  it("falls through directory match when sibling audiobook edition has a deleted work", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    // A stub work for the sidecar to find via title fallback
+    addWork(state, {
+      enrichmentStatus: "STUB",
+      id: "fallback-work",
+      titleCanonical: "orphan book",
+      titleDisplay: "Orphan Book",
+    });
+    addEdition(state, {
+      formatFamily: FormatFamily.AUDIOBOOK,
+      id: "fallback-edition",
+      workId: "fallback-work",
+    });
+
+    // An AUDIOBOOK edition whose work no longer exists (orphaned)
+    addEdition(state, {
+      formatFamily: FormatFamily.AUDIOBOOK,
+      id: "orphan-edition",
+      workId: "deleted-work", // this work doesn't exist
+    });
+
+    // Audio file linked to the orphaned edition, in the same directory as the sidecar
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Orphan Book/track.m4b",
+      basename: "track.m4b",
+      extension: "m4b",
+      fullHash: "audiohash",
+      id: "file-audio",
+      mediaKind: MediaKind.AUDIO,
+      relativePath: "Author/Orphan Book/track.m4b",
+    });
+    addEditionFile(state, {
+      editionId: "orphan-edition",
+      fileAssetId: "file-audio",
+      id: "ef-audio",
+      role: EditionFileRole.AUDIO_TRACK,
+    });
+
+    // Sidecar in the same directory
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Orphan Book/metadata.json",
+      basename: "metadata.json",
+      extension: "json",
+      id: "file-sidecar",
+      mediaKind: MediaKind.SIDECAR,
+      relativePath: "Author/Orphan Book/metadata.json",
+      metadata: {
+        normalized: {
+          authors: ["Author Name"],
+          narrators: [],
+          identifiers: { unknown: [] },
+          title: "Orphan Book",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "audiobook-json",
+        status: "parsed",
+        warnings: [],
+      } as unknown as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-sidecar" });
+
+    // Directory lookup found the audio file, edition is AUDIOBOOK, but work is missing.
+    // Should continue to the next sibling or fall through to title-based match.
+    expect(result.skipped).toBe(false);
+    expect(result.workId).toBe("fallback-work");
+    expect(result.editionId).toBe("fallback-edition");
+  });
+
+  it("enriches existing audiobook stub edition without narrators when sidecar has none", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    addWork(state, {
+      enrichmentStatus: "STUB",
+      id: "stub-work",
+      titleCanonical: "project hail mary",
+      titleDisplay: "Project Hail Mary",
+    });
+    addEdition(state, {
+      formatFamily: FormatFamily.AUDIOBOOK,
+      id: "stub-edition",
+      workId: "stub-work",
+    });
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Book/book.m4b",
+      basename: "book.m4b",
+      extension: "m4b",
+      fullHash: "audiohash",
+      id: "file-audio",
+      mediaKind: MediaKind.AUDIO,
+      relativePath: "Author/Book/book.m4b",
+    });
+    addEditionFile(state, {
+      editionId: "stub-edition",
+      fileAssetId: "file-audio",
+      id: "ef-audio",
+      role: EditionFileRole.AUDIO_TRACK,
+    });
+
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Book/metadata.json",
+      basename: "metadata.json",
+      extension: "json",
+      id: "file-sidecar",
+      mediaKind: MediaKind.SIDECAR,
+      relativePath: "Author/Book/metadata.json",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "audiobook-json",
+        status: "parsed",
+        warnings: [],
+      } as unknown as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-sidecar" });
+
+    expect(result).toMatchObject({ createdEdition: false, skipped: false });
+    expect(result.editionId).toBe("stub-edition");
+    // No narrator links created
+    const narratorLinks = [...state.editionContributors.values()].filter(
+      (ec) => ec.editionId === "stub-edition" && ec.role === ContributorRole.NARRATOR,
+    );
+    expect(narratorLinks).toHaveLength(0);
+  });
+
+  it("enriches existing audiobook stub edition via title-based fallback when sidecar is in a different directory", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    // Pre-existing stub work (created by SCAN) with no authors
+    addWork(state, {
+      enrichmentStatus: "STUB",
+      id: "stub-work",
+      titleCanonical: "project hail mary",
+      titleDisplay: "Project Hail Mary",
+    });
+    addEdition(state, {
+      formatFamily: FormatFamily.AUDIOBOOK,
+      id: "stub-edition",
+      workId: "stub-work",
+    });
+
+    // Audio file linked to the stub edition — in directory A
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Audiobooks/Project Hail Mary/book.m4b",
+      basename: "book.m4b",
+      extension: "m4b",
+      fullHash: "audiohash",
+      id: "file-audio",
+      mediaKind: MediaKind.AUDIO,
+      relativePath: "Audiobooks/Project Hail Mary/book.m4b",
+    });
+    addEditionFile(state, {
+      editionId: "stub-edition",
+      fileAssetId: "file-audio",
+      id: "ef-audio",
+      role: EditionFileRole.AUDIO_TRACK,
+    });
+
+    // metadata.json sidecar in directory B (different from audio file)
+    // The directory-based lookup won't find sibling audio files here
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Sidecars/Project Hail Mary/metadata.json",
+      basename: "metadata.json",
+      extension: "json",
+      id: "file-sidecar",
+      mediaKind: MediaKind.SIDECAR,
+      relativePath: "Sidecars/Project Hail Mary/metadata.json",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          narrators: ["Ray Porter"],
+          identifiers: { asin: "B08G9PRS1K", unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "audiobook-json",
+        status: "parsed",
+        warnings: [],
+      } as unknown as FileAsset["metadata"],
+    });
+
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-sidecar" });
+
+    // Should reuse existing stub work and edition (title-based fallback)
+    expect(result).toMatchObject({
+      createdEdition: false,
+      createdEditionFile: true,
+      createdWork: false,
+      enrichedExistingWork: true,
+      enqueuedCoverJob: true,
+      skipped: false,
+    });
+    expect(result.workId).toBe("stub-work");
+    expect(result.editionId).toBe("stub-edition");
+
+    // Stub should be enriched
+    const enrichedWork = state.works.get("stub-work");
+    expect(enrichedWork?.enrichmentStatus).toBe("ENRICHED");
+    expect(enrichedWork?.titleDisplay).toBe("Project Hail Mary");
+
+    // Edition should have ASIN from sidecar
+    const enrichedEdition = state.editions.get("stub-edition");
+    expect(enrichedEdition?.asin).toBe("B08G9PRS1K");
+
+    // Should NOT create a second edition
+    const editions = [...state.editions.values()].filter((e) => e.workId === "stub-work");
+    expect(editions).toHaveLength(1);
+
+    // Sidecar should be linked to the existing stub edition
+    const sidecarLink = [...state.editionFiles.values()].find(
+      (ef) => ef.fileAssetId === "file-sidecar" && ef.editionId === "stub-edition",
+    );
+    expect(sidecarLink).toBeDefined();
+
+    // Authors from sidecar should be on the existing edition
+    const authorLinks = [...state.editionContributors.values()].filter(
+      (ec) => ec.editionId === "stub-edition" && ec.role === ContributorRole.AUTHOR,
+    );
+    expect(authorLinks).toHaveLength(1);
+    const authorContributor = state.contributors.get(authorLinks[0]?.contributorId ?? "");
+    expect(authorContributor?.nameDisplay).toBe("Andy Weir");
+
+    // Narrators from sidecar should be on the existing edition
+    const narratorLinks2 = [...state.editionContributors.values()].filter(
+      (ec) => ec.editionId === "stub-edition" && ec.role === ContributorRole.NARRATOR,
+    );
+    expect(narratorLinks2).toHaveLength(1);
+    const narratorContributor = state.contributors.get(narratorLinks2[0]?.contributorId ?? "");
+    expect(narratorContributor?.nameDisplay).toBe("Ray Porter");
+
+    // Cover job should be enqueued
+    expect(enqueueLibraryJob).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ workId: "stub-work", fileAssetId: "file-sidecar" }),
+    );
+  });
+
+  it("title-based fallback preserves existing ASIN and skips narrators when sidecar has none", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    addWork(state, {
+      enrichmentStatus: "STUB",
+      id: "stub-work",
+      titleCanonical: "some title",
+      titleDisplay: "Some Title",
+    });
+    addEdition(state, {
+      asin: "EXISTING_ASIN",
+      formatFamily: FormatFamily.AUDIOBOOK,
+      id: "stub-edition",
+      workId: "stub-work",
+    });
+
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Audio/Some Title/book.m4b",
+      basename: "book.m4b",
+      extension: "m4b",
+      fullHash: "audiohash",
+      id: "file-audio",
+      mediaKind: MediaKind.AUDIO,
+      relativePath: "Audio/Some Title/book.m4b",
+    });
+    addEditionFile(state, {
+      editionId: "stub-edition",
+      fileAssetId: "file-audio",
+      id: "ef-audio",
+      role: EditionFileRole.AUDIO_TRACK,
+    });
+
+    // Sidecar in different directory — forces title-based fallback
+    // Has no narrators, no ASIN (so existing ASIN should be preserved)
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Sidecars/Some Title/metadata.json",
+      basename: "metadata.json",
+      extension: "json",
+      id: "file-sidecar",
+      mediaKind: MediaKind.SIDECAR,
+      relativePath: "Sidecars/Some Title/metadata.json",
+      metadata: {
+        normalized: {
+          authors: ["Author Name"],
+          narrators: [],
+          identifiers: { unknown: [] },
+          title: "Some Title",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "audiobook-json",
+        status: "parsed",
+        warnings: [],
+      } as unknown as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-sidecar" });
+
+    expect(result).toMatchObject({ createdEdition: false, skipped: false });
+    expect(result.editionId).toBe("stub-edition");
+
+    // Existing ASIN should be preserved (sidecar had no ASIN)
+    const edition = state.editions.get("stub-edition");
+    expect(edition?.asin).toBe("EXISTING_ASIN");
+
+    // No narrator contributors should be created
+    const narratorLinks = [...state.editionContributors.values()].filter(
+      (ec) => ec.editionId === "stub-edition" && ec.role === ContributorRole.NARRATOR,
+    );
+    expect(narratorLinks).toHaveLength(0);
+  });
+
+  it("creates new ebook edition on stub work without checking for existing editions", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    // Stub work with an existing ebook edition that has an author
+    addWork(state, {
+      enrichmentStatus: "STUB",
+      id: "stub-work",
+      titleCanonical: "project hail mary",
+      titleDisplay: "Project Hail Mary",
+    });
+    addEdition(state, {
+      formatFamily: FormatFamily.EBOOK,
+      id: "existing-edition",
+      workId: "stub-work",
+    });
+    addContributor(state, {
+      id: "existing-author",
+      nameCanonical: "andy weir",
+      nameDisplay: "Andy Weir",
+    });
+    addEditionContributor(state, {
+      contributorId: "existing-author",
+      editionId: "existing-edition",
+      id: "ec-existing",
+    });
+
+    // Second EPUB with same title+author
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary (2).epub",
+      basename: "Project Hail Mary (2).epub",
+      extension: "epub",
+      id: "file-epub2",
+      mediaKind: MediaKind.EPUB,
+      relativePath: "Andy Weir/Project Hail Mary (2).epub",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      } as unknown as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-epub2" });
+
+    // Ebooks always create new editions (no audiobook-style dedup)
+    expect(result).toMatchObject({ createdEdition: true, createdWork: false, skipped: false });
+    expect(result.workId).toBe("stub-work");
+    // Stub should be enriched
+    expect(state.works.get("stub-work")?.enrichmentStatus).toBe("ENRICHED");
+  });
+
+  it("creates new audiobook edition when stub work has no existing audiobook edition", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    // Stub work exists but has NO editions at all
+    addWork(state, {
+      enrichmentStatus: "STUB",
+      id: "stub-work",
+      titleCanonical: "project hail mary",
+      titleDisplay: "Project Hail Mary",
+    });
+
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Book/metadata.json",
+      basename: "metadata.json",
+      extension: "json",
+      id: "file-sidecar",
+      mediaKind: MediaKind.SIDECAR,
+      relativePath: "Author/Book/metadata.json",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "audiobook-json",
+        status: "parsed",
+        warnings: [],
+      } as unknown as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-sidecar" });
+
+    // Should create a new edition since the stub has no audiobook edition
+    expect(result).toMatchObject({ createdEdition: true, createdWork: false, skipped: false });
+    expect(result.workId).toBe("stub-work");
+  });
+
+  it("does not reuse non-stub work with matching title but no authors", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    // Pre-existing ENRICHED work (not a stub) with no authors
+    addWork(state, {
+      enrichmentStatus: "ENRICHED",
+      id: "enriched-work",
+      titleCanonical: "project hail mary",
+      titleDisplay: "Project Hail Mary",
+    });
+
+    // metadata.json sidecar with authors
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Book/metadata.json",
+      basename: "metadata.json",
+      extension: "json",
+      id: "file-sidecar",
+      mediaKind: MediaKind.SIDECAR,
+      relativePath: "Author/Book/metadata.json",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "audiobook-json",
+        status: "parsed",
+        warnings: [],
+      } as unknown as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-sidecar" });
+
+    // Should create a new work since the existing one is not a stub
+    expect(result).toMatchObject({
+      createdWork: true,
+      skipped: false,
+    });
+    expect(result.workId).not.toBe("enriched-work");
+  });
+
+  it("prefers author-matched work over stub fallback", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    // Stub work with no authors
+    addWork(state, {
+      enrichmentStatus: "STUB",
+      id: "stub-work",
+      titleCanonical: "project hail mary",
+      titleDisplay: "Project Hail Mary",
+    });
+
+    // Enriched work with matching authors
+    addWork(state, {
+      enrichmentStatus: "ENRICHED",
+      id: "author-work",
+      titleCanonical: "project hail mary",
+      titleDisplay: "Project Hail Mary",
+    });
+    addEdition(state, {
+      id: "author-edition",
+      workId: "author-work",
+    });
+    addContributor(state, {
+      id: "c-weir",
+      nameCanonical: "andy weir",
+      nameDisplay: "Andy Weir",
+    });
+    addEditionContributor(state, {
+      contributorId: "c-weir",
+      editionId: "author-edition",
+      id: "ec-weir",
+    });
+
+    // metadata.json sidecar
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Book/metadata.json",
+      basename: "metadata.json",
+      extension: "json",
+      id: "file-sidecar",
+      mediaKind: MediaKind.SIDECAR,
+      relativePath: "Author/Book/metadata.json",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "audiobook-json",
+        status: "parsed",
+        warnings: [],
+      } as unknown as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-sidecar" });
+
+    // Should use the author-matched work, not the stub
+    expect(result).toMatchObject({
+      createdWork: false,
+      skipped: false,
+    });
+    expect(result.workId).toBe("author-work");
   });
 
   it("creates AUDIOBOOK edition from standalone AUDIO file with ID3 metadata", async () => {
@@ -6429,7 +7483,7 @@ describe("matchAudio", () => {
 
     const result = await services.matchAudio({ fileAssetId: "nonexistent" });
 
-    expect(result).toEqual({ fileAssetId: "nonexistent", skipped: true, linksCreated: 0 });
+    expect(result).toEqual({ fileAssetId: "nonexistent", skipped: true, linksCreated: 0, mergedWorkIds: [] });
   });
 
   it("skips when file asset has no linked edition file", async () => {
@@ -6439,7 +7493,7 @@ describe("matchAudio", () => {
 
     const result = await services.matchAudio({ fileAssetId: "file-1" });
 
-    expect(result).toEqual({ fileAssetId: "file-1", skipped: true, linksCreated: 0 });
+    expect(result).toEqual({ fileAssetId: "file-1", skipped: true, linksCreated: 0, mergedWorkIds: [] });
   });
 
   it("skips when edition is not found", async () => {
@@ -6450,10 +7504,10 @@ describe("matchAudio", () => {
 
     const result = await services.matchAudio({ fileAssetId: "file-1" });
 
-    expect(result).toEqual({ fileAssetId: "file-1", skipped: true, linksCreated: 0 });
+    expect(result).toEqual({ fileAssetId: "file-1", skipped: true, linksCreated: 0, mergedWorkIds: [] });
   });
 
-  it("creates link when audiobook matches ebook by title+author", async () => {
+  it("merges works and creates SAME_WORK link when audiobook matches ebook", async () => {
     const state = createEmptyState();
     // Audiobook file and edition
     addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/gatsby.m4b", MediaKind.AUDIO);
@@ -6475,13 +7529,21 @@ describe("matchAudio", () => {
 
     expect(result.skipped).toBe(false);
     expect(result.linksCreated).toBe(1);
-    expect(state.audioLinks.size).toBe(1);
+    // Ebook work survives, audiobook work is deleted
+    expect(state.works.has("work-ebook")).toBe(true);
+    expect(state.works.has("work-audio")).toBe(false);
+    // Audio edition moved to ebook work
+    expect(state.editions.get("edition-audio")?.workId).toBe("work-ebook");
+    // Link created with SAME_WORK type (post-merge)
     const link = getFirstAudioLink(state);
     expect(link.ebookEditionId).toBe("edition-ebook");
     expect(link.audioEditionId).toBe("edition-audio");
+    expect(link.matchType).toBe("SAME_WORK");
+    // Result includes merge info
+    expect(result.mergedWorkIds).toEqual([{ losingWorkId: "work-audio", survivingWorkId: "work-ebook" }]);
   });
 
-  it("creates link when ebook matches audiobook by title+author", async () => {
+  it("merges works and creates SAME_WORK link when ebook matches audiobook", async () => {
     const state = createEmptyState();
     // Ebook file triggers the match
     addAudioFileAsset(state, "file-ebook", "/tmp/root/ebooks/gatsby.epub");
@@ -6503,9 +7565,16 @@ describe("matchAudio", () => {
 
     expect(result.skipped).toBe(false);
     expect(result.linksCreated).toBe(1);
+    // Ebook work survives (triggering file is ebook), audiobook work deleted
+    expect(state.works.has("work-ebook")).toBe(true);
+    expect(state.works.has("work-audio")).toBe(false);
+    // Audio edition moved to ebook work
+    expect(state.editions.get("edition-audio")?.workId).toBe("work-ebook");
     const link = getFirstAudioLink(state);
     expect(link.ebookEditionId).toBe("edition-ebook");
     expect(link.audioEditionId).toBe("edition-audio");
+    expect(link.matchType).toBe("SAME_WORK");
+    expect(result.mergedWorkIds).toEqual([{ losingWorkId: "work-audio", survivingWorkId: "work-ebook" }]);
   });
 
   it("does not create link when title similarity below threshold", async () => {
@@ -6554,7 +7623,7 @@ describe("matchAudio", () => {
     expect(state.audioLinks.size).toBe(0);
   });
 
-  it("does not create duplicate link when pair already exists", async () => {
+  it("does not create duplicate link when pair already exists but still merges", async () => {
     const state = createEmptyState();
     addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/gatsby.m4b", MediaKind.AUDIO);
     addAudioWork(state, "work-audio", "the great gatsby", "The Great Gatsby");
@@ -6581,8 +7650,12 @@ describe("matchAudio", () => {
     const services = createIngestServices({ db: createTestDb(state) });
     const result = await services.matchAudio({ fileAssetId: "file-audio" });
 
+    // No new link created (already exists), but merge still happens
     expect(result.linksCreated).toBe(0);
     expect(state.audioLinks.size).toBe(1);
+    expect(state.works.has("work-audio")).toBe(false);
+    expect(state.editions.get("edition-audio")?.workId).toBe("work-ebook");
+    expect(result.mergedWorkIds).toEqual([{ losingWorkId: "work-audio", survivingWorkId: "work-ebook" }]);
   });
 
   it("uses SAME_WORK matchType when editions share workId", async () => {
@@ -6608,7 +7681,7 @@ describe("matchAudio", () => {
     expect(link.confidence).toBeLessThanOrEqual(1.0);
   });
 
-  it("uses EXACT_METADATA matchType when editions have different workIds", async () => {
+  it("uses SAME_WORK matchType after merging works with different workIds", async () => {
     const state = createEmptyState();
     addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/gatsby.m4b", MediaKind.AUDIO);
     addAudioWork(state, "work-audio", "the great gatsby", "The Great Gatsby");
@@ -6628,10 +7701,11 @@ describe("matchAudio", () => {
 
     expect(result.linksCreated).toBe(1);
     const link = getFirstAudioLink(state);
-    expect(link.matchType).toBe("EXACT_METADATA");
+    // After merge, both editions are on the same work, so matchType is SAME_WORK
+    expect(link.matchType).toBe("SAME_WORK");
   });
 
-  it("applies filename similarity boost", async () => {
+  it("applies filename similarity boost after merge", async () => {
     const state = createEmptyState();
     // Same basename pattern (gatsby.m4b vs gatsby.epub)
     addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/the-great-gatsby.m4b", MediaKind.AUDIO);
@@ -6651,13 +7725,12 @@ describe("matchAudio", () => {
     const result = await services.matchAudio({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(1);
+    expect(result.mergedWorkIds).toHaveLength(1);
     const link = getFirstAudioLink(state);
-    // Base confidence is 1.0, filename boost +0.05, capped at 1.0
-    // But filenames are identical (stripped extension), so boost applies
     expect(link.confidence).toBeGreaterThan(0.85);
   });
 
-  it("applies folder proximity boost", async () => {
+  it("applies folder proximity boost after merge", async () => {
     const state = createEmptyState();
     // Files in sibling directories (same grandparent)
     addAudioFileAsset(state, "file-audio", "/tmp/root/books/audio/gatsby.m4b", MediaKind.AUDIO);
@@ -6677,12 +7750,12 @@ describe("matchAudio", () => {
     const result = await services.matchAudio({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(1);
+    expect(result.mergedWorkIds).toHaveLength(1);
     const link = getFirstAudioLink(state);
-    // Base confidence is 1.0 (identical title+author), + filename boost + folder boost, capped at 1.0
     expect(link.confidence).toBeLessThanOrEqual(1.0);
   });
 
-  it("caps confidence at 1.0 after boosts", async () => {
+  it("caps confidence at 1.0 after boosts with merge", async () => {
     const state = createEmptyState();
     // Same directory and same filename pattern — both boosts apply
     addAudioFileAsset(state, "file-audio", "/tmp/root/books/gatsby.m4b", MediaKind.AUDIO);
@@ -6702,6 +7775,7 @@ describe("matchAudio", () => {
     const result = await services.matchAudio({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(1);
+    expect(result.mergedWorkIds).toHaveLength(1);
     const link = getFirstAudioLink(state);
     // Base confidence 1.0 + 0.05 (filename) + 0.05 (folder) = 1.1, capped at 1.0
     expect(link.confidence).toBe(1.0);
@@ -6739,10 +7813,10 @@ describe("matchAudio", () => {
 
     const result = await services.matchAudio({ fileAssetId: "file-audio" });
 
-    expect(result).toEqual({ fileAssetId: "file-audio", skipped: true, linksCreated: 0 });
+    expect(result).toEqual({ fileAssetId: "file-audio", skipped: true, linksCreated: 0, mergedWorkIds: [] });
   });
 
-  it("creates link without boosts when other edition has no file", async () => {
+  it("merges and creates link without boosts when other edition has no file", async () => {
     const state = createEmptyState();
     addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/gatsby.m4b", MediaKind.AUDIO);
     addAudioWork(state, "work-audio", "the great gatsby", "The Great Gatsby");
@@ -6760,12 +7834,12 @@ describe("matchAudio", () => {
     const result = await services.matchAudio({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(1);
+    expect(result.mergedWorkIds).toHaveLength(1);
     const link = getFirstAudioLink(state);
-    // No boosts applied — base confidence only
     expect(link.confidence).toBe(1.0);
   });
 
-  it("creates link without boosts when other edition file has dangling file asset", async () => {
+  it("merges and creates link without boosts when other edition file has dangling file asset", async () => {
     const state = createEmptyState();
     addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/gatsby.m4b", MediaKind.AUDIO);
     addAudioWork(state, "work-audio", "the great gatsby", "The Great Gatsby");
@@ -6784,6 +7858,7 @@ describe("matchAudio", () => {
     const result = await services.matchAudio({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(1);
+    expect(result.mergedWorkIds).toHaveLength(1);
     const link = getFirstAudioLink(state);
     expect(link.confidence).toBe(1.0);
   });
@@ -6806,7 +7881,7 @@ describe("matchAudio", () => {
     expect(result.linksCreated).toBe(0);
   });
 
-  it("does not apply boosts when filenames differ and folders are far apart", async () => {
+  it("merges without boosts when filenames differ and folders are far apart", async () => {
     const state = createEmptyState();
     addAudioFileAsset(state, "file-audio", "/data/audiobooks/collection/my-audiobook-file.m4b", MediaKind.AUDIO);
     addAudioWork(state, "work-audio", "the great gatsby", "The Great Gatsby");
@@ -6826,8 +7901,8 @@ describe("matchAudio", () => {
     const result = await services.matchAudio({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(1);
+    expect(result.mergedWorkIds).toHaveLength(1);
     const link = getFirstAudioLink(state);
-    // No filename boost (different basenames), no folder proximity boost (different grandparents)
     expect(link.confidence).toBe(1.0);
   });
 
@@ -6843,7 +7918,7 @@ describe("matchAudio", () => {
 
     const result = await services.matchAudio({ fileAssetId: "file-1" });
 
-    expect(result).toEqual({ fileAssetId: "file-1", skipped: true, linksCreated: 0 });
+    expect(result).toEqual({ fileAssetId: "file-1", skipped: true, linksCreated: 0, mergedWorkIds: [] });
   });
 
   it("skips when both works have no authors", async () => {
@@ -6863,5 +7938,164 @@ describe("matchAudio", () => {
     const result = await services.matchAudio({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(0);
+  });
+
+  it("reconciles metadata — fills null fields from losing work", async () => {
+    const state = createEmptyState();
+    addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/gatsby.m4b", MediaKind.AUDIO);
+    const audioWork = addAudioWork(state, "work-audio", "the great gatsby", "The Great Gatsby");
+    audioWork.description = "A novel about the American Dream";
+    audioWork.language = "en";
+    addAudioEdition(state, "edition-audio", "work-audio", { formatFamily: FormatFamily.AUDIOBOOK });
+    addAudioEditionFile(state, "ef-audio", "edition-audio", "file-audio");
+    addAudioContributor(state, "c-audio", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-audio", "edition-audio", "c-audio");
+    // Ebook work has null description and language
+    addAudioFileAsset(state, "file-ebook", "/tmp/root/ebooks/gatsby.epub");
+    addAudioWork(state, "work-ebook", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-ebook", "work-ebook", { formatFamily: FormatFamily.EBOOK });
+    addAudioEditionFile(state, "ef-ebook", "edition-ebook", "file-ebook");
+    addAudioContributor(state, "c-ebook", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
+
+    const services = createIngestServices({ db: createTestDb(state) });
+    await services.matchAudio({ fileAssetId: "file-audio" });
+
+    // Ebook work survives and gets description+language from audiobook work
+    const survivingWork = state.works.get("work-ebook");
+    expect(survivingWork?.description).toBe("A novel about the American Dream");
+    expect(survivingWork?.language).toBe("en");
+  });
+
+  it("does not overwrite existing metadata during merge", async () => {
+    const state = createEmptyState();
+    addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/gatsby.m4b", MediaKind.AUDIO);
+    const audioWork = addAudioWork(state, "work-audio", "the great gatsby", "The Great Gatsby");
+    audioWork.description = "Audio description";
+    audioWork.coverPath = "/covers/audio.jpg";
+    addAudioEdition(state, "edition-audio", "work-audio", { formatFamily: FormatFamily.AUDIOBOOK });
+    addAudioEditionFile(state, "ef-audio", "edition-audio", "file-audio");
+    addAudioContributor(state, "c-audio", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-audio", "edition-audio", "c-audio");
+    // Ebook work already has description and cover
+    addAudioFileAsset(state, "file-ebook", "/tmp/root/ebooks/gatsby.epub");
+    const ebookWork = addAudioWork(state, "work-ebook", "the great gatsby", "The Great Gatsby");
+    ebookWork.description = "Ebook description";
+    ebookWork.coverPath = "/covers/ebook.jpg";
+    addAudioEdition(state, "edition-ebook", "work-ebook", { formatFamily: FormatFamily.EBOOK });
+    addAudioEditionFile(state, "ef-ebook", "edition-ebook", "file-ebook");
+    addAudioContributor(state, "c-ebook", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
+
+    const services = createIngestServices({ db: createTestDb(state) });
+    await services.matchAudio({ fileAssetId: "file-audio" });
+
+    // Surviving work keeps its own values
+    const survivingWork = state.works.get("work-ebook");
+    expect(survivingWork?.description).toBe("Ebook description");
+    expect(survivingWork?.coverPath).toBe("/covers/ebook.jpg");
+  });
+
+  it("moves multiple editions from losing work to surviving work", async () => {
+    const state = createEmptyState();
+    addAudioFileAsset(state, "file-audio1", "/tmp/root/audiobooks/gatsby-part1.m4b", MediaKind.AUDIO);
+    addAudioFileAsset(state, "file-audio2", "/tmp/root/audiobooks/gatsby-part2.m4b", MediaKind.AUDIO);
+    addAudioWork(state, "work-audio", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-audio1", "work-audio", { formatFamily: FormatFamily.AUDIOBOOK });
+    addAudioEdition(state, "edition-audio2", "work-audio", { formatFamily: FormatFamily.AUDIOBOOK });
+    addAudioEditionFile(state, "ef-audio1", "edition-audio1", "file-audio1");
+    addAudioEditionFile(state, "ef-audio2", "edition-audio2", "file-audio2");
+    addAudioContributor(state, "c-audio", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-audio1", "edition-audio1", "c-audio");
+    addAudioEditionContributor(state, "ec-audio2", "edition-audio2", "c-audio");
+    // Ebook
+    addAudioFileAsset(state, "file-ebook", "/tmp/root/ebooks/gatsby.epub");
+    addAudioWork(state, "work-ebook", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-ebook", "work-ebook", { formatFamily: FormatFamily.EBOOK });
+    addAudioEditionFile(state, "ef-ebook", "edition-ebook", "file-ebook");
+    addAudioContributor(state, "c-ebook", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
+
+    const services = createIngestServices({ db: createTestDb(state) });
+    const result = await services.matchAudio({ fileAssetId: "file-audio1" });
+
+    // Both audiobook editions moved to ebook work
+    expect(state.editions.get("edition-audio1")?.workId).toBe("work-ebook");
+    expect(state.editions.get("edition-audio2")?.workId).toBe("work-ebook");
+    expect(state.works.has("work-audio")).toBe(false);
+    // Links created for each opposite-format edition pair
+    expect(result.linksCreated).toBe(1);
+    expect(result.mergedWorkIds).toHaveLength(1);
+  });
+
+  it("returns empty mergedWorkIds when no cross-work match found", async () => {
+    const state = createEmptyState();
+    addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/gatsby.m4b", MediaKind.AUDIO);
+    addAudioWork(state, "work-audio", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-audio", "work-audio", { formatFamily: FormatFamily.AUDIOBOOK });
+    addAudioEditionFile(state, "ef-audio", "edition-audio", "file-audio");
+    addAudioContributor(state, "c-audio", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-audio", "edition-audio", "c-audio");
+    // No ebook exists
+
+    const services = createIngestServices({ db: createTestDb(state) });
+    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+
+    expect(result.mergedWorkIds).toEqual([]);
+    expect(result.linksCreated).toBe(0);
+  });
+
+  it("merges audiobook stub (no authors) with ebook by exact title match", async () => {
+    const state = createEmptyState();
+    // Audiobook stub with no authors
+    addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/gatsby.m4b", MediaKind.AUDIO);
+    addAudioWork(state, "work-audio", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-audio", "work-audio", { formatFamily: FormatFamily.AUDIOBOOK });
+    addAudioEditionFile(state, "ef-audio", "edition-audio", "file-audio");
+    // No authors on audiobook
+    // Ebook with authors
+    addAudioFileAsset(state, "file-ebook", "/tmp/root/ebooks/gatsby.epub");
+    addAudioWork(state, "work-ebook", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-ebook", "work-ebook", { formatFamily: FormatFamily.EBOOK });
+    addAudioEditionFile(state, "ef-ebook", "edition-ebook", "file-ebook");
+    addAudioContributor(state, "c-ebook", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
+
+    const services = createIngestServices({ db: createTestDb(state) });
+    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+
+    expect(result.skipped).toBe(false);
+    expect(result.linksCreated).toBe(1);
+    // Ebook work survives, audiobook work is deleted
+    expect(state.works.has("work-ebook")).toBe(true);
+    expect(state.works.has("work-audio")).toBe(false);
+    expect(state.editions.get("edition-audio")?.workId).toBe("work-ebook");
+    const link = getFirstAudioLink(state);
+    expect(link.matchType).toBe("TITLE_ONLY");
+    expect(link.confidence).toBe(1.0);
+    expect(result.mergedWorkIds).toEqual([{ losingWorkId: "work-audio", survivingWorkId: "work-ebook" }]);
+  });
+
+  it("does not auto-merge title-only when titleCanonicals differ even if similar", async () => {
+    const state = createEmptyState();
+    // Audiobook stub with no authors and similar-but-not-identical title (similarity ~0.94)
+    addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/gatsby.m4b", MediaKind.AUDIO);
+    addAudioWork(state, "work-audio", "the great gatspy", "The Great Gatspy");
+    addAudioEdition(state, "edition-audio", "work-audio", { formatFamily: FormatFamily.AUDIOBOOK });
+    addAudioEditionFile(state, "ef-audio", "edition-audio", "file-audio");
+    // No authors on audiobook
+    // Ebook with similar but not identical title
+    addAudioFileAsset(state, "file-ebook", "/tmp/root/ebooks/gatsby.epub");
+    addAudioWork(state, "work-ebook", "the great gatsby", "The Great Gatsby");
+    addAudioEdition(state, "edition-ebook", "work-ebook", { formatFamily: FormatFamily.EBOOK });
+    addAudioEditionFile(state, "ef-ebook", "edition-ebook", "file-ebook");
+    addAudioContributor(state, "c-ebook", "F Scott Fitzgerald");
+    addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
+
+    const services = createIngestServices({ db: createTestDb(state) });
+    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+
+    expect(result.linksCreated).toBe(0);
+    expect(state.audioLinks.size).toBe(0);
   });
 });

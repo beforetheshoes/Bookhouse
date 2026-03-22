@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const addMock = vi.fn();
+const flushdbMock = vi.fn().mockResolvedValue("OK");
 const redisConstructorMock = vi.fn();
 
 vi.mock("ioredis", () => ({
   default: function FakeRedis(config: unknown) {
     redisConstructorMock(config);
+    (this as Record<string, unknown>).flushdb = flushdbMock;
   },
 }));
 
@@ -18,6 +20,7 @@ vi.mock("bullmq", () => ({
 beforeEach(() => {
   vi.resetModules();
   addMock.mockReset();
+  flushdbMock.mockClear();
   redisConstructorMock.mockClear();
   process.env.QUEUE_URL = "redis://localhost:6379";
 });
@@ -38,7 +41,7 @@ describe("enqueueLibraryJob", () => {
     expect(addMock).toHaveBeenCalledWith(
       "scan-library-root",
       { libraryRootId: "root-1" },
-      { attempts: config.attempts, backoff: config.backoff },
+      { attempts: config.attempts, backoff: config.backoff, priority: expect.any(Number) as unknown },
     );
     // IORedis and Queue constructors should only have been called once (singleton)
     expect(redisConstructorMock).toHaveBeenCalledTimes(1);
@@ -56,7 +59,7 @@ describe("enqueueLibraryJob", () => {
     expect(addMock).toHaveBeenCalledWith(
       "hash-file-asset",
       { fileAssetId: "file-1" },
-      { attempts: config.attempts, backoff: config.backoff },
+      { attempts: config.attempts, backoff: config.backoff, priority: expect.any(Number) as unknown },
     );
   });
 
@@ -72,7 +75,7 @@ describe("enqueueLibraryJob", () => {
     expect(addMock).toHaveBeenCalledWith(
       "parse-file-asset-metadata",
       { fileAssetId: "file-2" },
-      { attempts: config.attempts, backoff: config.backoff },
+      { attempts: config.attempts, backoff: config.backoff, priority: expect.any(Number) as unknown },
     );
   });
 
@@ -88,7 +91,7 @@ describe("enqueueLibraryJob", () => {
     expect(addMock).toHaveBeenCalledWith(
       "match-file-asset-to-edition",
       { fileAssetId: "file-3" },
-      { attempts: config.attempts, backoff: config.backoff },
+      { attempts: config.attempts, backoff: config.backoff, priority: expect.any(Number) as unknown },
     );
   });
 
@@ -105,7 +108,7 @@ describe("enqueueLibraryJob", () => {
     expect(addMock).toHaveBeenCalledWith(
       "process-cover",
       { workId: "work-1", fileAssetId: "file-4" },
-      { attempts: config.attempts, backoff: config.backoff },
+      { attempts: config.attempts, backoff: config.backoff, priority: expect.any(Number) as unknown },
     );
   });
 
@@ -121,7 +124,7 @@ describe("enqueueLibraryJob", () => {
     expect(addMock).toHaveBeenCalledWith(
       "detect-duplicates",
       { fileAssetId: "file-5" },
-      { attempts: config.attempts, backoff: config.backoff },
+      { attempts: config.attempts, backoff: config.backoff, priority: expect.any(Number) as unknown },
     );
   });
 
@@ -156,6 +159,7 @@ describe("enqueueLibraryJob", () => {
       {
         attempts: config.attempts,
         backoff: config.backoff,
+        priority: expect.any(Number) as unknown,
         parent: { id: "parent-job-1", queue: "bull:library" },
         removeDependencyOnFailure: true,
       },
@@ -174,7 +178,7 @@ describe("enqueueLibraryJob", () => {
     expect(addMock).toHaveBeenCalledWith(
       "hash-file-asset",
       { fileAssetId: "file-1" },
-      { attempts: config.attempts, backoff: config.backoff },
+      { attempts: config.attempts, backoff: config.backoff, priority: expect.any(Number) as unknown },
     );
   });
 
@@ -187,5 +191,31 @@ describe("enqueueLibraryJob", () => {
         libraryRootId: "root-1",
       }),
     ).rejects.toThrow(QueueError);
+  });
+});
+
+describe("obliterateLibraryQueue", () => {
+  it("calls flushdb using existing connection when singleton exists", async () => {
+    addMock.mockResolvedValueOnce({ id: "job-1" });
+    const { obliterateLibraryQueue, enqueueLibraryJob, LIBRARY_JOB_NAMES } = await import("./index");
+
+    // Create singleton via enqueue first
+    await enqueueLibraryJob(LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT, { libraryRootId: "root-1" });
+    const constructorCallsBefore = redisConstructorMock.mock.calls.length;
+
+    await obliterateLibraryQueue();
+
+    // Should NOT have created a new connection
+    expect(redisConstructorMock).toHaveBeenCalledTimes(constructorCallsBefore);
+    expect(flushdbMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("initializes queue singleton if not yet created", async () => {
+    const { obliterateLibraryQueue } = await import("./index");
+
+    await obliterateLibraryQueue();
+
+    expect(redisConstructorMock).toHaveBeenCalledTimes(1);
+    expect(flushdbMock).toHaveBeenCalledTimes(1);
   });
 });

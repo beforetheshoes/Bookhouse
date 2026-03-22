@@ -34,6 +34,7 @@ export interface CoverDb {
     findUnique(args: { where: { id: string } }): Promise<FileAssetRecord | null>;
   };
   work: {
+    findUnique(args: { where: { id: string } }): Promise<{ id: string } | null>;
     update(args: { where: { id: string }; data: { coverPath: string } }): Promise<unknown>;
   };
 }
@@ -162,6 +163,12 @@ export async function processCoverForWork(
 
   if (imageBuffer === null) {
     deps.logger?.info({ workId: input.workId, fileAssetId: input.fileAssetId, mediaKind: fileAsset.mediaKind, directory: path.dirname(fileAsset.absolutePath) }, "No cover found for work");
+    return { source: "none", updated: false };
+  }
+
+  const work = await deps.db.work.findUnique({ where: { id: input.workId } });
+  if (work === null) {
+    deps.logger?.info({ workId: input.workId }, "Work no longer exists, skipping cover processing");
     return { source: "none", updated: false };
   }
 

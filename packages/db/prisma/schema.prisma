@@ -415,3 +415,8 @@ model ImportJob {
   @@index([kind])
   @@index([createdAt])
 }
+
+model AppSetting {
+  key   String @id
+  value String
+}
