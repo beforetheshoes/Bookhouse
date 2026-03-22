@@ -5813,6 +5813,168 @@ describe("ingest services", () => {
     expect(edition?.asin).toBe("B001234");
   });
 
+  it("falls through directory match when sibling edition is not AUDIOBOOK", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    // A stub audiobook work that the sidecar should find via title fallback
+    addWork(state, {
+      enrichmentStatus: "STUB",
+      id: "stub-work",
+      titleCanonical: "some book",
+      titleDisplay: "Some Book",
+    });
+    addEdition(state, {
+      formatFamily: FormatFamily.AUDIOBOOK,
+      id: "audio-edition",
+      workId: "stub-work",
+    });
+
+    // An EBOOK edition also linked to an audio file in the same directory as the sidecar.
+    // This simulates a non-AUDIOBOOK edition being found by the directory lookup.
+    addWork(state, {
+      enrichmentStatus: "ENRICHED",
+      id: "ebook-work",
+      titleCanonical: "other book",
+      titleDisplay: "Other Book",
+    });
+    addEdition(state, {
+      formatFamily: FormatFamily.EBOOK,
+      id: "ebook-edition",
+      workId: "ebook-work",
+    });
+
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Some Book/book.mp3",
+      basename: "book.mp3",
+      extension: "mp3",
+      fullHash: "audiohash",
+      id: "file-audio",
+      mediaKind: MediaKind.AUDIO,
+      relativePath: "Author/Some Book/book.mp3",
+    });
+    // Link the audio file to the EBOOK edition (not AUDIOBOOK) — triggers the branch
+    addEditionFile(state, {
+      editionId: "ebook-edition",
+      fileAssetId: "file-audio",
+      id: "ef-audio",
+      role: EditionFileRole.AUDIO_TRACK,
+    });
+
+    // Sidecar in the same directory as the audio file
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Some Book/metadata.json",
+      basename: "metadata.json",
+      extension: "json",
+      id: "file-sidecar",
+      mediaKind: MediaKind.SIDECAR,
+      relativePath: "Author/Some Book/metadata.json",
+      metadata: {
+        normalized: {
+          authors: ["Author Name"],
+          narrators: [],
+          identifiers: { unknown: [] },
+          title: "Some Book",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "audiobook-json",
+        status: "parsed",
+        warnings: [],
+      } as unknown as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-sidecar" });
+
+    // Directory lookup found the audio file but its edition is EBOOK, not AUDIOBOOK.
+    // Falls through to title-based match, which finds stub-work and enriches it.
+    expect(result.skipped).toBe(false);
+    expect(result.createdEdition).toBe(false);
+    expect(result.workId).toBe("stub-work");
+    expect(result.editionId).toBe("audio-edition");
+  });
+
+  it("falls through directory match when sibling audiobook edition has a deleted work", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    // A stub work for the sidecar to find via title fallback
+    addWork(state, {
+      enrichmentStatus: "STUB",
+      id: "fallback-work",
+      titleCanonical: "orphan book",
+      titleDisplay: "Orphan Book",
+    });
+    addEdition(state, {
+      formatFamily: FormatFamily.AUDIOBOOK,
+      id: "fallback-edition",
+      workId: "fallback-work",
+    });
+
+    // An AUDIOBOOK edition whose work no longer exists (orphaned)
+    addEdition(state, {
+      formatFamily: FormatFamily.AUDIOBOOK,
+      id: "orphan-edition",
+      workId: "deleted-work", // this work doesn't exist
+    });
+
+    // Audio file linked to the orphaned edition, in the same directory as the sidecar
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Orphan Book/track.m4b",
+      basename: "track.m4b",
+      extension: "m4b",
+      fullHash: "audiohash",
+      id: "file-audio",
+      mediaKind: MediaKind.AUDIO,
+      relativePath: "Author/Orphan Book/track.m4b",
+    });
+    addEditionFile(state, {
+      editionId: "orphan-edition",
+      fileAssetId: "file-audio",
+      id: "ef-audio",
+      role: EditionFileRole.AUDIO_TRACK,
+    });
+
+    // Sidecar in the same directory
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Orphan Book/metadata.json",
+      basename: "metadata.json",
+      extension: "json",
+      id: "file-sidecar",
+      mediaKind: MediaKind.SIDECAR,
+      relativePath: "Author/Orphan Book/metadata.json",
+      metadata: {
+        normalized: {
+          authors: ["Author Name"],
+          narrators: [],
+          identifiers: { unknown: [] },
+          title: "Orphan Book",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "audiobook-json",
+        status: "parsed",
+        warnings: [],
+      } as unknown as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-sidecar" });
+
+    // Directory lookup found the audio file, edition is AUDIOBOOK, but work is missing.
+    // Should continue to the next sibling or fall through to title-based match.
+    expect(result.skipped).toBe(false);
+    expect(result.workId).toBe("fallback-work");
+    expect(result.editionId).toBe("fallback-edition");
+  });
+
   it("enriches existing audiobook stub edition without narrators when sidecar has none", async () => {
     const state = createEmptyState("/tmp/root");
 
