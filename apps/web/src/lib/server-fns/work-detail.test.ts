@@ -40,14 +40,6 @@ describe("getWorkDetailServerFn", () => {
           include: {
             contributors: { include: { contributor: true } },
             editionFiles: { include: { fileAsset: true } },
-            ebookLinks: {
-              where: { reviewStatus: "CONFIRMED" },
-              include: { audioEdition: { include: { work: true } } },
-            },
-            audioLinks: {
-              where: { reviewStatus: "CONFIRMED" },
-              include: { ebookEdition: { include: { work: true } } },
-            },
           },
         },
       },

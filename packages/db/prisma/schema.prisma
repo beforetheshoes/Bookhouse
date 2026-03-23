@@ -86,6 +86,9 @@ enum ReviewStatus {
 enum AudioLinkMatchType {
   SAME_WORK
   EXACT_METADATA
+  NORMALIZED_TITLE
+  SUBTITLE_STRIPPED
+  TITLE_ONLY
 }
 
 enum EnrichmentStatus {
@@ -212,6 +215,9 @@ model Work {
   collections CollectionItem[]
   progressPreferences WorkProgressPreference[]
 
+  ebookLinks AudioLink[] @relation("EbookWork")
+  audioLinks AudioLink[] @relation("AudioWork")
+
   @@index([titleCanonical])
 }
 
@@ -235,9 +241,6 @@ model Edition {
 
   duplicateLeft  DuplicateCandidate[] @relation("DuplicateLeftEdition")
   duplicateRight DuplicateCandidate[] @relation("DuplicateRightEdition")
-
-  ebookLinks AudioLink[] @relation("EbookEdition")
-  audioLinks AudioLink[] @relation("AudioEdition")
 
   @@index([workId])
   @@index([isbn13])
@@ -350,17 +353,17 @@ model WorkProgressPreference {
 }
 
 model AudioLink {
-  id             String       @id @default(cuid())
-  ebookEditionId String
-  audioEditionId String
-  matchType      AudioLinkMatchType
-  confidence     Float?
-  reviewStatus   ReviewStatus @default(PENDING)
+  id           String             @id @default(cuid())
+  ebookWorkId  String
+  audioWorkId  String
+  matchType    AudioLinkMatchType
+  confidence   Float?
+  reviewStatus ReviewStatus       @default(PENDING)
 
-  ebookEdition Edition @relation("EbookEdition", fields: [ebookEditionId], references: [id], onDelete: Cascade)
-  audioEdition Edition @relation("AudioEdition", fields: [audioEditionId], references: [id], onDelete: Cascade)
+  ebookWork Work @relation("EbookWork", fields: [ebookWorkId], references: [id], onDelete: Cascade)
+  audioWork Work @relation("AudioWork", fields: [audioWorkId], references: [id], onDelete: Cascade)
 
-  @@unique([ebookEditionId, audioEditionId])
+  @@unique([ebookWorkId, audioWorkId])
 }
 
 model ExternalLink {

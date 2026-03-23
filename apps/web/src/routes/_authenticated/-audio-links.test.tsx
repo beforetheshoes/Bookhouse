@@ -6,17 +6,22 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const invalidateMock = vi.fn();
 
-interface MockEdition {
-  work: { titleDisplay: string; createdAt: Date };
+interface MockEditionEntry {
   contributors: { role: string; contributor: { nameDisplay: string } }[];
   editionFiles: { fileAsset: { absolutePath: string; mediaKind: string } }[];
+}
+
+interface MockWork {
+  titleDisplay: string;
+  createdAt: Date;
+  editions: MockEditionEntry[];
 }
 
 let mockLoaderData: {
   audioLinks: {
     id: string;
-    ebookEdition: MockEdition;
-    audioEdition: MockEdition;
+    ebookWork: MockWork;
+    audioWork: MockWork;
     matchType: string;
     confidence: number | null;
     reviewStatus: string;
@@ -41,31 +46,71 @@ vi.mock("@tanstack/react-router", async () => {
 const getAudioLinksServerFnMock = vi.fn();
 const confirmAudioLinkServerFnMock = vi.fn();
 const ignoreAudioLinkServerFnMock = vi.fn();
+const rematchAllAudioServerFnMock = vi.fn();
 
 vi.mock("~/lib/server-fns/audio-links", () => ({
   getAudioLinksServerFn: getAudioLinksServerFnMock,
   confirmAudioLinkServerFn: confirmAudioLinkServerFnMock,
   ignoreAudioLinkServerFn: ignoreAudioLinkServerFnMock,
+  rematchAllAudioServerFn: rematchAllAudioServerFnMock,
 }));
 
 vi.mock("~/components/skeletons/table-page-skeleton", () => ({
   TablePageSkeleton: () => <div>Loading...</div>,
 }));
 
+vi.mock("~/components/data-table/virtualized-data-table", () => ({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  VirtualizedDataTable: ({ data, columns }: { data: any[]; columns: any[] }) => (
+    <div data-testid="data-table">
+      <div data-testid="data-table-row-count">{data.length} rows</div>
+      <table>
+        <thead>
+          <tr>
+            {columns.map((col: { id?: string; header?: unknown }) => (
+              <th key={col.id ?? String(col.header)}>
+                {typeof col.header === "function" ? (col.header as (ctx: { column: { id: string | undefined } }) => React.ReactNode)({ column: { id: col.id } }) : (col.id ?? "")}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {data.map((row: { id: string }, i: number) => (
+            <tr key={row.id || i} data-testid="data-table-row">
+              {columns.map((col: { id?: string; accessorFn?: (r: unknown) => unknown; cell?: (ctx: { row: { original: unknown } }) => unknown }) => {
+                const val = col.accessorFn ? String(col.accessorFn(row)) : "";
+                const cellContent = col.cell ? col.cell({ row: { original: row } }) : val;
+                return <td key={col.id}>{typeof cellContent === "string" ? cellContent : cellContent as React.ReactNode}</td>;
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  ),
+}));
+
+vi.mock("~/components/data-table/data-table-column-header", () => ({
+  DataTableColumnHeader: ({ title }: { title: string }) => <span>{title}</span>,
+}));
+
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 
-const makeEdition = (title: string, contributors: { role: string; name: string }[] = [], files: { path: string; kind: string }[] = []): MockEdition => ({
-  work: { titleDisplay: title, createdAt: new Date("2025-01-01") },
-  contributors: contributors.map((c) => ({ role: c.role, contributor: { nameDisplay: c.name } })),
-  editionFiles: files.map((f) => ({ fileAsset: { absolutePath: f.path, mediaKind: f.kind } })),
+const makeWork = (title: string, contributors: { role: string; name: string }[] = [], files: { path: string; kind: string }[] = [], createdAt: Date = new Date("2025-01-01")): MockWork => ({
+  titleDisplay: title,
+  createdAt,
+  editions: [{
+    contributors: contributors.map((c) => ({ role: c.role, contributor: { nameDisplay: c.name } })),
+    editionFiles: files.map((f) => ({ fileAsset: { absolutePath: f.path, mediaKind: f.kind } })),
+  }],
 });
 
 const makeAudioLink = (overrides: Partial<typeof mockLoaderData.audioLinks[number]> = {}) => ({
   id: "al-1",
-  ebookEdition: makeEdition("Ebook Title", [{ role: "AUTHOR", name: "Author Name" }], [{ path: "/books/book.epub", kind: "EPUB" }]),
-  audioEdition: makeEdition("Audio Title", [{ role: "AUTHOR", name: "Author Name" }, { role: "NARRATOR", name: "Narrator Name" }], [{ path: "/audiobooks/book/chapter.mp3", kind: "AUDIO" }]),
+  ebookWork: makeWork("Ebook Title", [{ role: "AUTHOR", name: "Author Name" }], [{ path: "/books/book.epub", kind: "EPUB" }]),
+  audioWork: makeWork("Audio Title", [{ role: "AUTHOR", name: "Author Name" }, { role: "NARRATOR", name: "Narrator Name" }], [{ path: "/audiobooks/book/chapter.mp3", kind: "AUDIO" }]),
   matchType: "EXACT_METADATA",
   confidence: null,
   reviewStatus: "PENDING",
@@ -164,7 +209,7 @@ describe("AudioLinksPage", () => {
   it("renders without folder when audio edition has no files", async () => {
     mockLoaderData = {
       audioLinks: [makeAudioLink({
-        audioEdition: makeEdition("Audio Title", [{ role: "AUTHOR", name: "Author" }], []),
+        audioWork: makeWork("Audio Title", [{ role: "AUTHOR", name: "Author" }], []),
       })],
     };
     const { Route } = await import("./audio-links");
@@ -178,7 +223,7 @@ describe("AudioLinksPage", () => {
   it("renders singular 'file' when audio edition has exactly 1 audio track", async () => {
     mockLoaderData = {
       audioLinks: [makeAudioLink({
-        audioEdition: makeEdition("Audio Title", [{ role: "AUTHOR", name: "Author" }], [{ path: "/audio/track.mp3", kind: "AUDIO" }]),
+        audioWork: makeWork("Audio Title", [{ role: "AUTHOR", name: "Author" }], [{ path: "/audio/track.mp3", kind: "AUDIO" }]),
       })],
     };
     const { Route } = await import("./audio-links");
@@ -190,7 +235,7 @@ describe("AudioLinksPage", () => {
   it("renders plural 'files' when audio edition has multiple audio tracks", async () => {
     mockLoaderData = {
       audioLinks: [makeAudioLink({
-        audioEdition: makeEdition("Audio Title", [{ role: "AUTHOR", name: "Author" }], [
+        audioWork: makeWork("Audio Title", [{ role: "AUTHOR", name: "Author" }], [
           { path: "/audio/track1.mp3", kind: "AUDIO" },
           { path: "/audio/track2.mp3", kind: "AUDIO" },
         ]),
@@ -225,7 +270,7 @@ describe("AudioLinksPage", () => {
         makeAudioLink({
           id: "al-2",
           reviewStatus: "CONFIRMED",
-          ebookEdition: makeEdition("Confirmed Book", [], []),
+          ebookWork: makeWork("Confirmed Book", [], []),
         }),
       ],
     };
@@ -270,12 +315,12 @@ describe("AudioLinksPage", () => {
         audioLinks: [
           makeAudioLink({
             id: "al-1",
-            ebookEdition: makeEdition(
+            ebookWork: makeWork(
               "Alpha Book",
               [{ role: "AUTHOR", name: "Charlie Author" }],
               [{ path: "/books/alpha.epub", kind: "EPUB" }],
             ),
-            audioEdition: makeEdition(
+            audioWork: makeWork(
               "Alpha Audio",
               [{ role: "AUTHOR", name: "Charlie Author" }],
               [{ path: "/audio/alpha.mp3", kind: "AUDIO" }],
@@ -283,12 +328,13 @@ describe("AudioLinksPage", () => {
           }),
           makeAudioLink({
             id: "al-2",
-            ebookEdition: {
-              work: { titleDisplay: "Bravo Book", createdAt: new Date("2025-06-01") },
-              contributors: [{ role: "AUTHOR", contributor: { nameDisplay: "Alice Author" } }],
-              editionFiles: [{ fileAsset: { absolutePath: "/books/bravo.epub", mediaKind: "EPUB" } }],
-            },
-            audioEdition: makeEdition(
+            ebookWork: makeWork(
+              "Bravo Book",
+              [{ role: "AUTHOR", name: "Alice Author" }],
+              [{ path: "/books/bravo.epub", kind: "EPUB" }],
+              new Date("2025-06-01"),
+            ),
+            audioWork: makeWork(
               "Bravo Audio",
               [{ role: "AUTHOR", name: "Alice Author" }],
               [{ path: "/audio/bravo.mp3", kind: "AUDIO" }],
@@ -337,18 +383,18 @@ describe("AudioLinksPage", () => {
         audioLinks: [
           makeAudioLink({
             id: "al-1",
-            ebookEdition: makeEdition("No Author Book", [], [{ path: "/books/no-author.epub", kind: "EPUB" }]),
-            audioEdition: makeEdition("No Author Audio", [], [{ path: "/audio/no-author.mp3", kind: "AUDIO" }]),
+            ebookWork: makeWork("No Author Book", [], [{ path: "/books/no-author.epub", kind: "EPUB" }]),
+            audioWork: makeWork("No Author Audio", [], [{ path: "/audio/no-author.mp3", kind: "AUDIO" }]),
           }),
           makeAudioLink({
             id: "al-2",
-            ebookEdition: makeEdition("Has Author Book", [{ role: "AUTHOR", name: "Zach" }], [{ path: "/books/has-author.epub", kind: "EPUB" }]),
-            audioEdition: makeEdition("Has Author Audio", [{ role: "AUTHOR", name: "Zach" }], [{ path: "/audio/has-author.mp3", kind: "AUDIO" }]),
+            ebookWork: makeWork("Has Author Book", [{ role: "AUTHOR", name: "Zach" }], [{ path: "/books/has-author.epub", kind: "EPUB" }]),
+            audioWork: makeWork("Has Author Audio", [{ role: "AUTHOR", name: "Zach" }], [{ path: "/audio/has-author.mp3", kind: "AUDIO" }]),
           }),
           makeAudioLink({
             id: "al-3",
-            ebookEdition: makeEdition("Also No Author Book", [], [{ path: "/books/also-no-author.epub", kind: "EPUB" }]),
-            audioEdition: makeEdition("Also No Author Audio", [], [{ path: "/audio/also-no-author.mp3", kind: "AUDIO" }]),
+            ebookWork: makeWork("Also No Author Book", [], [{ path: "/books/also-no-author.epub", kind: "EPUB" }]),
+            audioWork: makeWork("Also No Author Audio", [], [{ path: "/audio/also-no-author.mp3", kind: "AUDIO" }]),
           }),
         ],
       };
@@ -367,18 +413,18 @@ describe("AudioLinksPage", () => {
         audioLinks: [
           makeAudioLink({
             id: "al-1",
-            ebookEdition: makeEdition("No Author Book", [], [{ path: "/books/no-author.epub", kind: "EPUB" }]),
-            audioEdition: makeEdition("No Author Audio", [], [{ path: "/audio/no-author.mp3", kind: "AUDIO" }]),
+            ebookWork: makeWork("No Author Book", [], [{ path: "/books/no-author.epub", kind: "EPUB" }]),
+            audioWork: makeWork("No Author Audio", [], [{ path: "/audio/no-author.mp3", kind: "AUDIO" }]),
           }),
           makeAudioLink({
             id: "al-2",
-            ebookEdition: makeEdition("Has Author Book", [{ role: "AUTHOR", name: "Zach" }], [{ path: "/books/has-author.epub", kind: "EPUB" }]),
-            audioEdition: makeEdition("Has Author Audio", [{ role: "AUTHOR", name: "Zach" }], [{ path: "/audio/has-author.mp3", kind: "AUDIO" }]),
+            ebookWork: makeWork("Has Author Book", [{ role: "AUTHOR", name: "Zach" }], [{ path: "/books/has-author.epub", kind: "EPUB" }]),
+            audioWork: makeWork("Has Author Audio", [{ role: "AUTHOR", name: "Zach" }], [{ path: "/audio/has-author.mp3", kind: "AUDIO" }]),
           }),
           makeAudioLink({
             id: "al-3",
-            ebookEdition: makeEdition("Also No Author Book", [], [{ path: "/books/also-no-author.epub", kind: "EPUB" }]),
-            audioEdition: makeEdition("Also No Author Audio", [], [{ path: "/audio/also-no-author.mp3", kind: "AUDIO" }]),
+            ebookWork: makeWork("Also No Author Book", [], [{ path: "/books/also-no-author.epub", kind: "EPUB" }]),
+            audioWork: makeWork("Also No Author Audio", [], [{ path: "/audio/also-no-author.mp3", kind: "AUDIO" }]),
           }),
         ],
       };
@@ -427,5 +473,216 @@ describe("AudioLinksPage", () => {
       // Alpha (2025-01-01) < Bravo (2025-06-01)
       expect(titles).toEqual(["Alpha Book", "Bravo Book"]);
     });
+  });
+
+  it("renders Re-match All button", async () => {
+    const { Route } = await import("./audio-links");
+    const AudioLinksPage = (Route.options.component as React.ComponentType);
+    render(<AudioLinksPage />);
+    expect(screen.getByRole("button", { name: /re-match all/i })).toBeTruthy();
+  });
+
+  it("Re-match All button calls rematchAllAudioServerFn and invalidates router", async () => {
+    rematchAllAudioServerFnMock.mockResolvedValueOnce({ importJobId: "job-1", enqueuedCount: 42 });
+    invalidateMock.mockResolvedValueOnce(undefined);
+    const user = userEvent.setup();
+    const { Route } = await import("./audio-links");
+    const AudioLinksPage = (Route.options.component as React.ComponentType);
+    render(<AudioLinksPage />);
+    await user.click(screen.getByRole("button", { name: /re-match all/i }));
+    expect(rematchAllAudioServerFnMock).toHaveBeenCalled();
+  });
+
+  it("Re-match All handles failure gracefully when mutation returns null", async () => {
+    rematchAllAudioServerFnMock.mockRejectedValueOnce(new Error("fail"));
+    invalidateMock.mockResolvedValueOnce(undefined);
+    const user = userEvent.setup();
+    const { Route } = await import("./audio-links");
+    const AudioLinksPage = (Route.options.component as React.ComponentType);
+    render(<AudioLinksPage />);
+    await user.click(screen.getByRole("button", { name: /re-match all/i }));
+    expect(rematchAllAudioServerFnMock).toHaveBeenCalled();
+  });
+
+  it("Re-match All shows toast when zero audiobook files to match", async () => {
+    const { toast } = await import("sonner");
+    rematchAllAudioServerFnMock.mockResolvedValueOnce({ importJobId: "job-1", enqueuedCount: 0 });
+    invalidateMock.mockResolvedValueOnce(undefined);
+    const user = userEvent.setup();
+    const { Route } = await import("./audio-links");
+    const AudioLinksPage = (Route.options.component as React.ComponentType);
+    render(<AudioLinksPage />);
+    await user.click(screen.getByRole("button", { name: /re-match all/i }));
+    expect(toast.success).toHaveBeenCalledWith("No audiobook files to match");
+  });
+
+  it("renders view toggle buttons", async () => {
+    const { Route } = await import("./audio-links");
+    const AudioLinksPage = (Route.options.component as React.ComponentType);
+    render(<AudioLinksPage />);
+    expect(screen.getByRole("button", { name: /card view/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /table view/i })).toBeTruthy();
+  });
+
+  it("switches to table view when table button is clicked", async () => {
+    mockLoaderData = { audioLinks: [makeAudioLink()] };
+    const user = userEvent.setup();
+    const { Route } = await import("./audio-links");
+    const AudioLinksPage = (Route.options.component as React.ComponentType);
+    render(<AudioLinksPage />);
+    // Initially in card view
+    expect(screen.getByText("Ebook Title")).toBeTruthy();
+    // Switch to table view
+    await user.click(screen.getByRole("button", { name: /table view/i }));
+    expect(screen.getByTestId("data-table")).toBeTruthy();
+  });
+
+  it("hides sort dropdown in table view", async () => {
+    const user = userEvent.setup();
+    const { Route } = await import("./audio-links");
+    const AudioLinksPage = (Route.options.component as React.ComponentType);
+    render(<AudioLinksPage />);
+    // Sort dropdown visible in card view
+    expect(screen.getByRole("combobox")).toBeTruthy();
+    // Switch to table view — sort dropdown hidden (table has its own sorting)
+    await user.click(screen.getByRole("button", { name: /table view/i }));
+    expect(screen.queryByRole("combobox")).toBeNull();
+  });
+
+  it("table view renders ebook and audio titles in cells", async () => {
+    mockLoaderData = { audioLinks: [makeAudioLink()] };
+    const user = userEvent.setup();
+    const { Route } = await import("./audio-links");
+    const AudioLinksPage = (Route.options.component as React.ComponentType);
+    render(<AudioLinksPage />);
+    await user.click(screen.getByRole("button", { name: /table view/i }));
+    expect(screen.getByText("Ebook Title")).toBeTruthy();
+    expect(screen.getByText("Audio Title")).toBeTruthy();
+  });
+
+  it("table view renders match type badge and confidence", async () => {
+    mockLoaderData = { audioLinks: [makeAudioLink({ matchType: "NORMALIZED_TITLE", confidence: 0.92 })] };
+    const user = userEvent.setup();
+    const { Route } = await import("./audio-links");
+    const AudioLinksPage = (Route.options.component as React.ComponentType);
+    render(<AudioLinksPage />);
+    await user.click(screen.getByRole("button", { name: /table view/i }));
+    expect(screen.getByText("NORMALIZED_TITLE")).toBeTruthy();
+    expect(screen.getByText("92%")).toBeTruthy();
+  });
+
+  it("table view renders status badge", async () => {
+    mockLoaderData = { audioLinks: [makeAudioLink({ reviewStatus: "PENDING" })] };
+    const user = userEvent.setup();
+    const { Route } = await import("./audio-links");
+    const AudioLinksPage = (Route.options.component as React.ComponentType);
+    render(<AudioLinksPage />);
+    await user.click(screen.getByRole("button", { name: /table view/i }));
+    expect(screen.getByText("PENDING")).toBeTruthy();
+  });
+
+  it("table view renders Merge/Ignore buttons for PENDING links", async () => {
+    mockLoaderData = { audioLinks: [makeAudioLink({ reviewStatus: "PENDING" })] };
+    const user = userEvent.setup();
+    const { Route } = await import("./audio-links");
+    const AudioLinksPage = (Route.options.component as React.ComponentType);
+    render(<AudioLinksPage />);
+    await user.click(screen.getByRole("button", { name: /table view/i }));
+    expect(screen.getByText("Merge")).toBeTruthy();
+    expect(screen.getByText("Ignore")).toBeTruthy();
+  });
+
+  it("table view does not render action buttons for CONFIRMED links", async () => {
+    mockLoaderData = { audioLinks: [makeAudioLink({ reviewStatus: "CONFIRMED" })] };
+    const user = userEvent.setup();
+    const { Route } = await import("./audio-links");
+    const AudioLinksPage = (Route.options.component as React.ComponentType);
+    render(<AudioLinksPage />);
+    await user.click(screen.getByRole("button", { name: /table view/i }));
+    expect(screen.queryByText("Merge")).toBeNull();
+    expect(screen.queryByText("Ignore")).toBeNull();
+  });
+
+  it("table view renders author from ebook work", async () => {
+    mockLoaderData = { audioLinks: [makeAudioLink()] };
+    const user = userEvent.setup();
+    const { Route } = await import("./audio-links");
+    const AudioLinksPage = (Route.options.component as React.ComponentType);
+    render(<AudioLinksPage />);
+    await user.click(screen.getByRole("button", { name: /table view/i }));
+    expect(screen.getByText("Author Name")).toBeTruthy();
+  });
+
+  it("table view Merge button calls confirmAudioLinkServerFn", async () => {
+    confirmAudioLinkServerFnMock.mockResolvedValueOnce({ success: true });
+    invalidateMock.mockResolvedValueOnce(undefined);
+    mockLoaderData = { audioLinks: [makeAudioLink({ id: "al-1", reviewStatus: "PENDING" })] };
+    const user = userEvent.setup();
+    const { Route } = await import("./audio-links");
+    const AudioLinksPage = (Route.options.component as React.ComponentType);
+    render(<AudioLinksPage />);
+    await user.click(screen.getByRole("button", { name: /table view/i }));
+    await user.click(screen.getByText("Merge"));
+    expect(confirmAudioLinkServerFnMock).toHaveBeenCalledWith({ data: { id: "al-1" } });
+  });
+
+  it("table view Ignore button calls ignoreAudioLinkServerFn", async () => {
+    ignoreAudioLinkServerFnMock.mockResolvedValueOnce({ success: true });
+    invalidateMock.mockResolvedValueOnce(undefined);
+    mockLoaderData = { audioLinks: [makeAudioLink({ id: "al-1", reviewStatus: "PENDING" })] };
+    const user = userEvent.setup();
+    const { Route } = await import("./audio-links");
+    const AudioLinksPage = (Route.options.component as React.ComponentType);
+    render(<AudioLinksPage />);
+    await user.click(screen.getByRole("button", { name: /table view/i }));
+    await user.click(screen.getByText("Ignore"));
+    expect(ignoreAudioLinkServerFnMock).toHaveBeenCalledWith({ data: { id: "al-1" } });
+  });
+
+  it("switches back to card view from table view", async () => {
+    mockLoaderData = { audioLinks: [makeAudioLink()] };
+    const user = userEvent.setup();
+    const { Route } = await import("./audio-links");
+    const AudioLinksPage = (Route.options.component as React.ComponentType);
+    render(<AudioLinksPage />);
+    await user.click(screen.getByRole("button", { name: /table view/i }));
+    expect(screen.getByTestId("data-table")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: /card view/i }));
+    expect(screen.queryByTestId("data-table")).toBeNull();
+  });
+
+  it("table view renders dash for missing author and null confidence", async () => {
+    mockLoaderData = {
+      audioLinks: [makeAudioLink({
+        ebookWork: makeWork("No Author Book", [], []),
+        audioWork: makeWork("No Author Audio", [], []),
+        confidence: null,
+      })],
+    };
+    const user = userEvent.setup();
+    const { Route } = await import("./audio-links");
+    const AudioLinksPage = (Route.options.component as React.ComponentType);
+    render(<AudioLinksPage />);
+    await user.click(screen.getByRole("button", { name: /table view/i }));
+    // "—" rendered for missing author and null confidence
+    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("table view renders outline badge for unknown status", async () => {
+    mockLoaderData = { audioLinks: [makeAudioLink({ reviewStatus: "UNKNOWN_STATUS" })] };
+    const user = userEvent.setup();
+    const { Route } = await import("./audio-links");
+    const AudioLinksPage = (Route.options.component as React.ComponentType);
+    render(<AudioLinksPage />);
+    await user.click(screen.getByRole("button", { name: /table view/i }));
+    expect(screen.getByText("UNKNOWN_STATUS")).toBeTruthy();
+  });
+
+  it("shows row count in subtitle", async () => {
+    mockLoaderData = { audioLinks: [makeAudioLink(), makeAudioLink({ id: "al-2" })] };
+    const { Route } = await import("./audio-links");
+    const AudioLinksPage = (Route.options.component as React.ComponentType);
+    render(<AudioLinksPage />);
+    expect(screen.getByText(/2 total/)).toBeTruthy();
   });
 });
