@@ -12,6 +12,7 @@ export {
   isFileChanged,
   matchAudio,
   matchFileAssetToEdition,
+  mergeWorksById,
   normalizeAudiobookMetadata,
   normalizeBookMetadata,
   normalizeOpfMetadata,
@@ -63,7 +64,7 @@ export { RateLimiter } from "./enrichment/rate-limiter";
 export type { RateLimitResult } from "./enrichment/rate-limiter";
 export { enrichWork } from "./enrichment/enrich-work";
 export type { EnrichWorkDeps, EnrichWorkResult } from "./enrichment/enrich-work";
-export { levenshteinDistance, normalizedSimilarity } from "./similarity";
+export { levenshteinDistance, normalizedSimilarity, normalizeForTitleMatching, stripSubtitleForMatching } from "./similarity";
 
 export const INGEST_PUBLIC_API = [
   "enrichWork",
@@ -86,7 +87,10 @@ export const INGEST_PUBLIC_API = [
   "isFileChanged",
   "matchAudio",
   "matchFileAssetToEdition",
+  "mergeWorksById",
   "normalizedSimilarity",
+  "normalizeForTitleMatching",
+  "stripSubtitleForMatching",
   "normalizeAudiobookMetadata",
   "normalizeBookMetadata",
   "normalizeOpfMetadata",
