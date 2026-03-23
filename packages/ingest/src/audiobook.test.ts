@@ -15,6 +15,7 @@ import {
   parseAudioId3Tags,
   type ParsedAudiobookMetadataJsonRaw,
   type ParsedAudioId3TagsRaw,
+  type ParseAudioId3Result,
 } from "./audiobook";
 
 const mockedReadFile = vi.mocked(readFile);
@@ -172,16 +173,19 @@ describe("parseAudioId3Tags", () => {
     const result = await parseAudioId3Tags("/books/chapter01.mp3");
 
     expect(result).toEqual({
-      title: "Chapter 01",
-      artist: "Andy Weir",
-      albumArtist: "Andy Weir",
-      album: "Project Hail Mary",
-      year: 2021,
-      genres: ["Science Fiction"],
-      comment: "A great audiobook",
-      trackNumber: 1,
-      trackTotal: 12,
-    } satisfies ParsedAudioId3TagsRaw);
+      tags: {
+        title: "Chapter 01",
+        artist: "Andy Weir",
+        albumArtist: "Andy Weir",
+        album: "Project Hail Mary",
+        year: 2021,
+        genres: ["Science Fiction"],
+        comment: "A great audiobook",
+        trackNumber: 1,
+        trackTotal: 12,
+      } satisfies ParsedAudioId3TagsRaw,
+      warnings: [],
+    } satisfies ParseAudioId3Result);
   });
 
   it("handles minimal metadata (all fields optional)", async () => {
@@ -195,16 +199,19 @@ describe("parseAudioId3Tags", () => {
     const result = await parseAudioId3Tags("/books/audio.m4b");
 
     expect(result).toEqual({
-      title: undefined,
-      artist: undefined,
-      albumArtist: undefined,
-      album: undefined,
-      year: undefined,
-      genres: [],
-      comment: undefined,
-      trackNumber: undefined,
-      trackTotal: undefined,
-    } satisfies ParsedAudioId3TagsRaw);
+      tags: {
+        title: undefined,
+        artist: undefined,
+        albumArtist: undefined,
+        album: undefined,
+        year: undefined,
+        genres: [],
+        comment: undefined,
+        trackNumber: undefined,
+        trackTotal: undefined,
+      } satisfies ParsedAudioId3TagsRaw,
+      warnings: [],
+    } satisfies ParseAudioId3Result);
   });
 
   it("takes first comment from array", async () => {
@@ -219,7 +226,7 @@ describe("parseAudioId3Tags", () => {
     } as never);
 
     const result = await parseAudioId3Tags("/books/audio.mp3");
-    expect(result.comment).toBe("first");
+    expect(result.tags.comment).toBe("first");
   });
 
   it("handles empty comment array", async () => {
@@ -234,7 +241,7 @@ describe("parseAudioId3Tags", () => {
     } as never);
 
     const result = await parseAudioId3Tags("/books/audio.mp3");
-    expect(result.comment).toBeUndefined();
+    expect(result.tags.comment).toBeUndefined();
   });
 
   it("handles missing track info", async () => {
@@ -248,15 +255,62 @@ describe("parseAudioId3Tags", () => {
     } as never);
 
     const result = await parseAudioId3Tags("/books/audio.mp3");
-    expect(result.trackNumber).toBeUndefined();
-    expect(result.trackTotal).toBeUndefined();
+    expect(result.tags.trackNumber).toBeUndefined();
+    expect(result.tags.trackTotal).toBeUndefined();
   });
 
-  it("propagates parse errors", async () => {
+  it("returns empty tags with warning for Unicode encoding errors", async () => {
+    mockedParseFile.mockRejectedValueOnce(new Error("unsupported Unicode escape sequence"));
+
+    const result = await parseAudioId3Tags("/books/audio.mp3");
+
+    expect(result).toEqual({
+      tags: {
+        title: undefined,
+        artist: undefined,
+        albumArtist: undefined,
+        album: undefined,
+        year: undefined,
+        genres: [],
+        comment: undefined,
+        trackNumber: undefined,
+        trackTotal: undefined,
+      },
+      warnings: ["unsupported Unicode escape sequence"],
+    });
+  });
+
+  it("returns empty tags with warning for 'invalid encoding' errors", async () => {
+    mockedParseFile.mockRejectedValueOnce(new Error("invalid encoding detected in ID3v2 tag"));
+
+    const result = await parseAudioId3Tags("/books/audio.mp3");
+
+    expect(result.tags.title).toBeUndefined();
+    expect(result.warnings).toEqual(["invalid encoding detected in ID3v2 tag"]);
+  });
+
+  it("returns empty tags with warning for 'unexpected character' errors", async () => {
+    mockedParseFile.mockRejectedValueOnce(new Error("unexpected character in tag data"));
+
+    const result = await parseAudioId3Tags("/books/audio.mp3");
+
+    expect(result.tags.title).toBeUndefined();
+    expect(result.warnings).toEqual(["unexpected character in tag data"]);
+  });
+
+  it("re-throws non-encoding errors", async () => {
     mockedParseFile.mockRejectedValueOnce(new Error("Unsupported format"));
 
     await expect(
       parseAudioId3Tags("/books/audio.wav"),
     ).rejects.toThrow("Unsupported format");
+  });
+
+  it("re-throws non-Error values", async () => {
+    mockedParseFile.mockRejectedValueOnce("string error");
+
+    await expect(
+      parseAudioId3Tags("/books/audio.wav"),
+    ).rejects.toBe("string error");
   });
 });

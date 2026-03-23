@@ -456,6 +456,24 @@ function getErrorCode(error: unknown): string | undefined {
     : undefined;
 }
 
+/** Transient infrastructure errors that should be retried, not permanently stored as "unparseable". */
+const TRANSIENT_ERROR_CODES = new Set([
+  "ENOTCONN",    // socket not connected (NFS/network filesystem)
+  "ECONNRESET",  // connection reset by peer
+  "ECONNREFUSED",// connection refused
+  "ETIMEDOUT",   // operation timed out
+  "EIO",         // I/O error (disk/network issue)
+  "EPIPE",       // broken pipe
+  "ENETUNREACH", // network unreachable
+  "EHOSTUNREACH",// host unreachable
+  "ECONNABORTED",// connection aborted
+]);
+
+function isTransientError(error: unknown): boolean {
+  const code = getErrorCode(error);
+  return code !== undefined && TRANSIENT_ERROR_CODES.has(code);
+}
+
 function parseStoredMetadata(metadata: FileAsset["metadata"]): ParsedFileAssetMetadata | undefined {
   if (metadata === null || typeof metadata !== "object") {
     return undefined;
@@ -1302,6 +1320,22 @@ export function createIngestServices(
                 }
               }
             }
+
+            // Re-parse edition-linked AUDIO files with unparseable metadata
+            // (encoding errors are now handled gracefully, so re-parsing will succeed)
+            const editionLinkedMeta = parseStoredMetadata(upsertedFileAsset.metadata);
+            if (
+              upsertedFileAsset.mediaKind === MediaKind.AUDIO &&
+              editionLinkedMeta?.status === "unparseable"
+            ) {
+              logger.info({ fileAssetId: upsertedFileAsset.id, reason: "edition-linked audio with unparseable metadata" }, "Recovery: re-enqueueing PARSE");
+              await enqueueJob(LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA, {
+                fileAssetId: upsertedFileAsset.id,
+              });
+              if (!enqueuedRecoveryJobs.includes(upsertedFileAsset.id)) {
+                enqueuedRecoveryJobs.push(upsertedFileAsset.id);
+              }
+            }
           } else {
             // Not linked to an edition — recover from earlier in the pipeline
             const parsedMeta = parseStoredMetadata(upsertedFileAsset.metadata);
@@ -1757,6 +1791,10 @@ export function createIngestServices(
           return { availabilityStatus: AvailabilityStatus.MISSING, fileAssetId: fileAsset.id, skipped: false };
         }
 
+        if (isTransientError(error)) {
+          throw error;
+        }
+
         const warning = error instanceof Error ? error.message : "Unknown OPF parsing error";
         const metadata: ParsedFileAssetMetadata = {
           parsedAt: now.toISOString(),
@@ -1798,7 +1836,8 @@ export function createIngestServices(
         const firstAudioSibling = audioSiblings[0];
         if (firstAudioSibling) {
           try {
-            id3Raw = await parseAudioId3(firstAudioSibling.absolutePath);
+            const { tags } = await parseAudioId3(firstAudioSibling.absolutePath);
+            id3Raw = tags;
           } catch {
             // ID3 parsing failure is non-fatal for sidecar flow
           }
@@ -1848,6 +1887,10 @@ export function createIngestServices(
           return { availabilityStatus: AvailabilityStatus.MISSING, fileAssetId: fileAsset.id, skipped: false };
         }
 
+        if (isTransientError(error)) {
+          throw error;
+        }
+
         const warning = error instanceof Error ? error.message : "Unknown audiobook metadata.json parsing error";
         const metadata: ParsedFileAssetMetadata = {
           parsedAt: now.toISOString(),
@@ -1885,7 +1928,16 @@ export function createIngestServices(
       if (metadataJsonSibling !== undefined) {
         const siblingMetadata = parseStoredMetadata(metadataJsonSibling.metadata);
         if (siblingMetadata?.source === "audiobook-json" && siblingMetadata.status === "parsed") {
-          // Sidecar already parsed; skip this audio file
+          // Sidecar already parsed; skip this audio file's own ID3 parse.
+          // If the audio file was previously marked unparseable (e.g. encoding error),
+          // clear it so it no longer shows as a library issue.
+          const ownMetadata = parseStoredMetadata(fileAsset.metadata);
+          if (ownMetadata?.status === "unparseable") {
+            await ingestDb.fileAsset.update({
+              where: { id: fileAsset.id },
+              data: { metadata: null },
+            });
+          }
           return {
             availabilityStatus: fileAsset.availabilityStatus,
             fileAssetId: fileAsset.id,
@@ -1895,7 +1947,7 @@ export function createIngestServices(
       }
 
       try {
-        const id3Raw = await parseAudioId3(fileAsset.absolutePath);
+        const { tags: id3Raw, warnings: id3Warnings } = await parseAudioId3(fileAsset.absolutePath);
         const normalized = normalizeAudiobookMetadata(
           {
             title: id3Raw.album ?? id3Raw.title ?? "",
@@ -1918,7 +1970,7 @@ export function createIngestServices(
           raw: id3Raw,
           source: "audio-id3",
           status: "parsed",
-          warnings: [],
+          warnings: id3Warnings,
         };
 
         await ingestDb.fileAsset.update({
@@ -1960,6 +2012,10 @@ export function createIngestServices(
             },
           });
           return { availabilityStatus: AvailabilityStatus.MISSING, fileAssetId: fileAsset.id, skipped: false };
+        }
+
+        if (isTransientError(error)) {
+          throw error;
         }
 
         const warning = error instanceof Error ? error.message : "Unknown audio ID3 parsing error";
@@ -2040,6 +2096,10 @@ export function createIngestServices(
           fileAssetId: fileAsset.id,
           skipped: false,
         };
+      }
+
+      if (isTransientError(error)) {
+        throw error;
       }
 
       const warning = error instanceof Error ? error.message : "Unknown EPUB parsing error";
@@ -2588,7 +2648,7 @@ export const mergeWorksById = services.mergeWorksById;
 export { classifyMediaKind, deriveFormatFamily, getFileExtension, hashFileContents, isFileChanged, normalizeRelativePath, normalizeRootPath, walkRegularFiles };
 export { parseEpubMetadata } from "./epub";
 export { parseOpfSidecar } from "./opf";
-export { parseAudiobookMetadataJson, parseAudioId3Tags } from "./audiobook";
+export { parseAudiobookMetadataJson, parseAudioId3Tags, type ParseAudioId3Result } from "./audiobook";
 export {
   canonicalizeBookTitle,
   canonicalizeContributorName,

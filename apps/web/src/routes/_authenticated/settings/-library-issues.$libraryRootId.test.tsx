@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import type * as TanstackRouter from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 let mockLoaderData: {
@@ -9,9 +10,15 @@ let mockLoaderData: {
 } = { libraryRootId: "root-1", issues: { items: [], total: 0 } };
 
 const getLibraryIssuesServerFnMock = vi.fn();
+const retryLibraryIssuesServerFnMock = vi.fn();
 
 vi.mock("~/lib/server-fns/library-roots", () => ({
   getLibraryIssuesServerFn: getLibraryIssuesServerFnMock,
+  retryLibraryIssuesServerFn: retryLibraryIssuesServerFnMock,
+}));
+
+vi.mock("sonner", () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
 }));
 
 interface MockRoute {
@@ -129,5 +136,129 @@ describe("LibraryIssuesPage", () => {
     const Page = Route.options.component;
     render(<Page />);
     expect(screen.getByText("author/broken.epub")).toBeTruthy();
+  });
+
+  it("renders Retry All button when issues exist", async () => {
+    mockLoaderData = {
+      libraryRootId: "root-1",
+      issues: {
+        items: [
+          {
+            id: "fa-1",
+            relativePath: "author/book.epub",
+            mediaKind: "EPUB",
+            metadata: { status: "unparseable", warnings: ["Bad XML"] },
+            lastSeenAt: null,
+          },
+        ],
+        total: 1,
+      },
+    };
+    const mod = await import("./library-issues.$libraryRootId");
+    const { Route } = mod as unknown as { Route: MockRoute };
+    const Page = Route.options.component;
+    render(<Page />);
+    expect(screen.getByRole("button", { name: /retry all/i })).toBeTruthy();
+  });
+
+  it("does not render Retry All button when no issues", async () => {
+    const mod = await import("./library-issues.$libraryRootId");
+    const { Route } = mod as unknown as { Route: MockRoute };
+    const Page = Route.options.component;
+    render(<Page />);
+    expect(screen.queryByRole("button", { name: /retry all/i })).toBeNull();
+  });
+
+  it("calls retryLibraryIssuesServerFn when Retry All is clicked", async () => {
+    mockLoaderData = {
+      libraryRootId: "root-1",
+      issues: {
+        items: [
+          {
+            id: "fa-1",
+            relativePath: "author/book.epub",
+            mediaKind: "EPUB",
+            metadata: { status: "unparseable", warnings: ["Bad XML"] },
+            lastSeenAt: null,
+          },
+        ],
+        total: 1,
+      },
+    };
+    retryLibraryIssuesServerFnMock
+      .mockResolvedValueOnce({ retriedCount: 1 })
+      .mockResolvedValueOnce({ retriedCount: 3 });
+    const mod = await import("./library-issues.$libraryRootId");
+    const { Route } = mod as unknown as { Route: MockRoute };
+    const Page = Route.options.component;
+    const { unmount } = render(<Page />);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /retry all/i }));
+
+    expect(retryLibraryIssuesServerFnMock).toHaveBeenCalledWith({
+      data: { libraryRootId: "root-1" },
+    });
+
+    // Click again to cover plural branch
+    unmount();
+    render(<Page />);
+    await user.click(screen.getByRole("button", { name: /retry all/i }));
+  });
+
+  it("shows error toast when retry fails with Error", async () => {
+    mockLoaderData = {
+      libraryRootId: "root-1",
+      issues: {
+        items: [
+          {
+            id: "fa-1",
+            relativePath: "author/book.epub",
+            mediaKind: "EPUB",
+            metadata: { status: "unparseable", warnings: ["Bad XML"] },
+            lastSeenAt: null,
+          },
+        ],
+        total: 1,
+      },
+    };
+    retryLibraryIssuesServerFnMock.mockRejectedValue(new Error("Queue connection failed"));
+    const mod = await import("./library-issues.$libraryRootId");
+    const { Route } = mod as unknown as { Route: MockRoute };
+    const Page = Route.options.component;
+    render(<Page />);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /retry all/i }));
+
+    expect(retryLibraryIssuesServerFnMock).toHaveBeenCalled();
+  });
+
+  it("shows fallback error toast when retry fails with non-Error", async () => {
+    mockLoaderData = {
+      libraryRootId: "root-1",
+      issues: {
+        items: [
+          {
+            id: "fa-1",
+            relativePath: "author/book.epub",
+            mediaKind: "EPUB",
+            metadata: { status: "unparseable", warnings: ["Bad XML"] },
+            lastSeenAt: null,
+          },
+        ],
+        total: 1,
+      },
+    };
+    retryLibraryIssuesServerFnMock.mockRejectedValue("non-error rejection");
+    const mod = await import("./library-issues.$libraryRootId");
+    const { Route } = mod as unknown as { Route: MockRoute };
+    const Page = Route.options.component;
+    render(<Page />);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /retry all/i }));
+
+    expect(retryLibraryIssuesServerFnMock).toHaveBeenCalled();
   });
 });

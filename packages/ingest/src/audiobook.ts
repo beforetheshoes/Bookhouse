@@ -84,21 +84,55 @@ export async function parseAudiobookMetadataJson(
   };
 }
 
+export interface ParseAudioId3Result {
+  tags: ParsedAudioId3TagsRaw;
+  warnings: string[];
+}
+
+function isEncodingError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const msg = error.message.toLowerCase();
+  return msg.includes("unicode") || msg.includes("encoding") || msg.includes("unexpected character");
+}
+
 export async function parseAudioId3Tags(
   absolutePath: string,
-): Promise<ParsedAudioId3TagsRaw> {
-  const metadata = await parseFile(absolutePath);
-  const { common } = metadata;
+): Promise<ParseAudioId3Result> {
+  try {
+    const metadata = await parseFile(absolutePath);
+    const { common } = metadata;
 
-  return {
-    title: common.title,
-    artist: common.artist,
-    albumArtist: common.albumartist,
-    album: common.album,
-    year: common.year,
-    genres: common.genre ?? [],
-    comment: common.comment?.[0]?.text,
-    trackNumber: common.track.no ?? undefined,
-    trackTotal: common.track.of ?? undefined,
-  };
+    return {
+      tags: {
+        title: common.title,
+        artist: common.artist,
+        albumArtist: common.albumartist,
+        album: common.album,
+        year: common.year,
+        genres: common.genre ?? [],
+        comment: common.comment?.[0]?.text,
+        trackNumber: common.track.no ?? undefined,
+        trackTotal: common.track.of ?? undefined,
+      },
+      warnings: [],
+    };
+  } catch (error) {
+    if (isEncodingError(error)) {
+      return {
+        tags: {
+          title: undefined,
+          artist: undefined,
+          albumArtist: undefined,
+          album: undefined,
+          year: undefined,
+          genres: [],
+          comment: undefined,
+          trackNumber: undefined,
+          trackTotal: undefined,
+        },
+        warnings: [(error as Error).message],
+      };
+    }
+    throw error;
+  }
 }

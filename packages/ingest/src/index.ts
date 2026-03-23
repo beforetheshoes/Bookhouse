@@ -40,6 +40,7 @@ export type {
   MatchFileAssetToEditionInput,
   MatchFileAssetToEditionResult,
   NormalizedBookMetadata,
+  ParseAudioId3Result,
   ParsedAudiobookMetadataJsonRaw,
   ParsedAudioId3TagsRaw,
   ParsedEpubMetadataRaw,

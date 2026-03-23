@@ -16,6 +16,7 @@
     "@bookhouse/auth": "workspace:*",
     "@bookhouse/db": "workspace:*",
     "@bookhouse/domain": "workspace:*",
+    "@bookhouse/ingest": "workspace:*",
     "@bookhouse/shared": "workspace:*",
     "@tanstack/react-router": "^1.167.4",
     "@tanstack/react-router-devtools": "^1.166.9",

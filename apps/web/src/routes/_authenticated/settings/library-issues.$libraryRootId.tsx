@@ -1,6 +1,9 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowLeft } from "lucide-react";
+import { useState } from "react";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
+import { toast } from "sonner";
+import { ArrowLeft, Loader2, RefreshCw } from "lucide-react";
 import { Badge } from "~/components/ui/badge";
+import { Button } from "~/components/ui/button";
 import {
   Table,
   TableBody,
@@ -9,7 +12,10 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
-import { getLibraryIssuesServerFn } from "~/lib/server-fns/library-roots";
+import {
+  getLibraryIssuesServerFn,
+  retryLibraryIssuesServerFn,
+} from "~/lib/server-fns/library-roots";
 
 interface IssueItem {
   id: string;
@@ -40,7 +46,28 @@ export const Route = createFileRoute(
 });
 
 function LibraryIssuesPage() {
-  const { issues } = Route.useLoaderData();
+  const { libraryRootId, issues } = Route.useLoaderData();
+  const router = useRouter();
+  const [retrying, setRetrying] = useState(false);
+
+  async function handleRetryAll() {
+    setRetrying(true);
+    try {
+      const result = await retryLibraryIssuesServerFn({
+        data: { libraryRootId },
+      });
+      toast.success(
+        `Re-parsed ${String(result.retriedCount)} file${result.retriedCount === 1 ? "" : "s"}`,
+      );
+      void router.invalidate();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to retry issues",
+      );
+    } finally {
+      setRetrying(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -56,9 +83,31 @@ function LibraryIssuesPage() {
 
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Library Issues</h1>
-        <span className="text-sm text-muted-foreground">
-          {String(issues.total)} total issues
-        </span>
+        <div className="flex items-center gap-3">
+          {issues.total > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { void handleRetryAll(); }}
+              disabled={retrying}
+            >
+              {retrying ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  Retrying...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="size-4" />
+                  Retry All
+                </>
+              )}
+            </Button>
+          )}
+          <span className="text-sm text-muted-foreground">
+            {String(issues.total)} total issues
+          </span>
+        </div>
       </div>
 
       {issues.items.length === 0 ? (
