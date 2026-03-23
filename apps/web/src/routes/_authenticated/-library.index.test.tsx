@@ -505,7 +505,24 @@ describe("LibraryPage", () => {
     expect(screen.getByText(/Scanning.*new/)).toBeTruthy();
   });
 
-  it("shows processing badge for stub works in table view", async () => {
+  it("shows processing badge for stub works in table view when scan is active", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Stub Book", ["Author"], ["EBOOK"], "STUB")],
+        totalCount: 1,
+        facetCounts: defaultFacetCounts,
+      },
+      activeJobCount: 1,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.getByText("Processing\u2026")).toBeTruthy();
+  });
+
+  it("does not show processing badge for stub works in table view when no scan is active", async () => {
     mockView = "table";
     mockLoaderData = {
       libraryResult: {
@@ -519,7 +536,7 @@ describe("LibraryPage", () => {
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
-    expect(screen.getByText("Processing\u2026")).toBeTruthy();
+    expect(screen.queryByText("Processing\u2026")).toBeNull();
   });
 
   it("does not show processing badge for enriched works in table view", async () => {

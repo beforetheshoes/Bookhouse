@@ -83,13 +83,23 @@ describe("WorkCard", () => {
     expect(link.getAttribute("href")).toBe("/library/work-123");
   });
 
-  it("shows processing badge when enrichmentStatus is STUB", () => {
-    render(<WorkCard {...baseProps} enrichmentStatus="STUB" />);
+  it("shows processing badge when enrichmentStatus is STUB and scanActive is true", () => {
+    render(<WorkCard {...baseProps} enrichmentStatus="STUB" scanActive />);
     expect(screen.getByText("Processing\u2026")).toBeTruthy();
   });
 
+  it("does not show processing badge when enrichmentStatus is STUB and scanActive is false", () => {
+    render(<WorkCard {...baseProps} enrichmentStatus="STUB" scanActive={false} />);
+    expect(screen.queryByText("Processing\u2026")).toBeNull();
+  });
+
+  it("does not show processing badge when enrichmentStatus is STUB and scanActive is not provided", () => {
+    render(<WorkCard {...baseProps} enrichmentStatus="STUB" />);
+    expect(screen.queryByText("Processing\u2026")).toBeNull();
+  });
+
   it("does not show processing badge when enrichmentStatus is ENRICHED", () => {
-    render(<WorkCard {...baseProps} enrichmentStatus="ENRICHED" />);
+    render(<WorkCard {...baseProps} enrichmentStatus="ENRICHED" scanActive />);
     expect(screen.queryByText("Processing\u2026")).toBeNull();
   });
 

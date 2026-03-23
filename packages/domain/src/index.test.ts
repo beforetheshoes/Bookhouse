@@ -10,6 +10,7 @@ import {
   ImportJobKind,
   ImportJobStatus,
   LibraryRootKind,
+  ScanStage,
   MediaKind,
   ReviewStatus,
   ScanMode,
@@ -30,6 +31,9 @@ describe("domain package", () => {
     expect(EnrichmentStatus.STUB).toBe("STUB");
     expect(EnrichmentStatus.ENRICHED).toBe("ENRICHED");
     expect(ImportJobStatus.QUEUED).toBe("QUEUED");
+    expect(ScanStage.DISCOVERY).toBe("DISCOVERY");
+    expect(ScanStage.PROCESSING).toBe("PROCESSING");
+    expect(ScanStage.ENRICHING).toBe("ENRICHING");
     expect(AudioLinkMatchType.SAME_WORK).toBe("SAME_WORK");
     expect(AudioLinkMatchType.EXACT_METADATA).toBe("EXACT_METADATA");
     expect(AudioLinkMatchType.NORMALIZED_TITLE).toBe("NORMALIZED_TITLE");

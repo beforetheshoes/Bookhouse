@@ -25,7 +25,12 @@ const importJobCreateMock = vi.fn();
 const importJobUpdateMock = vi.fn();
 const importJobDeleteManyMock = vi.fn();
 const importJobFindFirstMock = vi.fn();
-const transactionMock = vi.fn(async (ops: Promise<unknown>[]) => Promise.all(ops));
+const transactionMock = vi.fn(async (fnOrOps: unknown) => {
+  if (typeof fnOrOps === "function") {
+    return (fnOrOps as (tx: unknown) => Promise<unknown>)(null);
+  }
+  return Promise.all(fnOrOps as Promise<unknown>[]);
+});
 
 vi.mock("@bookhouse/db", () => ({
   db: {
@@ -66,8 +71,11 @@ const createIngestServicesMock = vi.fn(() => ({
   parseFileAssetMetadata: parseFileAssetMetadataMock,
 }));
 
+const cascadeCleanupOrphansMock = vi.fn();
+
 vi.mock("@bookhouse/ingest", () => ({
   createIngestServices: createIngestServicesMock,
+  cascadeCleanupOrphans: cascadeCleanupOrphansMock,
 }));
 
 import {
@@ -151,45 +159,57 @@ describe("addLibraryRootServerFn", () => {
 describe("removeLibraryRootServerFn", () => {
   beforeEach(() => {
     transactionMock.mockReset();
-    editionFileDeleteManyMock.mockReset();
-    fileAssetDeleteManyMock.mockReset();
+    fileAssetFindManyMock.mockReset();
+    cascadeCleanupOrphansMock.mockReset();
     importJobDeleteManyMock.mockReset();
     libraryRootDeleteMock.mockReset();
-    transactionMock.mockImplementation(async (ops: Promise<unknown>[]) =>
-      Promise.all(ops),
-    );
-    editionFileDeleteManyMock.mockResolvedValue({ count: 0 });
-    fileAssetDeleteManyMock.mockResolvedValue({ count: 0 });
+    const txClient = {
+      fileAsset: { findMany: fileAssetFindManyMock },
+      importJob: { deleteMany: importJobDeleteManyMock },
+      libraryRoot: { delete: libraryRootDeleteMock },
+    };
+    transactionMock.mockImplementation(async (fn: unknown) => {
+      if (typeof fn === "function") {
+        return (fn as (tx: unknown) => Promise<unknown>)(txClient);
+      }
+      return Promise.all(fn as Promise<unknown>[]);
+    });
+    fileAssetFindManyMock.mockResolvedValue([]);
+    cascadeCleanupOrphansMock.mockResolvedValue({ deletedEditionFileCount: 0, deletedEditionIds: [], deletedWorkIds: [] });
     importJobDeleteManyMock.mockResolvedValue({ count: 0 });
     libraryRootDeleteMock.mockResolvedValue({ id: "root-1" });
   });
 
-  it("calls db.$transaction with an array of 4 operations", async () => {
+  it("finds FileAsset IDs, calls cascadeCleanupOrphans, and deletes ImportJobs and LibraryRoot", async () => {
+    fileAssetFindManyMock.mockResolvedValue([{ id: "fa-1" }, { id: "fa-2" }]);
+
     await removeLibraryRootServerFn({ data: { id: "root-1" } });
 
     expect(transactionMock).toHaveBeenCalledTimes(1);
-    const firstCall = transactionMock.mock.calls[0];
-    expect(firstCall).toBeDefined();
-    const ops = firstCall?.[0];
-    expect(Array.isArray(ops)).toBe(true);
-    expect(ops).toHaveLength(4);
-  });
-
-  it("deletes editionFiles, fileAssets, importJobs, and the libraryRoot", async () => {
-    await removeLibraryRootServerFn({ data: { id: "root-1" } });
-
-    expect(editionFileDeleteManyMock).toHaveBeenCalledWith({
-      where: { fileAsset: { libraryRootId: "root-1" } },
-    });
-    expect(fileAssetDeleteManyMock).toHaveBeenCalledWith({
+    expect(fileAssetFindManyMock).toHaveBeenCalledWith({
       where: { libraryRootId: "root-1" },
+      select: { id: true },
     });
+    expect(cascadeCleanupOrphansMock).toHaveBeenCalledWith(
+      expect.anything(),
+      { fileAssetIds: ["fa-1", "fa-2"] },
+    );
     expect(importJobDeleteManyMock).toHaveBeenCalledWith({
       where: { libraryRootId: "root-1" },
     });
     expect(libraryRootDeleteMock).toHaveBeenCalledWith({
       where: { id: "root-1" },
     });
+  });
+
+  it("skips cascadeCleanupOrphans when library has no files", async () => {
+    fileAssetFindManyMock.mockResolvedValue([]);
+
+    await removeLibraryRootServerFn({ data: { id: "root-1" } });
+
+    expect(cascadeCleanupOrphansMock).not.toHaveBeenCalled();
+    expect(importJobDeleteManyMock).toHaveBeenCalled();
+    expect(libraryRootDeleteMock).toHaveBeenCalled();
   });
 });
 
@@ -212,6 +232,7 @@ describe("scanLibraryRootServerFn", () => {
         kind: "SCAN_ROOT",
         status: "QUEUED",
         libraryRootId: "root-xyz",
+        scanStage: "DISCOVERY",
       },
     });
   });
@@ -267,6 +288,9 @@ describe("getScanProgressServerFn", () => {
       processedFiles: 42,
       errorCount: 2,
       updatedAt: new Date(),
+      scanStage: "DISCOVERY",
+      totalProcessingJobs: null,
+      completedProcessingJobs: 0,
     });
 
     const result = await getScanProgressServerFn({
@@ -285,6 +309,9 @@ describe("getScanProgressServerFn", () => {
         processedFiles: true,
         errorCount: true,
         updatedAt: true,
+        scanStage: true,
+        totalProcessingJobs: true,
+        completedProcessingJobs: true,
       },
       orderBy: { createdAt: "desc" },
     });
@@ -293,6 +320,9 @@ describe("getScanProgressServerFn", () => {
       totalFiles: 100,
       processedFiles: 42,
       errorCount: 2,
+      scanStage: "DISCOVERY",
+      totalProcessingJobs: null,
+      completedProcessingJobs: 0,
       stale: false,
     });
   });
@@ -305,6 +335,9 @@ describe("getScanProgressServerFn", () => {
       processedFiles: 200,
       errorCount: 0,
       updatedAt: sixMinutesAgo,
+      scanStage: "PROCESSING",
+      totalProcessingJobs: 200,
+      completedProcessingJobs: 50,
     });
 
     const result = await getScanProgressServerFn({
@@ -316,6 +349,9 @@ describe("getScanProgressServerFn", () => {
       totalFiles: 500,
       processedFiles: 200,
       errorCount: 0,
+      scanStage: "PROCESSING",
+      totalProcessingJobs: 200,
+      completedProcessingJobs: 50,
       stale: true,
     });
   });

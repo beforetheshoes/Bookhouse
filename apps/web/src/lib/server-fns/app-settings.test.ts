@@ -29,6 +29,8 @@ vi.mock("@bookhouse/db", () => ({
 import {
   getWorkerConcurrencyServerFn,
   setWorkerConcurrencyServerFn,
+  getMissingFileBehaviorServerFn,
+  setMissingFileBehaviorServerFn,
 } from "./app-settings";
 
 beforeEach(() => {
@@ -67,5 +69,39 @@ describe("setWorkerConcurrencyServerFn", () => {
       update: { value: "10" },
     });
     expect(result).toEqual({ concurrency: 10 });
+  });
+});
+
+describe("getMissingFileBehaviorServerFn", () => {
+  it("returns stored behavior value", async () => {
+    appSettingFindUniqueMock.mockResolvedValue({ key: "missingFileBehavior", value: "auto-cleanup" });
+
+    const result = await getMissingFileBehaviorServerFn({} as never);
+
+    expect(appSettingFindUniqueMock).toHaveBeenCalledWith({ where: { key: "missingFileBehavior" } });
+    expect(result).toBe("auto-cleanup");
+  });
+
+  it("returns 'manual' when no setting exists", async () => {
+    appSettingFindUniqueMock.mockResolvedValue(null);
+
+    const result = await getMissingFileBehaviorServerFn({} as never);
+
+    expect(result).toBe("manual");
+  });
+});
+
+describe("setMissingFileBehaviorServerFn", () => {
+  it("upserts missing file behavior setting and returns the value", async () => {
+    appSettingUpsertMock.mockResolvedValue({ key: "missingFileBehavior", value: "auto-cleanup" });
+
+    const result = await setMissingFileBehaviorServerFn({ data: { behavior: "auto-cleanup" } });
+
+    expect(appSettingUpsertMock).toHaveBeenCalledWith({
+      where: { key: "missingFileBehavior" },
+      create: { key: "missingFileBehavior", value: "auto-cleanup" },
+      update: { value: "auto-cleanup" },
+    });
+    expect(result).toEqual({ behavior: "auto-cleanup" });
   });
 });

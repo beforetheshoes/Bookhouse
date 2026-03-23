@@ -57,7 +57,8 @@ const COLUMN_PICKER_ITEMS = [
   { id: "isbn", label: "ISBN" },
 ];
 
-const columns: ColumnDef<LibraryWork>[] = [
+function getColumns(scanActive: boolean): ColumnDef<LibraryWork>[] {
+  return [
   {
     accessorKey: "titleDisplay",
     header: ({ column }) => (
@@ -66,7 +67,7 @@ const columns: ColumnDef<LibraryWork>[] = [
     cell: ({ row }) => (
       <Link to="/library/$workId" params={{ workId: row.original.id }} search={{ page: 1, pageSize: 50, sort: "title-asc" as const }} className="flex items-center gap-2">
         {row.original.titleDisplay}
-        {row.original.enrichmentStatus === "STUB" && (
+        {row.original.enrichmentStatus === "STUB" && scanActive && (
           <Badge variant="outline" className="animate-pulse px-1.5 py-0 text-[10px]">
             Processing&hellip;
           </Badge>
@@ -110,7 +111,8 @@ const columns: ColumnDef<LibraryWork>[] = [
       row.editions[0]?.isbn13 ?? row.editions[0]?.isbn10 ?? "—",
     size: 120,
   },
-];
+  ];
+}
 
 function filterByReadingStatus(
   works: LibraryWork[],
@@ -318,10 +320,10 @@ function LibraryPage() {
             </div>
           )}
           {view === "grid" ? (
-            <LibraryGrid works={filteredByReading} progressMap={progressMap} />
+            <LibraryGrid works={filteredByReading} progressMap={progressMap} scanActive={isScanning} />
           ) : (
             <VirtualizedDataTable
-              columns={columns}
+              columns={getColumns(isScanning)}
               data={filteredByReading}
               showPagination={false}
               columnVisibility={tablePrefs.columnVisibility}

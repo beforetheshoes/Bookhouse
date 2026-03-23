@@ -346,6 +346,8 @@ export interface ScanProgressData {
   totalFiles?: number;
   processedFiles?: number;
   errorCount?: number;
+  scanStage?: "DISCOVERY" | "PROCESSING" | "ENRICHING";
+  totalProcessingJobs?: number;
 }
 
 export interface ScanLibraryRootInput {
@@ -1181,7 +1183,7 @@ export function createIngestServices(
     const seenAudioDirs = new Map<string, { workId: string; editionId: string }>();
 
     if (reportProgress) {
-      await reportProgress({ totalFiles: discoveredPaths.length });
+      await reportProgress({ totalFiles: discoveredPaths.length, scanStage: "DISCOVERY" });
     }
 
     let processedFiles = 0;
@@ -1482,7 +1484,12 @@ export function createIngestServices(
 
 
     if (reportProgress) {
-      await reportProgress({ processedFiles, errorCount });
+      await reportProgress({
+        processedFiles,
+        errorCount,
+        scanStage: "PROCESSING",
+        totalProcessingJobs: enqueuedHashJobs.length + enqueuedRecoveryJobs.length,
+      });
     }
 
     const missingFileAssetIds: string[] = [];

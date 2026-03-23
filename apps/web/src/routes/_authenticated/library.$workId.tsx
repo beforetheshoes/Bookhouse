@@ -1,6 +1,16 @@
 import { useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { BookOpen, ChevronRight } from "lucide-react";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
+import { toast } from "sonner";
+import { BookOpen, ChevronRight, Trash2 } from "lucide-react";
+import { Button } from "~/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog";
 import { Badge } from "~/components/ui/badge";
 import {
   Card,
@@ -16,6 +26,7 @@ import {
   type WorkDetail,
 } from "~/lib/server-fns/work-detail";
 import { getReadingProgressServerFn } from "~/lib/server-fns/reading-progress";
+import { deleteWorkServerFn, deleteEditionServerFn } from "~/lib/server-fns/deletion";
 
 export const Route = createFileRoute("/_authenticated/library/$workId")({
   loader: async ({ params }) => {
@@ -68,9 +79,47 @@ function formatBytes(bytes: bigint | number): string {
 
 function WorkDetailPage() {
   const { work, progress, trackingMode } = Route.useLoaderData();
+  const router = useRouter();
   const [imgFailed, setImgFailed] = useState(false);
+  const [deleteWorkOpen, setDeleteWorkOpen] = useState(false);
+  const [deletingWork, setDeletingWork] = useState(false);
+  const [deleteEditionOpen, setDeleteEditionOpen] = useState<string | null>(null);
+  const [deletingEdition, setDeletingEdition] = useState(false);
   const showPlaceholder = !work.coverPath || imgFailed;
   const authors = getAuthors(work);
+
+  async function handleDeleteWork() {
+    setDeletingWork(true);
+    try {
+      await deleteWorkServerFn({ data: { workId: work.id } });
+      toast.success(`"${work.titleDisplay}" deleted`);
+      setDeleteWorkOpen(false);
+      void router.navigate({ to: "/library", search: { page: 1, pageSize: 50, sort: "title-asc" as const } });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to delete work");
+    } finally {
+      setDeletingWork(false);
+    }
+  }
+
+  async function handleDeleteEdition(editionId: string) {
+    setDeletingEdition(true);
+    try {
+      const result = await deleteEditionServerFn({ data: { editionId } });
+      if (result.deletedWorkId) {
+        toast.success("Edition deleted — work had no remaining editions and was also removed");
+        void router.navigate({ to: "/library", search: { page: 1, pageSize: 50, sort: "title-asc" as const } });
+      } else {
+        toast.success("Edition deleted");
+        void router.invalidate();
+      }
+      setDeleteEditionOpen(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to delete edition");
+    } finally {
+      setDeletingEdition(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -102,7 +151,12 @@ function WorkDetailPage() {
 
         <div className="flex-1 space-y-4">
           <div>
-            <h1 className="text-2xl font-bold">{work.titleDisplay}</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-bold">{work.titleDisplay}</h1>
+              <Button variant="outline" size="sm" onClick={() => { setDeleteWorkOpen(true); }}>
+                <Trash2 className="size-4" />
+              </Button>
+            </div>
             {authors.length > 0 && (
               <p className="mt-1 text-lg text-muted-foreground">
                 {authors.map((author, i) => (
@@ -150,12 +204,17 @@ function WorkDetailPage() {
         {work.editions.map((edition) => (
           <Card key={edition.id}>
             <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Badge variant="secondary">{edition.formatFamily}</Badge>
-                {edition.publisher && (
-                  <span className="text-sm text-muted-foreground">{edition.publisher}</span>
-                )}
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Badge variant="secondary">{edition.formatFamily}</Badge>
+                  {edition.publisher && (
+                    <span className="text-sm text-muted-foreground">{edition.publisher}</span>
+                  )}
+                </CardTitle>
+                <Button variant="outline" size="sm" onClick={() => { setDeleteEditionOpen(edition.id); }}>
+                  <Trash2 className="size-3.5" />
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-3">
               {edition.contributors.length > 0 && (
@@ -200,6 +259,47 @@ function WorkDetailPage() {
           <EditionProgress progress={progress} editions={work.editions} />
         )}
       </div>
+
+      <Dialog open={deleteWorkOpen} onOpenChange={setDeleteWorkOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Work</DialogTitle>
+            <DialogDescription>
+              This will remove &ldquo;{work.titleDisplay}&rdquo; and all its editions from the library.
+              The actual files on disk will not be affected.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setDeleteWorkOpen(false); }} disabled={deletingWork}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={() => { void handleDeleteWork(); }} disabled={deletingWork}>
+              {deletingWork ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteEditionOpen !== null} onOpenChange={(open) => { if (!open) setDeleteEditionOpen(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Edition</DialogTitle>
+            <DialogDescription>
+              This will remove this edition from the library.
+              {work.editions.length === 1 && " Since it is the last edition, the work will also be removed."}
+              {" "}The actual files on disk will not be affected.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setDeleteEditionOpen(null); }} disabled={deletingEdition}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={() => { if (deleteEditionOpen) void handleDeleteEdition(deleteEditionOpen); }} disabled={deletingEdition}>
+              {deletingEdition ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

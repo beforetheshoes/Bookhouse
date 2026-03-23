@@ -2,7 +2,7 @@ import { pathToFileURL } from "node:url";
 import IORedis from "ioredis";
 import { type Job, WaitingChildrenError, Worker } from "bullmq";
 import { db } from "@bookhouse/db";
-import { createIngestServices, matchAudio, matchFileAssetToEdition, parseFileAssetMetadata, processCoverForWorkDefault, scanLibraryRoot, type ScanProgressData, enrichWork, searchOpenLibrary, getOpenLibraryWork, RateLimiter, type EnrichWorkDeps, detectDuplicates, hashFileAsset } from "@bookhouse/ingest";
+import { cascadeCleanupOrphans, createIngestServices, matchAudio, matchFileAssetToEdition, parseFileAssetMetadata, processCoverForWorkDefault, scanLibraryRoot, type ScanProgressData, type ScanLibraryRootResult, enrichWork, searchOpenLibrary, getOpenLibraryWork, RateLimiter, type EnrichWorkDeps, detectDuplicates, hashFileAsset } from "@bookhouse/ingest";
 import {
   LIBRARY_JOB_NAMES,
   type BaseJobPayload,
@@ -41,11 +41,15 @@ export interface LibraryWorkerHandlers {
 function createJobHandlers(
   job: Job<LibraryJobPayload<LibraryJobName>, unknown, LibraryJobName>,
 ): LibraryWorkerHandlers {
+  const parentImportJobId = (job.data as BaseJobPayload).importJobId;
   const wrappedEnqueue = async <TName extends LibraryJobName>(
     jobName: TName,
     payload: LibraryJobPayload<TName>,
   ): Promise<void> => {
-    await enqueueLibraryJob(jobName, payload, {
+    const enrichedPayload = parentImportJobId
+      ? { ...payload, importJobId: parentImportJobId }
+      : payload;
+    await enqueueLibraryJob(jobName, enrichedPayload, {
       parent: { id: job.id ?? "", queue: job.queueQualifiedName },
       removeDependencyOnFailure: true,
     });
@@ -65,7 +69,7 @@ function createJobHandlers(
   };
 }
 
-function dispatch(
+async function dispatch(
   handlers: LibraryWorkerHandlers,
   job: Job<LibraryJobPayload<LibraryJobName>, unknown, LibraryJobName>,
 ) {
@@ -74,6 +78,7 @@ function dispatch(
   switch (job.name) {
     case LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT: {
       const payload = job.data as ScanLibraryRootJobPayload;
+      let scanResult: ScanLibraryRootResult;
       if (importJobId) {
         const reportProgress = async (data: ScanProgressData) => {
           await db.importJob.update({
@@ -82,9 +87,20 @@ function dispatch(
           });
           await job.updateProgress(data);
         };
-        return handlers.scanLibraryRoot({ ...payload, reportProgress });
+        scanResult = await handlers.scanLibraryRoot({ ...payload, reportProgress });
+      } else {
+        scanResult = await handlers.scanLibraryRoot(payload);
       }
-      return handlers.scanLibraryRoot(payload);
+
+      // Auto-cleanup missing files if the setting is enabled
+      if (scanResult.missingFileAssetIds.length > 0) {
+        const setting = await db.appSetting.findUnique({ where: { key: "missingFileBehavior" } });
+        if (setting?.value === "auto-cleanup") {
+          await cascadeCleanupOrphans(db, { fileAssetIds: scanResult.missingFileAssetIds });
+        }
+      }
+
+      return scanResult;
     }
     case LIBRARY_JOB_NAMES.HASH_FILE_ASSET:
       return handlers.hashFileAsset(job.data as HashFileAssetJobPayload);
@@ -175,10 +191,49 @@ export function createLibraryWorkerProcessor(
       });
     }
 
+    // Clean up stale ImportJobs when a new scan starts
+    if (importJobId && isScanJob) {
+      const scanPayload = job.data as ScanLibraryRootJobPayload;
+      await db.importJob.updateMany({
+        where: {
+          libraryRootId: scanPayload.libraryRootId,
+          status: { in: ["QUEUED", "RUNNING"] },
+          id: { not: importJobId },
+        },
+        data: {
+          status: "FAILED",
+          error: "Superseded by new scan",
+          finishedAt: new Date(),
+        },
+      });
+    }
+
     const jobHandlers = handlers ?? createJobHandlers(job);
 
     try {
       const result = await dispatch(jobHandlers, job);
+
+      // Increment completedProcessingJobs for child jobs with importJobId
+      if (importJobId && !isScanJob) {
+        const updated = await db.importJob.update({
+          where: { id: importJobId },
+          data: { completedProcessingJobs: { increment: 1 } },
+          select: { completedProcessingJobs: true, totalProcessingJobs: true, scanStage: true },
+        });
+        await job.updateProgress({ completedProcessingJobs: updated.completedProcessingJobs });
+
+        // Stage transition: PROCESSING → ENRICHING when all hash/recovery jobs done
+        if (
+          updated.scanStage === "PROCESSING" &&
+          updated.totalProcessingJobs !== null &&
+          updated.completedProcessingJobs >= updated.totalProcessingJobs
+        ) {
+          await db.importJob.update({
+            where: { id: importJobId, scanStage: "PROCESSING" },
+            data: { scanStage: "ENRICHING", completedProcessingJobs: 0 },
+          });
+        }
+      }
 
       // Attempt to wait for any children this job spawned
       await job.updateData({ ...job.data, step: "waiting-children" });

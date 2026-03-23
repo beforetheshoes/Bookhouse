@@ -8,6 +8,7 @@ export {
   FormatFamily,
   ImportJobKind,
   ImportJobStatus,
+  ScanStage,
   LibraryRootKind,
   MediaKind,
   ReviewStatus,

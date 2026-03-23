@@ -12,10 +12,11 @@ let mockLoaderData: {
     scanMode: string;
     isEnabled: boolean;
     lastScannedAt: string | null;
-    scanProgress: { status: string; totalFiles: number | null; processedFiles: number | null; errorCount: number | null; stale: boolean } | null;
+    scanProgress: { status: string; totalFiles: number | null; processedFiles: number | null; errorCount: number | null; stale: boolean; scanStage: string | null; totalProcessingJobs: number | null; completedProcessingJobs: number } | null;
     issueCount: number;
-  }[]
-} = { roots: [] };
+  }[];
+  missingFileBehavior?: string;
+} = { roots: [], missingFileBehavior: "manual" };
 
 const getLibraryRootsServerFnMock = vi.fn();
 const scanLibraryRootServerFnMock = vi.fn();
@@ -31,6 +32,14 @@ vi.mock("~/lib/server-fns/library-roots", () => ({
   scanLibraryRootServerFn: scanLibraryRootServerFnMock,
   removeLibraryRootServerFn: removeLibraryRootServerFnMock,
   addLibraryRootServerFn: vi.fn(),
+}));
+
+const getMissingFileBehaviorServerFnMock = vi.fn();
+const setMissingFileBehaviorServerFnMock = vi.fn();
+
+vi.mock("~/lib/server-fns/app-settings", () => ({
+  getMissingFileBehaviorServerFn: getMissingFileBehaviorServerFnMock,
+  setMissingFileBehaviorServerFn: setMissingFileBehaviorServerFnMock,
 }));
 
 const mockNavigate = vi.fn();
@@ -72,7 +81,7 @@ const makeRoot = (overrides: Partial<{
   scanMode: string;
   isEnabled: boolean;
   lastScannedAt: string | null;
-  scanProgress: { status: string; totalFiles: number | null; processedFiles: number | null; errorCount: number | null; stale: boolean } | null;
+  scanProgress: { status: string; totalFiles: number | null; processedFiles: number | null; errorCount: number | null; stale: boolean; scanStage: string | null; totalProcessingJobs: number | null; completedProcessingJobs: number } | null;
   issueCount: number;
 }> = {}) => ({
   id: "root-1",
@@ -90,7 +99,7 @@ const makeRoot = (overrides: Partial<{
 describe("LibrariesPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLoaderData = { roots: [] };
+    mockLoaderData = { roots: [], missingFileBehavior: "manual" };
   });
 
   it("renders 'Library Roots' heading", async () => {
@@ -380,17 +389,17 @@ describe("LibrariesPage", () => {
     });
   });
 
-  it("shows progress bar when scan is active", async () => {
+  it("shows progress bar with discovery text during DISCOVERY stage", async () => {
     mockLoaderData = {
       roots: [makeRoot({
-        scanProgress: { status: "RUNNING", totalFiles: 100, processedFiles: 42, errorCount: 2, stale: false },
+        scanProgress: { status: "RUNNING", totalFiles: 100, processedFiles: 42, errorCount: 2, stale: false, scanStage: "DISCOVERY", totalProcessingJobs: null, completedProcessingJobs: 0 },
       })],
     };
     const { Route } = await import("./libraries");
     const LibrariesPage = (Route.options.component as React.ComponentType);
     render(<LibrariesPage />);
     expect(screen.getByRole("progressbar")).toBeTruthy();
-    expect(screen.getByText("Scanning... 42 / 100 files (2 errors)")).toBeTruthy();
+    expect(screen.getByText(/Discovering files/)).toBeTruthy();
   });
 
   it("does not show progress bar when no active scan", async () => {
@@ -427,35 +436,70 @@ describe("LibrariesPage", () => {
     expect(screen.queryByText("0 issues")).toBeNull();
   });
 
-  it("shows progress with null processedFiles and totalFiles", async () => {
+  it("shows progress with null processedFiles and totalFiles during DISCOVERY", async () => {
     mockLoaderData = {
       roots: [makeRoot({
-        scanProgress: { status: "QUEUED", totalFiles: null, processedFiles: null, errorCount: null, stale: false },
+        scanProgress: { status: "QUEUED", totalFiles: null, processedFiles: null, errorCount: null, stale: false, scanStage: "DISCOVERY", totalProcessingJobs: null, completedProcessingJobs: 0 },
       })],
     };
     const { Route } = await import("./libraries");
     const LibrariesPage = (Route.options.component as React.ComponentType);
     render(<LibrariesPage />);
     expect(screen.getByRole("progressbar")).toBeTruthy();
-    expect(screen.getByText("Scanning... 0 / ? files")).toBeTruthy();
+    expect(screen.getByText(/Discovering files/)).toBeTruthy();
   });
 
-  it("shows progress without error count when errorCount is 0", async () => {
+  it("shows deterministic progress bar during PROCESSING stage", async () => {
     mockLoaderData = {
       roots: [makeRoot({
-        scanProgress: { status: "RUNNING", totalFiles: 50, processedFiles: 10, errorCount: 0, stale: false },
+        scanProgress: { status: "RUNNING", totalFiles: 50, processedFiles: 50, errorCount: 0, stale: false, scanStage: "PROCESSING", totalProcessingJobs: 200, completedProcessingJobs: 45 },
       })],
     };
     const { Route } = await import("./libraries");
     const LibrariesPage = (Route.options.component as React.ComponentType);
     render(<LibrariesPage />);
-    expect(screen.getByText("Scanning... 10 / 50 files")).toBeTruthy();
+    expect(screen.getByRole("progressbar")).toBeTruthy();
+    expect(screen.getByText(/Processing files.*45.*200/)).toBeTruthy();
+  });
+
+  it("shows spinner with count during ENRICHING stage without progress bar", async () => {
+    mockLoaderData = {
+      roots: [makeRoot({
+        scanProgress: { status: "RUNNING", totalFiles: 50, processedFiles: 50, errorCount: 0, stale: false, scanStage: "ENRICHING", totalProcessingJobs: 200, completedProcessingJobs: 47 },
+      })],
+    };
+    const { Route } = await import("./libraries");
+    const LibrariesPage = (Route.options.component as React.ComponentType);
+    render(<LibrariesPage />);
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    expect(screen.getByText(/47 files processed/)).toBeTruthy();
+    expect(screen.getByText(/Extracting metadata/)).toBeTruthy();
+  });
+
+  it("shows persistent note during any active scan", async () => {
+    mockLoaderData = {
+      roots: [makeRoot({
+        scanProgress: { status: "RUNNING", totalFiles: 100, processedFiles: 42, errorCount: 0, stale: false, scanStage: "DISCOVERY", totalProcessingJobs: null, completedProcessingJobs: 0 },
+      })],
+    };
+    const { Route } = await import("./libraries");
+    const LibrariesPage = (Route.options.component as React.ComponentType);
+    render(<LibrariesPage />);
+    expect(screen.getByText(/Books may appear incomplete/)).toBeTruthy();
+  });
+
+  it("does not show persistent note when no scan is active", async () => {
+    mockLoaderData = { roots: [makeRoot({ scanProgress: null })] };
+    const { Route } = await import("./libraries");
+    const LibrariesPage = (Route.options.component as React.ComponentType);
+    render(<LibrariesPage />);
+    expect(screen.queryByText(/Books may appear incomplete/)).toBeNull();
   });
 
   it("shows stalled warning when scan is stale", async () => {
     mockLoaderData = {
       roots: [makeRoot({
-        scanProgress: { status: "RUNNING", totalFiles: 500, processedFiles: 200, errorCount: 0, stale: true },
+        scanProgress: { status: "RUNNING", totalFiles: 500, processedFiles: 200, errorCount: 0, stale: true, scanStage: "PROCESSING", totalProcessingJobs: 500, completedProcessingJobs: 200 },
       })],
     };
     const { Route } = await import("./libraries");
@@ -468,13 +512,13 @@ describe("LibrariesPage", () => {
   it("shows normal scanning state when scan is not stale", async () => {
     mockLoaderData = {
       roots: [makeRoot({
-        scanProgress: { status: "RUNNING", totalFiles: 100, processedFiles: 42, errorCount: 0, stale: false },
+        scanProgress: { status: "RUNNING", totalFiles: 100, processedFiles: 42, errorCount: 0, stale: false, scanStage: "DISCOVERY", totalProcessingJobs: null, completedProcessingJobs: 0 },
       })],
     };
     const { Route } = await import("./libraries");
     const LibrariesPage = (Route.options.component as React.ComponentType);
     render(<LibrariesPage />);
-    expect(screen.getByText("Scanning... 42 / 100 files")).toBeTruthy();
+    expect(screen.getByText(/Discovering files/)).toBeTruthy();
     expect(screen.queryByText("Scan Stalled")).toBeNull();
     expect(screen.queryByText(/Scan appears stalled/)).toBeNull();
   });
@@ -501,6 +545,71 @@ describe("LibrariesPage", () => {
     expect(mockNavigate).toHaveBeenCalledWith({
       to: "/settings/jobs/$jobId",
       params: { jobId: "job-123" },
+    });
+  });
+
+  it("renders Missing File Behavior setting card", async () => {
+    mockLoaderData = { roots: [], missingFileBehavior: "manual" };
+    const { Route } = await import("./libraries");
+    const LibrariesPage = (Route.options.component as React.ComponentType);
+    render(<LibrariesPage />);
+    expect(screen.getByText("Missing File Behavior")).toBeTruthy();
+  });
+
+  it("renders auto-cleanup option when missingFileBehavior is auto-cleanup", async () => {
+    mockLoaderData = { roots: [], missingFileBehavior: "auto-cleanup" };
+    const { Route } = await import("./libraries");
+    const LibrariesPage = (Route.options.component as React.ComponentType);
+    render(<LibrariesPage />);
+    expect(screen.getByText("Missing File Behavior")).toBeTruthy();
+  });
+
+  it("calls setMissingFileBehaviorServerFn when changing to auto-cleanup", async () => {
+    setMissingFileBehaviorServerFnMock.mockResolvedValue({ behavior: "auto-cleanup" });
+    mockLoaderData = { roots: [], missingFileBehavior: "manual" };
+    const { Route } = await import("./libraries");
+    const LibrariesPage = (Route.options.component as React.ComponentType);
+    render(<LibrariesPage />);
+
+    const autoCleanupRadio = screen.getByDisplayValue("auto-cleanup");
+    fireEvent.click(autoCleanupRadio);
+
+    await waitFor(() => {
+      expect(setMissingFileBehaviorServerFnMock).toHaveBeenCalledWith({
+        data: { behavior: "auto-cleanup" },
+      });
+    });
+  });
+
+  it("calls setMissingFileBehaviorServerFn when changing to manual", async () => {
+    setMissingFileBehaviorServerFnMock.mockResolvedValue({ behavior: "manual" });
+    mockLoaderData = { roots: [], missingFileBehavior: "auto-cleanup" };
+    const { Route } = await import("./libraries");
+    const LibrariesPage = (Route.options.component as React.ComponentType);
+    render(<LibrariesPage />);
+
+    const manualRadio = screen.getByDisplayValue("manual");
+    fireEvent.click(manualRadio);
+
+    await waitFor(() => {
+      expect(setMissingFileBehaviorServerFnMock).toHaveBeenCalledWith({
+        data: { behavior: "manual" },
+      });
+    });
+  });
+
+  it("shows error toast when setting update fails", async () => {
+    setMissingFileBehaviorServerFnMock.mockRejectedValue(new Error("fail"));
+    mockLoaderData = { roots: [], missingFileBehavior: "manual" };
+    const { Route } = await import("./libraries");
+    const LibrariesPage = (Route.options.component as React.ComponentType);
+    render(<LibrariesPage />);
+
+    const autoCleanupRadio = screen.getByDisplayValue("auto-cleanup");
+    fireEvent.click(autoCleanupRadio);
+
+    await waitFor(() => {
+      expect(mockToast.error).toHaveBeenCalledWith("Failed to update setting");
     });
   });
 });

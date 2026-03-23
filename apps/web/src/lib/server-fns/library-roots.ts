@@ -57,20 +57,28 @@ export const removeLibraryRootServerFn = createServerFn({
   .inputValidator(removeLibraryRootSchema)
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
-    await db.$transaction([
-      db.editionFile.deleteMany({
-        where: { fileAsset: { libraryRootId: data.id } },
-      }),
-      db.fileAsset.deleteMany({
+    const { cascadeCleanupOrphans } = await import("@bookhouse/ingest");
+
+    await db.$transaction(async (tx) => {
+      const fileAssets = await tx.fileAsset.findMany({
         where: { libraryRootId: data.id },
-      }),
-      db.importJob.deleteMany({
+        select: { id: true },
+      });
+
+      if (fileAssets.length > 0) {
+        await cascadeCleanupOrphans(tx as never, {
+          fileAssetIds: fileAssets.map((fa) => fa.id),
+        });
+      }
+
+      await tx.importJob.deleteMany({
         where: { libraryRootId: data.id },
-      }),
-      db.libraryRoot.delete({
+      });
+
+      await tx.libraryRoot.delete({
         where: { id: data.id },
-      }),
-    ]);
+      });
+    });
   });
 
 const libraryRootIdSchema = z.object({
@@ -97,6 +105,9 @@ export const getScanProgressServerFn = createServerFn({
         processedFiles: true,
         errorCount: true,
         updatedAt: true,
+        scanStage: true,
+        totalProcessingJobs: true,
+        completedProcessingJobs: true,
       },
       orderBy: { createdAt: "desc" },
     });
@@ -105,7 +116,7 @@ export const getScanProgressServerFn = createServerFn({
     return {
       ...rest,
       stale: Date.now() - updatedAt.getTime() > STALE_SCAN_THRESHOLD_MS,
-    };
+    } as typeof rest & { stale: boolean };
   });
 
 export const getLibraryIssueCountServerFn = createServerFn({
@@ -178,6 +189,7 @@ export const scanLibraryRootServerFn = createServerFn({
         kind: "SCAN_ROOT",
         status: "QUEUED",
         libraryRootId: data.libraryRootId,
+        scanStage: "DISCOVERY",
       },
     });
 

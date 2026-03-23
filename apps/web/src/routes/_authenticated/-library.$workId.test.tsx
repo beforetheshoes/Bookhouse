@@ -82,11 +82,15 @@ let mockLoaderData: { work: MockWork; progress: MockProgress[]; trackingMode: st
   trackingMode: "BY_EDITION",
 };
 
+const mockNavigate = vi.fn();
+const mockInvalidate = vi.fn();
+
 vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
     ...actual,
     Link: ({ children, to, ...props }: { children?: React.ReactNode; to: string; [key: string]: unknown }) => <a href={to} {...props}>{children}</a>,
+    useRouter: () => ({ navigate: mockNavigate, invalidate: mockInvalidate }),
     createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
       ...opts,
       options: opts,
@@ -95,6 +99,9 @@ vi.mock("@tanstack/react-router", async () => {
     }),
   };
 });
+
+const mockToast = { success: vi.fn(), error: vi.fn() };
+vi.mock("sonner", () => ({ toast: mockToast }));
 
 const getWorkDetailServerFnMock = vi.fn();
 vi.mock("~/lib/server-fns/work-detail", () => ({
@@ -106,6 +113,14 @@ const updateReadingProgressServerFnMock = vi.fn();
 vi.mock("~/lib/server-fns/reading-progress", () => ({
   getReadingProgressServerFn: getReadingProgressServerFnMock,
   updateReadingProgressServerFn: updateReadingProgressServerFnMock,
+}));
+
+const deleteWorkServerFnMock = vi.fn();
+const deleteEditionServerFnMock = vi.fn();
+
+vi.mock("~/lib/server-fns/deletion", () => ({
+  deleteWorkServerFn: deleteWorkServerFnMock,
+  deleteEditionServerFn: deleteEditionServerFnMock,
 }));
 
 vi.mock("~/components/enrichment-review", () => ({
@@ -547,5 +562,145 @@ describe("WorkDetailPage", () => {
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
     expect(screen.queryByRole("heading", { level: 2, name: "Linked Formats" })).toBeNull();
+  });
+
+  it("renders delete work button", async () => {
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    // There should be at least 2 buttons with trash icons (work + edition)
+    const buttons = screen.getAllByRole("button");
+    expect(buttons.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("opens delete work confirmation dialog", async () => {
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent } = await import("@testing-library/react");
+    render(<Page />);
+    // Click the first delete button (work delete)
+    const buttons = screen.getAllByRole("button");
+    const deleteBtn = buttons[0];
+    if (!deleteBtn) throw new Error("expected button");
+    fireEvent.click(deleteBtn);
+    expect(screen.getByText("Delete Work")).toBeTruthy();
+    expect(screen.getByText(/will remove/)).toBeTruthy();
+  });
+
+  it("calls deleteWorkServerFn and navigates on confirm", async () => {
+    deleteWorkServerFnMock.mockResolvedValue({ deletedWorkId: "work-1" });
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    render(<Page />);
+
+    // Open delete work dialog
+    const buttons = screen.getAllByRole("button");
+    const deleteBtn = buttons[0];
+    if (!deleteBtn) throw new Error("expected button");
+    fireEvent.click(deleteBtn);
+
+    // Confirm deletion
+    const confirmBtn = screen.getByText("Delete");
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(deleteWorkServerFnMock).toHaveBeenCalledWith({ data: { workId: "work-1" } });
+      expect(mockNavigate).toHaveBeenCalled();
+    });
+  });
+
+  it("shows error toast when delete work fails", async () => {
+    deleteWorkServerFnMock.mockRejectedValue(new Error("DB error"));
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    render(<Page />);
+
+    const buttons = screen.getAllByRole("button");
+    const deleteBtn = buttons[0];
+    if (!deleteBtn) throw new Error("expected button");
+    fireEvent.click(deleteBtn);
+
+    const confirmBtn = screen.getByText("Delete");
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(mockToast.error).toHaveBeenCalledWith("DB error");
+    });
+  });
+
+  it("opens delete edition confirmation dialog", async () => {
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent } = await import("@testing-library/react");
+    render(<Page />);
+    // Second button is the edition delete button
+    const buttons = screen.getAllByRole("button");
+    const editionDeleteBtn = buttons[1];
+    if (!editionDeleteBtn) throw new Error("expected edition delete button");
+    fireEvent.click(editionDeleteBtn);
+    expect(screen.getByText("Delete Edition")).toBeTruthy();
+  });
+
+  it("calls deleteEditionServerFn and invalidates on confirm when work survives", async () => {
+    deleteEditionServerFnMock.mockResolvedValue({ deletedEditionId: "edition-1", deletedWorkId: null });
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    render(<Page />);
+
+    const buttons = screen.getAllByRole("button");
+    const editionDeleteBtn = buttons[1];
+    if (!editionDeleteBtn) throw new Error("expected edition delete button");
+    fireEvent.click(editionDeleteBtn);
+
+    const confirmBtn = screen.getByText("Delete");
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(deleteEditionServerFnMock).toHaveBeenCalledWith({ data: { editionId: "edition-1" } });
+      expect(mockInvalidate).toHaveBeenCalled();
+    });
+  });
+
+  it("navigates away when deleting last edition also removes work", async () => {
+    deleteEditionServerFnMock.mockResolvedValue({ deletedEditionId: "edition-1", deletedWorkId: "work-1" });
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    render(<Page />);
+
+    const buttons = screen.getAllByRole("button");
+    const editionDeleteBtn = buttons[1];
+    if (!editionDeleteBtn) throw new Error("expected edition delete button");
+    fireEvent.click(editionDeleteBtn);
+
+    const confirmBtn = screen.getByText("Delete");
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalled();
+    });
+  });
+
+  it("shows error toast when delete edition fails", async () => {
+    deleteEditionServerFnMock.mockRejectedValue(new Error("Edition delete failed"));
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    render(<Page />);
+
+    const buttons = screen.getAllByRole("button");
+    const editionDeleteBtn = buttons[1];
+    if (!editionDeleteBtn) throw new Error("expected edition delete button");
+    fireEvent.click(editionDeleteBtn);
+
+    const confirmBtn = screen.getByText("Delete");
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(mockToast.error).toHaveBeenCalledWith("Edition delete failed");
+    });
   });
 });

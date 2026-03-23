@@ -944,15 +944,17 @@ describe("ingest services", () => {
       reportProgress,
     });
 
-    // First call: totalFiles after discovery
+    // First call: totalFiles after discovery with DISCOVERY stage
     expect(reportProgress).toHaveBeenCalledWith(
-      expect.objectContaining({ totalFiles: 3 }),
+      expect.objectContaining({ totalFiles: 3, scanStage: "DISCOVERY" }),
     );
-    // Last call: final processedFiles and errorCount
+    // Last call: final processedFiles, errorCount, PROCESSING stage, and totalProcessingJobs
     const allCalls = reportProgress.mock.calls as unknown as Array<[Record<string, unknown>]>;
     expect(allCalls.length).toBeGreaterThan(0);
     const lastProgressCall = allCalls[allCalls.length - 1] as [Record<string, unknown>];
-    expect(lastProgressCall[0]).toMatchObject({ processedFiles: 3, errorCount: 0 });
+    expect(lastProgressCall[0]).toMatchObject({ processedFiles: 3, errorCount: 0, scanStage: "PROCESSING" });
+    expect(lastProgressCall[0]).toHaveProperty("totalProcessingJobs");
+    expect(typeof lastProgressCall[0].totalProcessingJobs).toBe("number");
   });
 
   it("does not call reportProgress when callback is not provided", async () => {

@@ -30,6 +30,11 @@ import {
   scanLibraryRootServerFn,
   type LibraryRootRow,
 } from "~/lib/server-fns/library-roots";
+import {
+  getMissingFileBehaviorServerFn,
+  setMissingFileBehaviorServerFn,
+  type MissingFileBehavior,
+} from "~/lib/server-fns/app-settings";
 
 export interface LibraryRootWithExtras extends LibraryRootRow {
   scanProgress: Awaited<ReturnType<typeof getScanProgressServerFn>> | null;
@@ -38,7 +43,10 @@ export interface LibraryRootWithExtras extends LibraryRootRow {
 
 export const Route = createFileRoute("/_authenticated/settings/libraries")({
   loader: async () => {
-    const roots = await getLibraryRootsServerFn();
+    const [roots, missingFileBehavior] = await Promise.all([
+      getLibraryRootsServerFn(),
+      getMissingFileBehaviorServerFn(),
+    ]);
     const rootsWithExtras: LibraryRootWithExtras[] = await Promise.all(
       roots.map(async (root) => {
         const [scanProgress, issueCount] = await Promise.all([
@@ -48,7 +56,7 @@ export const Route = createFileRoute("/_authenticated/settings/libraries")({
         return { ...root, scanProgress, issueCount };
       }),
     );
-    return { roots: rootsWithExtras };
+    return { roots: rootsWithExtras, missingFileBehavior };
   },
   pendingComponent: LibrariesSkeleton,
   component: LibrariesPage,
@@ -67,7 +75,7 @@ function LibrariesSkeleton() {
 }
 
 function LibrariesPage() {
-  const { roots } = Route.useLoaderData();
+  const { roots, missingFileBehavior } = Route.useLoaderData();
 
   const hasActiveScan = roots.some((r) => r.scanProgress !== null);
   useSSE({ enabled: hasActiveScan });
@@ -100,7 +108,77 @@ function LibrariesPage() {
           ))}
         </div>
       )}
+
+      <MissingFileBehaviorCard initialBehavior={missingFileBehavior} />
     </div>
+  );
+}
+
+function MissingFileBehaviorCard({ initialBehavior }: { initialBehavior: MissingFileBehavior }) {
+  const [behavior, setBehavior] = useState<MissingFileBehavior>(initialBehavior);
+  const [saving, setSaving] = useState(false);
+
+  async function handleChange(value: MissingFileBehavior) {
+    setBehavior(value);
+    setSaving(true);
+    try {
+      await setMissingFileBehaviorServerFn({ data: { behavior: value } });
+      toast.success("Missing file behavior updated");
+    } catch {
+      toast.error("Failed to update setting");
+      setBehavior(initialBehavior);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Missing File Behavior</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          When files are no longer found on disk during a scan, choose what happens to their library entries.
+        </p>
+        <div className="space-y-2">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="radio"
+              name="missingFileBehavior"
+              value="manual"
+              checked={behavior === "manual"}
+              onChange={() => { void handleChange("manual"); }}
+              disabled={saving}
+              className="mt-1"
+            />
+            <div>
+              <p className="text-sm font-medium">Manual review</p>
+              <p className="text-xs text-muted-foreground">
+                Files are marked as missing but kept in the library. You can review and clean them up from the Missing Files page.
+              </p>
+            </div>
+          </label>
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="radio"
+              name="missingFileBehavior"
+              value="auto-cleanup"
+              checked={behavior === "auto-cleanup"}
+              onChange={() => { void handleChange("auto-cleanup"); }}
+              disabled={saving}
+              className="mt-1"
+            />
+            <div>
+              <p className="text-sm font-medium">Auto-cleanup during scan</p>
+              <p className="text-xs text-muted-foreground">
+                Missing files and their library entries are automatically removed. Editions with no remaining files are deleted, and works with no remaining editions are deleted.
+              </p>
+            </div>
+          </label>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -239,21 +317,52 @@ function LibraryRootCard({ root }: { root: LibraryRootWithExtras }) {
           </div>
           {root.scanProgress && (
             <div className="space-y-1.5">
-              <Progress
-                value={root.scanProgress.processedFiles ?? 0}
-                max={root.scanProgress.totalFiles ?? 1}
-              />
               {root.scanProgress.stale ? (
-                <p className="text-xs text-amber-600 flex items-center gap-1">
-                  <AlertTriangle className="size-3.5" />
-                  Scan appears stalled — no progress updates received
-                </p>
+                <>
+                  <Progress
+                    value={root.scanProgress.processedFiles ?? 0}
+                    max={root.scanProgress.totalFiles ?? 1}
+                  />
+                  <p className="text-xs text-amber-600 flex items-center gap-1">
+                    <AlertTriangle className="size-3.5" />
+                    Scan appears stalled — no progress updates received
+                  </p>
+                </>
+              ) : root.scanProgress.scanStage === "ENRICHING" ? (
+                <>
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Loader2 className="size-3.5 animate-spin" />
+                    {root.scanProgress.completedProcessingJobs} files processed
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Extracting metadata, covers, and matching editions — this is the longest step and may take a while.
+                  </p>
+                </>
+              ) : root.scanProgress.scanStage === "PROCESSING" ? (
+                <>
+                  <Progress
+                    value={root.scanProgress.completedProcessingJobs}
+                    max={root.scanProgress.totalProcessingJobs ?? 1}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Processing files... {root.scanProgress.completedProcessingJobs} / {root.scanProgress.totalProcessingJobs ?? "?"} files
+                  </p>
+                </>
               ) : (
-                <p className="text-xs text-muted-foreground">
-                  Scanning... {root.scanProgress.processedFiles ?? 0} / {root.scanProgress.totalFiles ?? "?"} files
-                  {root.scanProgress.errorCount ? ` (${String(root.scanProgress.errorCount)} errors)` : ""}
-                </p>
+                <>
+                  <Progress
+                    value={root.scanProgress.processedFiles ?? 0}
+                    max={root.scanProgress.totalFiles ?? 1}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Discovering files... {root.scanProgress.processedFiles ?? 0} / {root.scanProgress.totalFiles ?? "?"} files
+                    {root.scanProgress.errorCount ? ` (${String(root.scanProgress.errorCount)} errors)` : ""}
+                  </p>
+                </>
               )}
+              <p className="text-xs text-muted-foreground/80 italic">
+                Books may appear incomplete until the scan finishes. Covers, metadata, and edition matching happen automatically — no action needed on your part.
+              </p>
             </div>
           )}
         </CardContent>

@@ -112,6 +112,12 @@ enum ImportJobStatus {
   FAILED
 }
 
+enum ScanStage {
+  DISCOVERY
+  PROCESSING
+  ENRICHING
+}
+
 model User {
   id              String            @id @default(cuid())
   email           String?           @unique
@@ -404,9 +410,12 @@ model ImportJob {
   payload        Json?
   error          String?
   attemptsMade   Int             @default(0)
-  totalFiles     Int?
-  processedFiles Int?
-  errorCount     Int?
+  totalFiles             Int?
+  processedFiles         Int?
+  errorCount             Int?
+  scanStage              ScanStage?
+  totalProcessingJobs    Int?
+  completedProcessingJobs Int            @default(0)
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   startedAt      DateTime?

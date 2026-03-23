@@ -9,13 +9,14 @@ export interface WorkCardProps {
   title: string;
   authors: string;
   enrichmentStatus?: string;
+  scanActive?: boolean;
   formats: string[];
   series?: string | null;
   coverPath?: string | null;
   progressPercent?: number | null;
 }
 
-export function WorkCard({ id, title, authors, enrichmentStatus, formats, series, coverPath, progressPercent }: WorkCardProps) {
+export function WorkCard({ id, title, authors, enrichmentStatus, scanActive, formats, series, coverPath, progressPercent }: WorkCardProps) {
   const [imgFailed, setImgFailed] = useState(false);
   const showPlaceholder = !coverPath || imgFailed;
 
@@ -50,7 +51,7 @@ export function WorkCard({ id, title, authors, enrichmentStatus, formats, series
               {series}
             </Badge>
           )}
-          {enrichmentStatus === "STUB" && (
+          {enrichmentStatus === "STUB" && scanActive && (
             <Badge variant="outline" className="animate-pulse px-1.5 py-0 text-[10px]">
               Processing&hellip;
             </Badge>
