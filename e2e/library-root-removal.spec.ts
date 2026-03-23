@@ -7,8 +7,7 @@ test.describe("Library root removal with orphan cleanup", () => {
     await cleanTestData();
   });
 
-  // TODO: fix navigation to /settings/libraries after visiting /library
-  test.fixme("removing a library root cleans up orphaned works", async ({ page }) => {
+  test("removing a library root cleans up orphaned works", async ({ page }) => {
     const root = await seedLibraryRoot({ name: "Removable Library" });
     await db.work.create({
       data: {
