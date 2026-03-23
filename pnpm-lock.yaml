@@ -59,6 +59,9 @@ importers:
       '@bookhouse/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@bookhouse/ingest':
+        specifier: workspace:*
+        version: link:../../packages/ingest
       '@bookhouse/shared':
         specifier: workspace:*
         version: link:../../packages/shared

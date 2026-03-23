@@ -51,11 +51,23 @@ vi.mock("@bookhouse/db", () => ({
 }));
 
 const enqueueLibraryJobMock = vi.fn();
-const LIBRARY_JOB_NAMES = { SCAN_LIBRARY_ROOT: "SCAN_LIBRARY_ROOT" };
+const LIBRARY_JOB_NAMES = {
+  SCAN_LIBRARY_ROOT: "SCAN_LIBRARY_ROOT",
+  PARSE_FILE_ASSET_METADATA: "PARSE_FILE_ASSET_METADATA",
+};
 
 vi.mock("@bookhouse/shared", () => ({
   enqueueLibraryJob: enqueueLibraryJobMock,
   LIBRARY_JOB_NAMES,
+}));
+
+const parseFileAssetMetadataMock = vi.fn();
+const createIngestServicesMock = vi.fn(() => ({
+  parseFileAssetMetadata: parseFileAssetMetadataMock,
+}));
+
+vi.mock("@bookhouse/ingest", () => ({
+  createIngestServices: createIngestServicesMock,
 }));
 
 import {
@@ -66,6 +78,7 @@ import {
   getScanProgressServerFn,
   getLibraryIssueCountServerFn,
   getLibraryIssuesServerFn,
+  retryLibraryIssuesServerFn,
 } from "./library-roots";
 
 describe("getLibraryRootsServerFn", () => {
@@ -393,5 +406,69 @@ describe("getLibraryIssuesServerFn", () => {
     expect(fileAssetFindManyMock).toHaveBeenCalledWith(
       expect.objectContaining({ skip: 20, take: 10 }),
     );
+  });
+});
+
+describe("retryLibraryIssuesServerFn", () => {
+  beforeEach(() => {
+    fileAssetFindManyMock.mockReset();
+    parseFileAssetMetadataMock.mockReset();
+    createIngestServicesMock.mockClear();
+  });
+
+  it("calls parseFileAssetMetadata for each unparseable file sequentially", async () => {
+    const fakeAssets = [
+      { id: "fa-1" },
+      { id: "fa-2" },
+      { id: "fa-3" },
+    ];
+    fileAssetFindManyMock.mockResolvedValue(fakeAssets);
+    parseFileAssetMetadataMock.mockResolvedValue({ skipped: false });
+
+    const result = await retryLibraryIssuesServerFn({
+      data: { libraryRootId: "root-1" },
+    });
+
+    expect(fileAssetFindManyMock).toHaveBeenCalledWith({
+      where: {
+        libraryRootId: "root-1",
+        metadata: { path: ["status"], equals: "unparseable" },
+      },
+      select: { id: true },
+    });
+
+    expect(createIngestServicesMock).toHaveBeenCalledWith({
+      enqueueLibraryJob: expect.any(Function) as unknown,
+    });
+
+    // Verify the wrapper delegates to the real enqueueLibraryJob
+    const calls = createIngestServicesMock.mock.calls as unknown as Array<
+      Array<{ enqueueLibraryJob: (jobName: string, payload: unknown) => Promise<void> }>
+    >;
+    const firstCall = calls[0];
+    if (!firstCall) throw new Error("expected createIngestServices call");
+    const firstArg = firstCall[0];
+    if (!firstArg) throw new Error("expected createIngestServices argument");
+    enqueueLibraryJobMock.mockResolvedValue("job-id");
+    await firstArg.enqueueLibraryJob("SOME_JOB", { fileAssetId: "fa-99" });
+    expect(enqueueLibraryJobMock).toHaveBeenCalledWith("SOME_JOB", { fileAssetId: "fa-99" });
+
+    expect(parseFileAssetMetadataMock).toHaveBeenCalledTimes(3);
+    expect(parseFileAssetMetadataMock).toHaveBeenCalledWith({ fileAssetId: "fa-1" });
+    expect(parseFileAssetMetadataMock).toHaveBeenCalledWith({ fileAssetId: "fa-2" });
+    expect(parseFileAssetMetadataMock).toHaveBeenCalledWith({ fileAssetId: "fa-3" });
+
+    expect(result).toEqual({ retriedCount: 3 });
+  });
+
+  it("returns retriedCount 0 when no issues exist", async () => {
+    fileAssetFindManyMock.mockResolvedValue([]);
+
+    const result = await retryLibraryIssuesServerFn({
+      data: { libraryRootId: "root-1" },
+    });
+
+    expect(parseFileAssetMetadataMock).not.toHaveBeenCalled();
+    expect(result).toEqual({ retriedCount: 0 });
   });
 });

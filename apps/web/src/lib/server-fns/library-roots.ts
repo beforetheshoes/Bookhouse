@@ -193,3 +193,32 @@ export const scanLibraryRootServerFn = createServerFn({
 
     return { jobId, importJobId: importJob.id };
   });
+
+export const retryLibraryIssuesServerFn = createServerFn({
+  method: "POST",
+})
+  .inputValidator(libraryRootIdSchema)
+  .handler(async ({ data }) => {
+    const { db } = await import("@bookhouse/db");
+    const { createIngestServices } = await import("@bookhouse/ingest");
+    const { enqueueLibraryJob } = await import("@bookhouse/shared");
+
+    const issues = await db.fileAsset.findMany({
+      where: {
+        libraryRootId: data.libraryRootId,
+        metadata: { path: ["status"], equals: "unparseable" },
+      },
+      select: { id: true },
+    });
+
+    const services = createIngestServices({
+      async enqueueLibraryJob(jobName, payload) {
+        await enqueueLibraryJob(jobName, payload);
+      },
+    });
+    for (const issue of issues) {
+      await services.parseFileAssetMetadata({ fileAssetId: issue.id });
+    }
+
+    return { retriedCount: issues.length };
+  });
