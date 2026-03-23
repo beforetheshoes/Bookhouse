@@ -57,8 +57,8 @@ test.describe("Bulk delete works from library", () => {
 
     await expect(page.getByText(/1 work selected/)).toBeVisible();
 
-    // Click Clear
-    await page.getByText("Clear").click();
+    // Click Clear button
+    await page.getByRole("button", { name: "Clear" }).click();
 
     // Action bar should disappear
     await expect(page.getByText(/work selected/)).not.toBeVisible();

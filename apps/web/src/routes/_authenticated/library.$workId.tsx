@@ -153,7 +153,7 @@ function WorkDetailPage() {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold">{work.titleDisplay}</h1>
-              <Button variant="outline" size="sm" onClick={() => { setDeleteWorkOpen(true); }}>
+              <Button data-testid="delete-work-btn" variant="outline" size="sm" onClick={() => { setDeleteWorkOpen(true); }}>
                 <Trash2 className="size-4" />
               </Button>
             </div>
@@ -211,7 +211,7 @@ function WorkDetailPage() {
                     <span className="text-sm text-muted-foreground">{edition.publisher}</span>
                   )}
                 </CardTitle>
-                <Button variant="outline" size="sm" onClick={() => { setDeleteEditionOpen(edition.id); }}>
+                <Button data-testid={`delete-edition-${edition.id}`} variant="outline" size="sm" onClick={() => { setDeleteEditionOpen(edition.id); }}>
                   <Trash2 className="size-3.5" />
                 </Button>
               </div>

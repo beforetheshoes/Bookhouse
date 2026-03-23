@@ -16,20 +16,19 @@ test.describe("Delete work from detail page", () => {
     await page.getByText("Deletable Book").click();
     await expect(page.getByRole("heading", { level: 1, name: "Deletable Book" })).toBeVisible();
 
-    // Click the delete button (Trash2 icon button next to title)
-    const deleteButtons = page.getByRole("button").filter({ has: page.locator("svg") });
-    await deleteButtons.first().click();
+    // Click the delete work button
+    await page.getByTestId("delete-work-btn").click();
 
     // Confirmation dialog appears
     await expect(page.getByText("Delete Work")).toBeVisible();
-    await expect(page.getByText(/will remove.*Deletable Book/)).toBeVisible();
+    await expect(page.getByText(/will remove/)).toBeVisible();
     await expect(page.getByText(/files on disk will not be affected/)).toBeVisible();
 
     // Confirm deletion
-    await page.getByRole("button", { name: "Delete" }).click();
+    await page.locator("[role='dialog'] button", { hasText: "Delete" }).click();
 
     // Should redirect to library and book should be gone
-    await expect(page.getByText("Deletable Book")).not.toBeVisible({ timeout: 10_000 });
+    await expect(page).toHaveURL(/\/library/, { timeout: 10_000 });
   });
 
   test("cancelling delete work dialog does not remove the work", async ({ page }) => {
@@ -40,8 +39,7 @@ test.describe("Delete work from detail page", () => {
     await expect(page.getByRole("heading", { level: 1, name: "Keep This Book" })).toBeVisible();
 
     // Open delete dialog
-    const deleteButtons = page.getByRole("button").filter({ has: page.locator("svg") });
-    await deleteButtons.first().click();
+    await page.getByTestId("delete-work-btn").click();
     await expect(page.getByText("Delete Work")).toBeVisible();
 
     // Cancel

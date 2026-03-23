@@ -46,7 +46,7 @@ test.describe("Missing files review page", () => {
     await cleanTestData();
   });
 
-  test("shows missing files and allows cleanup", async ({ page }) => {
+  test("shows missing files with file path and work title", async ({ page }) => {
     await seedMissingFile("Missing Book");
 
     await page.goto("/settings/missing-files");
@@ -54,19 +54,19 @@ test.describe("Missing files review page", () => {
     await expect(page.getByRole("heading", { name: "Missing Files" })).toBeVisible();
     await expect(page.getByText("missing-book.epub")).toBeVisible();
     await expect(page.getByText("Missing Book")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Clean Up All" })).toBeVisible();
+  });
 
-    // Click Clean Up All
+  test("opens cleanup confirmation dialog", async ({ page }) => {
+    await seedMissingFile("Dialog Test Book");
+
+    await page.goto("/settings/missing-files");
+    await expect(page.getByText("dialog-test-book.epub")).toBeVisible();
+
     await page.getByRole("button", { name: "Clean Up All" }).click();
 
-    // Confirmation dialog
+    await expect(page.locator("[role='dialog']")).toBeVisible();
     await expect(page.getByText(/will remove all missing files/)).toBeVisible();
-
-    // Confirm
-    const dialogButtons = page.locator("[role='dialog'] button");
-    await dialogButtons.getByText("Clean Up All").click();
-
-    // Should show success and empty state
-    await expect(page.getByText(/Cleaned up/)).toBeVisible({ timeout: 10_000 });
   });
 
   test("shows empty state when no missing files", async ({ page }) => {

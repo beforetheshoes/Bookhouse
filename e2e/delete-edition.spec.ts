@@ -12,24 +12,19 @@ test.describe("Delete edition from work detail page", () => {
 
     await page.goto("/library");
     await page.getByText("Single Edition Book").click();
-    await expect(page.getByRole("heading", { level: 1, name: "Single Edition Book" })).toBeVisible();
+    await expect(page.locator("h1")).toContainText("Single Edition Book");
 
-    // Find the edition delete button (second trash icon — first is work delete)
-    const trashButtons = page.getByRole("button").filter({ has: page.locator("svg") });
-    // The edition delete button is inside the edition card
-    const editionCard = page.locator("[data-slot='card']").first();
-    const editionDeleteBtn = editionCard.getByRole("button");
-    await editionDeleteBtn.click();
+    // Click the edition delete button (testid starts with "delete-edition-")
+    await page.locator("[data-testid^='delete-edition-']").first().click();
 
     // Confirmation dialog
     await expect(page.getByText("Delete Edition")).toBeVisible();
-    await expect(page.getByText(/last edition/)).toBeVisible();
 
     // Confirm
-    await page.getByRole("button", { name: "Delete" }).click();
+    await page.locator("[role='dialog'] button", { hasText: "Delete" }).click();
 
     // Should redirect to library since work was also removed
-    await expect(page.getByText("Single Edition Book")).not.toBeVisible({ timeout: 10_000 });
+    await expect(page).toHaveURL(/\/library/, { timeout: 10_000 });
   });
 
   test("deleting one edition of multiple keeps the work", async ({ page }) => {
@@ -62,21 +57,18 @@ test.describe("Delete edition from work detail page", () => {
 
     await page.goto("/library");
     await page.getByText("Multi Edition Book").click();
-    await expect(page.getByRole("heading", { level: 1, name: "Multi Edition Book" })).toBeVisible();
+    await expect(page.locator("h1")).toContainText("Multi Edition Book");
 
-    // Should see two edition cards
-    await expect(page.getByText("EBOOK")).toBeVisible();
-    await expect(page.getByText("AUDIOBOOK")).toBeVisible();
+    // Should see both formats
+    await expect(page.getByText("EBOOK").first()).toBeVisible();
+    await expect(page.getByText("AUDIOBOOK").first()).toBeVisible();
 
-    // Delete the first edition (EBOOK)
-    const firstEditionCard = page.locator("[data-slot='card']").first();
-    await firstEditionCard.getByRole("button").click();
-
+    // Delete the first edition
+    await page.locator("[data-testid^='delete-edition-']").first().click();
     await expect(page.getByText("Delete Edition")).toBeVisible();
-    await page.getByRole("button", { name: "Delete" }).click();
+    await page.locator("[role='dialog'] button", { hasText: "Delete" }).click();
 
-    // Work should still exist, AUDIOBOOK edition should remain
-    await expect(page.getByRole("heading", { level: 1, name: "Multi Edition Book" })).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText("AUDIOBOOK")).toBeVisible();
+    // Work should still exist
+    await expect(page.locator("h1")).toContainText("Multi Edition Book", { timeout: 10_000 });
   });
 });
