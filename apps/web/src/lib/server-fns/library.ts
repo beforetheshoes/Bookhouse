@@ -60,25 +60,31 @@ function buildWhere(data: z.infer<typeof filterSchema>): WhereClause {
     ];
   }
 
+  const editionConditions: Record<string, unknown>[] = [];
+
   if (data.format && data.format.length > 0) {
-    where.editions = { some: { formatFamily: { in: data.format } } };
+    editionConditions.push({ formatFamily: { in: data.format } });
   }
 
   if (data.authorId && data.authorId.length > 0) {
-    where.editions = {
-      some: {
-        contributors: {
-          some: {
-            contributorId: { in: data.authorId },
-            role: "AUTHOR",
-          },
+    editionConditions.push({
+      contributors: {
+        some: {
+          contributorId: { in: data.authorId },
+          role: "AUTHOR",
         },
       },
-    };
+    });
   }
 
   if (data.publisher && data.publisher.length > 0) {
-    where.editions = { some: { publisher: { in: data.publisher } } };
+    editionConditions.push({ publisher: { in: data.publisher } });
+  }
+
+  if (editionConditions.length === 1) {
+    where.editions = { some: editionConditions[0] };
+  } else if (editionConditions.length > 1) {
+    where.editions = { some: { AND: editionConditions } };
   }
 
   if (data.seriesId && data.seriesId.length > 0) {

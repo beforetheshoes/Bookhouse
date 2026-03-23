@@ -305,7 +305,120 @@ describe("getFilteredLibraryWorksServerFn", () => {
     );
   });
 
-  it("combines multiple filters with AND logic", async () => {
+  it("combines format + authorId into a single editions filter with AND", async () => {
+    findManyMock.mockResolvedValue([]);
+    countMock.mockResolvedValue(0);
+    editionGroupByMock.mockResolvedValue([]);
+    seriesCountMock.mockResolvedValue(0);
+
+    await getFilteredLibraryWorksServerFn({
+      data: { format: ["EBOOK"], authorId: ["author-1"] },
+    });
+
+    const call = (findManyMock.mock.calls[0] as unknown[])[0] as { where: Record<string, unknown> };
+    expect(call.where).toEqual(
+      expect.objectContaining({
+        editions: {
+          some: {
+            AND: [
+              { formatFamily: { in: ["EBOOK"] } },
+              {
+                contributors: {
+                  some: { contributorId: { in: ["author-1"] }, role: "AUTHOR" },
+                },
+              },
+            ],
+          },
+        },
+      }),
+    );
+  });
+
+  it("combines format + publisher into a single editions filter with AND", async () => {
+    findManyMock.mockResolvedValue([]);
+    countMock.mockResolvedValue(0);
+    editionGroupByMock.mockResolvedValue([]);
+    seriesCountMock.mockResolvedValue(0);
+
+    await getFilteredLibraryWorksServerFn({
+      data: { format: ["AUDIOBOOK"], publisher: ["Penguin"] },
+    });
+
+    const call = (findManyMock.mock.calls[0] as unknown[])[0] as { where: Record<string, unknown> };
+    expect(call.where).toEqual(
+      expect.objectContaining({
+        editions: {
+          some: {
+            AND: [
+              { formatFamily: { in: ["AUDIOBOOK"] } },
+              { publisher: { in: ["Penguin"] } },
+            ],
+          },
+        },
+      }),
+    );
+  });
+
+  it("combines authorId + publisher into a single editions filter with AND", async () => {
+    findManyMock.mockResolvedValue([]);
+    countMock.mockResolvedValue(0);
+    editionGroupByMock.mockResolvedValue([]);
+    seriesCountMock.mockResolvedValue(0);
+
+    await getFilteredLibraryWorksServerFn({
+      data: { authorId: ["author-1"], publisher: ["Penguin"] },
+    });
+
+    const call = (findManyMock.mock.calls[0] as unknown[])[0] as { where: Record<string, unknown> };
+    expect(call.where).toEqual(
+      expect.objectContaining({
+        editions: {
+          some: {
+            AND: [
+              {
+                contributors: {
+                  some: { contributorId: { in: ["author-1"] }, role: "AUTHOR" },
+                },
+              },
+              { publisher: { in: ["Penguin"] } },
+            ],
+          },
+        },
+      }),
+    );
+  });
+
+  it("combines format + authorId + publisher into a single editions filter with AND", async () => {
+    findManyMock.mockResolvedValue([]);
+    countMock.mockResolvedValue(0);
+    editionGroupByMock.mockResolvedValue([]);
+    seriesCountMock.mockResolvedValue(0);
+
+    await getFilteredLibraryWorksServerFn({
+      data: { format: ["EBOOK"], authorId: ["author-1"], publisher: ["Penguin"] },
+    });
+
+    const call = (findManyMock.mock.calls[0] as unknown[])[0] as { where: Record<string, unknown> };
+    expect(call.where).toEqual(
+      expect.objectContaining({
+        editions: {
+          some: {
+            AND: [
+              { formatFamily: { in: ["EBOOK"] } },
+              {
+                contributors: {
+                  some: { contributorId: { in: ["author-1"] }, role: "AUTHOR" },
+                },
+              },
+              { publisher: { in: ["Penguin"] } },
+            ],
+          },
+        },
+      }),
+    );
+  });
+
+  it("combines edition-level and work-level filters with AND logic", async () => {
     findManyMock.mockResolvedValue([]);
     countMock.mockResolvedValue(0);
     editionGroupByMock.mockResolvedValue([]);
@@ -314,6 +427,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
     await getFilteredLibraryWorksServerFn({
       data: {
         format: ["EBOOK"],
+        authorId: ["author-1"],
         hasCover: true,
         q: "test",
       },
@@ -322,7 +436,18 @@ describe("getFilteredLibraryWorksServerFn", () => {
     const call = (findManyMock.mock.calls[0] as unknown[])[0] as { where: Record<string, unknown> };
     expect(call.where).toEqual(
       expect.objectContaining({
-        editions: { some: { formatFamily: { in: ["EBOOK"] } } },
+        editions: {
+          some: {
+            AND: [
+              { formatFamily: { in: ["EBOOK"] } },
+              {
+                contributors: {
+                  some: { contributorId: { in: ["author-1"] }, role: "AUTHOR" },
+                },
+              },
+            ],
+          },
+        },
         coverPath: { not: null },
         OR: [
           { titleDisplay: { contains: "test", mode: "insensitive" } },
