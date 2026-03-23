@@ -35,6 +35,7 @@ interface VirtualizedDataTableProps<TData, TValue> {
   estimateRowHeight?: number;
   containerHeight?: string;
   rowSelection?: RowSelectionState;
+  onRowSelectionChange?: OnChangeFn<RowSelectionState>;
   showPagination?: boolean;
   columnVisibility?: VisibilityState;
   onColumnVisibilityChange?: OnChangeFn<VisibilityState>;
@@ -50,6 +51,7 @@ export function VirtualizedDataTable<TData, TValue>({
   estimateRowHeight = 48,
   containerHeight = "70vh",
   rowSelection,
+  onRowSelectionChange,
   showPagination = true,
   columnVisibility,
   onColumnVisibilityChange,
@@ -69,6 +71,7 @@ export function VirtualizedDataTable<TData, TValue>({
       ...(rowSelection !== undefined ? { rowSelection } : {}),
     },
     enableRowSelection: rowSelection !== undefined,
+    onRowSelectionChange,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange,
