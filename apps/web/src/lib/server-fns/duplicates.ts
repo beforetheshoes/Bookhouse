@@ -11,25 +11,37 @@ export const getDuplicatesServerFn = createServerFn({
   .inputValidator(getDuplicatesSchema)
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
-    return db.duplicateCandidate.findMany({
+    const rows = await db.duplicateCandidate.findMany({
       ...(data.status ? { where: { status: data.status } } : {}),
       include: {
         leftEdition: {
           include: {
             work: true,
             contributors: { include: { contributor: true } },
+            editionFiles: { include: { fileAsset: true } },
           },
         },
         rightEdition: {
           include: {
             work: true,
             contributors: { include: { contributor: true } },
+            editionFiles: { include: { fileAsset: true } },
           },
         },
         leftFileAsset: true,
         rightFileAsset: true,
       },
       orderBy: { confidence: "desc" },
+    });
+    return rows.filter((r) => {
+      // Exclude candidates involving sidecar files (direct or via edition files)
+      const leftIsSidecar = r.leftFileAsset?.mediaKind === "SIDECAR"
+        || r.leftEdition?.editionFiles.some((ef) => ef.fileAsset.mediaKind === "SIDECAR");
+      const rightIsSidecar = r.rightFileAsset?.mediaKind === "SIDECAR"
+        || r.rightEdition?.editionFiles.some((ef) => ef.fileAsset.mediaKind === "SIDECAR");
+      if (leftIsSidecar || rightIsSidecar) return false;
+
+      return true;
     });
   });
 

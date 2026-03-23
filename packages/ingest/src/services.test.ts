@@ -328,6 +328,7 @@ function createTestDb(state: TestState): IngestDb {
         const notId = where.NOT.id;
         return [...state.editions.values()].filter((edition) => {
           if (edition.id === notId) return false;
+          if (edition.formatFamily !== where.formatFamily) return false;
           return where.OR.some((clause: Record<string, string | null>) =>
             Object.entries(clause).every(([key, value]) => edition[key as keyof TestEdition] === value),
           );
@@ -384,7 +385,9 @@ function createTestDb(state: TestState): IngestDb {
       async findMany({ where }) {
         await Promise.resolve();
         return [...state.editionFiles.values()].filter(
-          (editionFile) => editionFile.fileAssetId === where.fileAssetId,
+          (editionFile) =>
+            (where.fileAssetId === undefined || editionFile.fileAssetId === where.fileAssetId) &&
+            (where.editionId === undefined || editionFile.editionId === where.editionId),
         );
       },
       async update({ where, data }) {
@@ -2972,6 +2975,7 @@ describe("ingest services", () => {
         enrichedExistingWork: false,
         enqueuedCoverJob: true,
         fileAssetId: "file-1",
+        mediaKind: "EPUB",
         skipped: false,
         workId: "work-1",
       });
@@ -2983,6 +2987,7 @@ describe("ingest services", () => {
         enrichedExistingWork: false,
         enqueuedCoverJob: true,
         fileAssetId: "file-1",
+        mediaKind: "EPUB",
         skipped: false,
         workId: "work-1",
       });
@@ -3035,6 +3040,7 @@ describe("ingest services", () => {
       enrichedExistingWork: false,
       enqueuedCoverJob: true,
       fileAssetId: "file-1",
+      mediaKind: "EPUB",
       skipped: false,
       workId: "work-1",
     });
@@ -3083,6 +3089,7 @@ describe("ingest services", () => {
       enrichedExistingWork: false,
       enqueuedCoverJob: true,
       fileAssetId: "file-1",
+      mediaKind: "EPUB",
       skipped: false,
       workId: "work-1",
     });
@@ -3186,6 +3193,7 @@ describe("ingest services", () => {
       enrichedExistingWork: false,
       enqueuedCoverJob: true,
       fileAssetId: "file-1",
+      mediaKind: "EPUB",
       skipped: false,
       workId: "work-1",
     });
@@ -3226,6 +3234,7 @@ describe("ingest services", () => {
       enrichedExistingWork: false,
       enqueuedCoverJob: false,
       fileAssetId: "file-1",
+      mediaKind: "EPUB",
       skipped: false,
       workId: undefined,
     });
@@ -6904,6 +6913,33 @@ describe("matchFileAssetToEdition enqueues follow-up jobs", () => {
     );
   });
 
+  it("returns mediaKind in the result for a successful EPUB match", async () => {
+    const state = createEmptyState("/tmp/root");
+    addFileAsset(state, {
+      metadata: {
+        normalized: {
+          authors: ["Test Author"],
+          identifiers: { isbn13: "9780316498834", unknown: [] },
+          title: "Test Book",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      },
+    });
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-1" });
+
+    expect(result.skipped).toBe(false);
+    expect(result.mediaKind).toBe("EPUB");
+  });
+
   it("does not enqueue follow-up jobs when match is skipped", async () => {
     const enqueueMock = vi.fn(() => Promise.resolve(undefined));
     const services = createIngestServices({
@@ -6923,12 +6959,55 @@ describe("matchFileAssetToEdition enqueues follow-up jobs", () => {
       expect.anything(),
     );
   });
+
+  it("does not enqueue DETECT_DUPLICATES or MATCH_AUDIO for a SIDECAR file asset", async () => {
+    const state = createEmptyState("/tmp/root");
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Book/metadata.json",
+      basename: "metadata.json",
+      extension: "json",
+      id: "file-sidecar",
+      mediaKind: MediaKind.SIDECAR,
+      relativePath: "Author/Book/metadata.json",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          narrators: ["Ray Porter"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "audiobook-json",
+        status: "parsed",
+        warnings: [],
+      } as unknown as FileAsset["metadata"],
+    });
+    const enqueueMock = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: enqueueMock,
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-sidecar" });
+
+    expect(result.skipped).toBe(false);
+    expect(result.mediaKind).toBe("SIDECAR");
+    expect(enqueueMock).not.toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.DETECT_DUPLICATES,
+      expect.anything(),
+    );
+    expect(enqueueMock).not.toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.MATCH_AUDIO,
+      expect.anything(),
+    );
+  });
 });
 
 describe("detectDuplicates", () => {
   const now = new Date("2025-01-01");
 
-  function addDetectFileAsset(state: TestState, id: string, hash: string | null, absPath: string) {
+  function addDetectFileAsset(state: TestState, id: string, hash: string | null, absPath: string, overrides: Partial<TestFileAsset> = {}) {
     const fa: TestFileAsset = {
       absolutePath: absPath,
       availabilityStatus: AvailabilityStatus.PRESENT,
@@ -6945,6 +7024,7 @@ describe("detectDuplicates", () => {
       partialHash: hash,
       relativePath: absPath.replace("/tmp/root/", ""),
       sizeBytes: BigInt(1000),
+      ...overrides,
     };
     state.fileAssetsById.set(id, fa);
     state.fileAssets.set(absPath, fa);
@@ -7093,11 +7173,13 @@ describe("detectDuplicates", () => {
   it("SAME_ISBN: creates candidate when another edition shares isbn13", async () => {
     const state = createEmptyState();
     addDetectFileAsset(state, "file-1", "hash-a", "/tmp/root/book.epub");
+    addDetectFileAsset(state, "file-2", "hash-b", "/tmp/root/book-copy.epub");
     addDetectWork(state, "work-1", "book a", "Book A");
-    addDetectWork(state, "work-2", "book b", "Book B");
+    addDetectWork(state, "work-2", "book a", "Book A");
     addDetectEdition(state, "edition-1", "work-1", { isbn13: "9781234567890" });
     addDetectEdition(state, "edition-2", "work-2", { isbn13: "9781234567890" });
     addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    addDetectEditionFile(state, "ef-2", "edition-2", "file-2");
     const services = createIngestServices({ db: createTestDb(state) });
 
     const result = await services.detectDuplicates({ fileAssetId: "file-1" });
@@ -7115,11 +7197,13 @@ describe("detectDuplicates", () => {
   it("SAME_ISBN: creates candidate when another edition shares isbn10", async () => {
     const state = createEmptyState();
     addDetectFileAsset(state, "file-1", "hash-a", "/tmp/root/book.epub");
+    addDetectFileAsset(state, "file-2", "hash-b", "/tmp/root/book-copy.epub");
     addDetectWork(state, "work-1", "book a", "Book A");
-    addDetectWork(state, "work-2", "book b", "Book B");
+    addDetectWork(state, "work-2", "book a", "Book A");
     addDetectEdition(state, "edition-1", "work-1", { isbn10: "1234567890" });
     addDetectEdition(state, "edition-2", "work-2", { isbn10: "1234567890" });
     addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    addDetectEditionFile(state, "ef-2", "edition-2", "file-2");
     const services = createIngestServices({ db: createTestDb(state) });
 
     const result = await services.detectDuplicates({ fileAssetId: "file-1" });
@@ -7137,11 +7221,13 @@ describe("detectDuplicates", () => {
   it("SAME_ISBN: does not create candidate if pair already exists", async () => {
     const state = createEmptyState();
     addDetectFileAsset(state, "file-1", "hash-a", "/tmp/root/book.epub");
+    addDetectFileAsset(state, "file-2", "hash-b", "/tmp/root/book-copy.epub");
     addDetectWork(state, "work-1", "book a", "Book A");
-    addDetectWork(state, "work-2", "book b", "Book B");
+    addDetectWork(state, "work-2", "book a", "Book A");
     addDetectEdition(state, "edition-1", "work-1", { isbn13: "9781234567890" });
     addDetectEdition(state, "edition-2", "work-2", { isbn13: "9781234567890" });
     addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    addDetectEditionFile(state, "ef-2", "edition-2", "file-2");
     state.duplicateCandidates.set("existing-isbn", {
       id: "existing-isbn",
       leftEditionId: "edition-1",
@@ -7158,6 +7244,71 @@ describe("detectDuplicates", () => {
 
     expect(result.candidatesCreated).toBe(0);
     expect(state.duplicateCandidates.size).toBe(1);
+  });
+
+  it("SAME_ISBN: does not create candidate when editions have different formatFamily", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "hash-a", "/tmp/root/book.epub");
+    addDetectWork(state, "work-1", "book a", "Book A");
+    addDetectWork(state, "work-2", "book a audiobook", "Book A Audiobook");
+    addDetectEdition(state, "edition-1", "work-1", { isbn13: "9781234567890", formatFamily: FormatFamily.EBOOK });
+    addDetectEdition(state, "edition-2", "work-2", { isbn13: "9781234567890", formatFamily: FormatFamily.AUDIOBOOK });
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    expect(result.candidatesCreated).toBe(0);
+    expect(state.duplicateCandidates.size).toBe(0);
+  });
+
+  it("SAME_ISBN: creates candidate when matched edition has no files", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "hash-a", "/tmp/root/book.epub");
+    addDetectWork(state, "work-1", "book a", "Book A");
+    addDetectWork(state, "work-2", "book a", "Book A");
+    addDetectEdition(state, "edition-1", "work-1", { isbn13: "9781234567890" });
+    addDetectEdition(state, "edition-2", "work-2", { isbn13: "9781234567890" });
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    // edition-2 has no edition files
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    expect(result.candidatesCreated).toBe(1);
+  });
+
+  it("SAME_ISBN: does not create candidate when matched edition belongs to a different work (ISBN collision)", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "hash-a", "/tmp/root/book.epub");
+    addDetectWork(state, "work-1", "restaurant at the end of the universe", "The Restaurant at the End of the Universe");
+    addDetectWork(state, "work-2", "the ultimate hitchhikers guide", "The Ultimate Hitchhiker's Guide");
+    addDetectEdition(state, "edition-1", "work-1", { isbn13: "9780307498465" });
+    addDetectEdition(state, "edition-2", "work-2", { isbn13: "9780307498465" });
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    expect(result.candidatesCreated).toBe(0);
+    expect(state.duplicateCandidates.size).toBe(0);
+  });
+
+  it("SAME_ISBN: does not create candidate when matched edition has no overlapping file media kinds", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "hash-a", "/tmp/root/book.epub");
+    addDetectFileAsset(state, "file-2", null, "/tmp/root/book.pdf", { mediaKind: MediaKind.PDF });
+    addDetectWork(state, "work-1", "hijacked", "Hijacked");
+    addDetectEdition(state, "edition-1", "work-1", { isbn13: "9781009275439" });
+    addDetectEdition(state, "edition-2", "work-1", { isbn13: "9781009275439" });
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    addDetectEditionFile(state, "ef-2", "edition-2", "file-2");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    expect(result.candidatesCreated).toBe(0);
+    expect(state.duplicateCandidates.size).toBe(0);
   });
 
   it("SIMILAR_TITLE_AUTHOR: creates candidate when title and author similarity >= 0.85", async () => {
@@ -7312,11 +7463,13 @@ describe("detectDuplicates", () => {
     const state = createEmptyState();
     addDetectFileAsset(state, "file-1", "samehash", "/tmp/root/book.epub");
     addDetectFileAsset(state, "file-2", "samehash", "/tmp/root/book-copy.epub");
+    addDetectFileAsset(state, "file-3", null, "/tmp/root/book-isbn.epub");
     addDetectWork(state, "work-1", "book title", "Book Title");
-    addDetectWork(state, "work-2", "different title", "Different Title");
+    addDetectWork(state, "work-2", "book title", "Book Title");
     addDetectEdition(state, "edition-1", "work-1", { isbn13: "9781234567890" });
     addDetectEdition(state, "edition-2", "work-2", { isbn13: "9781234567890" });
     addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    addDetectEditionFile(state, "ef-2", "edition-2", "file-3");
     const services = createIngestServices({ db: createTestDb(state) });
 
     const result = await services.detectDuplicates({ fileAssetId: "file-1" });

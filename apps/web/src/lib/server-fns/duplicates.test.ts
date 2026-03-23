@@ -76,12 +76,14 @@ describe("getDuplicatesServerFn", () => {
           include: {
             work: true,
             contributors: { include: { contributor: true } },
+            editionFiles: { include: { fileAsset: true } },
           },
         },
         rightEdition: {
           include: {
             work: true,
             contributors: { include: { contributor: true } },
+            editionFiles: { include: { fileAsset: true } },
           },
         },
         leftFileAsset: true,
@@ -92,10 +94,10 @@ describe("getDuplicatesServerFn", () => {
   });
 
   it("returns the result from findMany", async () => {
-    const fakeData = [{ id: "dup-1", confidence: 0.99 }];
+    const fakeData = [{ id: "dup-1", confidence: 0.99, leftFileAsset: null, rightFileAsset: null }];
     findManyMock.mockResolvedValue(fakeData);
     const result = await getDuplicatesServerFn({ data: {} });
-    expect(result).toBe(fakeData);
+    expect(result).toEqual(fakeData);
   });
 
   it("filters by status when provided", async () => {
@@ -106,6 +108,27 @@ describe("getDuplicatesServerFn", () => {
         where: { status: "PENDING" },
       }),
     );
+  });
+
+  it("excludes candidates where either side has a sidecar file", async () => {
+    findManyMock.mockResolvedValue([
+      { id: "dup-ok", leftFileAsset: { mediaKind: "EPUB" }, rightFileAsset: { mediaKind: "EPUB" }, leftEdition: null, rightEdition: null },
+      { id: "dup-direct-sidecar", leftFileAsset: { mediaKind: "SIDECAR" }, rightFileAsset: { mediaKind: "EPUB" }, leftEdition: null, rightEdition: null },
+      { id: "dup-left-edition-sidecar", leftFileAsset: null, rightFileAsset: null, leftEdition: { editionFiles: [{ fileAsset: { mediaKind: "SIDECAR" } }], formatFamily: "EBOOK" }, rightEdition: { editionFiles: [], formatFamily: "EBOOK" } },
+      { id: "dup-right-edition-sidecar", leftFileAsset: null, rightFileAsset: null, leftEdition: { editionFiles: [], formatFamily: "EBOOK" }, rightEdition: { editionFiles: [{ fileAsset: { mediaKind: "SIDECAR" } }], formatFamily: "EBOOK" } },
+      { id: "dup-null-sides", leftFileAsset: null, rightFileAsset: null, leftEdition: null, rightEdition: null },
+    ]);
+    const result = await getDuplicatesServerFn({ data: {} });
+    expect(result).toHaveLength(2);
+    expect(result.map((r: { id: string }) => r.id)).toEqual(["dup-ok", "dup-null-sides"]);
+  });
+
+  it("does not filter cross-format candidates (handled at detection time)", async () => {
+    findManyMock.mockResolvedValue([
+      { id: "dup-cross", leftFileAsset: null, rightFileAsset: null, leftEdition: { editionFiles: [], formatFamily: "EBOOK" }, rightEdition: { editionFiles: [], formatFamily: "AUDIOBOOK" } },
+    ]);
+    const result = await getDuplicatesServerFn({ data: {} });
+    expect(result).toHaveLength(1);
   });
 
   it("does not add where clause when status is not provided", async () => {

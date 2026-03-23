@@ -6,15 +6,45 @@ import userEvent from "@testing-library/user-event";
 
 const invalidateMock = vi.fn();
 
+interface MockEditionFile {
+  fileAsset: {
+    relativePath: string;
+    sizeBytes: bigint | null;
+    mediaKind: string;
+    extension: string | null;
+    fullHash: string | null;
+  };
+}
+
+interface MockEdition {
+  work?: { id?: string; titleDisplay: string; coverPath?: string | null };
+  contributors?: { contributor: { nameDisplay: string } }[];
+  editionFiles?: MockEditionFile[];
+  isbn13?: string | null;
+  isbn10?: string | null;
+  publisher?: string | null;
+  publishedAt?: string | null;
+  formatFamily?: string;
+}
+
+interface MockFileAsset {
+  basename: string;
+  relativePath?: string;
+  sizeBytes?: bigint | null;
+  mediaKind?: string;
+  extension?: string | null;
+  fullHash?: string | null;
+}
+
 let mockLoaderData: {
   duplicates: {
     id: string;
     leftEditionId: string | null;
     rightEditionId: string | null;
-    leftEdition: { work?: { titleDisplay: string; coverPath?: string | null }; contributors?: { contributor: { nameDisplay: string } }[] } | null;
-    rightEdition: { work?: { titleDisplay: string; coverPath?: string | null }; contributors?: { contributor: { nameDisplay: string } }[] } | null;
-    leftFileAsset: { basename: string; relativePath?: string } | null;
-    rightFileAsset: { basename: string; relativePath?: string } | null;
+    leftEdition: MockEdition | null;
+    rightEdition: MockEdition | null;
+    leftFileAsset: MockFileAsset | null;
+    rightFileAsset: MockFileAsset | null;
     reason: string;
     confidence: number | null;
     status: string;
@@ -68,6 +98,13 @@ const makeDuplicate = (overrides: Partial<typeof mockLoaderData.duplicates[numbe
   confidence: null,
   status: "PENDING",
   ...overrides,
+});
+
+describe("formatFileSize", () => {
+  it("returns dash for null", async () => {
+    const { formatFileSize } = await import("./duplicates");
+    expect(formatFileSize(null)).toBe("—");
+  });
 });
 
 describe("DuplicatesPage", () => {
@@ -344,5 +381,317 @@ describe("DuplicatesPage", () => {
     // Two side dashes + one confidence dash = 3
     const dashes = screen.getAllByText("—");
     expect(dashes.length).toBe(3);
+  });
+
+  it("renders file path from direct fileAsset", async () => {
+    mockLoaderData = {
+      duplicates: [
+        makeDuplicate({
+          leftFileAsset: {
+            basename: "book.epub",
+            relativePath: "Author/Title/book.epub",
+            sizeBytes: 1048576n,
+            mediaKind: "EPUB",
+            extension: "epub",
+            fullHash: "abc123def456",
+          },
+          rightFileAsset: {
+            basename: "book-copy.epub",
+            relativePath: "Author/Title/book-copy.epub",
+            sizeBytes: 2097152n,
+            mediaKind: "EPUB",
+            extension: "epub",
+            fullHash: "abc123def456",
+          },
+        }),
+      ],
+    };
+    const { Route } = await import("./duplicates");
+    const DuplicatesPage = (Route.options.component as React.ComponentType);
+    render(<DuplicatesPage />);
+    expect(screen.getByText("Author/Title/book.epub")).toBeTruthy();
+    expect(screen.getByText("Author/Title/book-copy.epub")).toBeTruthy();
+  });
+
+  it("renders file path from edition's editionFiles when no direct fileAsset", async () => {
+    mockLoaderData = {
+      duplicates: [
+        makeDuplicate({
+          leftEdition: {
+            work: { titleDisplay: "Test Book" },
+            contributors: [],
+            editionFiles: [{
+              fileAsset: {
+                relativePath: "Author/Test Book/test.epub",
+                sizeBytes: 500000n,
+                mediaKind: "EPUB",
+                extension: "epub",
+                fullHash: null,
+              },
+            }],
+          },
+          rightEdition: {
+            work: { titleDisplay: "Test Book" },
+            contributors: [],
+            editionFiles: [{
+              fileAsset: {
+                relativePath: "Author/Test Book/test2.epub",
+                sizeBytes: 600000n,
+                mediaKind: "EPUB",
+                extension: "epub",
+                fullHash: null,
+              },
+            }],
+          },
+        }),
+      ],
+    };
+    const { Route } = await import("./duplicates");
+    const DuplicatesPage = (Route.options.component as React.ComponentType);
+    render(<DuplicatesPage />);
+    expect(screen.getByText("Author/Test Book/test.epub")).toBeTruthy();
+    expect(screen.getByText("Author/Test Book/test2.epub")).toBeTruthy();
+  });
+
+  it("renders formatted file size", async () => {
+    mockLoaderData = {
+      duplicates: [
+        makeDuplicate({
+          leftFileAsset: {
+            basename: "book.epub",
+            relativePath: "book.epub",
+            sizeBytes: 1572864n,
+            mediaKind: "EPUB",
+            extension: "epub",
+            fullHash: null,
+          },
+          rightFileAsset: {
+            basename: "book2.epub",
+            relativePath: "book2.epub",
+            sizeBytes: 500n,
+            mediaKind: "EPUB",
+            extension: "epub",
+            fullHash: null,
+          },
+        }),
+      ],
+    };
+    const { Route } = await import("./duplicates");
+    const DuplicatesPage = (Route.options.component as React.ComponentType);
+    render(<DuplicatesPage />);
+    expect(screen.getByText("1.5 MB")).toBeTruthy();
+    expect(screen.getByText("500 B")).toBeTruthy();
+  });
+
+  it("renders format from mediaKind", async () => {
+    mockLoaderData = {
+      duplicates: [
+        makeDuplicate({
+          leftFileAsset: {
+            basename: "book.epub",
+            relativePath: "book.epub",
+            sizeBytes: 1000n,
+            mediaKind: "EPUB",
+            extension: "epub",
+            fullHash: null,
+          },
+          rightFileAsset: {
+            basename: "book.pdf",
+            relativePath: "book.pdf",
+            sizeBytes: 2000n,
+            mediaKind: "PDF",
+            extension: "pdf",
+            fullHash: null,
+          },
+        }),
+      ],
+    };
+    const { Route } = await import("./duplicates");
+    const DuplicatesPage = (Route.options.component as React.ComponentType);
+    render(<DuplicatesPage />);
+    expect(screen.getByText("EPUB")).toBeTruthy();
+    expect(screen.getByText("PDF")).toBeTruthy();
+  });
+
+  it("renders ISBN10 when ISBN13 is not available for SAME_ISBN reason", async () => {
+    mockLoaderData = {
+      duplicates: [
+        makeDuplicate({
+          reason: "SAME_ISBN",
+          leftEdition: {
+            work: { titleDisplay: "Book A" },
+            contributors: [],
+            isbn13: null,
+            isbn10: "0316499015",
+            editionFiles: [],
+          },
+          rightEdition: {
+            work: { titleDisplay: "Book B" },
+            contributors: [],
+            isbn13: null,
+            isbn10: "0316499015",
+            editionFiles: [],
+          },
+        }),
+      ],
+    };
+    const { Route } = await import("./duplicates");
+    const DuplicatesPage = (Route.options.component as React.ComponentType);
+    render(<DuplicatesPage />);
+    expect(screen.getAllByText("0316499015").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("renders no file size when sizeBytes is null", async () => {
+    mockLoaderData = {
+      duplicates: [
+        makeDuplicate({
+          leftFileAsset: {
+            basename: "book.epub",
+            relativePath: "Author/Title/book.epub",
+            sizeBytes: null,
+            mediaKind: "EPUB",
+            extension: "epub",
+            fullHash: null,
+          },
+          rightFileAsset: null,
+        }),
+      ],
+    };
+    const { Route } = await import("./duplicates");
+    const DuplicatesPage = (Route.options.component as React.ComponentType);
+    render(<DuplicatesPage />);
+    expect(screen.getByText("EPUB")).toBeTruthy();
+    expect(screen.getByText("Author/Title/book.epub")).toBeTruthy();
+  });
+
+  it("renders ISBN for SAME_ISBN reason", async () => {
+    mockLoaderData = {
+      duplicates: [
+        makeDuplicate({
+          reason: "SAME_ISBN",
+          leftEdition: {
+            work: { titleDisplay: "Book A" },
+            contributors: [],
+            isbn13: "9780316498834",
+            editionFiles: [],
+          },
+          rightEdition: {
+            work: { titleDisplay: "Book B" },
+            contributors: [],
+            isbn13: "9780316498834",
+            editionFiles: [],
+          },
+        }),
+      ],
+    };
+    const { Route } = await import("./duplicates");
+    const DuplicatesPage = (Route.options.component as React.ComponentType);
+    render(<DuplicatesPage />);
+    expect(screen.getAllByText("9780316498834").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("renders truncated hash for SAME_HASH reason", async () => {
+    mockLoaderData = {
+      duplicates: [
+        makeDuplicate({
+          reason: "SAME_HASH",
+          leftFileAsset: {
+            basename: "book.epub",
+            relativePath: "book.epub",
+            sizeBytes: 1000n,
+            mediaKind: "EPUB",
+            extension: "epub",
+            fullHash: "abc123def456789ghijk",
+          },
+          rightFileAsset: {
+            basename: "copy.epub",
+            relativePath: "copy.epub",
+            sizeBytes: 1000n,
+            mediaKind: "EPUB",
+            extension: "epub",
+            fullHash: "abc123def456789ghijk",
+          },
+        }),
+      ],
+    };
+    const { Route } = await import("./duplicates");
+    const DuplicatesPage = (Route.options.component as React.ComponentType);
+    render(<DuplicatesPage />);
+    // Should show a truncated hash
+    expect(screen.getAllByText(/abc123/).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("renders publisher and date when available", async () => {
+    mockLoaderData = {
+      duplicates: [
+        makeDuplicate({
+          leftEdition: {
+            work: { titleDisplay: "Book A" },
+            contributors: [],
+            publisher: "Penguin",
+            publishedAt: "2023-06-15T00:00:00.000Z",
+            editionFiles: [],
+          },
+          rightEdition: {
+            work: { titleDisplay: "Book B" },
+            contributors: [],
+            publisher: "Random House",
+            publishedAt: null,
+            editionFiles: [],
+          },
+        }),
+      ],
+    };
+    const { Route } = await import("./duplicates");
+    const DuplicatesPage = (Route.options.component as React.ComponentType);
+    render(<DuplicatesPage />);
+    expect(screen.getByText(/Penguin/)).toBeTruthy();
+    expect(screen.getByText(/Random House/)).toBeTruthy();
+  });
+
+  it("renders file size in GB for large files", async () => {
+    mockLoaderData = {
+      duplicates: [
+        makeDuplicate({
+          leftFileAsset: {
+            basename: "huge.epub",
+            relativePath: "huge.epub",
+            sizeBytes: 2147483648n, // 2 GB
+            mediaKind: "EPUB",
+            extension: "epub",
+            fullHash: null,
+          },
+          rightFileAsset: null,
+        }),
+      ],
+    };
+    const { Route } = await import("./duplicates");
+    const DuplicatesPage = (Route.options.component as React.ComponentType);
+    render(<DuplicatesPage />);
+    expect(screen.getByText("2.0 GB")).toBeTruthy();
+  });
+
+  it("renders cover thumbnail when coverPath is available", async () => {
+    mockLoaderData = {
+      duplicates: [
+        makeDuplicate({
+          leftEdition: {
+            work: { id: "work-abc", titleDisplay: "Book A", coverPath: "/covers/abc.jpg" },
+            contributors: [],
+            editionFiles: [],
+          },
+          rightEdition: {
+            work: { titleDisplay: "Book B" },
+            contributors: [],
+            editionFiles: [],
+          },
+        }),
+      ],
+    };
+    const { Route } = await import("./duplicates");
+    const DuplicatesPage = (Route.options.component as React.ComponentType);
+    render(<DuplicatesPage />);
+    const img = screen.getByRole("img");
+    expect(img.getAttribute("src")).toBe("/api/covers/work-abc/thumb");
   });
 });

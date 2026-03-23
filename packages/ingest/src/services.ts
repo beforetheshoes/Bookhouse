@@ -216,6 +216,7 @@ interface EditionFindManyArgs {
   where: {
     OR: Array<Partial<Pick<EditionRecord, "isbn13" | "isbn10">>>;
     NOT: { id: string };
+    formatFamily: string;
   };
 }
 
@@ -237,7 +238,7 @@ interface EditionFileCreateArgs {
 }
 
 interface EditionFileFindManyArgs {
-  where: { fileAssetId: string };
+  where: { fileAssetId?: string; editionId?: string };
 }
 
 interface EditionFileUpdateArgs {
@@ -397,6 +398,7 @@ export interface MatchFileAssetToEditionResult {
   enrichedExistingWork: boolean;
   enqueuedCoverJob: boolean;
   fileAssetId: string;
+  mediaKind?: string;
   mergedIntoWorkId?: string;
   skipped: boolean;
   workId?: string;
@@ -772,6 +774,8 @@ async function detectDuplicatesImpl(
     return { fileAssetId: input.fileAssetId, skipped: true, candidatesCreated: 0 };
   }
 
+  const work = await ingestDb.work.findUnique({ where: { id: edition.workId } });
+
   let candidatesCreated = 0;
 
   // Strategy A: SAME_HASH
@@ -806,9 +810,31 @@ async function detectDuplicatesImpl(
 
   if (isbnClauses.length > 0) {
     const isbnMatches = await ingestDb.edition.findMany({
-      where: { OR: isbnClauses, NOT: { id: edition.id } },
+      where: { OR: isbnClauses, NOT: { id: edition.id }, formatFamily: edition.formatFamily },
     });
     for (const match of isbnMatches) {
+      // Skip ISBN collisions: different books sharing an ISBN (e.g. omnibus editions)
+      if (work && match.workId !== edition.workId) {
+        const matchWork = await ingestDb.work.findUnique({ where: { id: match.workId } });
+        if (matchWork && matchWork.titleCanonical !== work.titleCanonical) {
+          continue;
+        }
+      }
+
+      // Skip different file types (e.g. EPUB vs PDF of same book)
+      const matchEditionFiles = await ingestDb.editionFile.findMany({ where: { editionId: match.id } });
+      if (matchEditionFiles.length > 0) {
+        const matchFileAssets = await Promise.all(
+          matchEditionFiles.map((ef) => ingestDb.fileAsset.findUnique({ where: { id: ef.fileAssetId } })),
+        );
+        const matchMediaKinds = new Set(
+          matchFileAssets.filter((fa): fa is FileAssetRecord => fa !== null).map((fa) => fa.mediaKind),
+        );
+        if (matchMediaKinds.size > 0 && !matchMediaKinds.has(fileAsset.mediaKind)) {
+          continue;
+        }
+      }
+
       const alreadyExists = await duplicatePairExists(
         ingestDb.duplicateCandidate,
         { editionId: edition.id },
@@ -829,7 +855,6 @@ async function detectDuplicatesImpl(
   }
 
   // Strategy C: SIMILAR_TITLE_AUTHOR
-  const work = await ingestDb.work.findUnique({ where: { id: edition.workId } });
   if (work && work.titleCanonical) {
     const myWorkMatches = await ingestDb.work.findMany({
       where: { titleCanonical: work.titleCanonical },
@@ -2047,8 +2072,11 @@ export function createIngestServices(
   async function matchFileAssetToEdition(
     input: MatchFileAssetToEditionInput,
   ): Promise<MatchFileAssetToEditionResult> {
+    const CONTENT_MEDIA_KINDS: ReadonlySet<string> = new Set([
+      MediaKind.EPUB, MediaKind.PDF, MediaKind.CBZ, MediaKind.AUDIO,
+    ]);
     const result = await matchFileAssetToEditionCore(input);
-    if (!result.skipped) {
+    if (!result.skipped && result.mediaKind !== undefined && CONTENT_MEDIA_KINDS.has(result.mediaKind)) {
       await enqueueJob(LIBRARY_JOB_NAMES.DETECT_DUPLICATES, { fileAssetId: input.fileAssetId });
       await enqueueJob(LIBRARY_JOB_NAMES.MATCH_AUDIO, { fileAssetId: input.fileAssetId });
     }
@@ -2201,6 +2229,7 @@ export function createIngestServices(
         enrichedExistingWork,
         enqueuedCoverJob,
         fileAssetId: fileAsset.id,
+        mediaKind: fileAsset.mediaKind,
         mergedIntoWorkId,
         skipped: false,
         workId: finalWorkId,
@@ -2295,6 +2324,7 @@ export function createIngestServices(
                 enrichedExistingWork: true,
                 enqueuedCoverJob: true,
                 fileAssetId: fileAsset.id,
+                mediaKind: fileAsset.mediaKind,
                 skipped: false,
                 workId: siblingEdition.workId,
               };
@@ -2332,6 +2362,7 @@ export function createIngestServices(
         enrichedExistingWork: false,
         enqueuedCoverJob: true,
         fileAssetId: fileAsset.id,
+        mediaKind: fileAsset.mediaKind,
         skipped: false,
         workId: editionMatch.workId,
       };
@@ -2435,6 +2466,7 @@ export function createIngestServices(
               enrichedExistingWork: true,
               enqueuedCoverJob: true,
               fileAssetId: fileAsset.id,
+              mediaKind: fileAsset.mediaKind,
               skipped: false,
               workId,
             };
@@ -2503,6 +2535,7 @@ export function createIngestServices(
       enrichedExistingWork: false,
       enqueuedCoverJob: true,
       fileAssetId: fileAsset.id,
+      mediaKind: fileAsset.mediaKind,
       skipped: false,
       workId,
     };
