@@ -88,7 +88,7 @@ export const getImportJobsServerFn = createServerFn({
       }
 
       const snapshot = await getLibraryJobSnapshot(job.bullmqJobId);
-      const queueState = snapshot?.state ?? null;
+      const queueState = snapshot?.state;
       if (snapshot?.blockedByFailedChild) {
         await db.importJob.updateMany({
           where: { id: job.id, status: { not: "FAILED" } },
@@ -107,7 +107,7 @@ export const getImportJobsServerFn = createServerFn({
           finishedAt: new Date(),
         };
       }
-      if (!LIVE_SCAN_JOB_STATES.has(queueState ?? "")) {
+      if (!queueState || !LIVE_SCAN_JOB_STATES.has(queueState)) {
         const fallbackLiveActivity = await getImportJobLiveActivity(job.id);
         if (fallbackLiveActivity === null) {
           return job;
@@ -183,10 +183,8 @@ export const getActiveJobCountServerFn = createServerFn({
       }
       continue;
     }
-    const snapshot = job.bullmqJobId
-      ? await getLibraryJobSnapshot(job.bullmqJobId)
-      : null;
-    const queueState = snapshot?.state ?? null;
+    const snapshot = await getLibraryJobSnapshot(job.bullmqJobId);
+    const queueState = snapshot?.state;
     if (snapshot?.blockedByFailedChild) {
       await db.importJob.updateMany({
         where: { id: job.id, status: { not: "FAILED" } },
@@ -200,7 +198,7 @@ export const getActiveJobCountServerFn = createServerFn({
       });
       continue;
     }
-    if (LIVE_SCAN_JOB_STATES.has(queueState ?? "")) {
+    if (queueState && LIVE_SCAN_JOB_STATES.has(queueState)) {
       liveCount++;
       continue;
     }

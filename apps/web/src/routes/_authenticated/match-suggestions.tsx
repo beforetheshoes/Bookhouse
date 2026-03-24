@@ -337,10 +337,9 @@ function MatchSuggestionsPage() {
     }, 3000);
     // Stop polling after 60 seconds
     setTimeout(() => {
-      if (pollIntervalRef.current !== null) {
-        clearInterval(pollIntervalRef.current);
-        pollIntervalRef.current = null;
-      }
+      const intervalId = pollIntervalRef.current as ReturnType<typeof setInterval>;
+      clearInterval(intervalId);
+      pollIntervalRef.current = null;
       setIsPolling(false);
     }, 60000);
   }

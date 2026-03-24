@@ -555,6 +555,42 @@ describe("MatchSuggestionsPage", () => {
     vi.useRealTimers();
   });
 
+  it("Re-scan Matches returns to the idle button state after the polling timeout", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    rematchAllServerFnMock.mockResolvedValueOnce({ importJobId: "job-1", enqueuedCount: 5 });
+    invalidateMock.mockResolvedValue(undefined);
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const { Route } = await import("./match-suggestions");
+    const MatchSuggestionsPage = (Route.options.component as React.ComponentType);
+    const { act } = await import("@testing-library/react");
+    render(<MatchSuggestionsPage />);
+
+    await user.click(screen.getByRole("button", { name: /re-scan matches/i }));
+    expect(screen.getByRole("button", { name: /scanning/i })).toBeTruthy();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60000);
+    });
+
+    expect(screen.getByRole("button", { name: /re-scan matches/i })).toBeTruthy();
+    vi.useRealTimers();
+  });
+
+  it("cleans up polling on unmount before the timeout callback runs", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    rematchAllServerFnMock.mockResolvedValueOnce({ importJobId: "job-1", enqueuedCount: 5 });
+    invalidateMock.mockResolvedValue(undefined);
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const { Route } = await import("./match-suggestions");
+    const MatchSuggestionsPage = (Route.options.component as React.ComponentType);
+    const { unmount } = render(<MatchSuggestionsPage />);
+
+    await user.click(screen.getByRole("button", { name: /re-scan matches/i }));
+    unmount();
+    vi.advanceTimersByTime(61000);
+    vi.useRealTimers();
+  });
+
   it("Re-scan Matches handles failure gracefully when mutation returns null", async () => {
     rematchAllServerFnMock.mockRejectedValueOnce(new Error("fail"));
     invalidateMock.mockResolvedValueOnce(undefined);

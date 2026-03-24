@@ -185,7 +185,7 @@ export const getScanProgressServerFn = createServerFn({
 
       const fallbackLiveActivity = await getImportJobLiveActivity(job.id);
       if (fallbackLiveActivity !== null) {
-        const fallbackLastActivityAt = Math.max(job.updatedAt.getTime(), fallbackLiveActivity.lastActivityAt ?? 0);
+        const fallbackLastActivityAt = fallbackLiveActivity.lastActivityAt ?? job.updatedAt.getTime();
         return {
           status: "RUNNING" as const,
           totalFiles: job.totalFiles,

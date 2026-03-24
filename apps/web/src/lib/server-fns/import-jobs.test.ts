@@ -161,6 +161,101 @@ describe("getImportJobsServerFn", () => {
     }]);
   });
 
+  it("leaves SCAN_ROOT rows unchanged when they have no BullMQ id and no descendant activity", async () => {
+    findManyMock.mockResolvedValue([{
+      id: "job-1",
+      bullmqJobId: null,
+      kind: "SCAN_ROOT",
+      status: "SUCCEEDED",
+      error: null,
+      attemptsMade: 0,
+      createdAt: new Date(),
+      startedAt: new Date(),
+      finishedAt: new Date(),
+      libraryRoot: { id: "root-1", name: "Audiobooks" },
+    }]);
+    countMock.mockResolvedValue(1);
+    getImportJobLiveActivityMock.mockResolvedValue(null);
+
+    const result = await getImportJobsServerFn({
+      data: { page: 1, pageSize: 20 },
+    });
+
+    expect(result.jobs[0]).toMatchObject({
+      bullmqJobId: null,
+      kind: "SCAN_ROOT",
+      status: "SUCCEEDED",
+      finishedAt: expect.any(Date) as unknown,
+    });
+  });
+
+  it("keeps SCAN_ROOT rows running when BullMQ is no longer live but descendant queue jobs still are", async () => {
+    findManyMock.mockResolvedValue([{
+      id: "job-1",
+      bullmqJobId: "bull-1",
+      kind: "SCAN_ROOT",
+      status: "SUCCEEDED",
+      error: null,
+      attemptsMade: 0,
+      createdAt: new Date(),
+      startedAt: new Date(),
+      finishedAt: new Date(),
+      libraryRoot: { id: "root-1", name: "eBooks" },
+    }]);
+    countMock.mockResolvedValue(1);
+    getLibraryJobSnapshotMock.mockResolvedValue({ state: "completed", progress: null });
+    getImportJobLiveActivityMock.mockResolvedValue({
+      lastActivityAt: Date.now(),
+      scanStage: "PROCESSING",
+    });
+
+    const result = await getImportJobsServerFn({
+      data: { page: 1, pageSize: 20 },
+    });
+
+    expect(result.jobs).toEqual([{
+      id: "job-1",
+      bullmqJobId: "bull-1",
+      kind: "SCAN_ROOT",
+      status: "RUNNING",
+      error: null,
+      attemptsMade: 0,
+      createdAt: expect.any(Date) as unknown,
+      startedAt: expect.any(Date) as unknown,
+      finishedAt: null,
+      libraryRoot: { id: "root-1", name: "eBooks" },
+    }]);
+  });
+
+  it("leaves SCAN_ROOT rows unchanged when BullMQ is no longer live and no fallback activity exists", async () => {
+    findManyMock.mockResolvedValue([{
+      id: "job-1",
+      bullmqJobId: "bull-1",
+      kind: "SCAN_ROOT",
+      status: "SUCCEEDED",
+      error: null,
+      attemptsMade: 0,
+      createdAt: new Date(),
+      startedAt: new Date(),
+      finishedAt: new Date(),
+      libraryRoot: { id: "root-1", name: "eBooks" },
+    }]);
+    countMock.mockResolvedValue(1);
+    getLibraryJobSnapshotMock.mockResolvedValue({ state: "completed", progress: null });
+    getImportJobLiveActivityMock.mockResolvedValue(null);
+
+    const result = await getImportJobsServerFn({
+      data: { page: 1, pageSize: 20 },
+    });
+
+    expect(result.jobs[0]).toMatchObject({
+      bullmqJobId: "bull-1",
+      kind: "SCAN_ROOT",
+      status: "SUCCEEDED",
+      finishedAt: expect.any(Date) as unknown,
+    });
+  });
+
   it("overrides deadlocked SCAN_ROOT rows with FAILED status from BullMQ reconciliation", async () => {
     findManyMock.mockResolvedValue([{
       id: "job-1",
@@ -418,6 +513,21 @@ describe("getActiveJobCountServerFn", () => {
     findManyMock.mockResolvedValue([
       { id: "ij-fallback", bullmqJobId: null, updatedAt: new Date(), status: "SUCCEEDED" },
     ]);
+    getImportJobLiveActivityMock.mockResolvedValue({
+      lastActivityAt: Date.now(),
+      scanStage: "PROCESSING",
+    });
+
+    const result = await getActiveJobCountServerFn();
+
+    expect(result).toBe(1);
+  });
+
+  it("counts scan jobs with a BullMQ id when queue state is no longer live but descendant jobs still are", async () => {
+    findManyMock.mockResolvedValue([
+      { id: "ij-fallback", bullmqJobId: "bull-fallback", updatedAt: new Date(), status: "SUCCEEDED" },
+    ]);
+    getLibraryJobSnapshotMock.mockResolvedValue({ state: "completed", progress: null });
     getImportJobLiveActivityMock.mockResolvedValue({
       lastActivityAt: Date.now(),
       scanStage: "PROCESSING",

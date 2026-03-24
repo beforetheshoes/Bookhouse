@@ -1015,6 +1015,144 @@ describe("LibraryPage", () => {
     });
   });
 
+  it("shows plural text in success toast when bulk deleting multiple works", async () => {
+    bulkDeleteWorksServerFnMock.mockResolvedValue({ deletedWorkIds: ["work-book-a", "work-book-b"] });
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Book A"), makeWork("Book B")], totalCount: 2, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    render(<LibraryPage />);
+
+    // Select all rows
+    const selectAllCheckbox = screen.getAllByLabelText("Select all")[0];
+    if (!selectAllCheckbox) throw new Error("expected select-all checkbox");
+    fireEvent.click(selectAllCheckbox);
+
+    // Click Delete Selected
+    fireEvent.click(screen.getByText("Delete Selected"));
+
+    // Confirm
+    const confirmBtn = screen.getByRole("button", { name: "Delete" });
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(mockToast.success).toHaveBeenCalledWith("2 works deleted");
+    });
+  });
+
+  it("selects all rows when select-all header checkbox is clicked", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Book A"), makeWork("Book B")], totalCount: 2, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    const { fireEvent } = await import("@testing-library/react");
+    render(<LibraryPage />);
+
+    // Click select-all checkbox (first checkbox in the table header)
+    const selectAllCheckbox = screen.getAllByLabelText("Select all")[0];
+    if (!selectAllCheckbox) throw new Error("expected select-all checkbox");
+    fireEvent.click(selectAllCheckbox);
+
+    expect(screen.getByText(/2 works selected/)).toBeTruthy();
+  });
+
+  it("shows error toast when bulk delete fails", async () => {
+    bulkDeleteWorksServerFnMock.mockRejectedValue(new Error("Bulk delete failed"));
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    render(<LibraryPage />);
+
+    // Select row
+    const checkboxes = screen.getAllByRole("checkbox");
+    const rowCheckbox = checkboxes[1];
+    if (!rowCheckbox) throw new Error("expected row checkbox");
+    fireEvent.click(rowCheckbox);
+
+    // Click Delete Selected
+    fireEvent.click(screen.getByText("Delete Selected"));
+
+    // Click Delete in dialog
+    const confirmBtn = screen.getByRole("button", { name: "Delete" });
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(mockToast.error).toHaveBeenCalledWith("Bulk delete failed");
+    });
+  });
+
+  it("shows generic error toast when bulk delete fails with non-Error", async () => {
+    bulkDeleteWorksServerFnMock.mockRejectedValue("something went wrong");
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    render(<LibraryPage />);
+
+    // Select row
+    const checkboxes = screen.getAllByRole("checkbox");
+    const rowCheckbox = checkboxes[1];
+    if (!rowCheckbox) throw new Error("expected row checkbox");
+    fireEvent.click(rowCheckbox);
+
+    // Click Delete Selected
+    fireEvent.click(screen.getByText("Delete Selected"));
+
+    // Click Delete in dialog
+    const confirmBtn = screen.getByRole("button", { name: "Delete" });
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(mockToast.error).toHaveBeenCalledWith("Failed to delete works");
+    });
+  });
+
+  it("closes bulk delete dialog when cancel button is clicked", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    const { fireEvent } = await import("@testing-library/react");
+    render(<LibraryPage />);
+
+    // Select row
+    const checkboxes = screen.getAllByRole("checkbox");
+    const rowCheckbox = checkboxes[1];
+    if (!rowCheckbox) throw new Error("expected row checkbox");
+    fireEvent.click(rowCheckbox);
+
+    // Click Delete Selected to open dialog
+    fireEvent.click(screen.getByText("Delete Selected"));
+    expect(screen.getByText(/will remove 1 work/)).toBeTruthy();
+
+    // Click Cancel
+    fireEvent.click(screen.getByText("Cancel"));
+  });
+
   it("clears selection when Clear button is clicked", async () => {
     mockView = "table";
     mockLoaderData = {

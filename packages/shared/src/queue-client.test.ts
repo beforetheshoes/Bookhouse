@@ -344,6 +344,54 @@ describe("getLibraryJobSnapshot", () => {
     });
   });
 
+  it("ignores invalid dependency keys that resolve to an empty job id", async () => {
+    getJobMock.mockImplementation((jobId: string) => {
+      if (jobId === "job-123") {
+        return {
+          finishedOn: 0,
+          getState: vi.fn().mockResolvedValue("waiting-children"),
+          getDependencies: vi.fn().mockResolvedValue({
+            unprocessed: ["bull:library:"],
+          }),
+          processedOn: 100,
+          progress: { processedFiles: 10 },
+          timestamp: 50,
+        };
+      }
+
+      return null;
+    });
+
+    const { getLibraryJobSnapshot } = await import("./index");
+
+    await expect(getLibraryJobSnapshot("job-123")).resolves.toEqual({
+      blockedByFailedChild: false,
+      lastActivityAt: 100,
+      state: "waiting-children",
+      progress: { processedFiles: 10 },
+    });
+  });
+
+  it("treats waiting-children jobs with no unprocessed dependency list as unblocked", async () => {
+    getJobMock.mockResolvedValue({
+      finishedOn: 0,
+      getState: vi.fn().mockResolvedValue("waiting-children"),
+      getDependencies: vi.fn().mockResolvedValue({}),
+      processedOn: 100,
+      progress: { processedFiles: 10 },
+      timestamp: 50,
+    });
+
+    const { getLibraryJobSnapshot } = await import("./index");
+
+    await expect(getLibraryJobSnapshot("job-123")).resolves.toEqual({
+      blockedByFailedChild: false,
+      lastActivityAt: 100,
+      state: "waiting-children",
+      progress: { processedFiles: 10 },
+    });
+  });
+
   it("does not flag waiting-children jobs when a descendant has already completed", async () => {
     getJobMock.mockImplementation((jobId: string) => {
       if (jobId === "job-123") {
@@ -507,6 +555,33 @@ describe("getImportJobLiveActivity", () => {
     });
     expect(getJobsMock).toHaveBeenNthCalledWith(1, ["active"], 0, 499, true);
     expect(getJobsMock).toHaveBeenNthCalledWith(2, ["prioritized"], 0, 499, true);
+  });
+
+  it("pages through active jobs when the first batch does not contain the matching import job", async () => {
+    const activeBatch = Array.from({ length: 500 }, (_, index) => ({
+      data: { importJobId: `other-${String(index)}` },
+      finishedOn: 0,
+      processedOn: 100,
+      timestamp: 50,
+    }));
+
+    getJobsMock
+      .mockResolvedValueOnce(activeBatch)
+      .mockResolvedValueOnce([{
+        data: { importJobId: "ij-1" },
+        finishedOn: 0,
+        processedOn: 275,
+        timestamp: 125,
+      }]);
+
+    const { getImportJobLiveActivity } = await import("./index");
+
+    await expect(getImportJobLiveActivity("ij-1")).resolves.toEqual({
+      lastActivityAt: 275,
+      scanStage: "PROCESSING",
+    });
+    expect(getJobsMock).toHaveBeenNthCalledWith(1, ["active"], 0, 499, true);
+    expect(getJobsMock).toHaveBeenNthCalledWith(2, ["active"], 500, 999, true);
   });
 
   it("treats prioritized jobs as live import-job activity", async () => {

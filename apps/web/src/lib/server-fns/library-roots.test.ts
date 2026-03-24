@@ -542,6 +542,68 @@ describe("getScanProgressServerFn", () => {
     });
   });
 
+  it("keeps a completed scan visible when BullMQ is no longer live but fallback queue activity exists", async () => {
+    const sixMinutesAgo = new Date(Date.now() - 6 * 60 * 1000);
+    getLibraryJobSnapshotMock.mockResolvedValue({ state: "completed", progress: null });
+    importJobFindManyMock.mockResolvedValue([{
+      id: "ij-fallback-bull",
+      bullmqJobId: "bull-fallback",
+      status: "SUCCEEDED",
+      totalFiles: 3490,
+      processedFiles: 3490,
+      errorCount: 0,
+      updatedAt: sixMinutesAgo,
+      scanStage: null,
+    }]);
+    getImportJobLiveActivityMock.mockResolvedValue({
+      lastActivityAt: Date.now(),
+      scanStage: "PROCESSING",
+    });
+
+    const result = await getScanProgressServerFn({
+      data: { libraryRootId: "root-1" },
+    });
+
+    expect(result).toEqual({
+      status: "RUNNING",
+      totalFiles: 3490,
+      processedFiles: 3490,
+      errorCount: 0,
+      scanStage: "PROCESSING",
+      stale: false,
+    });
+  });
+
+  it("falls back to the job updated time when fallback activity has no timestamp", async () => {
+    getLibraryJobSnapshotMock.mockResolvedValue({ state: "completed", progress: null });
+    importJobFindManyMock.mockResolvedValue([{
+      id: "ij-fallback-no-time",
+      bullmqJobId: "bull-fallback",
+      status: "SUCCEEDED",
+      totalFiles: 10,
+      processedFiles: 10,
+      errorCount: 0,
+      updatedAt: new Date(),
+      scanStage: null,
+    }]);
+    getImportJobLiveActivityMock.mockResolvedValue({
+      scanStage: "PROCESSING",
+    });
+
+    const result = await getScanProgressServerFn({
+      data: { libraryRootId: "root-1" },
+    });
+
+    expect(result).toEqual({
+      status: "RUNNING",
+      totalFiles: 10,
+      processedFiles: 10,
+      errorCount: 0,
+      scanStage: "PROCESSING",
+      stale: false,
+    });
+  });
+
   it("returns null when no active scan exists", async () => {
     importJobFindManyMock.mockResolvedValue([]);
 

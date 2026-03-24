@@ -165,6 +165,22 @@ describe("bulkDeleteEditionsServerFn", () => {
     expect(editionDeleteManyMock).not.toHaveBeenCalled();
     expect(result).toEqual({ deletedEditionIds: [], deletedWorkIds: [] });
   });
+
+  it("does not delete parent Works when each Work still has editions left", async () => {
+    editionFindManyMock.mockResolvedValue([
+      { id: "ed-1", workId: "w-1" },
+      { id: "ed-2", workId: "w-2" },
+    ]);
+    editionDeleteManyMock.mockResolvedValue({ count: 2 });
+    editionCountMock
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(2);
+
+    const result = await bulkDeleteEditionsServerFn({ data: { editionIds: ["ed-1", "ed-2"] } });
+
+    expect(workDeleteManyMock).not.toHaveBeenCalled();
+    expect(result).toEqual({ deletedEditionIds: ["ed-1", "ed-2"], deletedWorkIds: [] });
+  });
 });
 
 describe("getMissingFilesServerFn", () => {

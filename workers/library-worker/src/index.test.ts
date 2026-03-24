@@ -298,6 +298,37 @@ describe("library worker", () => {
     });
   });
 
+  it("uses COVER_CACHE_DIR when it is configured", async () => {
+    process.env.COVER_CACHE_DIR = "/tmp/bookhouse-covers";
+
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor({
+      hashFileAsset: hashFileAssetMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
+      parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
+      scanLibraryRoot: scanLibraryRootMock,
+      enrichWork: enrichWorkMock,
+      detectDuplicates: detectDuplicatesMock,
+      matchSuggestions: matchSuggestionsMock,
+    });
+
+    processCoverForWorkMock.mockResolvedValueOnce("cover-result");
+
+    await expect(
+      processor(createMockJob({
+        data: { workId: "work-1", fileAssetId: "file-1" },
+        name: "process-cover",
+      }) as never),
+    ).resolves.toBe("cover-result");
+
+    expect(processCoverForWorkMock).toHaveBeenCalledWith({
+      workId: "work-1",
+      fileAssetId: "file-1",
+      coverCacheDir: "/tmp/bookhouse-covers",
+    });
+  });
+
   it("updates ImportJob to RUNNING then SUCCEEDED when importJobId is present and no children", async () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
@@ -326,6 +357,34 @@ describe("library worker", () => {
     });
     expect(importJobUpdateMock).toHaveBeenNthCalledWith(2, {
       where: { id: "ij-1", status: "RUNNING" },
+      data: { status: "SUCCEEDED", finishedAt: expect.any(Date) as unknown, scanStage: null, bullmqJobId: null },
+    });
+  });
+
+  it("completes immediately when dependency counts omit unprocessed", async () => {
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor({
+      hashFileAsset: hashFileAssetMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
+      parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
+      scanLibraryRoot: scanLibraryRootMock,
+      enrichWork: enrichWorkMock,
+      detectDuplicates: detectDuplicatesMock,
+      matchSuggestions: matchSuggestionsMock,
+    });
+
+    scanLibraryRootMock.mockResolvedValueOnce({ missingFileAssetIds: [] });
+    getDependenciesCountMock.mockResolvedValueOnce({});
+
+    await expect(processor(createMockJob({
+      data: { libraryRootId: "root-1", importJobId: "ij-no-unprocessed" },
+      name: "scan-library-root",
+      attemptsMade: 1,
+    }) as never)).resolves.toEqual({ missingFileAssetIds: [] });
+
+    expect(importJobUpdateMock).toHaveBeenNthCalledWith(2, {
+      where: { id: "ij-no-unprocessed", status: "RUNNING" },
       data: { status: "SUCCEEDED", finishedAt: expect.any(Date) as unknown, scanStage: null, bullmqJobId: null },
     });
   });
@@ -1186,6 +1245,42 @@ describe("library worker", () => {
         bullmqJobId: null,
       },
     });
+  });
+
+  it("does not remove a parent dependency when a final child failure has no parentKey", async () => {
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor({
+      hashFileAsset: hashFileAssetMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
+      parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
+      scanLibraryRoot: scanLibraryRootMock,
+      enrichWork: enrichWorkMock,
+      detectDuplicates: detectDuplicatesMock,
+      matchSuggestions: matchSuggestionsMock,
+    });
+
+    hashFileAssetMock.mockRejectedValueOnce(new Error("hash failed"));
+
+    await expect(
+      processor(createMockJob({
+        data: { fileAssetId: "file-1", importJobId: "ij-child-no-parent" },
+        opts: { attempts: 1 },
+        name: "hash-file-asset",
+      }) as never),
+    ).rejects.toThrow("hash failed");
+
+    expect(importJobUpdateMock).toHaveBeenCalledWith({
+      where: { id: "ij-child-no-parent", status: { in: ["QUEUED", "RUNNING"] } },
+      data: {
+        status: "FAILED",
+        error: "Child job hash-file-asset failed: hash failed",
+        finishedAt: expect.any(Date) as unknown,
+        scanStage: null,
+        bullmqJobId: null,
+      },
+    });
+    expect(removeChildDependencyMock).not.toHaveBeenCalled();
   });
 
   it("does not remove a parent dependency for non-final child failures", async () => {

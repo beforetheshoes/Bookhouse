@@ -77,8 +77,8 @@ async function getDescendantStatus(jobId: string): Promise<{
   let lastActivityAt: number | null = null;
 
   while (pendingJobIds.length > 0) {
-    const currentJobId = pendingJobIds.pop() ?? "";
-    if (currentJobId === "" || visitedJobIds.has(currentJobId)) {
+    const currentJobId = pendingJobIds.pop();
+    if (!currentJobId || visitedJobIds.has(currentJobId)) {
       continue;
     }
     visitedJobIds.add(currentJobId);
@@ -118,7 +118,12 @@ async function getDescendantStatus(jobId: string): Promise<{
       };
     }
 
-    for (const dependencyKey of dependencies.unprocessed ?? []) {
+    const unprocessedDependencies = dependencies.unprocessed;
+    if (!unprocessedDependencies) {
+      continue;
+    }
+
+    for (const dependencyKey of unprocessedDependencies) {
       pendingJobIds.push(getJobIdFromDependencyKey(dependencyKey));
     }
   }
