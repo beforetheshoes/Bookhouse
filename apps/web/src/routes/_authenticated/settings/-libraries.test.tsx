@@ -12,7 +12,7 @@ let mockLoaderData: {
     scanMode: string;
     isEnabled: boolean;
     lastScannedAt: string | null;
-    scanProgress: { status: string; totalFiles: number | null; processedFiles: number | null; errorCount: number | null; stale: boolean; scanStage: string | null; totalProcessingJobs: number | null; completedProcessingJobs: number } | null;
+    scanProgress: { status: string; totalFiles: number | null; processedFiles: number | null; errorCount: number | null; stale: boolean; scanStage: string | null } | null;
     issueCount: number;
   }[];
   missingFileBehavior?: string;
@@ -81,7 +81,7 @@ const makeRoot = (overrides: Partial<{
   scanMode: string;
   isEnabled: boolean;
   lastScannedAt: string | null;
-  scanProgress: { status: string; totalFiles: number | null; processedFiles: number | null; errorCount: number | null; stale: boolean; scanStage: string | null; totalProcessingJobs: number | null; completedProcessingJobs: number } | null;
+  scanProgress: { status: string; totalFiles: number | null; processedFiles: number | null; errorCount: number | null; stale: boolean; scanStage: string | null } | null;
   issueCount: number;
 }> = {}) => ({
   id: "root-1",
@@ -392,7 +392,7 @@ describe("LibrariesPage", () => {
   it("shows progress bar with discovery text during DISCOVERY stage", async () => {
     mockLoaderData = {
       roots: [makeRoot({
-        scanProgress: { status: "RUNNING", totalFiles: 100, processedFiles: 42, errorCount: 2, stale: false, scanStage: "DISCOVERY", totalProcessingJobs: null, completedProcessingJobs: 0 },
+        scanProgress: { status: "RUNNING", totalFiles: 100, processedFiles: 42, errorCount: 2, stale: false, scanStage: "DISCOVERY" },
       })],
     };
     const { Route } = await import("./libraries");
@@ -439,7 +439,7 @@ describe("LibrariesPage", () => {
   it("shows progress with null processedFiles and totalFiles during DISCOVERY", async () => {
     mockLoaderData = {
       roots: [makeRoot({
-        scanProgress: { status: "QUEUED", totalFiles: null, processedFiles: null, errorCount: null, stale: false, scanStage: "DISCOVERY", totalProcessingJobs: null, completedProcessingJobs: 0 },
+        scanProgress: { status: "QUEUED", totalFiles: null, processedFiles: null, errorCount: null, stale: false, scanStage: "DISCOVERY" },
       })],
     };
     const { Route } = await import("./libraries");
@@ -449,37 +449,23 @@ describe("LibrariesPage", () => {
     expect(screen.getByText(/Discovering files/)).toBeTruthy();
   });
 
-  it("shows deterministic progress bar during PROCESSING stage", async () => {
+  it("shows spinner-only messaging during PROCESSING stage", async () => {
     mockLoaderData = {
       roots: [makeRoot({
-        scanProgress: { status: "RUNNING", totalFiles: 50, processedFiles: 50, errorCount: 0, stale: false, scanStage: "PROCESSING", totalProcessingJobs: 200, completedProcessingJobs: 45 },
-      })],
-    };
-    const { Route } = await import("./libraries");
-    const LibrariesPage = (Route.options.component as React.ComponentType);
-    render(<LibrariesPage />);
-    expect(screen.getByRole("progressbar")).toBeTruthy();
-    expect(screen.getByText(/Processing files.*45.*200/)).toBeTruthy();
-  });
-
-  it("shows spinner with count during ENRICHING stage without progress bar", async () => {
-    mockLoaderData = {
-      roots: [makeRoot({
-        scanProgress: { status: "RUNNING", totalFiles: 50, processedFiles: 50, errorCount: 0, stale: false, scanStage: "ENRICHING", totalProcessingJobs: 200, completedProcessingJobs: 47 },
+        scanProgress: { status: "RUNNING", totalFiles: 50, processedFiles: 50, errorCount: 0, stale: false, scanStage: "PROCESSING" },
       })],
     };
     const { Route } = await import("./libraries");
     const LibrariesPage = (Route.options.component as React.ComponentType);
     render(<LibrariesPage />);
     expect(screen.queryByRole("progressbar")).toBeNull();
-    expect(screen.getByText(/47 files processed/)).toBeTruthy();
-    expect(screen.getByText(/Extracting metadata/)).toBeTruthy();
+    expect(screen.getByText(/Processing library/)).toBeTruthy();
   });
 
   it("shows persistent note during any active scan", async () => {
     mockLoaderData = {
       roots: [makeRoot({
-        scanProgress: { status: "RUNNING", totalFiles: 100, processedFiles: 42, errorCount: 0, stale: false, scanStage: "DISCOVERY", totalProcessingJobs: null, completedProcessingJobs: 0 },
+        scanProgress: { status: "RUNNING", totalFiles: 100, processedFiles: 42, errorCount: 0, stale: false, scanStage: "DISCOVERY" },
       })],
     };
     const { Route } = await import("./libraries");
@@ -499,7 +485,7 @@ describe("LibrariesPage", () => {
   it("shows stalled warning when scan is stale", async () => {
     mockLoaderData = {
       roots: [makeRoot({
-        scanProgress: { status: "RUNNING", totalFiles: 500, processedFiles: 200, errorCount: 0, stale: true, scanStage: "PROCESSING", totalProcessingJobs: 500, completedProcessingJobs: 200 },
+        scanProgress: { status: "RUNNING", totalFiles: 500, processedFiles: 200, errorCount: 0, stale: true, scanStage: "PROCESSING" },
       })],
     };
     const { Route } = await import("./libraries");
@@ -509,10 +495,23 @@ describe("LibrariesPage", () => {
     expect(screen.getByText(/Scan appears stalled/)).toBeTruthy();
   });
 
+  it("shows stalled warning progress even when processedFiles and totalFiles are null", async () => {
+    mockLoaderData = {
+      roots: [makeRoot({
+        scanProgress: { status: "RUNNING", totalFiles: null, processedFiles: null, errorCount: 0, stale: true, scanStage: "PROCESSING" },
+      })],
+    };
+    const { Route } = await import("./libraries");
+    const LibrariesPage = (Route.options.component as React.ComponentType);
+    render(<LibrariesPage />);
+    expect(screen.getByRole("progressbar")).toBeTruthy();
+    expect(screen.getByText(/Scan appears stalled/)).toBeTruthy();
+  });
+
   it("shows normal scanning state when scan is not stale", async () => {
     mockLoaderData = {
       roots: [makeRoot({
-        scanProgress: { status: "RUNNING", totalFiles: 100, processedFiles: 42, errorCount: 0, stale: false, scanStage: "DISCOVERY", totalProcessingJobs: null, completedProcessingJobs: 0 },
+        scanProgress: { status: "RUNNING", totalFiles: 100, processedFiles: 42, errorCount: 0, stale: false, scanStage: "DISCOVERY" },
       })],
     };
     const { Route } = await import("./libraries");

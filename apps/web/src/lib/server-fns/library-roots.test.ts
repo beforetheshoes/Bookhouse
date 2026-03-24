@@ -23,8 +23,9 @@ const fileAssetFindManyMock = vi.fn();
 const fileAssetCountMock = vi.fn();
 const importJobCreateMock = vi.fn();
 const importJobUpdateMock = vi.fn();
+const importJobUpdateManyMock = vi.fn();
 const importJobDeleteManyMock = vi.fn();
-const importJobFindFirstMock = vi.fn();
+const importJobFindManyMock = vi.fn();
 const transactionMock = vi.fn(async (fnOrOps: unknown) => {
   if (typeof fnOrOps === "function") {
     return (fnOrOps as (tx: unknown) => Promise<unknown>)(null);
@@ -48,14 +49,17 @@ vi.mock("@bookhouse/db", () => ({
     importJob: {
       create: importJobCreateMock,
       update: importJobUpdateMock,
+      updateMany: importJobUpdateManyMock,
       deleteMany: importJobDeleteManyMock,
-      findFirst: importJobFindFirstMock,
+      findMany: importJobFindManyMock,
     },
     $transaction: transactionMock,
   },
 }));
 
 const enqueueLibraryJobMock = vi.fn();
+const getLibraryJobSnapshotMock = vi.fn();
+const getImportJobLiveActivityMock = vi.fn();
 const LIBRARY_JOB_NAMES = {
   SCAN_LIBRARY_ROOT: "SCAN_LIBRARY_ROOT",
   PARSE_FILE_ASSET_METADATA: "PARSE_FILE_ASSET_METADATA",
@@ -63,6 +67,8 @@ const LIBRARY_JOB_NAMES = {
 
 vi.mock("@bookhouse/shared", () => ({
   enqueueLibraryJob: enqueueLibraryJobMock,
+  getImportJobLiveActivity: getImportJobLiveActivityMock,
+  getLibraryJobSnapshot: getLibraryJobSnapshotMock,
   LIBRARY_JOB_NAMES,
 }));
 
@@ -278,67 +284,73 @@ describe("scanLibraryRootServerFn", () => {
 
 describe("getScanProgressServerFn", () => {
   beforeEach(() => {
-    importJobFindFirstMock.mockReset();
+    importJobFindManyMock.mockReset();
+    importJobUpdateMock.mockReset();
+    importJobUpdateManyMock.mockReset();
+    getImportJobLiveActivityMock.mockReset();
+    getLibraryJobSnapshotMock.mockReset();
+    getImportJobLiveActivityMock.mockResolvedValue(null);
   });
 
-  it("returns progress data with stale: false for a recent scan", async () => {
-    importJobFindFirstMock.mockResolvedValue({
+  it("returns progress data with stale: false for a recent live scan", async () => {
+    getLibraryJobSnapshotMock.mockResolvedValue({ state: "active", progress: null });
+    importJobFindManyMock.mockResolvedValue([{
+      id: "ij-1",
+      bullmqJobId: "bull-1",
       status: "RUNNING",
       totalFiles: 100,
       processedFiles: 42,
       errorCount: 2,
       updatedAt: new Date(),
       scanStage: "DISCOVERY",
-      totalProcessingJobs: null,
-      completedProcessingJobs: 0,
-    });
+    }]);
 
     const result = await getScanProgressServerFn({
       data: { libraryRootId: "root-1" },
     });
 
-    expect(importJobFindFirstMock).toHaveBeenCalledWith({
+    expect(importJobFindManyMock).toHaveBeenCalledWith({
       where: {
         libraryRootId: "root-1",
         kind: "SCAN_ROOT",
-        status: { in: ["QUEUED", "RUNNING"] },
       },
       select: {
+        id: true,
+        bullmqJobId: true,
         status: true,
         totalFiles: true,
         processedFiles: true,
         errorCount: true,
         updatedAt: true,
         scanStage: true,
-        totalProcessingJobs: true,
-        completedProcessingJobs: true,
       },
       orderBy: { createdAt: "desc" },
+      take: 10,
     });
+    expect(getLibraryJobSnapshotMock).toHaveBeenCalledWith("bull-1");
     expect(result).toEqual({
       status: "RUNNING",
       totalFiles: 100,
       processedFiles: 42,
       errorCount: 2,
       scanStage: "DISCOVERY",
-      totalProcessingJobs: null,
-      completedProcessingJobs: 0,
       stale: false,
     });
   });
 
-  it("returns stale: true when updatedAt exceeds threshold", async () => {
+  it("returns stale: true when a live scan exceeds the threshold", async () => {
     const sixMinutesAgo = new Date(Date.now() - 6 * 60 * 1000);
-    importJobFindFirstMock.mockResolvedValue({
+    getLibraryJobSnapshotMock.mockResolvedValue({ state: "waiting-children", progress: null });
+    importJobFindManyMock.mockResolvedValue([{
+      id: "ij-2",
+      bullmqJobId: "bull-2",
       status: "RUNNING",
       totalFiles: 500,
       processedFiles: 200,
       errorCount: 0,
       updatedAt: sixMinutesAgo,
       scanStage: "PROCESSING",
-      totalProcessingJobs: 200,
-      completedProcessingJobs: 50,
-    });
+    }]);
 
     const result = await getScanProgressServerFn({
       data: { libraryRootId: "root-1" },
@@ -350,20 +362,254 @@ describe("getScanProgressServerFn", () => {
       processedFiles: 200,
       errorCount: 0,
       scanStage: "PROCESSING",
-      totalProcessingJobs: 200,
-      completedProcessingJobs: 50,
       stale: true,
     });
   });
 
+  it("normalizes queue-live scans to RUNNING even when the import row already says SUCCEEDED", async () => {
+    getLibraryJobSnapshotMock.mockResolvedValue({ state: "waiting-children", progress: null });
+    importJobFindManyMock.mockResolvedValue([{
+      id: "ij-succeeded",
+      bullmqJobId: "bull-2",
+      status: "SUCCEEDED",
+      totalFiles: 500,
+      processedFiles: 200,
+      errorCount: 0,
+      updatedAt: new Date(),
+      scanStage: "PROCESSING",
+    }]);
+
+    const result = await getScanProgressServerFn({
+      data: { libraryRootId: "root-1" },
+    });
+
+    expect(result).toEqual({
+      status: "RUNNING",
+      totalFiles: 500,
+      processedFiles: 200,
+      errorCount: 0,
+      scanStage: "PROCESSING",
+      stale: false,
+    });
+  });
+
+  it("uses live queue activity to suppress stale warnings during background processing", async () => {
+    const sixMinutesAgo = new Date(Date.now() - 6 * 60 * 1000);
+    getLibraryJobSnapshotMock.mockResolvedValue({
+      state: "waiting-children",
+      progress: { processedFiles: 3490, errorCount: 0 },
+      lastActivityAt: Date.now(),
+    });
+    importJobFindManyMock.mockResolvedValue([{
+      id: "ij-processing",
+      bullmqJobId: "bull-processing",
+      status: "RUNNING",
+      totalFiles: 3490,
+      processedFiles: 3490,
+      errorCount: 0,
+      updatedAt: sixMinutesAgo,
+      scanStage: "DISCOVERY",
+    }]);
+
+    const result = await getScanProgressServerFn({
+      data: { libraryRootId: "root-1" },
+    });
+
+    expect(result).toEqual({
+      status: "RUNNING",
+      totalFiles: 3490,
+      processedFiles: 3490,
+      errorCount: 0,
+      scanStage: "PROCESSING",
+      stale: false,
+    });
+  });
+
+  it("marks stale ghost scans as FAILED and returns null", async () => {
+    const sixMinutesAgo = new Date(Date.now() - 6 * 60 * 1000);
+    getLibraryJobSnapshotMock.mockResolvedValue(null);
+    importJobFindManyMock.mockResolvedValue([{
+      id: "ij-ghost",
+      bullmqJobId: "bull-missing",
+      status: "RUNNING",
+      totalFiles: 500,
+      processedFiles: 500,
+      errorCount: 0,
+      updatedAt: sixMinutesAgo,
+      scanStage: "PROCESSING",
+    }]);
+
+    const result = await getScanProgressServerFn({
+      data: { libraryRootId: "root-1" },
+    });
+
+    expect(importJobUpdateManyMock).toHaveBeenCalledWith({
+      where: { id: "ij-ghost", status: { in: ["QUEUED", "RUNNING"] } },
+      data: {
+        status: "FAILED",
+        error: "Scan job is no longer active in BullMQ",
+        finishedAt: expect.any(Date) as unknown,
+        scanStage: null,
+        bullmqJobId: null,
+      },
+    });
+    expect(result).toBeNull();
+  });
+
+  it("marks queue-deadlocked scans as FAILED and returns null", async () => {
+    getLibraryJobSnapshotMock.mockResolvedValue({
+      state: "waiting-children",
+      progress: { processedFiles: 3490, errorCount: 0, scanStage: "PROCESSING" },
+      blockedByFailedChild: true,
+    });
+    importJobFindManyMock.mockResolvedValue([{
+      id: "ij-deadlocked",
+      bullmqJobId: "bull-deadlocked",
+      status: "RUNNING",
+      totalFiles: 3490,
+      processedFiles: 3490,
+      errorCount: 0,
+      updatedAt: new Date(),
+      scanStage: "PROCESSING",
+    }]);
+
+    const result = await getScanProgressServerFn({
+      data: { libraryRootId: "root-1" },
+    });
+
+    expect(importJobUpdateManyMock).toHaveBeenCalledWith({
+      where: { id: "ij-deadlocked", status: { not: "FAILED" } },
+      data: {
+        status: "FAILED",
+        error: "Scan job is blocked by a failed child job",
+        finishedAt: expect.any(Date) as unknown,
+        scanStage: null,
+        bullmqJobId: null,
+      },
+    });
+    expect(result).toBeNull();
+  });
+
+  it("returns null for scans without a BullMQ id", async () => {
+    importJobFindManyMock.mockResolvedValue([{
+      id: "ij-no-bull",
+      bullmqJobId: null,
+      status: "QUEUED",
+      totalFiles: null,
+      processedFiles: null,
+      errorCount: null,
+      updatedAt: new Date(),
+      scanStage: "DISCOVERY",
+    }]);
+    getImportJobLiveActivityMock.mockResolvedValue(null);
+
+    const result = await getScanProgressServerFn({
+      data: { libraryRootId: "root-1" },
+    });
+
+    expect(getLibraryJobSnapshotMock).not.toHaveBeenCalled();
+    expect(result).toBeNull();
+  });
+
+  it("keeps a completed scan visible when descendant queue jobs are still live", async () => {
+    const sixMinutesAgo = new Date(Date.now() - 6 * 60 * 1000);
+    importJobFindManyMock.mockResolvedValue([{
+      id: "ij-fallback",
+      bullmqJobId: null,
+      status: "SUCCEEDED",
+      totalFiles: 3490,
+      processedFiles: 3490,
+      errorCount: 0,
+      updatedAt: sixMinutesAgo,
+      scanStage: null,
+    }]);
+    getImportJobLiveActivityMock.mockResolvedValue({
+      lastActivityAt: Date.now(),
+      scanStage: "PROCESSING",
+    });
+
+    const result = await getScanProgressServerFn({
+      data: { libraryRootId: "root-1" },
+    });
+
+    expect(result).toEqual({
+      status: "RUNNING",
+      totalFiles: 3490,
+      processedFiles: 3490,
+      errorCount: 0,
+      scanStage: "PROCESSING",
+      stale: false,
+    });
+  });
+
   it("returns null when no active scan exists", async () => {
-    importJobFindFirstMock.mockResolvedValue(null);
+    importJobFindManyMock.mockResolvedValue([]);
 
     const result = await getScanProgressServerFn({
       data: { libraryRootId: "root-1" },
     });
 
     expect(result).toBeNull();
+  });
+
+  it("uses BullMQ progress to surface PROCESSING when the DB row is stale", async () => {
+    getLibraryJobSnapshotMock.mockResolvedValue({
+      state: "waiting-children",
+      progress: { processedFiles: 3490, errorCount: 0, scanStage: "PROCESSING" },
+    });
+    importJobFindManyMock.mockResolvedValue([{
+      id: "ij-live",
+      bullmqJobId: "bull-live",
+      status: "RUNNING",
+      totalFiles: 3490,
+      processedFiles: 3490,
+      errorCount: 0,
+      updatedAt: new Date(),
+      scanStage: "DISCOVERY",
+    }]);
+
+    const result = await getScanProgressServerFn({
+      data: { libraryRootId: "root-1" },
+    });
+
+    expect(result).toEqual({
+      status: "RUNNING",
+      totalFiles: 3490,
+      processedFiles: 3490,
+      errorCount: 0,
+      scanStage: "PROCESSING",
+      stale: false,
+    });
+  });
+
+  it("infers PROCESSING from waiting-children even when BullMQ progress omits scanStage", async () => {
+    getLibraryJobSnapshotMock.mockResolvedValue({
+      state: "waiting-children",
+      progress: { processedFiles: 3490, errorCount: 0 },
+    });
+    importJobFindManyMock.mockResolvedValue([{
+      id: "ij-live",
+      bullmqJobId: "bull-live",
+      status: "RUNNING",
+      totalFiles: 3490,
+      processedFiles: 3490,
+      errorCount: 0,
+      updatedAt: new Date(),
+      scanStage: "DISCOVERY",
+    }]);
+
+    const result = await getScanProgressServerFn({
+      data: { libraryRootId: "root-1" },
+    });
+
+    expect(result).toEqual({
+      status: "RUNNING",
+      totalFiles: 3490,
+      processedFiles: 3490,
+      errorCount: 0,
+      scanStage: "PROCESSING",
+      stale: false,
+    });
   });
 });
 

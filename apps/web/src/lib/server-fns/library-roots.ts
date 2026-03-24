@@ -1,6 +1,37 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+const LIVE_SCAN_JOB_STATES = new Set([
+  "active",
+  "prioritized",
+  "waiting",
+  "waiting-children",
+]);
+const GHOST_SCAN_ERROR = "Scan job is no longer active in BullMQ";
+const DEADLOCKED_SCAN_ERROR = "Scan job is blocked by a failed child job";
+
+function isScanProgressObject(
+  value: unknown,
+): value is { processedFiles?: number; errorCount?: number; scanStage?: "DISCOVERY" | "PROCESSING" } {
+  return typeof value === "object" && value !== null;
+}
+
+function getEffectiveScanStage(
+  persistedStage: "DISCOVERY" | "PROCESSING" | null,
+  queueState: string | null,
+  queueProgress: unknown,
+) {
+  if (isScanProgressObject(queueProgress) && queueProgress.scanStage) {
+    return queueProgress.scanStage;
+  }
+
+  if (queueState === "waiting-children") {
+    return "PROCESSING" as const;
+  }
+
+  return persistedStage;
+}
+
 export const getLibraryRootsServerFn = createServerFn({
   method: "GET",
 }).handler(async () => {
@@ -93,30 +124,96 @@ export const getScanProgressServerFn = createServerFn({
   .inputValidator(libraryRootIdSchema)
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
-    const job = await db.importJob.findFirst({
+    const { getImportJobLiveActivity, getLibraryJobSnapshot } = await import("@bookhouse/shared");
+    const jobs = await db.importJob.findMany({
       where: {
         libraryRootId: data.libraryRootId,
         kind: "SCAN_ROOT",
-        status: { in: ["QUEUED", "RUNNING"] },
       },
       select: {
+        id: true,
+        bullmqJobId: true,
         status: true,
         totalFiles: true,
         processedFiles: true,
         errorCount: true,
         updatedAt: true,
         scanStage: true,
-        totalProcessingJobs: true,
-        completedProcessingJobs: true,
       },
       orderBy: { createdAt: "desc" },
+      take: 10,
     });
-    if (!job) return null;
-    const { updatedAt, ...rest } = job;
-    return {
-      ...rest,
-      stale: Date.now() - updatedAt.getTime() > STALE_SCAN_THRESHOLD_MS,
-    } as typeof rest & { stale: boolean };
+    for (const job of jobs) {
+      const snapshot = job.bullmqJobId
+        ? await getLibraryJobSnapshot(job.bullmqJobId)
+        : null;
+      const queueState = snapshot?.state ?? null;
+      const lastActivityAt = Math.max(job.updatedAt.getTime(), snapshot?.lastActivityAt ?? 0);
+      const stale = Date.now() - lastActivityAt > STALE_SCAN_THRESHOLD_MS;
+
+      if (snapshot?.blockedByFailedChild) {
+        await db.importJob.updateMany({
+          where: { id: job.id, status: { not: "FAILED" } },
+          data: {
+            status: "FAILED",
+            error: DEADLOCKED_SCAN_ERROR,
+            finishedAt: new Date(),
+            scanStage: null,
+            bullmqJobId: null,
+          },
+        });
+        continue;
+      }
+
+      if (LIVE_SCAN_JOB_STATES.has(queueState ?? "")) {
+        const queueProgress = snapshot?.progress;
+        return {
+          status: "RUNNING" as const,
+          totalFiles: job.totalFiles,
+          processedFiles: isScanProgressObject(queueProgress) &&
+            typeof queueProgress.processedFiles === "number"
+            ? queueProgress.processedFiles
+            : job.processedFiles,
+          errorCount: isScanProgressObject(queueProgress) &&
+            typeof queueProgress.errorCount === "number"
+            ? queueProgress.errorCount
+            : job.errorCount,
+          scanStage: getEffectiveScanStage(job.scanStage, queueState, queueProgress),
+          stale,
+        };
+      }
+
+      const fallbackLiveActivity = await getImportJobLiveActivity(job.id);
+      if (fallbackLiveActivity !== null) {
+        const fallbackLastActivityAt = Math.max(job.updatedAt.getTime(), fallbackLiveActivity.lastActivityAt ?? 0);
+        return {
+          status: "RUNNING" as const,
+          totalFiles: job.totalFiles,
+          processedFiles: job.processedFiles,
+          errorCount: job.errorCount,
+          scanStage: fallbackLiveActivity.scanStage,
+          stale: Date.now() - fallbackLastActivityAt > STALE_SCAN_THRESHOLD_MS,
+        };
+      }
+
+      if (
+        stale &&
+        (job.status === "QUEUED" || job.status === "RUNNING")
+      ) {
+        await db.importJob.updateMany({
+          where: { id: job.id, status: { in: ["QUEUED", "RUNNING"] } },
+          data: {
+            status: "FAILED",
+            error: GHOST_SCAN_ERROR,
+            finishedAt: new Date(),
+            scanStage: null,
+            bullmqJobId: null,
+          },
+        });
+      }
+    }
+
+    return null;
   });
 
 export const getLibraryIssueCountServerFn = createServerFn({

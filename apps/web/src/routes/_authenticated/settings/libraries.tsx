@@ -328,24 +328,14 @@ function LibraryRootCard({ root }: { root: LibraryRootWithExtras }) {
                     Scan appears stalled — no progress updates received
                   </p>
                 </>
-              ) : root.scanProgress.scanStage === "ENRICHING" ? (
+              ) : root.scanProgress.scanStage === "PROCESSING" ? (
                 <>
                   <p className="text-xs text-muted-foreground flex items-center gap-1.5">
                     <Loader2 className="size-3.5 animate-spin" />
-                    {root.scanProgress.completedProcessingJobs} files processed
+                    Processing library...
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Extracting metadata, covers, and matching editions — this is the longest step and may take a while.
-                  </p>
-                </>
-              ) : root.scanProgress.scanStage === "PROCESSING" ? (
-                <>
-                  <Progress
-                    value={root.scanProgress.completedProcessingJobs}
-                    max={root.scanProgress.totalProcessingJobs ?? 1}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Processing files... {root.scanProgress.completedProcessingJobs} / {root.scanProgress.totalProcessingJobs ?? "?"} files
+                    Metadata extraction, cover processing, and edition matching continue automatically in the background.
                   </p>
                 </>
               ) : (

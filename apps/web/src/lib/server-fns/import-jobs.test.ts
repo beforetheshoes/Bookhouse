@@ -44,10 +44,14 @@ class MockNotFoundError extends Error {
 }
 
 const obliterateLibraryQueueMock = vi.fn().mockResolvedValue(undefined);
+const getImportJobLiveActivityMock = vi.fn();
+const getLibraryJobSnapshotMock = vi.fn();
 
 vi.mock("@bookhouse/shared", () => ({
   NotFoundError: MockNotFoundError,
+  getImportJobLiveActivity: (...args: unknown[]): unknown => getImportJobLiveActivityMock(...args),
   obliterateLibraryQueue: (...args: unknown[]): unknown => obliterateLibraryQueueMock(...args),
+  getLibraryJobSnapshot: (...args: unknown[]): unknown => getLibraryJobSnapshotMock(...args),
 }));
 
 import {
@@ -61,6 +65,10 @@ describe("getImportJobsServerFn", () => {
   beforeEach(() => {
     findManyMock.mockReset();
     countMock.mockReset();
+    updateManyMock.mockReset();
+    getImportJobLiveActivityMock.mockReset();
+    getLibraryJobSnapshotMock.mockReset();
+    getImportJobLiveActivityMock.mockResolvedValue(null);
     findManyMock.mockResolvedValue([]);
     countMock.mockResolvedValue(0);
   });
@@ -80,6 +88,125 @@ describe("getImportJobsServerFn", () => {
       page: 1,
       pageSize: 20,
     });
+  });
+
+  it("overrides stale SCAN_ROOT success rows with a live RUNNING status from BullMQ", async () => {
+    findManyMock.mockResolvedValue([{
+      id: "job-1",
+      bullmqJobId: "bull-1",
+      kind: "SCAN_ROOT",
+      status: "SUCCEEDED",
+      error: null,
+      attemptsMade: 0,
+      createdAt: new Date(),
+      startedAt: new Date(),
+      finishedAt: new Date(),
+      libraryRoot: { id: "root-1", name: "eBooks" },
+    }]);
+    countMock.mockResolvedValue(1);
+    getLibraryJobSnapshotMock.mockResolvedValue({ state: "waiting-children", progress: null });
+
+    const result = await getImportJobsServerFn({
+      data: { page: 1, pageSize: 20 },
+    });
+
+    expect(result.jobs).toEqual([{
+      id: "job-1",
+      bullmqJobId: "bull-1",
+      kind: "SCAN_ROOT",
+      status: "RUNNING",
+      error: null,
+      attemptsMade: 0,
+      createdAt: expect.any(Date) as unknown,
+      startedAt: expect.any(Date) as unknown,
+      finishedAt: null,
+      libraryRoot: { id: "root-1", name: "eBooks" },
+    }]);
+  });
+
+  it("keeps SCAN_ROOT rows running when descendant queue jobs are still live", async () => {
+    findManyMock.mockResolvedValue([{
+      id: "job-1",
+      bullmqJobId: null,
+      kind: "SCAN_ROOT",
+      status: "SUCCEEDED",
+      error: null,
+      attemptsMade: 0,
+      createdAt: new Date(),
+      startedAt: new Date(),
+      finishedAt: new Date(),
+      libraryRoot: { id: "root-1", name: "Audiobooks" },
+    }]);
+    countMock.mockResolvedValue(1);
+    getImportJobLiveActivityMock.mockResolvedValue({
+      lastActivityAt: Date.now(),
+      scanStage: "PROCESSING",
+    });
+
+    const result = await getImportJobsServerFn({
+      data: { page: 1, pageSize: 20 },
+    });
+
+    expect(result.jobs).toEqual([{
+      id: "job-1",
+      bullmqJobId: null,
+      kind: "SCAN_ROOT",
+      status: "RUNNING",
+      error: null,
+      attemptsMade: 0,
+      createdAt: expect.any(Date) as unknown,
+      startedAt: expect.any(Date) as unknown,
+      finishedAt: null,
+      libraryRoot: { id: "root-1", name: "Audiobooks" },
+    }]);
+  });
+
+  it("overrides deadlocked SCAN_ROOT rows with FAILED status from BullMQ reconciliation", async () => {
+    findManyMock.mockResolvedValue([{
+      id: "job-1",
+      bullmqJobId: "bull-1",
+      kind: "SCAN_ROOT",
+      status: "RUNNING",
+      error: null,
+      attemptsMade: 0,
+      createdAt: new Date(),
+      startedAt: new Date(),
+      finishedAt: null,
+      libraryRoot: { id: "root-1", name: "eBooks" },
+    }]);
+    countMock.mockResolvedValue(1);
+    getLibraryJobSnapshotMock.mockResolvedValue({
+      state: "waiting-children",
+      progress: { processedFiles: 3490, errorCount: 0, scanStage: "PROCESSING" },
+      blockedByFailedChild: true,
+    });
+
+    const result = await getImportJobsServerFn({
+      data: { page: 1, pageSize: 20 },
+    });
+
+    expect(updateManyMock).toHaveBeenCalledWith({
+      where: { id: "job-1", status: { not: "FAILED" } },
+      data: {
+        status: "FAILED",
+        error: "Scan job is blocked by a failed child job",
+        finishedAt: expect.any(Date) as unknown,
+        scanStage: null,
+        bullmqJobId: null,
+      },
+    });
+    expect(result.jobs).toEqual([{
+      id: "job-1",
+      bullmqJobId: "bull-1",
+      kind: "SCAN_ROOT",
+      status: "FAILED",
+      error: "Scan job is blocked by a failed child job",
+      attemptsMade: 0,
+      createdAt: expect.any(Date) as unknown,
+      startedAt: expect.any(Date) as unknown,
+      finishedAt: expect.any(Date) as unknown,
+      libraryRoot: { id: "root-1", name: "eBooks" },
+    }]);
   });
 
   it("calls findMany with status filter when status is provided (non-empty array)", async () => {
@@ -197,29 +324,108 @@ describe("getImportJobDetailServerFn", () => {
 
 describe("getActiveJobCountServerFn", () => {
   beforeEach(() => {
-    countMock.mockReset();
-    workCountMock.mockReset();
+    findManyMock.mockReset();
+    updateManyMock.mockReset();
+    getImportJobLiveActivityMock.mockReset();
+    getLibraryJobSnapshotMock.mockReset();
+    getImportJobLiveActivityMock.mockResolvedValue(null);
   });
 
-  it("calls db.importJob.count with QUEUED and RUNNING status filter", async () => {
-    countMock.mockResolvedValue(3);
-    workCountMock.mockResolvedValue(0);
+  it("queries non-failed scan-root import jobs", async () => {
+    findManyMock.mockResolvedValue([]);
     await getActiveJobCountServerFn();
-    expect(countMock).toHaveBeenCalledWith({
-      where: { status: { in: ["QUEUED", "RUNNING"] } },
+    expect(findManyMock).toHaveBeenCalledWith({
+      where: { kind: "SCAN_ROOT", status: { not: "FAILED" } },
+      select: { id: true, bullmqJobId: true, updatedAt: true, status: true },
     });
   });
 
-  it("returns count of active import jobs only", async () => {
-    countMock.mockResolvedValue(3);
+  it("returns count of live scan-root jobs only", async () => {
+    findManyMock.mockResolvedValue([
+      { id: "ij-live-1", bullmqJobId: "bull-1", updatedAt: new Date(), status: "RUNNING" },
+      { id: "ij-live-2", bullmqJobId: "bull-2", updatedAt: new Date(), status: "SUCCEEDED" },
+      { id: "ij-dead", bullmqJobId: "bull-dead", updatedAt: new Date(), status: "RUNNING" },
+    ]);
+    getLibraryJobSnapshotMock
+      .mockResolvedValueOnce({ state: "active", progress: null })
+      .mockResolvedValueOnce({ state: "waiting-children", progress: null })
+      .mockResolvedValueOnce(null);
+
     const result = await getActiveJobCountServerFn();
-    expect(result).toBe(3);
+    expect(result).toBe(2);
   });
 
-  it("returns 0 when no active jobs", async () => {
-    countMock.mockResolvedValue(0);
+  it("does not count queue-deadlocked scan-root jobs as active", async () => {
+    findManyMock.mockResolvedValue([
+      { id: "ij-deadlocked", bullmqJobId: "bull-1", updatedAt: new Date(), status: "RUNNING" },
+    ]);
+    getLibraryJobSnapshotMock.mockResolvedValue({
+      state: "waiting-children",
+      progress: { scanStage: "PROCESSING" },
+      blockedByFailedChild: true,
+    });
+
     const result = await getActiveJobCountServerFn();
+
+    expect(updateManyMock).toHaveBeenCalledWith({
+      where: { id: "ij-deadlocked", status: { not: "FAILED" } },
+      data: {
+        status: "FAILED",
+        error: "Scan job is blocked by a failed child job",
+        finishedAt: expect.any(Date) as unknown,
+        scanStage: null,
+        bullmqJobId: null,
+      },
+    });
     expect(result).toBe(0);
+  });
+
+  it("marks stale ghost scan jobs as failed before counting", async () => {
+    const sixMinutesAgo = new Date(Date.now() - 6 * 60 * 1000);
+    findManyMock.mockResolvedValue([
+      { id: "ij-ghost", bullmqJobId: "bull-missing", updatedAt: sixMinutesAgo, status: "RUNNING" },
+    ]);
+    getLibraryJobSnapshotMock.mockResolvedValue(null);
+
+    const result = await getActiveJobCountServerFn();
+
+    expect(updateManyMock).toHaveBeenCalledWith({
+      where: { id: "ij-ghost", status: { in: ["QUEUED", "RUNNING"] } },
+      data: {
+        status: "FAILED",
+        error: "Scan job is no longer active in BullMQ",
+        finishedAt: expect.any(Date) as unknown,
+        scanStage: null,
+        bullmqJobId: null,
+      },
+    });
+    expect(result).toBe(0);
+  });
+
+  it("treats scan jobs without a BullMQ id as inactive", async () => {
+    findManyMock.mockResolvedValue([
+      { id: "ij-no-bull", bullmqJobId: null, updatedAt: new Date(), status: "QUEUED" },
+    ]);
+    getImportJobLiveActivityMock.mockResolvedValue(null);
+
+    const result = await getActiveJobCountServerFn();
+
+    expect(getLibraryJobSnapshotMock).not.toHaveBeenCalled();
+    expect(result).toBe(0);
+  });
+
+  it("counts scan jobs with live descendant queue work even after the parent row completed", async () => {
+    findManyMock.mockResolvedValue([
+      { id: "ij-fallback", bullmqJobId: null, updatedAt: new Date(), status: "SUCCEEDED" },
+    ]);
+    getImportJobLiveActivityMock.mockResolvedValue({
+      lastActivityAt: Date.now(),
+      scanStage: "PROCESSING",
+    });
+
+    const result = await getActiveJobCountServerFn();
+
+    expect(result).toBe(1);
   });
 });
 
@@ -237,7 +443,7 @@ describe("stopAllJobsServerFn", () => {
     expect(obliterateLibraryQueueMock).toHaveBeenCalledTimes(1);
     expect(updateManyMock).toHaveBeenCalledWith({
       where: { status: { in: ["QUEUED", "RUNNING"] } },
-      data: { status: "FAILED", error: "Stopped by user", finishedAt: expect.any(Date) as unknown },
+      data: { status: "FAILED", error: "Stopped by user", finishedAt: expect.any(Date) as unknown, bullmqJobId: null, scanStage: null },
     });
     expect(result).toEqual({ stoppedCount: 5 });
   });
