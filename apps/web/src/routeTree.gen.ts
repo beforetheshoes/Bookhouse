@@ -17,15 +17,16 @@ import { Route as AuthLoginRouteImport } from './routes/auth/login'
 import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedSeriesRouteImport } from './routes/_authenticated/series'
+import { Route as AuthenticatedMatchSuggestionsRouteImport } from './routes/_authenticated/match-suggestions'
 import { Route as AuthenticatedLibraryRouteImport } from './routes/_authenticated/library'
 import { Route as AuthenticatedDuplicatesRouteImport } from './routes/_authenticated/duplicates'
 import { Route as AuthenticatedCollectionsRouteImport } from './routes/_authenticated/collections'
 import { Route as AuthenticatedAuthorsRouteImport } from './routes/_authenticated/authors'
-import { Route as AuthenticatedAudioLinksRouteImport } from './routes/_authenticated/audio-links'
 import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
 import { Route as AuthenticatedSeriesIndexRouteImport } from './routes/_authenticated/series.index'
 import { Route as AuthenticatedLibraryIndexRouteImport } from './routes/_authenticated/library.index'
 import { Route as AuthenticatedAuthorsIndexRouteImport } from './routes/_authenticated/authors.index'
+import { Route as AuthenticatedSettingsMissingFilesRouteImport } from './routes/_authenticated/settings/missing-files'
 import { Route as AuthenticatedSettingsLibrariesRouteImport } from './routes/_authenticated/settings/libraries'
 import { Route as AuthenticatedSettingsJobsRouteImport } from './routes/_authenticated/settings/jobs'
 import { Route as AuthenticatedSeriesSeriesIdRouteImport } from './routes/_authenticated/series.$seriesId'
@@ -74,6 +75,12 @@ const AuthenticatedSeriesRoute = AuthenticatedSeriesRouteImport.update({
   path: '/series',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedMatchSuggestionsRoute =
+  AuthenticatedMatchSuggestionsRouteImport.update({
+    id: '/match-suggestions',
+    path: '/match-suggestions',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedLibraryRoute = AuthenticatedLibraryRouteImport.update({
   id: '/library',
   path: '/library',
@@ -93,11 +100,6 @@ const AuthenticatedCollectionsRoute =
 const AuthenticatedAuthorsRoute = AuthenticatedAuthorsRouteImport.update({
   id: '/authors',
   path: '/authors',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
-const AuthenticatedAudioLinksRoute = AuthenticatedAudioLinksRouteImport.update({
-  id: '/audio-links',
-  path: '/audio-links',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedSettingsIndexRoute =
@@ -123,6 +125,12 @@ const AuthenticatedAuthorsIndexRoute =
     id: '/',
     path: '/',
     getParentRoute: () => AuthenticatedAuthorsRoute,
+  } as any)
+const AuthenticatedSettingsMissingFilesRoute =
+  AuthenticatedSettingsMissingFilesRouteImport.update({
+    id: '/missing-files',
+    path: '/missing-files',
+    getParentRoute: () => AuthenticatedSettingsRoute,
   } as any)
 const AuthenticatedSettingsLibrariesRoute =
   AuthenticatedSettingsLibrariesRouteImport.update({
@@ -176,11 +184,11 @@ const AuthenticatedSettingsJobsJobIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
   '/logged-out': typeof LoggedOutRoute
-  '/audio-links': typeof AuthenticatedAudioLinksRoute
   '/authors': typeof AuthenticatedAuthorsRouteWithChildren
   '/collections': typeof AuthenticatedCollectionsRoute
   '/duplicates': typeof AuthenticatedDuplicatesRoute
   '/library': typeof AuthenticatedLibraryRouteWithChildren
+  '/match-suggestions': typeof AuthenticatedMatchSuggestionsRoute
   '/series': typeof AuthenticatedSeriesRouteWithChildren
   '/settings': typeof AuthenticatedSettingsRouteWithChildren
   '/auth/callback': typeof AuthCallbackRoute
@@ -191,6 +199,7 @@ export interface FileRoutesByFullPath {
   '/series/$seriesId': typeof AuthenticatedSeriesSeriesIdRoute
   '/settings/jobs': typeof AuthenticatedSettingsJobsRouteWithChildren
   '/settings/libraries': typeof AuthenticatedSettingsLibrariesRoute
+  '/settings/missing-files': typeof AuthenticatedSettingsMissingFilesRoute
   '/authors/': typeof AuthenticatedAuthorsIndexRoute
   '/library/': typeof AuthenticatedLibraryIndexRoute
   '/series/': typeof AuthenticatedSeriesIndexRoute
@@ -201,9 +210,9 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/logged-out': typeof LoggedOutRoute
-  '/audio-links': typeof AuthenticatedAudioLinksRoute
   '/collections': typeof AuthenticatedCollectionsRoute
   '/duplicates': typeof AuthenticatedDuplicatesRoute
+  '/match-suggestions': typeof AuthenticatedMatchSuggestionsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/logout': typeof AuthLogoutRoute
@@ -212,6 +221,7 @@ export interface FileRoutesByTo {
   '/library/$workId': typeof AuthenticatedLibraryWorkIdRoute
   '/series/$seriesId': typeof AuthenticatedSeriesSeriesIdRoute
   '/settings/libraries': typeof AuthenticatedSettingsLibrariesRoute
+  '/settings/missing-files': typeof AuthenticatedSettingsMissingFilesRoute
   '/authors': typeof AuthenticatedAuthorsIndexRoute
   '/library': typeof AuthenticatedLibraryIndexRoute
   '/series': typeof AuthenticatedSeriesIndexRoute
@@ -224,11 +234,11 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/logged-out': typeof LoggedOutRoute
-  '/_authenticated/audio-links': typeof AuthenticatedAudioLinksRoute
   '/_authenticated/authors': typeof AuthenticatedAuthorsRouteWithChildren
   '/_authenticated/collections': typeof AuthenticatedCollectionsRoute
   '/_authenticated/duplicates': typeof AuthenticatedDuplicatesRoute
   '/_authenticated/library': typeof AuthenticatedLibraryRouteWithChildren
+  '/_authenticated/match-suggestions': typeof AuthenticatedMatchSuggestionsRoute
   '/_authenticated/series': typeof AuthenticatedSeriesRouteWithChildren
   '/_authenticated/settings': typeof AuthenticatedSettingsRouteWithChildren
   '/auth/callback': typeof AuthCallbackRoute
@@ -240,6 +250,7 @@ export interface FileRoutesById {
   '/_authenticated/series/$seriesId': typeof AuthenticatedSeriesSeriesIdRoute
   '/_authenticated/settings/jobs': typeof AuthenticatedSettingsJobsRouteWithChildren
   '/_authenticated/settings/libraries': typeof AuthenticatedSettingsLibrariesRoute
+  '/_authenticated/settings/missing-files': typeof AuthenticatedSettingsMissingFilesRoute
   '/_authenticated/authors/': typeof AuthenticatedAuthorsIndexRoute
   '/_authenticated/library/': typeof AuthenticatedLibraryIndexRoute
   '/_authenticated/series/': typeof AuthenticatedSeriesIndexRoute
@@ -253,11 +264,11 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/logged-out'
-    | '/audio-links'
     | '/authors'
     | '/collections'
     | '/duplicates'
     | '/library'
+    | '/match-suggestions'
     | '/series'
     | '/settings'
     | '/auth/callback'
@@ -268,6 +279,7 @@ export interface FileRouteTypes {
     | '/series/$seriesId'
     | '/settings/jobs'
     | '/settings/libraries'
+    | '/settings/missing-files'
     | '/authors/'
     | '/library/'
     | '/series/'
@@ -278,9 +290,9 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/logged-out'
-    | '/audio-links'
     | '/collections'
     | '/duplicates'
+    | '/match-suggestions'
     | '/auth/callback'
     | '/auth/login'
     | '/auth/logout'
@@ -289,6 +301,7 @@ export interface FileRouteTypes {
     | '/library/$workId'
     | '/series/$seriesId'
     | '/settings/libraries'
+    | '/settings/missing-files'
     | '/authors'
     | '/library'
     | '/series'
@@ -300,11 +313,11 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_authenticated'
     | '/logged-out'
-    | '/_authenticated/audio-links'
     | '/_authenticated/authors'
     | '/_authenticated/collections'
     | '/_authenticated/duplicates'
     | '/_authenticated/library'
+    | '/_authenticated/match-suggestions'
     | '/_authenticated/series'
     | '/_authenticated/settings'
     | '/auth/callback'
@@ -316,6 +329,7 @@ export interface FileRouteTypes {
     | '/_authenticated/series/$seriesId'
     | '/_authenticated/settings/jobs'
     | '/_authenticated/settings/libraries'
+    | '/_authenticated/settings/missing-files'
     | '/_authenticated/authors/'
     | '/_authenticated/library/'
     | '/_authenticated/series/'
@@ -391,6 +405,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSeriesRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/match-suggestions': {
+      id: '/_authenticated/match-suggestions'
+      path: '/match-suggestions'
+      fullPath: '/match-suggestions'
+      preLoaderRoute: typeof AuthenticatedMatchSuggestionsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/library': {
       id: '/_authenticated/library'
       path: '/library'
@@ -417,13 +438,6 @@ declare module '@tanstack/react-router' {
       path: '/authors'
       fullPath: '/authors'
       preLoaderRoute: typeof AuthenticatedAuthorsRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/audio-links': {
-      id: '/_authenticated/audio-links'
-      path: '/audio-links'
-      fullPath: '/audio-links'
-      preLoaderRoute: typeof AuthenticatedAudioLinksRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/settings/': {
@@ -453,6 +467,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/authors/'
       preLoaderRoute: typeof AuthenticatedAuthorsIndexRouteImport
       parentRoute: typeof AuthenticatedAuthorsRoute
+    }
+    '/_authenticated/settings/missing-files': {
+      id: '/_authenticated/settings/missing-files'
+      path: '/missing-files'
+      fullPath: '/settings/missing-files'
+      preLoaderRoute: typeof AuthenticatedSettingsMissingFilesRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
     }
     '/_authenticated/settings/libraries': {
       id: '/_authenticated/settings/libraries'
@@ -571,6 +592,7 @@ const AuthenticatedSettingsJobsRouteWithChildren =
 interface AuthenticatedSettingsRouteChildren {
   AuthenticatedSettingsJobsRoute: typeof AuthenticatedSettingsJobsRouteWithChildren
   AuthenticatedSettingsLibrariesRoute: typeof AuthenticatedSettingsLibrariesRoute
+  AuthenticatedSettingsMissingFilesRoute: typeof AuthenticatedSettingsMissingFilesRoute
   AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute
   AuthenticatedSettingsLibraryIssuesLibraryRootIdRoute: typeof AuthenticatedSettingsLibraryIssuesLibraryRootIdRoute
 }
@@ -578,6 +600,8 @@ interface AuthenticatedSettingsRouteChildren {
 const AuthenticatedSettingsRouteChildren: AuthenticatedSettingsRouteChildren = {
   AuthenticatedSettingsJobsRoute: AuthenticatedSettingsJobsRouteWithChildren,
   AuthenticatedSettingsLibrariesRoute: AuthenticatedSettingsLibrariesRoute,
+  AuthenticatedSettingsMissingFilesRoute:
+    AuthenticatedSettingsMissingFilesRoute,
   AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,
   AuthenticatedSettingsLibraryIssuesLibraryRootIdRoute:
     AuthenticatedSettingsLibraryIssuesLibraryRootIdRoute,
@@ -589,22 +613,22 @@ const AuthenticatedSettingsRouteWithChildren =
   )
 
 interface AuthenticatedRouteChildren {
-  AuthenticatedAudioLinksRoute: typeof AuthenticatedAudioLinksRoute
   AuthenticatedAuthorsRoute: typeof AuthenticatedAuthorsRouteWithChildren
   AuthenticatedCollectionsRoute: typeof AuthenticatedCollectionsRoute
   AuthenticatedDuplicatesRoute: typeof AuthenticatedDuplicatesRoute
   AuthenticatedLibraryRoute: typeof AuthenticatedLibraryRouteWithChildren
+  AuthenticatedMatchSuggestionsRoute: typeof AuthenticatedMatchSuggestionsRoute
   AuthenticatedSeriesRoute: typeof AuthenticatedSeriesRouteWithChildren
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRouteWithChildren
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
-  AuthenticatedAudioLinksRoute: AuthenticatedAudioLinksRoute,
   AuthenticatedAuthorsRoute: AuthenticatedAuthorsRouteWithChildren,
   AuthenticatedCollectionsRoute: AuthenticatedCollectionsRoute,
   AuthenticatedDuplicatesRoute: AuthenticatedDuplicatesRoute,
   AuthenticatedLibraryRoute: AuthenticatedLibraryRouteWithChildren,
+  AuthenticatedMatchSuggestionsRoute: AuthenticatedMatchSuggestionsRoute,
   AuthenticatedSeriesRoute: AuthenticatedSeriesRouteWithChildren,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRouteWithChildren,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,

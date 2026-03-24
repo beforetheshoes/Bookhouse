@@ -236,7 +236,7 @@ function SidePanel({
         <p className="font-medium">{label}</p>
         {authors && <p className="text-sm text-muted-foreground">{authors}</p>}
         {filePath && (
-          <p className="truncate text-xs text-muted-foreground">{filePath}</p>
+          <p className="break-all text-xs text-muted-foreground">{filePath}</p>
         )}
         <div className="mt-1 flex flex-wrap items-center gap-1.5">
           {mediaKind && <Badge variant="outline" className="text-xs">{mediaKind}</Badge>}

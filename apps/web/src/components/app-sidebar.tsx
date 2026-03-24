@@ -37,7 +37,7 @@ const navItems = [
   { title: "Authors", href: "/authors", icon: Users },
   { title: "Collections", href: "/collections", icon: FolderOpen },
   { title: "Duplicates", href: "/duplicates", icon: Copy },
-  { title: "Audio Links", href: "/audio-links", icon: Headphones },
+  { title: "Match Suggestions", href: "/match-suggestions", icon: Headphones },
   { title: "Jobs", href: "/settings/jobs", icon: Activity },
   { title: "Settings", href: "/settings", icon: Settings },
 ] as const;

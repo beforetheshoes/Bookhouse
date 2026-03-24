@@ -1,13 +1,13 @@
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import IORedis from "ioredis";
 import { type Job, WaitingChildrenError, Worker } from "bullmq";
 import { db } from "@bookhouse/db";
-import { cascadeCleanupOrphans, createIngestServices, matchAudio, matchFileAssetToEdition, parseFileAssetMetadata, processCoverForWorkDefault, scanLibraryRoot, type ScanProgressData, type ScanLibraryRootResult, enrichWork, searchOpenLibrary, getOpenLibraryWork, RateLimiter, type EnrichWorkDeps, detectDuplicates, hashFileAsset } from "@bookhouse/ingest";
+import { cascadeCleanupOrphans, createIngestServices, matchSuggestions, matchFileAssetToEdition, parseFileAssetMetadata, processCoverForWorkDefault, scanLibraryRoot, type ScanProgressData, type ScanLibraryRootResult, enrichWork, searchOpenLibrary, getOpenLibraryWork, RateLimiter, type EnrichWorkDeps, detectDuplicates, hashFileAsset } from "@bookhouse/ingest";
 import {
   LIBRARY_JOB_NAMES,
   type BaseJobPayload,
   type DetectDuplicatesJobPayload,
-  type MatchAudioJobPayload,
+  type MatchSuggestionsJobPayload,
   type HashFileAssetJobPayload,
   type LibraryJobName,
   type LibraryJobPayload,
@@ -27,6 +27,18 @@ const logger = createLogger("library-worker");
 const processCoverForWork = processCoverForWorkDefault(db);
 const rateLimiter = new RateLimiter();
 
+function getCoverCacheDir(): string {
+  if (process.env.COVER_CACHE_DIR) {
+    return process.env.COVER_CACHE_DIR;
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    return "/data/covers";
+  }
+
+  return fileURLToPath(new URL("../../covers", import.meta.url));
+}
+
 export interface LibraryWorkerHandlers {
   hashFileAsset: typeof hashFileAsset;
   matchFileAssetToEdition: typeof matchFileAssetToEdition;
@@ -35,7 +47,7 @@ export interface LibraryWorkerHandlers {
   scanLibraryRoot: typeof scanLibraryRoot;
   enrichWork: typeof enrichWork;
   detectDuplicates: typeof detectDuplicates;
-  matchAudio: typeof matchAudio;
+  matchSuggestions: typeof matchSuggestions;
 }
 
 function createJobHandlers(
@@ -51,7 +63,6 @@ function createJobHandlers(
       : payload;
     await enqueueLibraryJob(jobName, enrichedPayload, {
       parent: { id: job.id ?? "", queue: job.queueQualifiedName },
-      removeDependencyOnFailure: true,
     });
   };
 
@@ -65,7 +76,7 @@ function createJobHandlers(
     scanLibraryRoot: services.scanLibraryRoot,
     enrichWork,
     detectDuplicates: services.detectDuplicates,
-    matchAudio: services.matchAudio,
+    matchSuggestions: services.matchSuggestions,
   };
 }
 
@@ -81,11 +92,18 @@ async function dispatch(
       let scanResult: ScanLibraryRootResult;
       if (importJobId) {
         const reportProgress = async (data: ScanProgressData) => {
-          await db.importJob.update({
-            where: { id: importJobId },
-            data,
-          });
-          await job.updateProgress(data);
+          try {
+            await db.importJob.update({
+              where: { id: importJobId },
+              data,
+            });
+            await job.updateProgress(data);
+          } catch (error) {
+            logger.warn(
+              { err: error, importJobId, jobId: job.id, progress: data },
+              "Failed to persist scan progress",
+            );
+          }
         };
         scanResult = await handlers.scanLibraryRoot({ ...payload, reportProgress });
       } else {
@@ -113,13 +131,13 @@ async function dispatch(
       return handlers.processCoverForWork({
         workId: coverPayload.workId,
         fileAssetId: coverPayload.fileAssetId,
-        coverCacheDir: process.env.COVER_CACHE_DIR ?? "/data/covers",
+        coverCacheDir: getCoverCacheDir(),
       });
     }
     case LIBRARY_JOB_NAMES.DETECT_DUPLICATES:
       return handlers.detectDuplicates(job.data as DetectDuplicatesJobPayload);
-    case LIBRARY_JOB_NAMES.MATCH_AUDIO:
-      return handlers.matchAudio(job.data as MatchAudioJobPayload);
+    case LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS:
+      return handlers.matchSuggestions(job.data as MatchSuggestionsJobPayload);
     case LIBRARY_JOB_NAMES.REFRESH_METADATA: {
       const refreshPayload = job.data as RefreshMetadataJobPayload;
       const deps: EnrichWorkDeps = {
@@ -165,19 +183,21 @@ export function createLibraryWorkerProcessor(
     job: Job<LibraryJobPayload<LibraryJobName>, unknown, LibraryJobName>,
     token?: string,
   ) => {
-    const importJobId = (job.data as BaseJobPayload).importJobId;
-    const isScanJob = job.name === LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT;
+  const importJobId = (job.data as BaseJobPayload).importJobId;
+  const isScanJob = job.name === LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT;
+  const totalAttempts = job.opts.attempts ?? 1;
+  const finalAttempt = job.attemptsMade + 1 >= totalAttempts;
 
-    // Completion phase — BullMQ re-activated this job after all children finished
-    if ((job.data as BaseJobPayload).step === "waiting-children") {
-      if (importJobId) {
-        await db.importJob.update({
-          where: { id: importJobId },
-          data: { status: "SUCCEEDED", finishedAt: new Date() },
-        });
-      }
-      return;
+  // Completion phase — BullMQ re-activated this job after all children finished
+  if ((job.data as BaseJobPayload).step === "waiting-children") {
+    if (importJobId && isScanJob) {
+      await db.importJob.update({
+        where: { id: importJobId, status: "RUNNING" },
+        data: { status: "SUCCEEDED", finishedAt: new Date(), scanStage: null, bullmqJobId: null },
+      });
     }
+    return;
+  }
 
     // Only the scan job manages ImportJob lifecycle
     if (importJobId && isScanJob) {
@@ -204,6 +224,7 @@ export function createLibraryWorkerProcessor(
           status: "FAILED",
           error: "Superseded by new scan",
           finishedAt: new Date(),
+          bullmqJobId: null,
         },
       });
     }
@@ -213,40 +234,22 @@ export function createLibraryWorkerProcessor(
     try {
       const result = await dispatch(jobHandlers, job);
 
-      // Increment completedProcessingJobs for child jobs with importJobId
-      if (importJobId && !isScanJob) {
-        const updated = await db.importJob.update({
-          where: { id: importJobId },
-          data: { completedProcessingJobs: { increment: 1 } },
-          select: { completedProcessingJobs: true, totalProcessingJobs: true, scanStage: true },
-        });
-        await job.updateProgress({ completedProcessingJobs: updated.completedProcessingJobs });
-
-        // Stage transition: PROCESSING → ENRICHING when all hash/recovery jobs done
-        if (
-          updated.scanStage === "PROCESSING" &&
-          updated.totalProcessingJobs !== null &&
-          updated.completedProcessingJobs >= updated.totalProcessingJobs
-        ) {
-          await db.importJob.update({
-            where: { id: importJobId, scanStage: "PROCESSING" },
-            data: { scanStage: "ENRICHING", completedProcessingJobs: 0 },
-          });
-        }
-      }
-
       // Attempt to wait for any children this job spawned
       await job.updateData({ ...job.data, step: "waiting-children" });
       const shouldWait = await job.moveToWaitingChildren(token ?? "");
+      const dependencyCounts = await job.getDependenciesCount();
       if (shouldWait) {
+        throw new WaitingChildrenError();
+      }
+      if ((dependencyCounts.unprocessed ?? 0) > 0) {
         throw new WaitingChildrenError();
       }
 
       // No children (or all already done) — complete immediately
       if (importJobId && isScanJob) {
         await db.importJob.update({
-          where: { id: importJobId },
-          data: { status: "SUCCEEDED", finishedAt: new Date() },
+          where: { id: importJobId, status: "RUNNING" },
+          data: { status: "SUCCEEDED", finishedAt: new Date(), scanStage: null, bullmqJobId: null },
         });
       }
 
@@ -264,8 +267,25 @@ export function createLibraryWorkerProcessor(
             finishedAt: new Date(),
             error: error instanceof Error ? error.message : String(error),
             attemptsMade: job.attemptsMade,
+            scanStage: null,
+            bullmqJobId: null,
           },
         });
+      }
+      if (importJobId && !isScanJob && finalAttempt) {
+        await db.importJob.update({
+          where: { id: importJobId, status: { in: ["QUEUED", "RUNNING"] } },
+          data: {
+            status: "FAILED",
+            finishedAt: new Date(),
+            error: `Child job ${job.name} failed: ${error instanceof Error ? error.message : String(error)}`,
+            scanStage: null,
+            bullmqJobId: null,
+          },
+        });
+        if (job.parentKey) {
+          await job.removeChildDependency();
+        }
       }
       throw error;
     }
@@ -280,7 +300,7 @@ const defaultHandlers: LibraryWorkerHandlers = {
   scanLibraryRoot,
   enrichWork,
   detectDuplicates,
-  matchAudio,
+  matchSuggestions,
 };
 
 const DEFAULT_WORKER_CONCURRENCY = 5;

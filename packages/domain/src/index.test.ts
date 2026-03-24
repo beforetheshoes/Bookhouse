@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  AudioLinkMatchType,
+  MatchSuggestionType,
   AvailabilityStatus,
   BATCH1_DOMAIN_MODEL_NAMES,
   DuplicateReason,
@@ -33,12 +33,11 @@ describe("domain package", () => {
     expect(ImportJobStatus.QUEUED).toBe("QUEUED");
     expect(ScanStage.DISCOVERY).toBe("DISCOVERY");
     expect(ScanStage.PROCESSING).toBe("PROCESSING");
-    expect(ScanStage.ENRICHING).toBe("ENRICHING");
-    expect(AudioLinkMatchType.SAME_WORK).toBe("SAME_WORK");
-    expect(AudioLinkMatchType.EXACT_METADATA).toBe("EXACT_METADATA");
-    expect(AudioLinkMatchType.NORMALIZED_TITLE).toBe("NORMALIZED_TITLE");
-    expect(AudioLinkMatchType.SUBTITLE_STRIPPED).toBe("SUBTITLE_STRIPPED");
-    expect(AudioLinkMatchType.TITLE_ONLY).toBe("TITLE_ONLY");
+    expect(MatchSuggestionType.SAME_WORK).toBe("SAME_WORK");
+    expect(MatchSuggestionType.EXACT_METADATA).toBe("EXACT_METADATA");
+    expect(MatchSuggestionType.NORMALIZED_TITLE).toBe("NORMALIZED_TITLE");
+    expect(MatchSuggestionType.SUBTITLE_STRIPPED).toBe("SUBTITLE_STRIPPED");
+    expect(MatchSuggestionType.TITLE_ONLY).toBe("TITLE_ONLY");
     expect(BATCH1_DOMAIN_MODEL_NAMES).toEqual([
       "LibraryRoot",
       "FileAsset",

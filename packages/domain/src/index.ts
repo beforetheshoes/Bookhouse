@@ -1,5 +1,5 @@
 export {
-  AudioLinkMatchType,
+  MatchSuggestionType,
   AvailabilityStatus,
   ContributorRole,
   DuplicateReason,

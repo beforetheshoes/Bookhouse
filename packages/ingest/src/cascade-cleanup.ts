@@ -111,7 +111,7 @@ export async function cascadeCleanupOrphans(
   }
 
   if (emptyWorkIds.length > 0) {
-    // 10. Delete empty Works (cascade handles CollectionItems, AudioLinks)
+    // 10. Delete empty Works (cascade handles CollectionItems, MatchSuggestions)
     await db.work.deleteMany({
       where: { id: { in: emptyWorkIds } },
     });
