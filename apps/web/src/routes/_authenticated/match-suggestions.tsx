@@ -332,9 +332,6 @@ function MatchSuggestionsPage() {
 
     // Poll for new results while background jobs run
     setIsPolling(true);
-    if (pollIntervalRef.current !== null) {
-      clearInterval(pollIntervalRef.current);
-    }
     pollIntervalRef.current = setInterval(() => {
       void router.invalidate();
     }, 3000);

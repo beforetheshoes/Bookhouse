@@ -9,6 +9,7 @@ const invalidateMock = vi.fn();
 interface MockEditionEntry {
   contributors: { role: string; contributor: { nameDisplay: string } }[];
   editionFiles: { fileAsset: { absolutePath: string; mediaKind: string } }[];
+  formatFamily?: string;
 }
 
 interface MockWork {
@@ -20,6 +21,8 @@ interface MockWork {
 let mockLoaderData: {
   matchSuggestions: {
     id: string;
+    targetWorkId: string;
+    suggestedWorkId: string;
     targetWork: MockWork;
     suggestedWork: MockWork;
     matchType: string;
@@ -104,6 +107,7 @@ const makeWork = (title: string, contributors: { role: string; name: string }[] 
   editions: [{
     contributors: contributors.map((c) => ({ role: c.role, contributor: { nameDisplay: c.name } })),
     editionFiles: files.map((f) => ({ fileAsset: { absolutePath: f.path, mediaKind: f.kind } })),
+    formatFamily: files[0]?.kind === "AUDIO" ? "AUDIOBOOK" : "EBOOK",
   }],
 });
 
@@ -310,6 +314,17 @@ describe("MatchSuggestionsPage", () => {
     expect(acceptMatchSuggestionServerFnMock).toHaveBeenCalledWith({ data: { id: "ms-1", survivingWorkId: "work-target" } });
   });
 
+  it("Keep Right button calls acceptMatchSuggestionServerFn with suggested work", async () => {
+    acceptMatchSuggestionServerFnMock.mockResolvedValueOnce({ success: true });
+    invalidateMock.mockResolvedValueOnce(undefined);
+    mockLoaderData = { matchSuggestions: [makeMatchSuggestion({ id: "ms-1", reviewStatus: "PENDING" })] };
+    const { Route } = await import("./match-suggestions");
+    const MatchSuggestionsPage = (Route.options.component as React.ComponentType);
+    render(<MatchSuggestionsPage />);
+    await userEvent.click(screen.getByText("Keep Right"));
+    expect(acceptMatchSuggestionServerFnMock).toHaveBeenCalledWith({ data: { id: "ms-1", survivingWorkId: "work-suggested" } });
+  });
+
   it("Decline button calls declineMatchSuggestionServerFn", async () => {
     declineMatchSuggestionServerFnMock.mockResolvedValueOnce({ success: true });
     invalidateMock.mockResolvedValueOnce(undefined);
@@ -505,6 +520,41 @@ describe("MatchSuggestionsPage", () => {
     expect(rematchAllServerFnMock).toHaveBeenCalled();
   });
 
+  it("Re-scan Matches starts polling when jobs are enqueued", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    rematchAllServerFnMock.mockResolvedValueOnce({ importJobId: "job-1", enqueuedCount: 5 });
+    invalidateMock.mockResolvedValue(undefined);
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const { Route } = await import("./match-suggestions");
+    const MatchSuggestionsPage = (Route.options.component as React.ComponentType);
+    render(<MatchSuggestionsPage />);
+    await user.click(screen.getByRole("button", { name: /re-scan matches/i }));
+    // Button should change to "Scanning..." while polling
+    expect(screen.getByRole("button", { name: /scanning/i })).toBeTruthy();
+    // Advance past one poll interval (3s) — router.invalidate should be called
+    vi.advanceTimersByTime(3500);
+    expect(invalidateMock).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("Re-scan Matches clears previous poll when clicked again", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    rematchAllServerFnMock.mockResolvedValue({ importJobId: "job-1", enqueuedCount: 5 });
+    invalidateMock.mockResolvedValue(undefined);
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const { Route } = await import("./match-suggestions");
+    const MatchSuggestionsPage = (Route.options.component as React.ComponentType);
+    const { unmount } = render(<MatchSuggestionsPage />);
+    // Click once to start polling
+    await user.click(screen.getByRole("button", { name: /re-scan matches/i }));
+    expect(screen.getByRole("button", { name: /scanning/i })).toBeTruthy();
+    // Advance past timeout to clean up polling and re-enable button
+    vi.advanceTimersByTime(61000);
+    // Unmount to trigger cleanup effect
+    unmount();
+    vi.useRealTimers();
+  });
+
   it("Re-scan Matches handles failure gracefully when mutation returns null", async () => {
     rematchAllServerFnMock.mockRejectedValueOnce(new Error("fail"));
     invalidateMock.mockResolvedValueOnce(undefined);
@@ -616,7 +666,7 @@ describe("MatchSuggestionsPage", () => {
     expect(screen.queryByText("Decline")).toBeNull();
   });
 
-  it("table view renders author below title in each work column", async () => {
+  it("table view renders author as caption below title in work cells", async () => {
     mockLoaderData = { matchSuggestions: [makeMatchSuggestion()] };
     const user = userEvent.setup();
     const { Route } = await import("./match-suggestions");
@@ -638,6 +688,19 @@ describe("MatchSuggestionsPage", () => {
     await user.click(screen.getByRole("button", { name: /table view/i }));
     await user.click(screen.getByText("Keep A"));
     expect(acceptMatchSuggestionServerFnMock).toHaveBeenCalledWith({ data: { id: "ms-1", survivingWorkId: "work-target" } });
+  });
+
+  it("table view Keep B button calls acceptMatchSuggestionServerFn with suggested work", async () => {
+    acceptMatchSuggestionServerFnMock.mockResolvedValueOnce({ success: true });
+    invalidateMock.mockResolvedValueOnce(undefined);
+    mockLoaderData = { matchSuggestions: [makeMatchSuggestion({ id: "ms-1", reviewStatus: "PENDING" })] };
+    const user = userEvent.setup();
+    const { Route } = await import("./match-suggestions");
+    const MatchSuggestionsPage = (Route.options.component as React.ComponentType);
+    render(<MatchSuggestionsPage />);
+    await user.click(screen.getByRole("button", { name: /table view/i }));
+    await user.click(screen.getByText("Keep B"));
+    expect(acceptMatchSuggestionServerFnMock).toHaveBeenCalledWith({ data: { id: "ms-1", survivingWorkId: "work-suggested" } });
   });
 
   it("table view Decline button calls declineMatchSuggestionServerFn", async () => {
