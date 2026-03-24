@@ -27,3 +27,30 @@ export const setWorkerConcurrencyServerFn = createServerFn({
 
     return { concurrency: data.concurrency };
   });
+
+export type MissingFileBehavior = "auto-cleanup" | "manual";
+
+export const getMissingFileBehaviorServerFn = createServerFn({
+  method: "GET",
+}).handler(async () => {
+  const { db } = await import("@bookhouse/db");
+
+  const setting = await db.appSetting.findUnique({ where: { key: "missingFileBehavior" } });
+  return (setting?.value ?? "manual") as MissingFileBehavior;
+});
+
+export const setMissingFileBehaviorServerFn = createServerFn({
+  method: "POST",
+})
+  .inputValidator(z.object({ behavior: z.enum(["auto-cleanup", "manual"]) }))
+  .handler(async ({ data }) => {
+    const { db } = await import("@bookhouse/db");
+
+    await db.appSetting.upsert({
+      where: { key: "missingFileBehavior" },
+      create: { key: "missingFileBehavior", value: data.behavior },
+      update: { value: data.behavior },
+    });
+
+    return { behavior: data.behavior as MissingFileBehavior };
+  });

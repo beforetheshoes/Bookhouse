@@ -5,8 +5,41 @@
 
 set -euo pipefail
 
+load_dotenv_file() {
+  local env_file="$1"
+  local line
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+
+    if [[ -z "$line" || "$line" == \#* ]]; then
+      continue
+    fi
+
+    if [[ "$line" != *=* ]]; then
+      continue
+    fi
+
+    local key="${line%%=*}"
+    local value="${line#*=}"
+
+    if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+      value="${value:1:${#value}-2}"
+    elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
+      value="${value:1:${#value}-2}"
+    fi
+
+    export "$key=$value"
+  done < "$env_file"
+}
+
+if [[ -f ".env" ]]; then
+  load_dotenv_file ".env"
+fi
+
 # Kill stale workers from previous runs
-pkill -f 'tsx.*library-worker' 2>/dev/null || true
+pkill -f 'Bookhouse/workers/library-worker.*tsx.*src/index.ts' 2>/dev/null || true
+pkill -f 'Bookhouse/workers/library-worker.*npm exec tsx src/index.ts' 2>/dev/null || true
 
 # Start dev in background, then trap EXIT to kill the entire process group
 trap 'kill 0 2>/dev/null' EXIT

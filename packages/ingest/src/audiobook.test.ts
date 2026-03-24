@@ -298,19 +298,50 @@ describe("parseAudioId3Tags", () => {
     expect(result.warnings).toEqual(["unexpected character in tag data"]);
   });
 
-  it("re-throws non-encoding errors", async () => {
+  it("returns empty tags with warning for any parsing error, not just encoding errors", async () => {
     mockedParseFile.mockRejectedValueOnce(new Error("Unsupported format"));
 
-    await expect(
-      parseAudioId3Tags("/books/audio.wav"),
-    ).rejects.toThrow("Unsupported format");
+    const result = await parseAudioId3Tags("/books/audio.wav");
+
+    expect(result.tags.title).toBeUndefined();
+    expect(result.tags.artist).toBeUndefined();
+    expect(result.warnings).toEqual(["Unsupported format"]);
   });
 
-  it("re-throws non-Error values", async () => {
+  it("returns empty tags with warning for 'invalid byte sequence' errors", async () => {
+    mockedParseFile.mockRejectedValueOnce(new Error("invalid byte sequence at offset 42"));
+
+    const result = await parseAudioId3Tags("/books/audio.mp3");
+
+    expect(result.tags.title).toBeUndefined();
+    expect(result.warnings).toEqual(["invalid byte sequence at offset 42"]);
+  });
+
+  it("returns empty tags with warning for 'unexpected end of file' errors", async () => {
+    mockedParseFile.mockRejectedValueOnce(new Error("unexpected end of file"));
+
+    const result = await parseAudioId3Tags("/books/audio.mp3");
+
+    expect(result.tags.title).toBeUndefined();
+    expect(result.warnings).toEqual(["unexpected end of file"]);
+  });
+
+  it("returns fallback warning message for non-Error thrown values", async () => {
     mockedParseFile.mockRejectedValueOnce("string error");
 
-    await expect(
-      parseAudioId3Tags("/books/audio.wav"),
-    ).rejects.toBe("string error");
+    const result = await parseAudioId3Tags("/books/audio.wav");
+
+    expect(result.tags.title).toBeUndefined();
+    expect(result.warnings).toEqual(["Unknown ID3 parsing error"]);
+  });
+
+  it("preserves original error message in warnings array for debugging", async () => {
+    const errorMsg = "Not a valid ID3v2 tag: expected ID3 but got FOO";
+    mockedParseFile.mockRejectedValueOnce(new Error(errorMsg));
+
+    const result = await parseAudioId3Tags("/books/audio.mp3");
+
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]).toBe(errorMsg);
   });
 });

@@ -123,28 +123,28 @@ interface DuplicateCandidateRecord {
   status: string;
 }
 
-interface AudioLinkRecord {
+interface MatchSuggestionRecord {
   id: string;
-  ebookWorkId: string;
-  audioWorkId: string;
+  targetWorkId: string;
+  suggestedWorkId: string;
   matchType: string;
   confidence: number | null;
   reviewStatus: string;
 }
 
-interface AudioLinkCreateArgs {
+interface MatchSuggestionCreateArgs {
   data: {
-    ebookWorkId: string;
-    audioWorkId: string;
+    targetWorkId: string;
+    suggestedWorkId: string;
     matchType: string;
     confidence: number;
   };
 }
 
-interface AudioLinkFindFirstArgs {
+interface MatchSuggestionFindFirstArgs {
   where: {
-    ebookWorkId?: string;
-    audioWorkId?: string;
+    targetWorkId?: string;
+    suggestedWorkId?: string;
   };
 }
 
@@ -315,9 +315,9 @@ export interface IngestDb {
     create(args: DuplicateCandidateCreateArgs): Promise<DuplicateCandidateRecord>;
     findFirst(args: DuplicateCandidateFindFirstArgs): Promise<DuplicateCandidateRecord | null>;
   };
-  audioLink: {
-    create(args: AudioLinkCreateArgs): Promise<AudioLinkRecord>;
-    findFirst(args: AudioLinkFindFirstArgs): Promise<AudioLinkRecord | null>;
+  matchSuggestion: {
+    create(args: MatchSuggestionCreateArgs): Promise<MatchSuggestionRecord>;
+    findFirst(args: MatchSuggestionFindFirstArgs): Promise<MatchSuggestionRecord | null>;
   };
 }
 
@@ -346,6 +346,7 @@ export interface ScanProgressData {
   totalFiles?: number;
   processedFiles?: number;
   errorCount?: number;
+  scanStage?: "DISCOVERY" | "PROCESSING";
 }
 
 export interface ScanLibraryRootInput {
@@ -414,11 +415,11 @@ export interface DetectDuplicatesResult {
   candidatesCreated: number;
 }
 
-export interface MatchAudioInput {
+export interface MatchSuggestionsInput {
   fileAssetId: string;
 }
 
-export interface MatchAudioResult {
+export interface MatchSuggestionsResult {
   fileAssetId: string;
   skipped: boolean;
   linksCreated: number;
@@ -737,7 +738,7 @@ function createDefaultIngestDb(): IngestDb {
       },
     },
     duplicateCandidate: prisma.duplicateCandidate as unknown as IngestDb["duplicateCandidate"],
-    audioLink: prisma.audioLink as unknown as IngestDb["audioLink"],
+    matchSuggestion: prisma.matchSuggestion as unknown as IngestDb["matchSuggestion"],
   };
 }
 
@@ -926,13 +927,13 @@ async function detectDuplicatesImpl(
   return { fileAssetId: input.fileAssetId, skipped: false, candidatesCreated };
 }
 
-async function audioLinkPairExists(
-  alDb: IngestDb["audioLink"],
-  ebookWorkId: string,
-  audioWorkId: string,
+async function matchSuggestionPairExists(
+  alDb: IngestDb["matchSuggestion"],
+  targetWorkId: string,
+  suggestedWorkId: string,
 ): Promise<boolean> {
   const existing = await alDb.findFirst({
-    where: { ebookWorkId, audioWorkId },
+    where: { targetWorkId, suggestedWorkId },
   });
   return existing !== null;
 }
@@ -1043,10 +1044,10 @@ async function mergeWorks(
   await ingestDb.work.delete({ where: { id: losingWork.id } });
 }
 
-async function matchAudioImpl(
-  input: MatchAudioInput,
+async function matchSuggestionsImpl(
+  input: MatchSuggestionsInput,
   ingestDb: IngestDb,
-): Promise<MatchAudioResult> {
+): Promise<MatchSuggestionsResult> {
   const fileAsset = await ingestDb.fileAsset.findUnique({ where: { id: input.fileAssetId } });
   if (fileAsset === null) {
     return { fileAssetId: input.fileAssetId, skipped: true, linksCreated: 0 };
@@ -1125,18 +1126,18 @@ async function matchAudioImpl(
     }
 
     // Determine work roles: ebook work and audiobook work
-    const ebookWorkId = isAudiobook ? otherWork.id : work.id;
-    const audioWorkId = isAudiobook ? work.id : otherWork.id;
+    const targetWorkId = isAudiobook ? otherWork.id : work.id;
+    const suggestedWorkId = isAudiobook ? work.id : otherWork.id;
 
     // Skip if a link already exists for this work pair (any status — respect IGNORED)
-    const alreadyExists = await audioLinkPairExists(ingestDb.audioLink, ebookWorkId, audioWorkId);
+    const alreadyExists = await matchSuggestionPairExists(ingestDb.matchSuggestion, targetWorkId, suggestedWorkId);
     if (alreadyExists) continue;
 
     // Create PENDING suggestion — works are NOT merged here; merge happens on user confirm
-    await ingestDb.audioLink.create({
+    await ingestDb.matchSuggestion.create({
       data: {
-        ebookWorkId,
-        audioWorkId,
+        targetWorkId,
+        suggestedWorkId,
         matchType,
         confidence: matchConfidence,
       },
@@ -1181,7 +1182,7 @@ export function createIngestServices(
     const seenAudioDirs = new Map<string, { workId: string; editionId: string }>();
 
     if (reportProgress) {
-      await reportProgress({ totalFiles: discoveredPaths.length });
+      await reportProgress({ totalFiles: discoveredPaths.length, scanStage: "DISCOVERY" });
     }
 
     let processedFiles = 0;
@@ -1336,6 +1337,23 @@ export function createIngestServices(
                 enqueuedRecoveryJobs.push(upsertedFileAsset.id);
               }
             }
+
+            // Re-enqueue MATCH_SUGGESTIONS for AUDIO files in AUDIOBOOK editions.
+            // matchSuggestionsImpl is safe to re-run: it skips pairs that already have suggestions.
+            // This ensures match suggestions are generated even when the edition link was
+            // created before MATCH_SUGGESTIONS enqueuing was added.
+            if (
+              upsertedFileAsset.mediaKind === MediaKind.AUDIO &&
+              edition &&
+              edition.formatFamily === FormatFamily.AUDIOBOOK
+            ) {
+              await enqueueJob(LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS, {
+                fileAssetId: upsertedFileAsset.id,
+              });
+              if (!enqueuedRecoveryJobs.includes(upsertedFileAsset.id)) {
+                enqueuedRecoveryJobs.push(upsertedFileAsset.id);
+              }
+            }
           } else {
             // Not linked to an edition — recover from earlier in the pipeline
             const parsedMeta = parseStoredMetadata(upsertedFileAsset.metadata);
@@ -1482,7 +1500,11 @@ export function createIngestServices(
 
 
     if (reportProgress) {
-      await reportProgress({ processedFiles, errorCount });
+      await reportProgress({
+        processedFiles,
+        errorCount,
+        scanStage: "PROCESSING",
+      });
     }
 
     const missingFileAssetIds: string[] = [];
@@ -1938,6 +1960,27 @@ export function createIngestServices(
               data: { metadata: null },
             });
           }
+
+          // Link this audio file to the same edition as the metadata.json sidecar,
+          // so that rematch-all and match suggestion display can find it via editionFile queries.
+          const sidecarEditionFile = await ingestDb.editionFile.findFirst({
+            where: { fileAssetId: metadataJsonSibling.id },
+          });
+          if (sidecarEditionFile !== null) {
+            const existingLink = await ingestDb.editionFile.findFirst({
+              where: { fileAssetId: fileAsset.id },
+            });
+            if (existingLink === null) {
+              await ingestDb.editionFile.create({
+                data: { editionId: sidecarEditionFile.editionId, fileAssetId: fileAsset.id, role: EditionFileRole.AUDIO_TRACK },
+              });
+              // Now that this audio file is edition-linked, trigger audio matching
+              // so it can find ebook counterparts. The audio file (not the sidecar)
+              // is the content that should be matched.
+              await enqueueJob(LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS, { fileAssetId: fileAsset.id });
+            }
+          }
+
           return {
             availabilityStatus: fileAsset.availabilityStatus,
             fileAssetId: fileAsset.id,
@@ -1988,8 +2031,8 @@ export function createIngestServices(
           });
         } else {
           // Audiobook lacks full metadata — skip edition matching but still attempt
-          // cross-format audio linking using the stub's directory-derived title
-          await enqueueJob(LIBRARY_JOB_NAMES.MATCH_AUDIO, {
+          // cross-format match suggestion using the stub's directory-derived title
+          await enqueueJob(LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS, {
             fileAssetId: fileAsset.id,
           });
         }
@@ -2138,7 +2181,7 @@ export function createIngestServices(
     const result = await matchFileAssetToEditionCore(input);
     if (!result.skipped && result.mediaKind !== undefined && CONTENT_MEDIA_KINDS.has(result.mediaKind)) {
       await enqueueJob(LIBRARY_JOB_NAMES.DETECT_DUPLICATES, { fileAssetId: input.fileAssetId });
-      await enqueueJob(LIBRARY_JOB_NAMES.MATCH_AUDIO, { fileAssetId: input.fileAssetId });
+      await enqueueJob(LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS, { fileAssetId: input.fileAssetId });
     }
     return result;
   }
@@ -2607,10 +2650,10 @@ export function createIngestServices(
     return detectDuplicatesImpl(input, ingestDb);
   }
 
-  async function matchAudio(
-    input: MatchAudioInput,
-  ): Promise<MatchAudioResult> {
-    return matchAudioImpl(input, ingestDb);
+  async function matchSuggestions(
+    input: MatchSuggestionsInput,
+  ): Promise<MatchSuggestionsResult> {
+    return matchSuggestionsImpl(input, ingestDb);
   }
 
   async function mergeWorksById(
@@ -2628,7 +2671,7 @@ export function createIngestServices(
   return {
     detectDuplicates,
     hashFileAsset,
-    matchAudio,
+    matchSuggestions,
     matchFileAssetToEdition,
     mergeWorksById,
     parseFileAssetMetadata,
@@ -2640,7 +2683,7 @@ const services = createIngestServices();
 
 export const scanLibraryRoot = services.scanLibraryRoot;
 export const hashFileAsset = services.hashFileAsset;
-export const matchAudio = services.matchAudio;
+export const matchSuggestions = services.matchSuggestions;
 export const matchFileAssetToEdition = services.matchFileAssetToEdition;
 export const parseFileAssetMetadata = services.parseFileAssetMetadata;
 export const detectDuplicates = services.detectDuplicates;

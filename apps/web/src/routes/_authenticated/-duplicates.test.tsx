@@ -671,6 +671,88 @@ describe("DuplicatesPage", () => {
     expect(screen.getByText("2.0 GB")).toBeTruthy();
   });
 
+  it("file path element uses break-all class for wrapping instead of truncate", async () => {
+    mockLoaderData = {
+      duplicates: [
+        makeDuplicate({
+          leftFileAsset: {
+            basename: "book.epub",
+            relativePath: "Very Long Author Name/An Extremely Long Book Title That Should Wrap/book.epub",
+            sizeBytes: 1000n,
+            mediaKind: "EPUB",
+            extension: "epub",
+            fullHash: null,
+          },
+          rightFileAsset: null,
+        }),
+      ],
+    };
+    const { Route } = await import("./duplicates");
+    const DuplicatesPage = (Route.options.component as React.ComponentType);
+    render(<DuplicatesPage />);
+
+    const pathElement = screen.getByText("Very Long Author Name/An Extremely Long Book Title That Should Wrap/book.epub");
+    expect(pathElement.className).toContain("break-all");
+    expect(pathElement.className).not.toContain("truncate");
+  });
+
+  it("long file paths are rendered fully in the DOM", async () => {
+    const longPath = "A".repeat(200) + "/book.epub";
+    mockLoaderData = {
+      duplicates: [
+        makeDuplicate({
+          leftFileAsset: {
+            basename: "book.epub",
+            relativePath: longPath,
+            sizeBytes: 1000n,
+            mediaKind: "EPUB",
+            extension: "epub",
+            fullHash: null,
+          },
+          rightFileAsset: null,
+        }),
+      ],
+    };
+    const { Route } = await import("./duplicates");
+    const DuplicatesPage = (Route.options.component as React.ComponentType);
+    render(<DuplicatesPage />);
+
+    // Full path text should be present in the DOM
+    expect(screen.getByText(longPath)).toBeTruthy();
+  });
+
+  it("displays both publication years when comparing same-titled books from different years", async () => {
+    mockLoaderData = {
+      duplicates: [
+        makeDuplicate({
+          leftEdition: {
+            work: { titleDisplay: "Almanac" },
+            contributors: [],
+            publisher: "Pub A",
+            publishedAt: "2020-06-01T00:00:00.000Z",
+            editionFiles: [],
+          },
+          rightEdition: {
+            work: { titleDisplay: "Almanac" },
+            contributors: [],
+            publisher: "Pub A",
+            publishedAt: "2022-06-01T00:00:00.000Z",
+            editionFiles: [],
+          },
+          reason: "SIMILAR_TITLE_AUTHOR",
+          confidence: 1.0,
+        }),
+      ],
+    };
+    const { Route } = await import("./duplicates");
+    const DuplicatesPage = (Route.options.component as React.ComponentType);
+    render(<DuplicatesPage />);
+
+    // Both years should be visible so users can distinguish different editions
+    expect(screen.getByText(/Pub A · 2020/)).toBeTruthy();
+    expect(screen.getByText(/Pub A · 2022/)).toBeTruthy();
+  });
+
   it("renders cover thumbnail when coverPath is available", async () => {
     mockLoaderData = {
       duplicates: [

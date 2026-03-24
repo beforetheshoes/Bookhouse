@@ -83,7 +83,7 @@ enum ReviewStatus {
   MERGED
 }
 
-enum AudioLinkMatchType {
+enum MatchSuggestionType {
   SAME_WORK
   EXACT_METADATA
   NORMALIZED_TITLE
@@ -102,7 +102,7 @@ enum ImportJobKind {
   PARSE_FILE
   REFRESH_METADATA
   DETECT_DUPLICATES
-  MATCH_AUDIO
+  MATCH_SUGGESTIONS
 }
 
 enum ImportJobStatus {
@@ -110,6 +110,11 @@ enum ImportJobStatus {
   RUNNING
   SUCCEEDED
   FAILED
+}
+
+enum ScanStage {
+  DISCOVERY
+  PROCESSING
 }
 
 model User {
@@ -215,8 +220,8 @@ model Work {
   collections CollectionItem[]
   progressPreferences WorkProgressPreference[]
 
-  ebookLinks AudioLink[] @relation("EbookWork")
-  audioLinks AudioLink[] @relation("AudioWork")
+  targetMatchSuggestions    MatchSuggestion[] @relation("TargetWork")
+  suggestedMatchSuggestions MatchSuggestion[] @relation("SuggestedWork")
 
   @@index([titleCanonical])
 }
@@ -352,18 +357,18 @@ model WorkProgressPreference {
   @@index([workId])
 }
 
-model AudioLink {
-  id           String             @id @default(cuid())
-  ebookWorkId  String
-  audioWorkId  String
-  matchType    AudioLinkMatchType
-  confidence   Float?
-  reviewStatus ReviewStatus       @default(PENDING)
+model MatchSuggestion {
+  id              String              @id @default(cuid())
+  targetWorkId    String
+  suggestedWorkId String
+  matchType       MatchSuggestionType
+  confidence      Float?
+  reviewStatus    ReviewStatus        @default(PENDING)
 
-  ebookWork Work @relation("EbookWork", fields: [ebookWorkId], references: [id], onDelete: Cascade)
-  audioWork Work @relation("AudioWork", fields: [audioWorkId], references: [id], onDelete: Cascade)
+  targetWork    Work @relation("TargetWork", fields: [targetWorkId], references: [id], onDelete: Cascade)
+  suggestedWork Work @relation("SuggestedWork", fields: [suggestedWorkId], references: [id], onDelete: Cascade)
 
-  @@unique([ebookWorkId, audioWorkId])
+  @@unique([targetWorkId, suggestedWorkId])
 }
 
 model ExternalLink {
@@ -404,9 +409,10 @@ model ImportJob {
   payload        Json?
   error          String?
   attemptsMade   Int             @default(0)
-  totalFiles     Int?
-  processedFiles Int?
-  errorCount     Int?
+  totalFiles             Int?
+  processedFiles         Int?
+  errorCount             Int?
+  scanStage              ScanStage?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   startedAt      DateTime?

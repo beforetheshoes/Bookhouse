@@ -10,7 +10,7 @@ export const LIBRARY_JOB_NAMES = {
   PROCESS_COVER: "process-cover",
   REFRESH_METADATA: "refresh-metadata",
   DETECT_DUPLICATES: "detect-duplicates",
-  MATCH_AUDIO: "match-audio",
+  MATCH_SUGGESTIONS: "match-suggestions",
 } as const;
 
 export interface BaseJobPayload {
@@ -48,7 +48,7 @@ export interface DetectDuplicatesJobPayload extends BaseJobPayload {
   fileAssetId: string;
 }
 
-export interface MatchAudioJobPayload extends BaseJobPayload {
+export interface MatchSuggestionsJobPayload extends BaseJobPayload {
   fileAssetId: string;
 }
 
@@ -60,7 +60,7 @@ export interface LibraryJobPayloads {
   [LIBRARY_JOB_NAMES.PROCESS_COVER]: ProcessCoverJobPayload;
   [LIBRARY_JOB_NAMES.REFRESH_METADATA]: RefreshMetadataJobPayload;
   [LIBRARY_JOB_NAMES.DETECT_DUPLICATES]: DetectDuplicatesJobPayload;
-  [LIBRARY_JOB_NAMES.MATCH_AUDIO]: MatchAudioJobPayload;
+  [LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS]: MatchSuggestionsJobPayload;
 }
 
 export type LibraryJobName = keyof LibraryJobPayloads;
@@ -100,7 +100,7 @@ export const RETRY_CONFIG: Record<LibraryJobName, JobRetryConfig> = {
     attempts: 2,
     backoff: { type: "exponential", delay: 3000 },
   },
-  [LIBRARY_JOB_NAMES.MATCH_AUDIO]: {
+  [LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS]: {
     attempts: 2,
     backoff: { type: "exponential", delay: 3000 },
   },
@@ -109,7 +109,7 @@ export const RETRY_CONFIG: Record<LibraryJobName, JobRetryConfig> = {
 // Lower number = higher priority. BullMQ processes prioritized jobs before non-prioritized ones.
 export const JOB_PRIORITY: Record<LibraryJobName, number> = {
   [LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT]: 1,
-  [LIBRARY_JOB_NAMES.MATCH_AUDIO]: 2,
+  [LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS]: 2,
   [LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION]: 2,
   [LIBRARY_JOB_NAMES.DETECT_DUPLICATES]: 3,
   [LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA]: 4,

@@ -104,6 +104,8 @@ echo "Stopping existing local dev processes"
 kill_pattern_if_running "pnpm -r --parallel dev"
 kill_pattern_if_running "vite dev"
 kill_pattern_if_running "tsx watch src/index.ts"
+kill_pattern_if_running "Bookhouse/workers/library-worker.*tsx.*src/index.ts"
+kill_pattern_if_running "Bookhouse/workers/library-worker.*npm exec tsx src/index.ts"
 kill_dev_listener_on_port 3000
 
 if [[ "$USE_DOCKER" == "1" ]]; then

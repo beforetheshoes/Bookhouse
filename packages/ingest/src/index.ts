@@ -10,7 +10,7 @@ export {
   hashFileContents,
   hashFileAsset,
   isFileChanged,
-  matchAudio,
+  matchSuggestions,
   matchFileAssetToEdition,
   mergeWorksById,
   normalizeAudiobookMetadata,
@@ -31,8 +31,8 @@ export {
 export type {
   DetectDuplicatesInput,
   DetectDuplicatesResult,
-  MatchAudioInput,
-  MatchAudioResult,
+  MatchSuggestionsInput,
+  MatchSuggestionsResult,
   HashFileAssetInput,
   HashFileAssetResult,
   IngestDb,
@@ -66,6 +66,8 @@ export type { RateLimitResult } from "./enrichment/rate-limiter";
 export { enrichWork } from "./enrichment/enrich-work";
 export type { EnrichWorkDeps, EnrichWorkResult } from "./enrichment/enrich-work";
 export { levenshteinDistance, normalizedSimilarity, normalizeForTitleMatching, stripSubtitleForMatching } from "./similarity";
+export { cascadeCleanupOrphans } from "./cascade-cleanup";
+export type { CascadeCleanupInput, CascadeCleanupResult } from "./cascade-cleanup";
 
 export const INGEST_PUBLIC_API = [
   "enrichWork",
@@ -76,6 +78,7 @@ export const INGEST_PUBLIC_API = [
   "detectAdjacentCover",
   "detectDuplicates",
   "extractEpubCover",
+  "cascadeCleanupOrphans",
   "canonicalizeBookTitle",
   "canonicalizeContributorName",
   "canonicalizeContributorNames",
@@ -86,7 +89,7 @@ export const INGEST_PUBLIC_API = [
   "hashFileContents",
   "levenshteinDistance",
   "isFileChanged",
-  "matchAudio",
+  "matchSuggestions",
   "matchFileAssetToEdition",
   "mergeWorksById",
   "normalizedSimilarity",

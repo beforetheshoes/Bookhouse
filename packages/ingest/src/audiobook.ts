@@ -89,12 +89,6 @@ export interface ParseAudioId3Result {
   warnings: string[];
 }
 
-function isEncodingError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  const msg = error.message.toLowerCase();
-  return msg.includes("unicode") || msg.includes("encoding") || msg.includes("unexpected character");
-}
-
 export async function parseAudioId3Tags(
   absolutePath: string,
 ): Promise<ParseAudioId3Result> {
@@ -117,22 +111,23 @@ export async function parseAudioId3Tags(
       warnings: [],
     };
   } catch (error) {
-    if (isEncodingError(error)) {
-      return {
-        tags: {
-          title: undefined,
-          artist: undefined,
-          albumArtist: undefined,
-          album: undefined,
-          year: undefined,
-          genres: [],
-          comment: undefined,
-          trackNumber: undefined,
-          trackTotal: undefined,
-        },
-        warnings: [(error as Error).message],
-      };
-    }
-    throw error;
+    // All ID3 parsing errors are non-fatal: the file exists, we just can't
+    // read its tags. Return empty tags with the error as a warning so the
+    // file continues through the pipeline instead of being stuck as
+    // "unparseable" forever.
+    return {
+      tags: {
+        title: undefined,
+        artist: undefined,
+        albumArtist: undefined,
+        album: undefined,
+        year: undefined,
+        genres: [],
+        comment: undefined,
+        trackNumber: undefined,
+        trackTotal: undefined,
+      },
+      warnings: [error instanceof Error ? error.message : "Unknown ID3 parsing error"],
+    };
   }
 }

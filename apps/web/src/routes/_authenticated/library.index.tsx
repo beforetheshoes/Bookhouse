@@ -1,14 +1,24 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
+import { toast } from "sonner";
 import { useSSE } from "~/hooks/use-sse";
 import { useLibraryViewPreference } from "~/hooks/use-library-view-preference";
 import { useLibraryTablePreferences } from "~/hooks/use-library-table-preferences";
-import type { ColumnDef } from "@tanstack/react-table";
-import { AlignJustify, BookOpen, Loader2, WrapText } from "lucide-react";
+import type { ColumnDef, RowSelectionState } from "@tanstack/react-table";
+import { AlignJustify, BookOpen, Loader2, Trash2, WrapText, X } from "lucide-react";
 import { VirtualizedDataTable, DataTableColumnHeader } from "~/components/data-table";
 import { DataTableColumnPicker } from "~/components/data-table/data-table-column-picker";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog";
+import { bulkDeleteWorksServerFn } from "~/lib/server-fns/deletion";
 import { GridPageSkeleton } from "~/components/skeletons/grid-page-skeleton";
 import { LibraryToolbar } from "~/components/library-toolbar";
 import { LibraryGrid } from "~/components/library-grid";
@@ -57,7 +67,30 @@ const COLUMN_PICKER_ITEMS = [
   { id: "isbn", label: "ISBN" },
 ];
 
-const columns: ColumnDef<LibraryWork>[] = [
+function getColumns(scanActive: boolean): ColumnDef<LibraryWork>[] {
+  return [
+  {
+    id: "select",
+    header: ({ table }) => (
+      <input
+        type="checkbox"
+        checked={table.getIsAllPageRowsSelected()}
+        onChange={(e) => { table.toggleAllPageRowsSelected(e.target.checked); }}
+        aria-label="Select all"
+      />
+    ),
+    cell: ({ row }) => (
+      <input
+        type="checkbox"
+        checked={row.getIsSelected()}
+        onChange={(e) => { row.toggleSelected(e.target.checked); }}
+        aria-label="Select row"
+      />
+    ),
+    size: 40,
+    enableSorting: false,
+    enableHiding: false,
+  },
   {
     accessorKey: "titleDisplay",
     header: ({ column }) => (
@@ -66,7 +99,7 @@ const columns: ColumnDef<LibraryWork>[] = [
     cell: ({ row }) => (
       <Link to="/library/$workId" params={{ workId: row.original.id }} search={{ page: 1, pageSize: 50, sort: "title-asc" as const }} className="flex items-center gap-2">
         {row.original.titleDisplay}
-        {row.original.enrichmentStatus === "STUB" && (
+        {row.original.enrichmentStatus === "STUB" && scanActive && (
           <Badge variant="outline" className="animate-pulse px-1.5 py-0 text-[10px]">
             Processing&hellip;
           </Badge>
@@ -110,7 +143,8 @@ const columns: ColumnDef<LibraryWork>[] = [
       row.editions[0]?.isbn13 ?? row.editions[0]?.isbn10 ?? "—",
     size: 120,
   },
-];
+  ];
+}
 
 function filterByReadingStatus(
   works: LibraryWork[],
@@ -141,8 +175,28 @@ function LibraryPage() {
   const [readingFilter, setReadingFilter] = useState<ReadingFilter>("all");
   const [prevCount, setPrevCount] = useState(totalCount);
 
+  const router = useRouter();
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const isScanning = activeJobCount > 0;
   const newCount = totalCount - prevCount;
+  const selectedCount = Object.keys(rowSelection).length;
+
+  async function handleBulkDelete() {
+    setBulkDeleting(true);
+    try {
+      await bulkDeleteWorksServerFn({ data: { workIds: selectedWorkIds } });
+      toast.success(`${String(selectedWorkIds.length)} work${selectedWorkIds.length === 1 ? "" : "s"} deleted`);
+      setRowSelection({});
+      setBulkDeleteOpen(false);
+      void router.invalidate();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to delete works");
+    } finally {
+      setBulkDeleting(false);
+    }
+  }
 
   useSSE();
 
@@ -231,6 +285,12 @@ function LibraryPage() {
     [works, readingFilter, progressMap],
   );
 
+  const selectedWorkIds = useMemo(() => {
+    return Object.keys(rowSelection)
+      .map((idx) => filteredByReading[Number(idx)]?.id)
+      .filter((id): id is string => id !== undefined);
+  }, [rowSelection, filteredByReading]);
+
   const currentFilters: LibraryFilterValues = {
     format: search.format,
     authorId: search.authorId,
@@ -318,14 +378,16 @@ function LibraryPage() {
             </div>
           )}
           {view === "grid" ? (
-            <LibraryGrid works={filteredByReading} progressMap={progressMap} />
+            <LibraryGrid works={filteredByReading} progressMap={progressMap} scanActive={isScanning} />
           ) : (
             <VirtualizedDataTable
-              columns={columns}
+              columns={getColumns(isScanning)}
               data={filteredByReading}
               showPagination={false}
               columnVisibility={tablePrefs.columnVisibility}
               textOverflow={tablePrefs.textOverflow}
+              rowSelection={rowSelection}
+              onRowSelectionChange={setRowSelection}
             />
           )}
           <LibraryPagination
@@ -337,6 +399,40 @@ function LibraryPage() {
           />
         </div>
       </div>
+
+      {selectedCount > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-lg border bg-background p-3 shadow-lg">
+          <span className="text-sm font-medium">{selectedCount} work{selectedCount === 1 ? "" : "s"} selected</span>
+          <Button variant="destructive" size="sm" onClick={() => { setBulkDeleteOpen(true); }}>
+            <Trash2 className="mr-1.5 size-3.5" />
+            Delete Selected
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => { setRowSelection({}); }}>
+            <X className="mr-1.5 size-3.5" />
+            Clear
+          </Button>
+        </div>
+      )}
+
+      <Dialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete {selectedCount} Work{selectedCount === 1 ? "" : "s"}</DialogTitle>
+            <DialogDescription>
+              This will remove {selectedCount} work{selectedCount === 1 ? "" : "s"} and all {selectedCount === 1 ? "its" : "their"} editions from the library.
+              The actual files on disk will not be affected.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setBulkDeleteOpen(false); }} disabled={bulkDeleting}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={() => { void handleBulkDelete(); }} disabled={bulkDeleting}>
+              {bulkDeleting ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

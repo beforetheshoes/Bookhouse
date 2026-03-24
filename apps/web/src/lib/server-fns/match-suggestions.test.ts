@@ -16,7 +16,7 @@ vi.mock("@tanstack/react-start", () => ({
 
 const findManyMock = vi.fn();
 const updateMock = vi.fn();
-const audioLinkFindUniqueOrThrowMock = vi.fn();
+const matchSuggestionFindUniqueOrThrowMock = vi.fn();
 const workFindUniqueOrThrowMock = vi.fn();
 const workUpdateMock = vi.fn();
 const workDeleteMock = vi.fn();
@@ -25,7 +25,7 @@ const editionFileFindManyMock = vi.fn();
 const importJobCreateMock = vi.fn();
 vi.mock("@bookhouse/db", () => ({
   db: {
-    audioLink: { findMany: findManyMock, update: updateMock, findUniqueOrThrow: audioLinkFindUniqueOrThrowMock },
+    matchSuggestion: { findMany: findManyMock, update: updateMock, findUniqueOrThrow: matchSuggestionFindUniqueOrThrowMock },
     work: { findUniqueOrThrow: workFindUniqueOrThrowMock, update: workUpdateMock, delete: workDeleteMock },
     edition: { updateMany: editionUpdateManyMock },
     editionFile: { findMany: editionFileFindManyMock },
@@ -34,31 +34,31 @@ vi.mock("@bookhouse/db", () => ({
 }));
 
 const enqueueLibraryJobMock = vi.fn();
-const LIBRARY_JOB_NAMES = { MATCH_AUDIO: "match-audio" };
+const LIBRARY_JOB_NAMES = { MATCH_SUGGESTIONS: "match-suggestions" };
 vi.mock("@bookhouse/shared", () => ({
   enqueueLibraryJob: enqueueLibraryJobMock,
   LIBRARY_JOB_NAMES,
 }));
 
 import {
-  getAudioLinksServerFn,
-  confirmAudioLinkServerFn,
-  ignoreAudioLinkServerFn,
-  rematchAllAudioServerFn,
-} from "./audio-links";
+  getMatchSuggestionsServerFn,
+  acceptMatchSuggestionServerFn,
+  declineMatchSuggestionServerFn,
+  rematchAllServerFn,
+} from "./match-suggestions";
 
-describe("getAudioLinksServerFn", () => {
+describe("getMatchSuggestionsServerFn", () => {
   beforeEach(() => {
     findManyMock.mockReset();
     updateMock.mockReset();
   });
 
-  it("calls db.audioLink.findMany with correct includes and orderBy confidence desc", async () => {
+  it("calls db.matchSuggestion.findMany with correct includes and orderBy confidence desc", async () => {
     findManyMock.mockResolvedValue([]);
-    await getAudioLinksServerFn();
+    await getMatchSuggestionsServerFn();
     expect(findManyMock).toHaveBeenCalledWith({
       include: {
-        ebookWork: {
+        targetWork: {
           include: {
             editions: {
               include: {
@@ -74,7 +74,7 @@ describe("getAudioLinksServerFn", () => {
             },
           },
         },
-        audioWork: {
+        suggestedWork: {
           include: {
             editions: {
               include: {
@@ -95,145 +95,170 @@ describe("getAudioLinksServerFn", () => {
     });
   });
 
-  it("returns only links where audio work has audio files", async () => {
+  it("returns only suggestions where suggested work has audio files", async () => {
     const fakeData = [
       {
-        id: "al-1",
+        id: "ms-1",
         confidence: 0.95,
-        audioWork: { editions: [{ editionFiles: [{ fileAsset: { mediaKind: "AUDIO" } }] }] },
+        suggestedWork: { editions: [{ editionFiles: [{ fileAsset: { mediaKind: "AUDIO" } }] }] },
       },
       {
-        id: "al-2",
+        id: "ms-2",
         confidence: 0.90,
-        audioWork: { editions: [{ editionFiles: [{ fileAsset: { mediaKind: "SIDECAR" } }] }] },
+        suggestedWork: { editions: [{ editionFiles: [{ fileAsset: { mediaKind: "SIDECAR" } }] }] },
       },
     ];
     findManyMock.mockResolvedValue(fakeData);
-    const result = await getAudioLinksServerFn();
+    const result = await getMatchSuggestionsServerFn();
     expect(result).toHaveLength(1);
-    expect((result[0] as { id: string }).id).toBe("al-1");
+    expect((result[0] as { id: string }).id).toBe("ms-1");
   });
 
-  it("returns empty array when all links are sidecar-only", async () => {
+  it("returns empty array when all suggestions are sidecar-only", async () => {
     findManyMock.mockResolvedValue([
       {
-        id: "al-1",
-        audioWork: { editions: [{ editionFiles: [{ fileAsset: { mediaKind: "SIDECAR" } }] }] },
+        id: "ms-1",
+        suggestedWork: { editions: [{ editionFiles: [{ fileAsset: { mediaKind: "SIDECAR" } }] }] },
       },
     ]);
-    const result = await getAudioLinksServerFn();
+    const result = await getMatchSuggestionsServerFn();
     expect(result).toHaveLength(0);
   });
 });
 
-describe("confirmAudioLinkServerFn", () => {
+describe("acceptMatchSuggestionServerFn", () => {
   beforeEach(() => {
-    audioLinkFindUniqueOrThrowMock.mockReset();
+    matchSuggestionFindUniqueOrThrowMock.mockReset();
     workFindUniqueOrThrowMock.mockReset();
     workUpdateMock.mockReset();
     workDeleteMock.mockReset();
     editionUpdateManyMock.mockReset();
   });
 
-  it("moves editions from audio work to ebook work and deletes audio work", async () => {
-    audioLinkFindUniqueOrThrowMock.mockResolvedValue({
-      ebookWorkId: "work-ebook",
-      audioWorkId: "work-audio",
+  it("moves editions from suggested work to target work and deletes suggested work", async () => {
+    matchSuggestionFindUniqueOrThrowMock.mockResolvedValue({
+      targetWorkId: "work-target",
+      suggestedWorkId: "work-suggested",
     });
     workFindUniqueOrThrowMock
-      .mockResolvedValueOnce({ id: "work-ebook", description: "desc", language: "en", coverPath: "/cover", seriesId: null, seriesPosition: null, sortTitle: "title" })
-      .mockResolvedValueOnce({ id: "work-audio", description: null, language: null, coverPath: null, seriesId: null, seriesPosition: null, sortTitle: null });
+      .mockResolvedValueOnce({ id: "work-target", description: "desc", language: "en", coverPath: "/cover", seriesId: null, seriesPosition: null, sortTitle: "title" })
+      .mockResolvedValueOnce({ id: "work-suggested", description: null, language: null, coverPath: null, seriesId: null, seriesPosition: null, sortTitle: null });
     editionUpdateManyMock.mockResolvedValue({ count: 1 });
     workDeleteMock.mockResolvedValue({});
 
-    const result = await confirmAudioLinkServerFn({ data: { id: "al-1" } });
+    const result = await acceptMatchSuggestionServerFn({ data: { id: "ms-1", survivingWorkId: "work-target" } });
 
-    expect(audioLinkFindUniqueOrThrowMock).toHaveBeenCalledWith({
-      where: { id: "al-1" },
-      select: { ebookWorkId: true, audioWorkId: true },
+    expect(matchSuggestionFindUniqueOrThrowMock).toHaveBeenCalledWith({
+      where: { id: "ms-1" },
+      select: { targetWorkId: true, suggestedWorkId: true },
     });
     expect(editionUpdateManyMock).toHaveBeenCalledWith({
-      where: { workId: "work-audio" },
-      data: { workId: "work-ebook" },
+      where: { workId: "work-suggested" },
+      data: { workId: "work-target" },
     });
     expect(workDeleteMock).toHaveBeenCalledWith({
-      where: { id: "work-audio" },
+      where: { id: "work-suggested" },
     });
     expect(result).toEqual({ success: true });
   });
 
-  it("reconciles metadata by filling nulls on ebook work from audio work", async () => {
-    audioLinkFindUniqueOrThrowMock.mockResolvedValue({
-      ebookWorkId: "work-ebook",
-      audioWorkId: "work-audio",
+  it("user can choose the suggested work as the surviving work", async () => {
+    matchSuggestionFindUniqueOrThrowMock.mockResolvedValue({
+      targetWorkId: "work-target",
+      suggestedWorkId: "work-suggested",
     });
     workFindUniqueOrThrowMock
-      .mockResolvedValueOnce({ id: "work-ebook", description: null, language: null, coverPath: null, seriesId: null, seriesPosition: null, sortTitle: null })
-      .mockResolvedValueOnce({ id: "work-audio", description: "audio desc", language: "fr", coverPath: "/audio-cover", seriesId: "series-1", seriesPosition: 2, sortTitle: "audio sort" });
+      .mockResolvedValueOnce({ id: "work-suggested", description: "enriched desc", language: "en", coverPath: "/cover", seriesId: null, seriesPosition: null, sortTitle: "title" })
+      .mockResolvedValueOnce({ id: "work-target", description: null, language: null, coverPath: null, seriesId: null, seriesPosition: null, sortTitle: null });
+    editionUpdateManyMock.mockResolvedValue({ count: 1 });
+    workDeleteMock.mockResolvedValue({});
+
+    const result = await acceptMatchSuggestionServerFn({ data: { id: "ms-1", survivingWorkId: "work-suggested" } });
+
+    // Editions move FROM target (losing) TO suggested (surviving)
+    expect(editionUpdateManyMock).toHaveBeenCalledWith({
+      where: { workId: "work-target" },
+      data: { workId: "work-suggested" },
+    });
+    // Target work is deleted
+    expect(workDeleteMock).toHaveBeenCalledWith({
+      where: { id: "work-target" },
+    });
+    expect(result).toEqual({ success: true });
+  });
+
+  it("reconciles metadata by filling nulls on surviving work from losing work", async () => {
+    matchSuggestionFindUniqueOrThrowMock.mockResolvedValue({
+      targetWorkId: "work-target",
+      suggestedWorkId: "work-suggested",
+    });
+    workFindUniqueOrThrowMock
+      .mockResolvedValueOnce({ id: "work-target", description: null, language: null, coverPath: null, seriesId: null, seriesPosition: null, sortTitle: null })
+      .mockResolvedValueOnce({ id: "work-suggested", description: "suggested desc", language: "fr", coverPath: "/suggested-cover", seriesId: "series-1", seriesPosition: 2, sortTitle: "suggested sort" });
     workUpdateMock.mockResolvedValue({});
     editionUpdateManyMock.mockResolvedValue({ count: 1 });
     workDeleteMock.mockResolvedValue({});
 
-    await confirmAudioLinkServerFn({ data: { id: "al-1" } });
+    await acceptMatchSuggestionServerFn({ data: { id: "ms-1", survivingWorkId: "work-target" } });
 
     expect(workUpdateMock).toHaveBeenCalledWith({
-      where: { id: "work-ebook" },
+      where: { id: "work-target" },
       data: {
-        description: "audio desc",
+        description: "suggested desc",
         language: "fr",
-        coverPath: "/audio-cover",
+        coverPath: "/suggested-cover",
         seriesId: "series-1",
         seriesPosition: 2,
-        sortTitle: "audio sort",
+        sortTitle: "suggested sort",
       },
     });
   });
 
   it("does not call work.update when no fields need reconciliation", async () => {
-    audioLinkFindUniqueOrThrowMock.mockResolvedValue({
-      ebookWorkId: "work-ebook",
-      audioWorkId: "work-audio",
+    matchSuggestionFindUniqueOrThrowMock.mockResolvedValue({
+      targetWorkId: "work-target",
+      suggestedWorkId: "work-suggested",
     });
     workFindUniqueOrThrowMock
-      .mockResolvedValueOnce({ id: "work-ebook", description: "desc", language: "en", coverPath: "/cover", seriesId: "s1", seriesPosition: 1, sortTitle: "title" })
-      .mockResolvedValueOnce({ id: "work-audio", description: "other", language: "fr", coverPath: "/other", seriesId: "s2", seriesPosition: 2, sortTitle: "other" });
+      .mockResolvedValueOnce({ id: "work-target", description: "desc", language: "en", coverPath: "/cover", seriesId: "s1", seriesPosition: 1, sortTitle: "title" })
+      .mockResolvedValueOnce({ id: "work-suggested", description: "other", language: "fr", coverPath: "/other", seriesId: "s2", seriesPosition: 2, sortTitle: "other" });
     editionUpdateManyMock.mockResolvedValue({ count: 1 });
     workDeleteMock.mockResolvedValue({});
 
-    await confirmAudioLinkServerFn({ data: { id: "al-1" } });
+    await acceptMatchSuggestionServerFn({ data: { id: "ms-1", survivingWorkId: "work-target" } });
 
     expect(workUpdateMock).not.toHaveBeenCalled();
   });
 });
 
-describe("ignoreAudioLinkServerFn", () => {
+describe("declineMatchSuggestionServerFn", () => {
   beforeEach(() => {
     updateMock.mockReset();
   });
 
   it("updates reviewStatus to IGNORED", async () => {
     updateMock.mockResolvedValue({});
-    const result = await ignoreAudioLinkServerFn({ data: { id: "al-1" } });
+    const result = await declineMatchSuggestionServerFn({ data: { id: "ms-1" } });
     expect(updateMock).toHaveBeenCalledWith({
-      where: { id: "al-1" },
+      where: { id: "ms-1" },
       data: { reviewStatus: "IGNORED" },
     });
     expect(result).toEqual({ success: true });
   });
 });
 
-describe("rematchAllAudioServerFn", () => {
+describe("rematchAllServerFn", () => {
   beforeEach(() => {
     editionFileFindManyMock.mockReset();
     importJobCreateMock.mockReset();
     enqueueLibraryJobMock.mockReset();
   });
 
-  it("queries audiobook file assets with correct filters", async () => {
+  it("queries audiobook AUDIO files linked to AUDIOBOOK editions", async () => {
     editionFileFindManyMock.mockResolvedValue([]);
     importJobCreateMock.mockResolvedValue({ id: "job-1" });
 
-    await rematchAllAudioServerFn();
+    await rematchAllServerFn();
 
     expect(editionFileFindManyMock).toHaveBeenCalledWith({
       where: {
@@ -245,7 +270,7 @@ describe("rematchAllAudioServerFn", () => {
     });
   });
 
-  it("creates an ImportJob with kind MATCH_AUDIO and totalFiles count", async () => {
+  it("creates an ImportJob with kind MATCH_SUGGESTIONS and totalFiles count", async () => {
     editionFileFindManyMock.mockResolvedValue([
       { fileAssetId: "fa-1" },
       { fileAssetId: "fa-2" },
@@ -253,18 +278,18 @@ describe("rematchAllAudioServerFn", () => {
     importJobCreateMock.mockResolvedValue({ id: "job-1" });
     enqueueLibraryJobMock.mockResolvedValue("bull-1");
 
-    await rematchAllAudioServerFn();
+    await rematchAllServerFn();
 
     expect(importJobCreateMock).toHaveBeenCalledWith({
       data: {
-        kind: "MATCH_AUDIO",
+        kind: "MATCH_SUGGESTIONS",
         status: "QUEUED",
         totalFiles: 2,
       },
     });
   });
 
-  it("enqueues a MATCH_AUDIO job for each file asset", async () => {
+  it("enqueues a MATCH_SUGGESTIONS job for each file asset", async () => {
     editionFileFindManyMock.mockResolvedValue([
       { fileAssetId: "fa-1" },
       { fileAssetId: "fa-2" },
@@ -273,19 +298,19 @@ describe("rematchAllAudioServerFn", () => {
     importJobCreateMock.mockResolvedValue({ id: "job-1" });
     enqueueLibraryJobMock.mockResolvedValue("bull-1");
 
-    await rematchAllAudioServerFn();
+    await rematchAllServerFn();
 
     expect(enqueueLibraryJobMock).toHaveBeenCalledTimes(3);
     expect(enqueueLibraryJobMock).toHaveBeenCalledWith(
-      LIBRARY_JOB_NAMES.MATCH_AUDIO,
+      LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS,
       { fileAssetId: "fa-1", importJobId: "job-1" },
     );
     expect(enqueueLibraryJobMock).toHaveBeenCalledWith(
-      LIBRARY_JOB_NAMES.MATCH_AUDIO,
+      LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS,
       { fileAssetId: "fa-2", importJobId: "job-1" },
     );
     expect(enqueueLibraryJobMock).toHaveBeenCalledWith(
-      LIBRARY_JOB_NAMES.MATCH_AUDIO,
+      LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS,
       { fileAssetId: "fa-3", importJobId: "job-1" },
     );
   });
@@ -298,7 +323,7 @@ describe("rematchAllAudioServerFn", () => {
     importJobCreateMock.mockResolvedValue({ id: "job-1" });
     enqueueLibraryJobMock.mockResolvedValue("bull-1");
 
-    const result = await rematchAllAudioServerFn();
+    const result = await rematchAllServerFn();
 
     expect(result).toEqual({ importJobId: "job-1", enqueuedCount: 2 });
   });
@@ -307,7 +332,7 @@ describe("rematchAllAudioServerFn", () => {
     editionFileFindManyMock.mockResolvedValue([]);
     importJobCreateMock.mockResolvedValue({ id: "job-1" });
 
-    const result = await rematchAllAudioServerFn();
+    const result = await rematchAllServerFn();
 
     expect(result).toEqual({ importJobId: "job-1", enqueuedCount: 0 });
     expect(enqueueLibraryJobMock).not.toHaveBeenCalled();

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import { LayoutGrid, Table2 } from "lucide-react";
@@ -13,20 +13,20 @@ import { Tabs, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { TablePageSkeleton } from "~/components/skeletons/table-page-skeleton";
 import { runMutation } from "~/lib/mutation";
 import {
-  getAudioLinksServerFn,
-  confirmAudioLinkServerFn,
-  ignoreAudioLinkServerFn,
-  rematchAllAudioServerFn,
-  type AudioLinkRow,
-} from "~/lib/server-fns/audio-links";
+  getMatchSuggestionsServerFn,
+  acceptMatchSuggestionServerFn,
+  declineMatchSuggestionServerFn,
+  rematchAllServerFn,
+  type MatchSuggestionRow,
+} from "~/lib/server-fns/match-suggestions";
 
-export const Route = createFileRoute("/_authenticated/audio-links")({
+export const Route = createFileRoute("/_authenticated/match-suggestions")({
   loader: async () => {
-    const audioLinks = await getAudioLinksServerFn();
-    return { audioLinks };
+    const matchSuggestions = await getMatchSuggestionsServerFn();
+    return { matchSuggestions };
   },
   pendingComponent: TablePageSkeleton,
-  component: AudioLinksPage,
+  component: MatchSuggestionsPage,
 });
 
 type StatusTab = "ALL" | "PENDING" | "CONFIRMED" | "IGNORED";
@@ -49,28 +49,28 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: "date-asc", label: "Oldest first" },
 ];
 
-function sortLinks(links: AudioLinkRow[], sort: SortOption): AudioLinkRow[] {
+function sortLinks(links: MatchSuggestionRow[], sort: SortOption): MatchSuggestionRow[] {
   const sorted = [...links];
-  sorted.sort((a: AudioLinkRow, b: AudioLinkRow) => {
+  sorted.sort((a: MatchSuggestionRow, b: MatchSuggestionRow) => {
     switch (sort) {
       case "title-asc":
-        return a.ebookWork.titleDisplay.localeCompare(b.ebookWork.titleDisplay);
+        return a.targetWork.titleDisplay.localeCompare(b.targetWork.titleDisplay);
       case "title-desc":
-        return b.ebookWork.titleDisplay.localeCompare(a.ebookWork.titleDisplay);
+        return b.targetWork.titleDisplay.localeCompare(a.targetWork.titleDisplay);
       case "author-asc": {
-        const authA = getContributorsByRole(a.ebookWork.editions, "AUTHOR") || "\uffff";
-        const authB = getContributorsByRole(b.ebookWork.editions, "AUTHOR") || "\uffff";
+        const authA = getContributorsByRole(a.targetWork.editions, "AUTHOR") || "\uffff";
+        const authB = getContributorsByRole(b.targetWork.editions, "AUTHOR") || "\uffff";
         return authA.localeCompare(authB);
       }
       case "author-desc": {
-        const authA = getContributorsByRole(a.ebookWork.editions, "AUTHOR") || "";
-        const authB = getContributorsByRole(b.ebookWork.editions, "AUTHOR") || "";
+        const authA = getContributorsByRole(a.targetWork.editions, "AUTHOR") || "";
+        const authB = getContributorsByRole(b.targetWork.editions, "AUTHOR") || "";
         return authB.localeCompare(authA);
       }
       case "date-desc":
-        return new Date(b.ebookWork.createdAt).getTime() - new Date(a.ebookWork.createdAt).getTime();
+        return new Date(b.targetWork.createdAt).getTime() - new Date(a.targetWork.createdAt).getTime();
       case "date-asc":
-        return new Date(a.ebookWork.createdAt).getTime() - new Date(b.ebookWork.createdAt).getTime();
+        return new Date(a.targetWork.createdAt).getTime() - new Date(b.targetWork.createdAt).getTime();
     }
   });
   return sorted;
@@ -87,7 +87,7 @@ const statusVariant: Record<string, "default" | "secondary" | "destructive" | "o
   CONFIRMED: "default",
 };
 
-type EditionWithContributors = AudioLinkRow["ebookWork"]["editions"][number];
+type EditionWithContributors = MatchSuggestionRow["targetWork"]["editions"][number];
 
 function getContributorsByRole(editions: EditionWithContributors[], role: string): string {
   return editions
@@ -97,7 +97,9 @@ function getContributorsByRole(editions: EditionWithContributors[], role: string
     .join(", ");
 }
 
-function getAudiobookFolder(work: AudioLinkRow["audioWork"]): string | null {
+type WorkSide = MatchSuggestionRow["targetWork"] | MatchSuggestionRow["suggestedWork"];
+
+function getWorkFolder(work: WorkSide): string | null {
   const allFiles = work.editions.flatMap((e) => e.editionFiles);
   const anyFile = allFiles[0];
   if (!anyFile) return null;
@@ -106,42 +108,55 @@ function getAudiobookFolder(work: AudioLinkRow["audioWork"]): string | null {
   return parts.join("/");
 }
 
-function getAudioTrackCount(work: AudioLinkRow["audioWork"]): number {
-  return work.editions
-    .flatMap((e) => e.editionFiles)
-    .filter((ef) => ef.fileAsset.mediaKind === "AUDIO").length;
+function getWorkFileCount(work: WorkSide): number {
+  return work.editions.flatMap((e) => e.editionFiles).length;
+}
+
+function getWorkFormatFamilies(work: WorkSide): string[] {
+  const families = new Set(work.editions.map((e) => e.formatFamily).filter(Boolean));
+  return [...families];
 }
 
 type ViewMode = "card" | "table";
 
 function createColumns(
-  onConfirm: (id: string) => void,
-  onIgnore: (id: string) => void,
-): ColumnDef<AudioLinkRow>[] {
+  onAccept: (id: string, survivingWorkId: string) => void,
+  onDecline: (id: string) => void,
+): ColumnDef<MatchSuggestionRow>[] {
   return [
     {
-      id: "ebookTitle",
+      id: "workA",
       header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="Ebook" />
+        <DataTableColumnHeader column={column} title="Work A" />
       ),
-      accessorFn: (row) => row.ebookWork.titleDisplay,
-      size: 250,
+      accessorFn: (row) => row.targetWork.titleDisplay,
+      cell: ({ row }) => {
+        const authors = getContributorsByRole(row.original.targetWork.editions, "AUTHOR");
+        return (
+          <div>
+            <p>{row.original.targetWork.titleDisplay}</p>
+            {authors && <p className="text-xs text-muted-foreground">{authors}</p>}
+          </div>
+        );
+      },
+      size: 280,
     },
     {
-      id: "audioTitle",
+      id: "workB",
       header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="Audiobook" />
+        <DataTableColumnHeader column={column} title="Work B" />
       ),
-      accessorFn: (row) => row.audioWork.titleDisplay,
-      size: 250,
-    },
-    {
-      id: "author",
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="Author" />
-      ),
-      accessorFn: (row) => getContributorsByRole(row.ebookWork.editions, "AUTHOR") || "—",
-      size: 180,
+      accessorFn: (row) => row.suggestedWork.titleDisplay,
+      cell: ({ row }) => {
+        const authors = getContributorsByRole(row.original.suggestedWork.editions, "AUTHOR");
+        return (
+          <div>
+            <p>{row.original.suggestedWork.titleDisplay}</p>
+            {authors && <p className="text-xs text-muted-foreground">{authors}</p>}
+          </div>
+        );
+      },
+      size: 280,
     },
     {
       id: "matchType",
@@ -178,39 +193,69 @@ function createColumns(
         if (row.original.reviewStatus !== "PENDING") return null;
         return (
           <div className="flex gap-1">
-            <Button variant="outline" size="sm" onClick={() => { onConfirm(row.original.id); }}>
-              Merge
+            <Button size="sm" onClick={() => { onAccept(row.original.id, row.original.targetWorkId); }}>
+              Keep A
             </Button>
-            <Button variant="outline" size="sm" onClick={() => { onIgnore(row.original.id); }}>
-              Ignore
+            <Button size="sm" onClick={() => { onAccept(row.original.id, row.original.suggestedWorkId); }}>
+              Keep B
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => { onDecline(row.original.id); }}>
+              Decline
             </Button>
           </div>
         );
       },
-      size: 150,
+      size: 220,
     },
   ];
 }
 
-function AudioLinkCard({
+function WorkPanel({ work, label }: { work: WorkSide; label: string }) {
+  const title = work.titleDisplay;
+  const authors = getContributorsByRole(work.editions, "AUTHOR");
+  const narrators = getContributorsByRole(work.editions, "NARRATOR");
+  const formats = getWorkFormatFamilies(work);
+  const fileCount = getWorkFileCount(work);
+  const folder = getWorkFolder(work);
+
+  return (
+    <div>
+      <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground/60">{label}</p>
+      <p className="text-lg font-medium">{title}</p>
+      {authors && <p className="text-sm text-muted-foreground">{authors}</p>}
+      {narrators && (
+        <p className="text-sm text-muted-foreground">
+          <span className="text-muted-foreground/60">Narrated by </span>
+          {narrators}
+        </p>
+      )}
+      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+        {formats.map((f) => (
+          <Badge key={f} variant="outline" className="text-xs">{f}</Badge>
+        ))}
+        {fileCount > 0 && (
+          <span className="text-xs text-muted-foreground/60">
+            {String(fileCount)} {fileCount === 1 ? "file" : "files"}
+          </span>
+        )}
+      </div>
+      {folder && (
+        <p className="mt-0.5 break-all text-xs text-muted-foreground/60">{folder}</p>
+      )}
+    </div>
+  );
+}
+
+function MatchSuggestionCard({
   link,
-  onConfirm,
-  onIgnore,
+  onAccept,
+  onDecline,
 }: {
-  link: AudioLinkRow;
-  onConfirm: (id: string) => void;
-  onIgnore: (id: string) => void;
+  link: MatchSuggestionRow;
+  onAccept: (id: string, survivingWorkId: string) => void;
+  onDecline: (id: string) => void;
 }) {
   const isPending = link.reviewStatus === "PENDING";
-
-  const workTitle = link.ebookWork.titleDisplay;
-  const workAuthors = getContributorsByRole(link.ebookWork.editions, "AUTHOR");
-
-  const audioTitle = link.audioWork.titleDisplay;
-  const audioAuthors = getContributorsByRole(link.audioWork.editions, "AUTHOR");
-  const audioNarrators = getContributorsByRole(link.audioWork.editions, "NARRATOR");
-  const audioFolder = getAudiobookFolder(link.audioWork);
-  const trackCount = getAudioTrackCount(link.audioWork);
 
   return (
     <Card>
@@ -227,36 +272,19 @@ function AudioLinkCard({
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 gap-6">
-          <div>
-            <p className="text-lg font-medium">{workTitle}</p>
-            {workAuthors && <p className="text-sm text-muted-foreground">{workAuthors}</p>}
-          </div>
-          <div>
-            <p className="text-lg font-medium">{audioTitle}</p>
-            {audioAuthors && <p className="text-sm text-muted-foreground">{audioAuthors}</p>}
-            {audioNarrators && (
-              <p className="text-sm text-muted-foreground">
-                <span className="text-muted-foreground/60">Narrated by </span>
-                {audioNarrators}
-              </p>
-            )}
-            {trackCount > 0 && (
-              <p className="mt-1 text-xs text-muted-foreground/60">
-                {String(trackCount)} audio {trackCount === 1 ? "file" : "files"}
-              </p>
-            )}
-            {audioFolder && (
-              <p className="mt-0.5 break-all text-xs text-muted-foreground/60">{audioFolder}</p>
-            )}
-          </div>
+          <WorkPanel work={link.targetWork} label="Work A" />
+          <WorkPanel work={link.suggestedWork} label="Work B" />
         </div>
         {isPending && (
           <div className="mt-4 flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => { onConfirm(link.id); }}>
-              Merge
+            <Button size="sm" onClick={() => { onAccept(link.id, link.targetWorkId); }}>
+              Keep Left
             </Button>
-            <Button variant="outline" size="sm" onClick={() => { onIgnore(link.id); }}>
-              Ignore
+            <Button size="sm" onClick={() => { onAccept(link.id, link.suggestedWorkId); }}>
+              Keep Right
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => { onDecline(link.id); }}>
+              Decline
             </Button>
           </div>
         )}
@@ -265,52 +293,76 @@ function AudioLinkCard({
   );
 }
 
-function AudioLinksPage() {
-  const { audioLinks } = Route.useLoaderData();
+function MatchSuggestionsPage() {
+  const { matchSuggestions } = Route.useLoaderData();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<StatusTab>("ALL");
   const [sort, setSort] = useState<SortOption>("title-asc");
   const [view, setView] = useState<ViewMode>("card");
+  const [isPolling, setIsPolling] = useState(false);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Clean up polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current !== null) {
+        clearInterval(pollIntervalRef.current);
+      }
+    };
+  }, []);
 
   const filtered = sortLinks(
     activeTab === "ALL"
-      ? audioLinks
-      : audioLinks.filter((l) => l.reviewStatus === activeTab),
+      ? matchSuggestions
+      : matchSuggestions.filter((l) => l.reviewStatus === activeTab),
     sort,
   );
 
   async function handleRematch() {
-    const result = await runMutation(() => rematchAllAudioServerFn(), {
-      success: "Audio re-matching started",
+    const result = await runMutation(() => rematchAllServerFn(), {
+      success: "Match scanning started",
     });
     if (result) {
       const { enqueuedCount } = result as { enqueuedCount: number };
       if (enqueuedCount === 0) {
-        toast.success("No audiobook files to match");
+        toast.success("No files to match");
+        return;
       }
     }
-    void router.invalidate();
+
+    // Poll for new results while background jobs run
+    setIsPolling(true);
+    pollIntervalRef.current = setInterval(() => {
+      void router.invalidate();
+    }, 3000);
+    // Stop polling after 60 seconds
+    setTimeout(() => {
+      const intervalId = pollIntervalRef.current as ReturnType<typeof setInterval>;
+      clearInterval(intervalId);
+      pollIntervalRef.current = null;
+      setIsPolling(false);
+    }, 60000);
   }
 
-  async function handleConfirm(id: string) {
-    await runMutation(() => confirmAudioLinkServerFn({ data: { id } }), {
-      success: "Audiobook merged into work",
+  async function handleAccept(id: string, survivingWorkId: string) {
+    await runMutation(() => acceptMatchSuggestionServerFn({ data: { id, survivingWorkId } }), {
+      success: "Works merged",
     });
     void router.invalidate();
   }
 
-  async function handleIgnore(id: string) {
-    await runMutation(() => ignoreAudioLinkServerFn({ data: { id } }), {
-      success: "Audio link ignored",
+  async function handleDecline(id: string) {
+    await runMutation(() => declineMatchSuggestionServerFn({ data: { id } }), {
+      success: "Match suggestion declined",
     });
     void router.invalidate();
   }
 
   return (
     <div>
-      <h1 className="text-2xl font-bold">Audio Links</h1>
+      <h1 className="text-2xl font-bold">Match Suggestions</h1>
       <p className="mb-6 mt-2 text-muted-foreground">
-        Merge audiobooks into existing works.
+        Review and resolve suggested edition matches.
         {" "}<span className="text-muted-foreground/60">{String(filtered.length)} {activeTab === "ALL" ? "total" : activeTab.toLowerCase()}</span>
       </p>
 
@@ -331,9 +383,10 @@ function AudioLinksPage() {
           <Button
             variant="outline"
             size="sm"
+            disabled={isPolling}
             onClick={() => { void handleRematch(); }}
           >
-            Re-match All
+            {isPolling ? "Scanning…" : "Re-scan Matches"}
           </Button>
           {view === "card" && (
             <Select value={sort} onValueChange={(v) => { setSort(v as SortOption); }}>
@@ -377,24 +430,24 @@ function AudioLinksPage() {
       <div className="mt-4">
         {filtered.length === 0 ? (
           <p className="py-8 text-center text-muted-foreground">
-            No audio links found
+            No match suggestions found
           </p>
         ) : view === "card" ? (
           <div className="flex flex-col gap-4">
             {filtered.map((link) => (
-              <AudioLinkCard
+              <MatchSuggestionCard
                 key={link.id}
                 link={link}
-                onConfirm={(id) => { void handleConfirm(id); }}
-                onIgnore={(id) => { void handleIgnore(id); }}
+                onAccept={(id, survivingWorkId) => { void handleAccept(id, survivingWorkId); }}
+                onDecline={(id) => { void handleDecline(id); }}
               />
             ))}
           </div>
         ) : (
           <VirtualizedDataTable
             columns={createColumns(
-              (id) => { void handleConfirm(id); },
-              (id) => { void handleIgnore(id); },
+              (id, survivingWorkId) => { void handleAccept(id, survivingWorkId); },
+              (id) => { void handleDecline(id); },
             )}
             data={filtered}
             showPagination={false}

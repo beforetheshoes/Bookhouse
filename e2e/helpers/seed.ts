@@ -4,7 +4,7 @@ export async function cleanDatabase() {
   await db.$executeRawUnsafe(`
     TRUNCATE TABLE "ImportJob",
                    "DuplicateCandidate",
-                   "AudioLink",
+                   "MatchSuggestion",
                    "ExternalLink",
                    "ReadingProgress",
                    "WorkProgressPreference",
@@ -35,7 +35,7 @@ export async function cleanTestData() {
   await db.$executeRawUnsafe(`
     TRUNCATE TABLE "ImportJob",
                    "DuplicateCandidate",
-                   "AudioLink",
+                   "MatchSuggestion",
                    "ExternalLink",
                    "ReadingProgress",
                    "WorkProgressPreference",
@@ -123,7 +123,7 @@ export async function seedWork(overrides: { title?: string } = {}) {
 export async function seedImportJob(
   libraryRootId: string,
   overrides: {
-    kind?: "SCAN_ROOT" | "HASH_FILE" | "PARSE_FILE" | "REFRESH_METADATA" | "DETECT_DUPLICATES" | "MATCH_AUDIO";
+    kind?: "SCAN_ROOT" | "HASH_FILE" | "PARSE_FILE" | "REFRESH_METADATA" | "DETECT_DUPLICATES" | "MATCH_SUGGESTIONS";
     status?: "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED";
   } = {},
 ) {

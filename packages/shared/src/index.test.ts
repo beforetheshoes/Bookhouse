@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type {
   HashFileAssetJobPayload,
-  MatchAudioJobPayload,
+  MatchSuggestionsJobPayload,
   MatchFileAssetToEditionJobPayload,
   ParseFileAssetMetadataJobPayload,
   RefreshMetadataJobPayload,
@@ -34,7 +34,7 @@ describe("shared queue helpers", () => {
     expect(LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA).toBe("parse-file-asset-metadata");
     expect(LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION).toBe("match-file-asset-to-edition");
     expect(LIBRARY_JOB_NAMES.REFRESH_METADATA).toBe("refresh-metadata");
-    expect(LIBRARY_JOB_NAMES.MATCH_AUDIO).toBe("match-audio");
+    expect(LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS).toBe("match-suggestions");
   });
 
   it("parses redis connection details", () => {
@@ -133,10 +133,10 @@ describe("shared queue helpers", () => {
     const refreshPayload: RefreshMetadataJobPayload = {
       workId: "work-1",
     };
-    const matchAudioPayload: MatchAudioJobPayload = {
+    const matchSuggestionsPayload: MatchSuggestionsJobPayload = {
       fileAssetId: "file-1",
     };
-    expect(matchAudioPayload).toEqual({ fileAssetId: "file-1" });
+    expect(matchSuggestionsPayload).toEqual({ fileAssetId: "file-1" });
     expect(refreshPayload).toEqual({ workId: "work-1" });
     expect(scanPayload).toEqual({ libraryRootId: "root-1" });
     expect(hashPayload).toEqual({

@@ -48,6 +48,16 @@ let mockLoaderData: {
 };
 
 let mockSearch = { page: 1, pageSize: 50, sort: "title-asc" as const };
+const mockRouterInvalidate = vi.fn();
+const bulkDeleteWorksServerFnMock = vi.fn();
+
+vi.mock("~/lib/server-fns/deletion", () => ({
+  bulkDeleteWorksServerFn: bulkDeleteWorksServerFnMock,
+}));
+
+const mockToast = { success: vi.fn(), error: vi.fn() };
+vi.mock("sonner", () => ({ toast: mockToast }));
+
 const mockNavigate = vi.fn().mockImplementation((opts: { search?: (prev: Record<string, unknown>) => unknown }) => {
   if (typeof opts.search === "function") {
     opts.search({});
@@ -67,7 +77,7 @@ vi.mock("@tanstack/react-router", async () => {
       }
       return <a href={href} {...props}>{children}</a>;
     },
-    useRouter: () => ({ invalidate: vi.fn(), navigate: vi.fn() }),
+    useRouter: () => ({ invalidate: mockRouterInvalidate, navigate: vi.fn() }),
     useNavigate: () => mockNavigate,
     createFileRoute: (_path: string) => (opts: Record<string, unknown>) => {
       // Call validateSearch and loaderDeps to exercise those branches
@@ -505,7 +515,24 @@ describe("LibraryPage", () => {
     expect(screen.getByText(/Scanning.*new/)).toBeTruthy();
   });
 
-  it("shows processing badge for stub works in table view", async () => {
+  it("shows processing badge for stub works in table view when scan is active", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Stub Book", ["Author"], ["EBOOK"], "STUB")],
+        totalCount: 1,
+        facetCounts: defaultFacetCounts,
+      },
+      activeJobCount: 1,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.getByText("Processing\u2026")).toBeTruthy();
+  });
+
+  it("does not show processing badge for stub works in table view when no scan is active", async () => {
     mockView = "table";
     mockLoaderData = {
       libraryResult: {
@@ -519,7 +546,7 @@ describe("LibraryPage", () => {
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
-    expect(screen.getByText("Processing\u2026")).toBeTruthy();
+    expect(screen.queryByText("Processing\u2026")).toBeNull();
   });
 
   it("does not show processing badge for enriched works in table view", async () => {
@@ -914,5 +941,242 @@ describe("LibraryPage", () => {
       columnVisibility: {},
       textOverflow: "truncate",
     });
+  });
+
+  it("renders select-all checkbox in table view", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    const checkboxes = screen.getAllByRole("checkbox");
+    expect(checkboxes.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("shows floating action bar with delete button when rows are selected", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    const { fireEvent } = await import("@testing-library/react");
+    render(<LibraryPage />);
+
+    // Select the row checkbox (first non-header checkbox)
+    const checkboxes = screen.getAllByRole("checkbox");
+    const rowCheckbox = checkboxes[1]; // 0 is select-all, 1 is row
+    if (!rowCheckbox) throw new Error("expected row checkbox");
+    fireEvent.click(rowCheckbox);
+
+    expect(screen.getByText(/1 work selected/)).toBeTruthy();
+    expect(screen.getByText("Delete Selected")).toBeTruthy();
+  });
+
+  it("opens confirmation dialog and calls bulkDeleteWorksServerFn on confirm", async () => {
+    bulkDeleteWorksServerFnMock.mockResolvedValue({ deletedWorkIds: ["work-book-a"] });
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    render(<LibraryPage />);
+
+    // Select row
+    const checkboxes = screen.getAllByRole("checkbox");
+    const rowCheckbox = checkboxes[1];
+    if (!rowCheckbox) throw new Error("expected row checkbox");
+    fireEvent.click(rowCheckbox);
+
+    // Click Delete Selected
+    fireEvent.click(screen.getByText("Delete Selected"));
+
+    // Confirm dialog appears
+    expect(screen.getByText(/will remove 1 work/)).toBeTruthy();
+
+    // Click Delete in dialog
+    const confirmBtn = screen.getByRole("button", { name: "Delete" });
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(bulkDeleteWorksServerFnMock).toHaveBeenCalledWith({
+        data: { workIds: ["work-book-a"] },
+      });
+    });
+  });
+
+  it("shows plural text in success toast when bulk deleting multiple works", async () => {
+    bulkDeleteWorksServerFnMock.mockResolvedValue({ deletedWorkIds: ["work-book-a", "work-book-b"] });
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Book A"), makeWork("Book B")], totalCount: 2, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    render(<LibraryPage />);
+
+    // Select all rows
+    const selectAllCheckbox = screen.getAllByLabelText("Select all")[0];
+    if (!selectAllCheckbox) throw new Error("expected select-all checkbox");
+    fireEvent.click(selectAllCheckbox);
+
+    // Click Delete Selected
+    fireEvent.click(screen.getByText("Delete Selected"));
+
+    // Confirm
+    const confirmBtn = screen.getByRole("button", { name: "Delete" });
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(mockToast.success).toHaveBeenCalledWith("2 works deleted");
+    });
+  });
+
+  it("selects all rows when select-all header checkbox is clicked", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Book A"), makeWork("Book B")], totalCount: 2, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    const { fireEvent } = await import("@testing-library/react");
+    render(<LibraryPage />);
+
+    // Click select-all checkbox (first checkbox in the table header)
+    const selectAllCheckbox = screen.getAllByLabelText("Select all")[0];
+    if (!selectAllCheckbox) throw new Error("expected select-all checkbox");
+    fireEvent.click(selectAllCheckbox);
+
+    expect(screen.getByText(/2 works selected/)).toBeTruthy();
+  });
+
+  it("shows error toast when bulk delete fails", async () => {
+    bulkDeleteWorksServerFnMock.mockRejectedValue(new Error("Bulk delete failed"));
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    render(<LibraryPage />);
+
+    // Select row
+    const checkboxes = screen.getAllByRole("checkbox");
+    const rowCheckbox = checkboxes[1];
+    if (!rowCheckbox) throw new Error("expected row checkbox");
+    fireEvent.click(rowCheckbox);
+
+    // Click Delete Selected
+    fireEvent.click(screen.getByText("Delete Selected"));
+
+    // Click Delete in dialog
+    const confirmBtn = screen.getByRole("button", { name: "Delete" });
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(mockToast.error).toHaveBeenCalledWith("Bulk delete failed");
+    });
+  });
+
+  it("shows generic error toast when bulk delete fails with non-Error", async () => {
+    bulkDeleteWorksServerFnMock.mockRejectedValue("something went wrong");
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    render(<LibraryPage />);
+
+    // Select row
+    const checkboxes = screen.getAllByRole("checkbox");
+    const rowCheckbox = checkboxes[1];
+    if (!rowCheckbox) throw new Error("expected row checkbox");
+    fireEvent.click(rowCheckbox);
+
+    // Click Delete Selected
+    fireEvent.click(screen.getByText("Delete Selected"));
+
+    // Click Delete in dialog
+    const confirmBtn = screen.getByRole("button", { name: "Delete" });
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(mockToast.error).toHaveBeenCalledWith("Failed to delete works");
+    });
+  });
+
+  it("closes bulk delete dialog when cancel button is clicked", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    const { fireEvent } = await import("@testing-library/react");
+    render(<LibraryPage />);
+
+    // Select row
+    const checkboxes = screen.getAllByRole("checkbox");
+    const rowCheckbox = checkboxes[1];
+    if (!rowCheckbox) throw new Error("expected row checkbox");
+    fireEvent.click(rowCheckbox);
+
+    // Click Delete Selected to open dialog
+    fireEvent.click(screen.getByText("Delete Selected"));
+    expect(screen.getByText(/will remove 1 work/)).toBeTruthy();
+
+    // Click Cancel
+    fireEvent.click(screen.getByText("Cancel"));
+  });
+
+  it("clears selection when Clear button is clicked", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    const { fireEvent } = await import("@testing-library/react");
+    render(<LibraryPage />);
+
+    // Select row
+    const checkboxes = screen.getAllByRole("checkbox");
+    const rowCheckbox = checkboxes[1];
+    if (!rowCheckbox) throw new Error("expected row checkbox");
+    fireEvent.click(rowCheckbox);
+
+    expect(screen.getByText(/1 work selected/)).toBeTruthy();
+
+    // Click Clear
+    fireEvent.click(screen.getByText("Clear"));
+
+    // Action bar should disappear
+    expect(screen.queryByText(/work selected/)).toBeNull();
   });
 });

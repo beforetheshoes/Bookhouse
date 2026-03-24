@@ -55,17 +55,17 @@ interface TestDuplicateCandidate {
   status: string;
 }
 
-interface TestAudioLink {
-  audioWorkId: string;
+interface TestMatchSuggestion {
+  suggestedWorkId: string;
   confidence: number | null;
-  ebookWorkId: string;
+  targetWorkId: string;
   id: string;
   matchType: string;
   reviewStatus: string;
 }
 
 interface TestState {
-  audioLinks: Map<string, TestAudioLink>;
+  matchSuggestions: Map<string, TestMatchSuggestion>;
   contributors: Map<string, TestContributor>;
   contributorsByCanonical: Map<string, TestContributor>;
   duplicateCandidates: Map<string, TestDuplicateCandidate>;
@@ -125,7 +125,7 @@ interface TestEditionContributor {
 
 function createEmptyState(rootPath = "/tmp/root"): TestState {
   return {
-    audioLinks: new Map(),
+    matchSuggestions: new Map(),
     contributors: new Map(),
     contributorsByCanonical: new Map(),
     duplicateCandidates: new Map(),
@@ -149,7 +149,7 @@ function getEditionContributorKey(editionId: string, contributorId: string, role
 }
 
 function createTestDb(state: TestState): IngestDb {
-  let audioLinkSequence = state.audioLinks.size;
+  let matchSuggestionSequence = state.matchSuggestions.size;
   let contributorSequence = state.contributors.size;
   let duplicateCandidateSequence = state.duplicateCandidates.size;
   let editionContributorSequence = state.editionContributors.size;
@@ -469,27 +469,27 @@ function createTestDb(state: TestState): IngestDb {
         ) ?? null;
       },
     },
-    audioLink: {
+    matchSuggestion: {
       async create({ data }) {
         await Promise.resolve();
-        audioLinkSequence += 1;
-        const created: TestAudioLink = {
-          id: `audio-link-${String(audioLinkSequence)}`,
-          ebookWorkId: data.ebookWorkId,
-          audioWorkId: data.audioWorkId,
+        matchSuggestionSequence += 1;
+        const created: TestMatchSuggestion = {
+          id: `audio-link-${String(matchSuggestionSequence)}`,
+          targetWorkId: data.targetWorkId,
+          suggestedWorkId: data.suggestedWorkId,
           matchType: data.matchType,
           confidence: data.confidence,
           reviewStatus: "PENDING",
         };
-        state.audioLinks.set(created.id, created);
+        state.matchSuggestions.set(created.id, created);
         return created;
       },
-      async findFirst({ where }: { where: { ebookWorkId?: string; audioWorkId?: string } }) {
+      async findFirst({ where }: { where: { targetWorkId?: string; suggestedWorkId?: string } }) {
         await Promise.resolve();
-        return [...state.audioLinks.values()].find(
+        return [...state.matchSuggestions.values()].find(
           (al) => {
-            if (where.ebookWorkId && al.ebookWorkId !== where.ebookWorkId) return false;
-            if (where.audioWorkId && al.audioWorkId !== where.audioWorkId) return false;
+            if (where.targetWorkId && al.targetWorkId !== where.targetWorkId) return false;
+            if (where.suggestedWorkId && al.suggestedWorkId !== where.suggestedWorkId) return false;
             return true;
           },
         ) ?? null;
@@ -944,15 +944,16 @@ describe("ingest services", () => {
       reportProgress,
     });
 
-    // First call: totalFiles after discovery
+    // First call: totalFiles after discovery with DISCOVERY stage
     expect(reportProgress).toHaveBeenCalledWith(
-      expect.objectContaining({ totalFiles: 3 }),
+      expect.objectContaining({ totalFiles: 3, scanStage: "DISCOVERY" }),
     );
-    // Last call: final processedFiles and errorCount
+    // Last call: final processedFiles, errorCount, and PROCESSING stage
     const allCalls = reportProgress.mock.calls as unknown as Array<[Record<string, unknown>]>;
     expect(allCalls.length).toBeGreaterThan(0);
     const lastProgressCall = allCalls[allCalls.length - 1] as [Record<string, unknown>];
-    expect(lastProgressCall[0]).toMatchObject({ processedFiles: 3, errorCount: 0 });
+    expect(lastProgressCall[0]).toMatchObject({ processedFiles: 3, errorCount: 0, scanStage: "PROCESSING" });
+    expect(lastProgressCall[0]).not.toHaveProperty("totalProcessingJobs");
   });
 
   it("does not call reportProgress when callback is not provided", async () => {
@@ -1871,6 +1872,55 @@ describe("ingest services", () => {
     });
     expect(enqueuedJobs).toContainEqual({
       jobName: LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA,
+      payload: { fileAssetId: fileAsset.id },
+    });
+  });
+
+  it("re-enqueues MATCH_SUGGESTIONS for AUDIO file linked to AUDIOBOOK edition during recovery", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-recovery-audio-match-"));
+    tempDirectories.push(directory);
+
+    await mkdir(path.join(directory, "audiobook"));
+    await writeFile(path.join(directory, "audiobook", "chapter1.mp3"), "audio");
+
+    const state = createEmptyState(directory);
+    const enqueuedJobs: Array<{ jobName: LibraryJobName; payload: LibraryJobPayloads[LibraryJobName] }> = [];
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: (jobName, payload) => {
+        enqueuedJobs.push({ jobName, payload });
+        return Promise.resolve(undefined);
+      },
+    });
+
+    // First scan creates stub with EditionFile link
+    await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    // Simulate: fully processed audiobook — hashed, edition-linked, work enriched, has cover
+    const fileAsset = state.fileAssets.get(path.join(directory, "audiobook", "chapter1.mp3"));
+    if (!fileAsset) throw new Error("expected fileAsset");
+    fileAsset.partialHash = "partial";
+    fileAsset.fullHash = "full";
+    fileAsset.metadata = null; // Audio files with metadata.json siblings have null metadata
+
+    const edition = [...state.editions.values()][0];
+    if (!edition) throw new Error("expected edition");
+    // Edition must be AUDIOBOOK for MATCH_SUGGESTIONS recovery to trigger
+    edition.formatFamily = FormatFamily.AUDIOBOOK;
+
+    const work = [...state.works.values()][0];
+    if (!work) throw new Error("expected work");
+    work.enrichmentStatus = "ENRICHED";
+    work.coverPath = "/covers/existing.jpg";
+
+    enqueuedJobs.length = 0;
+
+    const result = await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    // Recovery should enqueue MATCH_SUGGESTIONS for the audio file
+    expect(result.enqueuedRecoveryJobs).toContain(fileAsset.id);
+    expect(enqueuedJobs).toContainEqual({
+      jobName: LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS,
       payload: { fileAssetId: fileAsset.id },
     });
   });
@@ -3348,7 +3398,7 @@ describe("ingest services", () => {
       { fileAssetId: "file-1" },
     );
     expect(enqueueLibraryJob).toHaveBeenCalledWith(
-      LIBRARY_JOB_NAMES.MATCH_AUDIO,
+      LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS,
       { fileAssetId: "file-1" },
     );
   });
@@ -5341,6 +5391,201 @@ describe("ingest services", () => {
     expect(updatedMetadata?.status).not.toBe("unparseable");
   });
 
+  it("audio file with parsed metadata.json sibling creates editionFile link to same edition", async () => {
+    const state = createEmptyState("/tmp/root");
+    const audioAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/chapter01.mp3",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "chapter01.mp3",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "mp3",
+      fullHash: "hash",
+      id: "file-audio",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.AUDIO,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/chapter01.mp3",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(audioAsset.absolutePath, audioAsset);
+    state.fileAssetsById.set(audioAsset.id, audioAsset);
+
+    const sidecarAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.json",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.json",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "json",
+      fullHash: "sidecar-hash",
+      id: "file-sidecar",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: {
+        source: "audiobook-json",
+        status: "parsed",
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        warnings: [],
+        normalized: {
+          title: "Test Book",
+          authors: ["Author Name"],
+          identifiers: { unknown: [] },
+        },
+      } as unknown as FileAsset["metadata"],
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "sidecar-phash",
+      relativePath: "Author/Book/metadata.json",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(sidecarAsset.absolutePath, sidecarAsset);
+    state.fileAssetsById.set(sidecarAsset.id, sidecarAsset);
+
+    // The metadata.json is already linked to an edition via editionFile
+    const sidecarEditionFile: TestEditionFile = {
+      id: "ef-sidecar",
+      editionId: "edition-audiobook",
+      fileAssetId: "file-sidecar",
+      role: EditionFileRole.PRIMARY,
+    };
+    state.editionFiles.set(
+      getEditionFileKey(sidecarEditionFile.editionId, sidecarEditionFile.fileAssetId),
+      sidecarEditionFile,
+    );
+
+    const enqueueMock = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: enqueueMock,
+    });
+
+    const result = await services.parseFileAssetMetadata({
+      fileAssetId: "file-audio",
+      now: new Date("2025-06-01T00:00:00.000Z"),
+    });
+
+    expect(result).toMatchObject({
+      fileAssetId: "file-audio",
+      skipped: true,
+    });
+
+    // Audio file should now also be linked to the same edition as the metadata.json
+    const audioEditionFile = [...state.editionFiles.values()].find(
+      (ef) => ef.fileAssetId === "file-audio",
+    );
+    expect(audioEditionFile).toBeDefined();
+    expect(audioEditionFile?.editionId).toBe("edition-audiobook");
+    expect(audioEditionFile?.role).toBe(EditionFileRole.AUDIO_TRACK);
+
+    // MATCH_SUGGESTIONS should be enqueued for the audio file so it can find ebook counterparts
+    expect(enqueueMock).toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS,
+      { fileAssetId: "file-audio" },
+    );
+  });
+
+  it("audio file with parsed metadata.json sibling does not create duplicate editionFile", async () => {
+    const state = createEmptyState("/tmp/root");
+    const audioAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/chapter01.mp3",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "chapter01.mp3",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "mp3",
+      fullHash: "hash",
+      id: "file-audio",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.AUDIO,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/chapter01.mp3",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(audioAsset.absolutePath, audioAsset);
+    state.fileAssetsById.set(audioAsset.id, audioAsset);
+
+    const sidecarAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.json",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.json",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "json",
+      fullHash: "sidecar-hash",
+      id: "file-sidecar",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: {
+        source: "audiobook-json",
+        status: "parsed",
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        warnings: [],
+        normalized: {
+          title: "Test Book",
+          authors: ["Author Name"],
+          identifiers: { unknown: [] },
+        },
+      } as unknown as FileAsset["metadata"],
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "sidecar-phash",
+      relativePath: "Author/Book/metadata.json",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(sidecarAsset.absolutePath, sidecarAsset);
+    state.fileAssetsById.set(sidecarAsset.id, sidecarAsset);
+
+    // Sidecar linked to edition
+    const sidecarEditionFile: TestEditionFile = {
+      id: "ef-sidecar",
+      editionId: "edition-audiobook",
+      fileAssetId: "file-sidecar",
+      role: EditionFileRole.PRIMARY,
+    };
+    state.editionFiles.set(
+      getEditionFileKey(sidecarEditionFile.editionId, sidecarEditionFile.fileAssetId),
+      sidecarEditionFile,
+    );
+
+    // Audio file ALREADY linked to same edition (e.g., from previous scan)
+    const existingAudioEditionFile: TestEditionFile = {
+      id: "ef-audio-existing",
+      editionId: "edition-audiobook",
+      fileAssetId: "file-audio",
+      role: EditionFileRole.AUDIO_TRACK,
+    };
+    state.editionFiles.set(
+      getEditionFileKey(existingAudioEditionFile.editionId, existingAudioEditionFile.fileAssetId),
+      existingAudioEditionFile,
+    );
+
+    const initialEditionFileCount = state.editionFiles.size;
+
+    const enqueueMock = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: enqueueMock,
+    });
+
+    await services.parseFileAssetMetadata({
+      fileAssetId: "file-audio",
+      now: new Date("2025-06-01T00:00:00.000Z"),
+    });
+
+    // Should not create a duplicate — count should remain the same
+    expect(state.editionFiles.size).toBe(initialEditionFileCount);
+    // Should NOT enqueue MATCH_SUGGESTIONS since the link already existed
+    expect(enqueueMock).not.toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS,
+      expect.anything(),
+    );
+  });
+
   it("handles metadata.json ENOENT by marking file as MISSING", async () => {
     const state = createEmptyState("/tmp/root");
     const sidecarAsset: TestFileAsset = {
@@ -5528,6 +5773,72 @@ describe("ingest services", () => {
       source: "audio-id3",
       status: "unparseable",
     });
+  });
+
+  it("audio file with ID3 warnings gets status 'parsed' with warnings, not 'unparseable'", async () => {
+    const state = createEmptyState("/tmp/root");
+    const audioAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/chapter01.mp3",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "chapter01.mp3",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "mp3",
+      fullHash: "hash",
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.AUDIO,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/chapter01.mp3",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(audioAsset.absolutePath, audioAsset);
+    state.fileAssetsById.set(audioAsset.id, audioAsset);
+
+    const enqueueMock = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: enqueueMock,
+      parseAudioId3: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          tags: {
+            title: undefined,
+            artist: undefined,
+            albumArtist: undefined,
+            album: undefined,
+            year: undefined,
+            genres: [],
+            comment: undefined,
+            trackNumber: undefined,
+            trackTotal: undefined,
+          },
+          warnings: ["invalid byte sequence at offset 42"],
+        };
+      }),
+    });
+
+    const result = await services.parseFileAssetMetadata({
+      fileAssetId: "file-1",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(result).toMatchObject({
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      fileAssetId: "file-1",
+      skipped: false,
+    });
+    // File should be marked as "parsed" with warnings, NOT "unparseable"
+    const storedMetadata = state.fileAssetsById.get("file-1")?.metadata as Record<string, unknown>;
+    expect(storedMetadata.status).toBe("parsed");
+    expect(storedMetadata.warnings).toEqual(["invalid byte sequence at offset 42"]);
+    // Should enqueue MATCH_SUGGESTIONS since metadata is insufficient for edition matching
+    expect(enqueueMock).toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS,
+      expect.objectContaining({ fileAssetId: "file-1" }),
+    );
   });
 
   it("re-throws transient ENOTCONN error from audio ID3 parsing instead of marking unparseable", async () => {
@@ -5768,7 +6079,7 @@ describe("ingest services", () => {
       warnings: ["unsupported Unicode escape sequence"],
     });
     expect(enqueueLibraryJob).toHaveBeenCalledWith(
-      LIBRARY_JOB_NAMES.MATCH_AUDIO,
+      LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS,
       { fileAssetId: "file-1" },
     );
     expect(enqueueLibraryJob).not.toHaveBeenCalledWith(
@@ -5777,7 +6088,7 @@ describe("ingest services", () => {
     );
   });
 
-  it("enqueues MATCH_AUDIO directly when audio ID3 has no title and no authors", async () => {
+  it("enqueues MATCH_SUGGESTIONS directly when audio ID3 has no title and no authors", async () => {
     const state = createEmptyState("/tmp/root");
     const audioAsset: TestFileAsset = {
       absolutePath: "/tmp/root/Author/Book/chapter01.mp3",
@@ -5836,12 +6147,12 @@ describe("ingest services", () => {
       expect.anything(),
     );
     expect(enqueueLibraryJob).toHaveBeenCalledWith(
-      LIBRARY_JOB_NAMES.MATCH_AUDIO,
+      LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS,
       { fileAssetId: "file-1" },
     );
   });
 
-  it("enqueues MATCH_AUDIO directly when audio ID3 has title but no authors", async () => {
+  it("enqueues MATCH_SUGGESTIONS directly when audio ID3 has title but no authors", async () => {
     const state = createEmptyState("/tmp/root");
     const audioAsset: TestFileAsset = {
       absolutePath: "/tmp/root/Author/Book/chapter01.mp3",
@@ -5896,7 +6207,7 @@ describe("ingest services", () => {
       expect.anything(),
     );
     expect(enqueueLibraryJob).toHaveBeenCalledWith(
-      LIBRARY_JOB_NAMES.MATCH_AUDIO,
+      LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS,
       { fileAssetId: "file-1" },
     );
   });
@@ -7357,7 +7668,7 @@ describe("matchFileAssetToEdition enqueues follow-up jobs", () => {
       { fileAssetId: "file-1" },
     );
     expect(enqueueMock).toHaveBeenCalledWith(
-      LIBRARY_JOB_NAMES.MATCH_AUDIO,
+      LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS,
       { fileAssetId: "file-1" },
     );
   });
@@ -7404,12 +7715,12 @@ describe("matchFileAssetToEdition enqueues follow-up jobs", () => {
       expect.anything(),
     );
     expect(enqueueMock).not.toHaveBeenCalledWith(
-      LIBRARY_JOB_NAMES.MATCH_AUDIO,
+      LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS,
       expect.anything(),
     );
   });
 
-  it("does not enqueue DETECT_DUPLICATES or MATCH_AUDIO for a SIDECAR file asset", async () => {
+  it("does not enqueue DETECT_DUPLICATES or MATCH_SUGGESTIONS for a SIDECAR file asset", async () => {
     const state = createEmptyState("/tmp/root");
     addFileAsset(state, {
       absolutePath: "/tmp/root/Author/Book/metadata.json",
@@ -7447,7 +7758,7 @@ describe("matchFileAssetToEdition enqueues follow-up jobs", () => {
       expect.anything(),
     );
     expect(enqueueMock).not.toHaveBeenCalledWith(
-      LIBRARY_JOB_NAMES.MATCH_AUDIO,
+      LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS,
       expect.anything(),
     );
   });
@@ -7993,11 +8304,11 @@ describe("detectDuplicates", () => {
   });
 });
 
-describe("matchAudio", () => {
+describe("matchSuggestions", () => {
   const now = new Date("2025-01-01");
 
-  function getFirstAudioLink(state: TestState): TestAudioLink {
-    const link = [...state.audioLinks.values()][0];
+  function getFirstMatchSuggestion(state: TestState): TestMatchSuggestion {
+    const link = [...state.matchSuggestions.values()][0];
     if (!link) throw new Error("expected at least one audio link");
     return link;
   }
@@ -8087,7 +8398,7 @@ describe("matchAudio", () => {
     const state = createEmptyState();
     const services = createIngestServices({ db: createTestDb(state) });
 
-    const result = await services.matchAudio({ fileAssetId: "nonexistent" });
+    const result = await services.matchSuggestions({ fileAssetId: "nonexistent" });
 
     expect(result).toEqual({ fileAssetId: "nonexistent", skipped: true, linksCreated: 0 });
   });
@@ -8097,7 +8408,7 @@ describe("matchAudio", () => {
     addAudioFileAsset(state, "file-1", "/tmp/root/book.epub");
     const services = createIngestServices({ db: createTestDb(state) });
 
-    const result = await services.matchAudio({ fileAssetId: "file-1" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-1" });
 
     expect(result).toEqual({ fileAssetId: "file-1", skipped: true, linksCreated: 0 });
   });
@@ -8108,12 +8419,12 @@ describe("matchAudio", () => {
     addAudioEditionFile(state, "ef-1", "missing-edition", "file-1");
     const services = createIngestServices({ db: createTestDb(state) });
 
-    const result = await services.matchAudio({ fileAssetId: "file-1" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-1" });
 
     expect(result).toEqual({ fileAssetId: "file-1", skipped: true, linksCreated: 0 });
   });
 
-  it("creates PENDING AudioLink when audiobook matches ebook on different works", async () => {
+  it("creates PENDING MatchSuggestion when audiobook matches ebook on different works", async () => {
     const state = createEmptyState();
     // Audiobook file and edition
     addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/gatsby.m4b", MediaKind.AUDIO);
@@ -8131,7 +8442,7 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     expect(result.skipped).toBe(false);
     expect(result.linksCreated).toBe(1);
@@ -8141,13 +8452,13 @@ describe("matchAudio", () => {
     // Edition stays on its original work
     expect(state.editions.get("edition-audio")?.workId).toBe("work-audio");
     // Link created with work IDs
-    const link = getFirstAudioLink(state);
-    expect(link.ebookWorkId).toBe("work-ebook");
-    expect(link.audioWorkId).toBe("work-audio");
+    const link = getFirstMatchSuggestion(state);
+    expect(link.targetWorkId).toBe("work-ebook");
+    expect(link.suggestedWorkId).toBe("work-audio");
     expect(link.matchType).toBe("SAME_WORK");
   });
 
-  it("creates PENDING AudioLink when ebook matches audiobook on different works", async () => {
+  it("creates PENDING MatchSuggestion when ebook matches audiobook on different works", async () => {
     const state = createEmptyState();
     // Ebook file triggers the match
     addAudioFileAsset(state, "file-ebook", "/tmp/root/ebooks/gatsby.epub");
@@ -8165,7 +8476,7 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-audio", "edition-audio", "c-audio");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-ebook" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-ebook" });
 
     expect(result.skipped).toBe(false);
     expect(result.linksCreated).toBe(1);
@@ -8174,9 +8485,9 @@ describe("matchAudio", () => {
     expect(state.works.has("work-audio")).toBe(true);
     // Edition stays on its original work
     expect(state.editions.get("edition-audio")?.workId).toBe("work-audio");
-    const link = getFirstAudioLink(state);
-    expect(link.ebookWorkId).toBe("work-ebook");
-    expect(link.audioWorkId).toBe("work-audio");
+    const link = getFirstMatchSuggestion(state);
+    expect(link.targetWorkId).toBe("work-ebook");
+    expect(link.suggestedWorkId).toBe("work-audio");
     expect(link.matchType).toBe("SAME_WORK");
   });
 
@@ -8197,10 +8508,10 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(0);
-    expect(state.audioLinks.size).toBe(0);
+    expect(state.matchSuggestions.size).toBe(0);
   });
 
   it("does not create link when author similarity below threshold", async () => {
@@ -8220,10 +8531,10 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(0);
-    expect(state.audioLinks.size).toBe(0);
+    expect(state.matchSuggestions.size).toBe(0);
   });
 
   it("does not create duplicate link when work pair already exists", async () => {
@@ -8241,27 +8552,27 @@ describe("matchAudio", () => {
     addAudioContributor(state, "c-ebook", "F Scott Fitzgerald");
     addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
     // Pre-existing link with work IDs
-    state.audioLinks.set("existing", {
+    state.matchSuggestions.set("existing", {
       id: "existing",
-      ebookWorkId: "work-ebook",
-      audioWorkId: "work-audio",
+      targetWorkId: "work-ebook",
+      suggestedWorkId: "work-audio",
       matchType: "EXACT_METADATA",
       confidence: 1.0,
       reviewStatus: "PENDING",
     });
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     // No new link created (already exists), no merge
     expect(result.linksCreated).toBe(0);
-    expect(state.audioLinks.size).toBe(1);
+    expect(state.matchSuggestions.size).toBe(1);
     // Works are NOT merged
     expect(state.works.has("work-audio")).toBe(true);
     expect(state.works.has("work-ebook")).toBe(true);
   });
 
-  it("does not create AudioLink when editions share the same work", async () => {
+  it("does not create MatchSuggestion when editions share the same work", async () => {
     const state = createEmptyState();
     addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/gatsby.m4b", MediaKind.AUDIO);
     addAudioWork(state, "work-shared", "the great gatsby", "The Great Gatsby");
@@ -8276,11 +8587,11 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-1");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
-    // Same-work editions don't need an AudioLink
+    // Same-work editions don't need an MatchSuggestion
     expect(result.linksCreated).toBe(0);
-    expect(state.audioLinks.size).toBe(0);
+    expect(state.matchSuggestions.size).toBe(0);
   });
 
   it("uses SAME_WORK matchType for cross-work match with matching titles and authors", async () => {
@@ -8299,10 +8610,10 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(1);
-    const link = getFirstAudioLink(state);
+    const link = getFirstMatchSuggestion(state);
     expect(link.matchType).toBe("SAME_WORK");
     // Works are NOT merged
     expect(state.works.has("work-audio")).toBe(true);
@@ -8326,10 +8637,10 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(1);
-    const link = getFirstAudioLink(state);
+    const link = getFirstMatchSuggestion(state);
     expect(link.confidence).toBeGreaterThan(0.85);
   });
 
@@ -8350,10 +8661,10 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(1);
-    const link = getFirstAudioLink(state);
+    const link = getFirstMatchSuggestion(state);
     expect(link.confidence).toBeLessThanOrEqual(1.0);
   });
 
@@ -8374,10 +8685,10 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(1);
-    const link = getFirstAudioLink(state);
+    const link = getFirstMatchSuggestion(state);
     // Base confidence 1.0 + 0.05 (filename) + 0.05 (folder) = 1.1, capped at 1.0
     expect(link.confidence).toBe(1.0);
   });
@@ -8399,7 +8710,7 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-audio2", "edition-audio2", "c-audio2");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(0);
   });
@@ -8412,7 +8723,7 @@ describe("matchAudio", () => {
     addAudioEditionFile(state, "ef-audio", "edition-audio", "file-audio");
     const services = createIngestServices({ db: createTestDb(state) });
 
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     expect(result).toEqual({ fileAssetId: "file-audio", skipped: true, linksCreated: 0 });
   });
@@ -8432,10 +8743,10 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(1);
-    const link = getFirstAudioLink(state);
+    const link = getFirstMatchSuggestion(state);
     expect(link.confidence).toBe(1.0);
     // Works are NOT merged
     expect(state.works.has("work-audio")).toBe(true);
@@ -8458,10 +8769,10 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(1);
-    const link = getFirstAudioLink(state);
+    const link = getFirstMatchSuggestion(state);
     expect(link.confidence).toBe(1.0);
     // Works are NOT merged
     expect(state.works.has("work-audio")).toBe(true);
@@ -8481,7 +8792,7 @@ describe("matchAudio", () => {
     addAudioEdition(state, "edition-ebook", "work-ebook", { formatFamily: FormatFamily.EBOOK });
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(0);
   });
@@ -8503,10 +8814,10 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(1);
-    const link = getFirstAudioLink(state);
+    const link = getFirstMatchSuggestion(state);
     expect(link.confidence).toBe(1.0);
     // Works are NOT merged
     expect(state.works.has("work-audio")).toBe(true);
@@ -8523,7 +8834,7 @@ describe("matchAudio", () => {
     addAudioEditionFile(state, "ef-1", "edition-1", "file-1");
     const services = createIngestServices({ db: createTestDb(state) });
 
-    const result = await services.matchAudio({ fileAssetId: "file-1" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-1" });
 
     expect(result).toEqual({ fileAssetId: "file-1", skipped: true, linksCreated: 0 });
   });
@@ -8542,14 +8853,14 @@ describe("matchAudio", () => {
     // No authors
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(1);
-    const link = getFirstAudioLink(state);
+    const link = getFirstMatchSuggestion(state);
     expect(link.matchType).toBe("TITLE_ONLY");
   });
 
-  it("does not reconcile metadata during matchAudio — creates link only", async () => {
+  it("does not reconcile metadata during matchSuggestions — creates link only", async () => {
     const state = createEmptyState();
     addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/gatsby.m4b", MediaKind.AUDIO);
     const audioWork = addAudioWork(state, "work-audio", "the great gatsby", "The Great Gatsby");
@@ -8568,7 +8879,7 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     // Link created but no merge — works stay separate
     expect(result.linksCreated).toBe(1);
@@ -8580,7 +8891,7 @@ describe("matchAudio", () => {
     expect(ebookWork?.language).toBeNull();
   });
 
-  it("preserves both works metadata during matchAudio — no merge", async () => {
+  it("preserves both works metadata during matchSuggestions — no merge", async () => {
     const state = createEmptyState();
     addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/gatsby.m4b", MediaKind.AUDIO);
     const audioWork = addAudioWork(state, "work-audio", "the great gatsby", "The Great Gatsby");
@@ -8601,7 +8912,7 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(1);
     // Both works keep their own metadata — no merge
@@ -8634,7 +8945,7 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio1" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio1" });
 
     // Editions stay on their original works — no merge
     expect(state.editions.get("edition-audio1")?.workId).toBe("work-audio");
@@ -8656,7 +8967,7 @@ describe("matchAudio", () => {
     // No ebook exists
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(0);
   });
@@ -8678,7 +8989,7 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     expect(result.skipped).toBe(false);
     expect(result.linksCreated).toBe(1);
@@ -8686,9 +8997,9 @@ describe("matchAudio", () => {
     expect(state.works.has("work-ebook")).toBe(true);
     expect(state.works.has("work-audio")).toBe(true);
     expect(state.editions.get("edition-audio")?.workId).toBe("work-audio");
-    const link = getFirstAudioLink(state);
-    expect(link.ebookWorkId).toBe("work-ebook");
-    expect(link.audioWorkId).toBe("work-audio");
+    const link = getFirstMatchSuggestion(state);
+    expect(link.targetWorkId).toBe("work-ebook");
+    expect(link.suggestedWorkId).toBe("work-audio");
     expect(link.matchType).toBe("TITLE_ONLY");
     expect(link.confidence).toBe(1.0);
   });
@@ -8710,10 +9021,10 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(0);
-    expect(state.audioLinks.size).toBe(0);
+    expect(state.matchSuggestions.size).toBe(0);
   });
 
   it("matches audiobook with trailing parenthetical narrator via normalized title", async () => {
@@ -8733,10 +9044,10 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(1);
-    const link = getFirstAudioLink(state);
+    const link = getFirstMatchSuggestion(state);
     expect(link.matchType).toBe("NORMALIZED_TITLE");
     // Works are NOT merged
     expect(state.works.has("work-audio")).toBe(true);
@@ -8760,10 +9071,10 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(1);
-    const link = getFirstAudioLink(state);
+    const link = getFirstMatchSuggestion(state);
     expect(link.matchType).toBe("NORMALIZED_TITLE");
   });
 
@@ -8790,10 +9101,10 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(1);
-    const link = getFirstAudioLink(state);
+    const link = getFirstMatchSuggestion(state);
     expect(link.matchType).toBe("SUBTITLE_STRIPPED");
     // Subtitle stripping applies 0.9 confidence penalty
     expect(link.confidence).toBeLessThan(1.0);
@@ -8816,10 +9127,10 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(0);
-    expect(state.audioLinks.size).toBe(0);
+    expect(state.matchSuggestions.size).toBe(0);
   });
 
   it("creates separate links for multi-part audiobooks to the same ebook", async () => {
@@ -8840,7 +9151,7 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-audio1", "edition-audio1", "c-audio1");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result1 = await services.matchAudio({ fileAssetId: "file-audio1" });
+    const result1 = await services.matchSuggestions({ fileAssetId: "file-audio1" });
 
     expect(result1.linksCreated).toBe(1);
     // Works are NOT merged
@@ -8855,7 +9166,7 @@ describe("matchAudio", () => {
     addAudioContributor(state, "c-audio2", "Rebecca Yarros");
     addAudioEditionContributor(state, "ec-audio2", "edition-audio2", "c-audio2");
 
-    const result2 = await services.matchAudio({ fileAssetId: "file-audio2" });
+    const result2 = await services.matchSuggestions({ fileAssetId: "file-audio2" });
 
     expect(result2.linksCreated).toBe(1);
     expect(state.works.has("work-audio2")).toBe(true);
@@ -8882,10 +9193,10 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(1);
-    const link = getFirstAudioLink(state);
+    const link = getFirstMatchSuggestion(state);
     expect(link.matchType).toBe("TITLE_ONLY");
     expect(link.confidence).toBe(0.9); // SUBTITLE_CONFIDENCE_PENALTY
   });
@@ -8905,11 +9216,11 @@ describe("matchAudio", () => {
     // No authors on ebook
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     // Both sides have subtitles (after ":"), stripped to "heavy" === "heavy"
     expect(result.linksCreated).toBe(1);
-    const link = getFirstAudioLink(state);
+    const link = getFirstMatchSuggestion(state);
     expect(link.matchType).toBe("TITLE_ONLY");
     expect(link.confidence).toBe(0.9);
   });
@@ -8927,7 +9238,7 @@ describe("matchAudio", () => {
     addAudioEditionFile(state, "ef-ebook", "edition-ebook", "file-ebook");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     // Both stripped to base before ":", but "alpha" !== "beta"
     expect(result.linksCreated).toBe(0);
@@ -8946,7 +9257,7 @@ describe("matchAudio", () => {
     addAudioEditionFile(state, "ef-ebook", "edition-ebook", "file-ebook");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     // Stripped "alpha" vs canonical "beta" — don't match
     expect(result.linksCreated).toBe(0);
@@ -8968,10 +9279,10 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(1);
-    const link = getFirstAudioLink(state);
+    const link = getFirstMatchSuggestion(state);
     expect(link.matchType).toBe("TITLE_ONLY");
   });
 
@@ -9003,10 +9314,10 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(1);
-    const link = getFirstAudioLink(state);
+    const link = getFirstMatchSuggestion(state);
     expect(link.matchType).toBe("SUBTITLE_STRIPPED");
     expect(link.confidence).toBeLessThan(1.0);
   });
@@ -9028,7 +9339,7 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(0);
   });
@@ -9050,7 +9361,7 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(0);
   });
@@ -9073,7 +9384,7 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     // No match — normalization returns undefined for one side, pass 3 also fails
     expect(result.linksCreated).toBe(0);
@@ -9097,15 +9408,15 @@ describe("matchAudio", () => {
     addAudioEditionContributor(state, "ec-ebook", "edition-ebook", "c-ebook");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     expect(result.linksCreated).toBe(1);
-    const link = getFirstAudioLink(state);
+    const link = getFirstMatchSuggestion(state);
     // Pass 1 matches — SAME_WORK, not NORMALIZED_TITLE
     expect(link.matchType).toBe("SAME_WORK");
   });
 
-  it("does not create AudioLink when audiobook and ebook editions are on the same work", async () => {
+  it("does not create MatchSuggestion when audiobook and ebook editions are on the same work", async () => {
     const state = createEmptyState();
     // One work with TWO ebook editions
     addAudioFileAsset(state, "file-ebook-1", "/tmp/root/ebooks/circus1.epub");
@@ -9125,12 +9436,12 @@ describe("matchAudio", () => {
     addAudioEditionFile(state, "ef-audio", "edition-audio", "file-audio");
 
     const services = createIngestServices({ db: createTestDb(state) });
-    const result = await services.matchAudio({ fileAssetId: "file-audio" });
+    const result = await services.matchSuggestions({ fileAssetId: "file-audio" });
 
     expect(result.skipped).toBe(false);
-    // Same-work editions don't need an AudioLink
+    // Same-work editions don't need an MatchSuggestion
     expect(result.linksCreated).toBe(0);
-    expect(state.audioLinks.size).toBe(0);
+    expect(state.matchSuggestions.size).toBe(0);
   });
 });
 

@@ -1,5 +1,5 @@
 export {
-  AudioLinkMatchType,
+  MatchSuggestionType,
   AvailabilityStatus,
   ContributorRole,
   DuplicateReason,
@@ -8,6 +8,7 @@ export {
   FormatFamily,
   ImportJobKind,
   ImportJobStatus,
+  ScanStage,
   LibraryRootKind,
   MediaKind,
   ReviewStatus,
