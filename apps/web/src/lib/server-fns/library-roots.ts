@@ -59,7 +59,7 @@ const addLibraryRootSchema = z.object({
   name: z.string().min(1, "Name is required"),
   path: z.string().min(1, "Path is required"),
   kind: z.enum(["EBOOKS", "AUDIOBOOKS", "MIXED"]),
-  scanMode: z.enum(["FULL", "INCREMENTAL"]).default("INCREMENTAL"),
+  scanMode: z.enum(["FULL", "INCREMENTAL"]).default("FULL"),
 });
 
 export const addLibraryRootServerFn = createServerFn({
@@ -269,6 +269,7 @@ export const getLibraryIssuesServerFn = createServerFn({
 
 const scanLibraryRootSchema = z.object({
   libraryRootId: z.string().min(1),
+  scanMode: z.enum(["FULL", "INCREMENTAL"]).optional(),
 });
 
 export const scanLibraryRootServerFn = createServerFn({
@@ -292,7 +293,11 @@ export const scanLibraryRootServerFn = createServerFn({
 
     const jobId = await enqueueLibraryJob(
       LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT,
-      { libraryRootId: data.libraryRootId, importJobId: importJob.id },
+      {
+        libraryRootId: data.libraryRootId,
+        importJobId: importJob.id,
+        ...(data.scanMode ? { scanMode: data.scanMode } : {}),
+      },
     );
 
     await db.importJob.update({

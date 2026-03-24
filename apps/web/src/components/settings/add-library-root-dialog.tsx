@@ -28,21 +28,19 @@ export function AddLibraryRootDialog() {
   const [name, setName] = useState("");
   const [path, setPath] = useState("");
   const [kind, setKind] = useState<"EBOOKS" | "AUDIOBOOKS" | "MIXED">("EBOOKS");
-  const [scanMode, setScanMode] = useState<"FULL" | "INCREMENTAL">("INCREMENTAL");
   const [submitting, setSubmitting] = useState(false);
 
   function resetForm() {
     setName("");
     setPath("");
     setKind("EBOOKS");
-    setScanMode("INCREMENTAL");
   }
 
   async function handleSubmit(e: React.SubmitEvent) {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await addLibraryRootServerFn({ data: { name, path, kind, scanMode } });
+      await addLibraryRootServerFn({ data: { name, path, kind, scanMode: "FULL" } });
       toast.success("Library root added");
       setOpen(false);
       resetForm();
@@ -110,18 +108,9 @@ export function AddLibraryRootDialog() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid gap-2">
-              <label className="text-sm font-medium">Scan Mode</label>
-              <Select value={scanMode} onValueChange={(v) => { setScanMode(v as typeof scanMode); }}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="INCREMENTAL">Incremental</SelectItem>
-                  <SelectItem value="FULL">Full</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <p className="text-sm text-muted-foreground">
+              New libraries start with a full scan. Later scans default to incremental, with a manual full scan option available from the library card.
+            </p>
           </div>
           <DialogFooter>
             <Button type="submit" disabled={submitting}>

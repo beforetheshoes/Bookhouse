@@ -12,6 +12,7 @@ import {
   type FileAsset,
   MediaKind,
   type LibraryRoot,
+  ScanMode,
   type Work,
 } from "@bookhouse/domain";
 import { db, type EditionContributor } from "@bookhouse/db";
@@ -71,7 +72,7 @@ type FileAssetRecord = Pick<
   | "sizeBytes"
 >;
 
-type LibraryRootRecord = Pick<LibraryRoot, "id" | "lastScannedAt" | "path">;
+type LibraryRootRecord = Pick<LibraryRoot, "id" | "lastScannedAt" | "path" | "scanMode">;
 type WorkRecord = Pick<Work, "coverPath" | "description" | "enrichmentStatus" | "id" | "language" | "seriesId" | "seriesPosition" | "sortTitle" | "titleCanonical" | "titleDisplay">;
 type EditionRecord = Pick<
   Edition,
@@ -189,6 +190,11 @@ interface FileAssetUpdateArgs {
   data: Partial<FileAssetUpdateInput>;
 }
 
+interface FileAssetUpdateManyArgs {
+  where: { id: { in: string[] } };
+  data: Partial<FileAssetUpdateInput>;
+}
+
 interface WorkFindManyArgs {
   where: { titleCanonical: string } | { NOT: { id: string } };
   include: {
@@ -238,7 +244,7 @@ interface EditionFileCreateArgs {
 }
 
 interface EditionFileFindManyArgs {
-  where: { fileAssetId?: string; editionId?: string };
+  where: { fileAssetId?: string | { in: string[] }; editionId?: string };
 }
 
 interface EditionFileUpdateArgs {
@@ -264,7 +270,7 @@ interface EditionContributorCreateArgs {
 
 interface LibraryRootUpdateArgs {
   where: { id: string };
-  data: { lastScannedAt: Date };
+  data: { lastScannedAt: Date; scanMode?: ScanMode };
 }
 
 export interface IngestDb {
@@ -277,12 +283,14 @@ export interface IngestDb {
     findMany(args: FileAssetFindManyArgs): Promise<FileAssetRecord[]>;
     findUnique(args: { where: { id: string } }): Promise<FileAssetRecord | null>;
     update(args: FileAssetUpdateArgs): Promise<FileAssetRecord>;
+    updateMany(args: FileAssetUpdateManyArgs): Promise<{ count: number }>;
     upsert(args: FileAssetUpsertArgs): Promise<FileAssetRecord>;
   };
   work: {
     create(args: WorkCreateArgs): Promise<WorkRecord>;
     delete(args: { where: { id: string } }): Promise<void>;
     findMany(args: WorkFindManyArgs): Promise<WorkMatchRecord[]>;
+    findManyByIds(args: { ids: string[] }): Promise<WorkRecord[]>;
     findUnique(args: { where: { id: string } }): Promise<WorkRecord | null>;
     update(args: { where: { id: string }; data: Partial<Pick<Work, "coverPath" | "description" | "enrichmentStatus" | "language" | "seriesId" | "seriesPosition" | "sortTitle" | "titleCanonical" | "titleDisplay">> }): Promise<WorkRecord>;
   };
@@ -290,6 +298,7 @@ export interface IngestDb {
     create(args: EditionCreateArgs): Promise<EditionRecord>;
     findFirst(args: EditionFindFirstArgs): Promise<EditionRecord | null>;
     findMany(args: EditionFindManyArgs): Promise<EditionRecord[]>;
+    findManyByIds(args: { ids: string[] }): Promise<EditionRecord[]>;
     findUnique(args: { where: { id: string } }): Promise<EditionRecord | null>;
     update(args: { where: { id: string }; data: Partial<Pick<Edition, "asin" | "isbn10" | "isbn13" | "publisher" | "publishedAt" | "workId">> }): Promise<EditionRecord>;
     updateMany(args: { where: { workId: string }; data: { workId: string } }): Promise<{ count: number }>;
@@ -351,6 +360,7 @@ export interface ScanProgressData {
 
 export interface ScanLibraryRootInput {
   libraryRootId: string;
+  scanMode?: ScanMode;
   now?: Date;
   reportProgress?: (data: ScanProgressData) => Promise<void>;
 }
@@ -430,6 +440,7 @@ const OPF_PARSER_VERSION = 1;
 const AUDIOBOOK_JSON_PARSER_VERSION = 1;
 const AUDIO_ID3_PARSER_VERSION = 1;
 export const SCAN_PROGRESS_INTERVAL = 50;
+const SCAN_STAT_CONCURRENCY = 8;
 
 
 function isFileChanged(existingFileAsset: FileAssetRecord | undefined, nextFileState: { mtime: Date; sizeBytes: bigint }): boolean {
@@ -446,6 +457,83 @@ function isFileChanged(existingFileAsset: FileAssetRecord | undefined, nextFileS
   }
 
   return existingFileAsset.partialHash === null || existingFileAsset.fullHash === null;
+}
+
+function didFileStatsChange(existingFileAsset: FileAssetRecord | undefined, nextFileState: { mtime: Date; sizeBytes: bigint }): boolean {
+  if (existingFileAsset === undefined) {
+    return true;
+  }
+
+  if (existingFileAsset.sizeBytes !== nextFileState.sizeBytes) {
+    return true;
+  }
+
+  return existingFileAsset.mtime?.getTime() !== nextFileState.mtime.getTime();
+}
+
+interface ScanPathStatsResult {
+  absolutePath: string;
+  fileStats?: Stats;
+  statFailed: boolean;
+}
+
+async function collectScanPathStats(
+  discoveredPaths: string[],
+  readStats: ReadStatsFn,
+): Promise<ScanPathStatsResult[]> {
+  const results = new Array<ScanPathStatsResult>(discoveredPaths.length);
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (nextIndex < discoveredPaths.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      const absolutePath = discoveredPaths[currentIndex] as string;
+
+      try {
+        results[currentIndex] = {
+          absolutePath,
+          fileStats: await readStats(absolutePath),
+          statFailed: false,
+        };
+      } catch {
+        results[currentIndex] = {
+          absolutePath,
+          statFailed: true,
+        };
+      }
+    }
+  }
+
+  const workerCount = Math.min(SCAN_STAT_CONCURRENCY, discoveredPaths.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
+}
+
+function buildFileAssetsByDirectory(fileAssets: FileAssetRecord[]): Map<string, FileAssetRecord[]> {
+  const fileAssetsByDirectory = new Map<string, FileAssetRecord[]>();
+
+  for (const fileAsset of fileAssets) {
+    const directoryPath = path.dirname(fileAsset.absolutePath);
+    const directoryAssets = fileAssetsByDirectory.get(directoryPath) ?? [];
+    directoryAssets.push(fileAsset);
+    fileAssetsByDirectory.set(directoryPath, directoryAssets);
+  }
+
+  return fileAssetsByDirectory;
+}
+
+function setDirectoryFileAsset(
+  fileAssetsByDirectory: Map<string, FileAssetRecord[]>,
+  fileAsset: FileAssetRecord,
+): void {
+  const directoryPath = path.dirname(fileAsset.absolutePath);
+  const directoryAssets = fileAssetsByDirectory.get(directoryPath) ?? [];
+  const nextDirectoryAssets = directoryAssets.filter(
+    (directoryAsset) => directoryAsset.id !== fileAsset.id && directoryAsset.absolutePath !== fileAsset.absolutePath,
+  );
+  nextDirectoryAssets.push(fileAsset);
+  fileAssetsByDirectory.set(directoryPath, nextDirectoryAssets);
 }
 
 function getErrorCode(error: unknown): string | undefined {
@@ -713,15 +801,28 @@ function createDefaultIngestDb(): IngestDb {
           },
         }) as unknown as Promise<FileAssetRecord[]>;
       },
+      async updateMany(args: FileAssetUpdateManyArgs) {
+        return prisma.fileAsset.updateMany(args as never) as unknown as Promise<{ count: number }>;
+      },
     },
     work: {
-      ...(prisma.work as unknown as Omit<IngestDb["work"], "update">),
+      ...(prisma.work as unknown as Omit<IngestDb["work"], "findManyByIds" | "update">),
+      async findManyByIds(args: { ids: string[] }) {
+        return prisma.work.findMany({
+          where: { id: { in: args.ids } },
+        }) as unknown as Promise<WorkRecord[]>;
+      },
       async update(args: { where: { id: string }; data: Partial<Pick<Work, "coverPath" | "description" | "enrichmentStatus" | "language" | "seriesId" | "seriesPosition" | "sortTitle" | "titleCanonical" | "titleDisplay">> }) {
         return prisma.work.update(args) as unknown as Promise<WorkRecord>;
       },
     },
     edition: {
-      ...(prisma.edition as unknown as Omit<IngestDb["edition"], "update">),
+      ...(prisma.edition as unknown as Omit<IngestDb["edition"], "findManyByIds" | "update">),
+      async findManyByIds(args: { ids: string[] }) {
+        return prisma.edition.findMany({
+          where: { id: { in: args.ids } },
+        }) as unknown as Promise<EditionRecord[]>;
+      },
       async update(args: { where: { id: string }; data: Partial<Pick<Edition, "asin" | "isbn10" | "isbn13" | "publisher" | "publishedAt" | "workId">> }) {
         return prisma.edition.update(args) as unknown as Promise<EditionRecord>;
       },
@@ -740,6 +841,137 @@ function createDefaultIngestDb(): IngestDb {
     duplicateCandidate: prisma.duplicateCandidate as unknown as IngestDb["duplicateCandidate"],
     matchSuggestion: prisma.matchSuggestion as unknown as IngestDb["matchSuggestion"],
   };
+}
+
+interface ScanRecoveryContext {
+  editionById: Map<string, EditionRecord>;
+  editionFileByFileAssetId: Map<string, EditionFileRecord>;
+  fileAssetsByDirectory: Map<string, FileAssetRecord[]>;
+  workById: Map<string, WorkRecord>;
+}
+
+function addRecoveryJobIdOnce(enqueuedRecoveryJobs: string[], fileAssetId: string): void {
+  if (!enqueuedRecoveryJobs.includes(fileAssetId)) {
+    enqueuedRecoveryJobs.push(fileAssetId);
+  }
+}
+
+async function recoverUnchangedFile(
+  upsertedFileAsset: FileAssetRecord,
+  recoveryContext: ScanRecoveryContext,
+  logger: IngestLogger,
+  enqueueJob: <TName extends LibraryJobName>(jobName: TName, payload: LibraryJobPayload<TName>) => Promise<unknown>,
+  enqueuedRecoveryJobs: string[],
+): Promise<void> {
+  const recoveryFormatFamily = deriveFormatFamily(upsertedFileAsset.mediaKind);
+  if (recoveryFormatFamily !== null && upsertedFileAsset.fullHash !== null) {
+    const editionFileLink = recoveryContext.editionFileByFileAssetId.get(upsertedFileAsset.id) ?? null;
+
+    if (editionFileLink !== null) {
+      const edition = recoveryContext.editionById.get(editionFileLink.editionId) ?? null;
+      if (edition) {
+        const work = recoveryContext.workById.get(edition.workId) ?? null;
+        if (work && work.enrichmentStatus === "STUB") {
+          if (
+            upsertedFileAsset.mediaKind === MediaKind.PDF ||
+            upsertedFileAsset.mediaKind === MediaKind.CBZ
+          ) {
+            const directory = path.dirname(upsertedFileAsset.absolutePath);
+            const sidecarSiblings = (recoveryContext.fileAssetsByDirectory.get(directory) as FileAssetRecord[]).filter(
+              (fileAsset) => fileAsset.mediaKind === MediaKind.SIDECAR,
+            );
+            const opfSibling = sidecarSiblings.find(
+              (fileAsset) => getFileExtension(fileAsset.absolutePath) === "opf",
+            );
+            if (opfSibling && opfSibling.fullHash !== null) {
+              logger.info({ fileAssetId: upsertedFileAsset.id, opfFileAssetId: opfSibling.id, workId: work.id, reason: "STUB work with OPF sibling" }, "Recovery: re-enqueueing OPF PARSE");
+              await enqueueJob(LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA, {
+                fileAssetId: opfSibling.id,
+              });
+              enqueuedRecoveryJobs.push(upsertedFileAsset.id);
+            } else {
+              logger.info({ fileAssetId: upsertedFileAsset.id, workId: work.id, reason: "work stuck at STUB (no OPF)" }, "Recovery: re-enqueueing MATCH");
+              await enqueueJob(LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, {
+                fileAssetId: upsertedFileAsset.id,
+              });
+              enqueuedRecoveryJobs.push(upsertedFileAsset.id);
+            }
+          } else {
+            logger.info({ fileAssetId: upsertedFileAsset.id, workId: work.id, reason: "work stuck at STUB" }, "Recovery: re-enqueueing MATCH");
+            await enqueueJob(LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, {
+              fileAssetId: upsertedFileAsset.id,
+            });
+            enqueuedRecoveryJobs.push(upsertedFileAsset.id);
+          }
+        }
+        if (work && work.coverPath === null) {
+          logger.info({ fileAssetId: upsertedFileAsset.id, workId: work.id, reason: "missing cover" }, "Recovery: re-enqueueing PROCESS_COVER");
+          await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
+            workId: work.id,
+            fileAssetId: upsertedFileAsset.id,
+          });
+          addRecoveryJobIdOnce(enqueuedRecoveryJobs, upsertedFileAsset.id);
+        }
+      }
+
+      const editionLinkedMeta = parseStoredMetadata(upsertedFileAsset.metadata);
+      if (
+        upsertedFileAsset.mediaKind === MediaKind.AUDIO &&
+        editionLinkedMeta?.status === "unparseable"
+      ) {
+        logger.info({ fileAssetId: upsertedFileAsset.id, reason: "edition-linked audio with unparseable metadata" }, "Recovery: re-enqueueing PARSE");
+        await enqueueJob(LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA, {
+          fileAssetId: upsertedFileAsset.id,
+        });
+        addRecoveryJobIdOnce(enqueuedRecoveryJobs, upsertedFileAsset.id);
+      }
+
+      if (
+        upsertedFileAsset.mediaKind === MediaKind.AUDIO &&
+        edition &&
+        edition.formatFamily === FormatFamily.AUDIOBOOK
+      ) {
+        await enqueueJob(LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS, {
+          fileAssetId: upsertedFileAsset.id,
+        });
+        addRecoveryJobIdOnce(enqueuedRecoveryJobs, upsertedFileAsset.id);
+      }
+    } else {
+      const parsedMeta = parseStoredMetadata(upsertedFileAsset.metadata);
+
+      if (!parsedMeta || parsedMeta.status !== "parsed") {
+        if (
+          upsertedFileAsset.mediaKind === MediaKind.EPUB ||
+          upsertedFileAsset.mediaKind === MediaKind.AUDIO
+        ) {
+          logger.info({ fileAssetId: upsertedFileAsset.id, reason: "missing or failed metadata" }, "Recovery: re-enqueueing PARSE");
+          await enqueueJob(LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA, {
+            fileAssetId: upsertedFileAsset.id,
+          });
+          enqueuedRecoveryJobs.push(upsertedFileAsset.id);
+        }
+      } else {
+        logger.info({ fileAssetId: upsertedFileAsset.id, reason: "parsed but unmatched" }, "Recovery: re-enqueueing MATCH");
+        await enqueueJob(LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, {
+          fileAssetId: upsertedFileAsset.id,
+        });
+        enqueuedRecoveryJobs.push(upsertedFileAsset.id);
+      }
+    }
+  }
+
+  const isOpfSidecar = upsertedFileAsset.mediaKind === MediaKind.SIDECAR
+    && getFileExtension(upsertedFileAsset.absolutePath) === "opf";
+  if (isOpfSidecar && upsertedFileAsset.fullHash !== null) {
+    const opfMeta = parseStoredMetadata(upsertedFileAsset.metadata);
+    if (!opfMeta || opfMeta.status !== "parsed") {
+      logger.info({ fileAssetId: upsertedFileAsset.id, reason: "OPF hashed but not parsed" }, "Recovery: re-enqueueing OPF PARSE");
+      await enqueueJob(LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA, {
+        fileAssetId: upsertedFileAsset.id,
+      });
+      enqueuedRecoveryJobs.push(upsertedFileAsset.id);
+    }
+  }
 }
 
 const SIMILARITY_THRESHOLD = 0.85;
@@ -1166,6 +1398,7 @@ export function createIngestServices(
     const now = input.now ?? new Date();
     const reportProgress = input.reportProgress;
     const libraryRoot = await getExistingLibraryRootOrThrow(ingestDb, input.libraryRootId);
+    const effectiveScanMode = input.scanMode ?? libraryRoot.scanMode;
     const normalizedRootPath = normalizeRootPath(libraryRoot.path);
     const existingFileAssets = await ingestDb.fileAsset.findMany({
       where: { libraryRootId: libraryRoot.id },
@@ -1173,13 +1406,43 @@ export function createIngestServices(
     const existingByPath = new Map(
       existingFileAssets.map((fileAsset) => [fileAsset.absolutePath, fileAsset]),
     );
+    const fileAssetsByDirectory = buildFileAssetsByDirectory(existingFileAssets);
+    const existingEditionFiles = existingFileAssets.length === 0
+      ? []
+      : await ingestDb.editionFile.findMany({
+        where: {
+          fileAssetId: { in: existingFileAssets.map((fileAsset) => fileAsset.id) },
+        },
+      });
+    const editionFileByFileAssetId = new Map<string, EditionFileRecord>();
+    for (const editionFile of [...existingEditionFiles].reverse()) {
+      editionFileByFileAssetId.set(editionFile.fileAssetId, editionFile);
+    }
+    const existingEditions = existingEditionFiles.length === 0
+      ? []
+      : await ingestDb.edition.findManyByIds({
+        ids: [...new Set(existingEditionFiles.map((editionFile) => editionFile.editionId))],
+      });
+    const editionById = new Map(
+      existingEditions.map((edition) => [edition.id, edition]),
+    );
+    const existingWorks = existingEditions.length === 0
+      ? []
+      : await ingestDb.work.findManyByIds({
+        ids: [...new Set(existingEditions.map((edition) => edition.workId))],
+      });
+    const workById = new Map(
+      existingWorks.map((work) => [work.id, work]),
+    );
     const discoveredPaths = await walkRegularFiles(normalizedRootPath, listDirectory, readStats);
+    const scanPathStats = await collectScanPathStats(discoveredPaths, readStats);
     const seenPaths = new Set<string>();
     const scannedFileAssetIds: string[] = [];
     const enqueuedHashJobs: string[] = [];
     const enqueuedRecoveryJobs: string[] = [];
     const createdStubWorkIds: string[] = [];
     const seenAudioDirs = new Map<string, { workId: string; editionId: string }>();
+    const unchangedSeenFileAssetIds: string[] = [];
 
     if (reportProgress) {
       await reportProgress({ totalFiles: discoveredPaths.length, scanStage: "DISCOVERY" });
@@ -1188,12 +1451,8 @@ export function createIngestServices(
     let processedFiles = 0;
     let errorCount = 0;
 
-    for (const absolutePath of discoveredPaths) {
-      let fileStats;
-
-      try {
-        fileStats = await readStats(absolutePath);
-      } catch {
+    for (const pathStats of scanPathStats) {
+      if (pathStats.statFailed || pathStats.fileStats === undefined) {
         processedFiles++;
         errorCount++;
         if (reportProgress && processedFiles % SCAN_PROGRESS_INTERVAL === 0) {
@@ -1202,6 +1461,7 @@ export function createIngestServices(
         continue;
       }
 
+      const { absolutePath, fileStats } = pathStats;
       if (!fileStats.isFile() || fileStats.isSymbolicLink()) {
         processedFiles++;
         if (reportProgress && processedFiles % SCAN_PROGRESS_INTERVAL === 0) {
@@ -1212,188 +1472,78 @@ export function createIngestServices(
 
       const relativePath = normalizeRelativePath(normalizedRootPath, absolutePath);
       const existingFileAsset = existingByPath.get(absolutePath);
-      const upsertedFileAsset = await ingestDb.fileAsset.upsert({
-        where: { absolutePath },
-        create: {
-          absolutePath,
-          availabilityStatus: AvailabilityStatus.PRESENT,
-          basename: path.basename(absolutePath),
-          ctime: fileStats.ctime,
-          extension: getFileExtension(absolutePath),
-          lastSeenAt: now,
-          libraryRootId: libraryRoot.id,
-          mediaKind: classifyMediaKind(absolutePath),
-          metadata: null,
-          mtime: fileStats.mtime,
-          relativePath,
-          sizeBytes: BigInt(fileStats.size),
-        },
-        update: {
-          availabilityStatus: AvailabilityStatus.PRESENT,
-          basename: path.basename(absolutePath),
-          ctime: fileStats.ctime,
-          extension: getFileExtension(absolutePath),
-          lastSeenAt: now,
-          mediaKind: classifyMediaKind(absolutePath),
-          mtime: fileStats.mtime,
-          relativePath,
-          sizeBytes: BigInt(fileStats.size),
-        },
-      });
+      const nextFileState = {
+        mtime: fileStats.mtime,
+        sizeBytes: BigInt(fileStats.size),
+      };
+      const fileStatsChanged = didFileStatsChange(existingFileAsset, nextFileState);
+      const shouldEnqueueHash = effectiveScanMode === ScanMode.FULL
+        || isFileChanged(existingFileAsset, nextFileState);
+      const shouldUpsert = effectiveScanMode === ScanMode.FULL
+        || existingFileAsset === undefined
+        || existingFileAsset.availabilityStatus === AvailabilityStatus.MISSING
+        || fileStatsChanged;
+      let upsertedFileAsset: FileAssetRecord;
+      if (shouldUpsert) {
+        upsertedFileAsset = await ingestDb.fileAsset.upsert({
+          where: { absolutePath },
+          create: {
+            absolutePath,
+            availabilityStatus: AvailabilityStatus.PRESENT,
+            basename: path.basename(absolutePath),
+            ctime: fileStats.ctime,
+            extension: getFileExtension(absolutePath),
+            lastSeenAt: now,
+            libraryRootId: libraryRoot.id,
+            mediaKind: classifyMediaKind(absolutePath),
+            metadata: null,
+            mtime: fileStats.mtime,
+            relativePath,
+            sizeBytes: BigInt(fileStats.size),
+          },
+          update: {
+            availabilityStatus: AvailabilityStatus.PRESENT,
+            basename: path.basename(absolutePath),
+            ctime: fileStats.ctime,
+            extension: getFileExtension(absolutePath),
+            lastSeenAt: now,
+            mediaKind: classifyMediaKind(absolutePath),
+            mtime: fileStats.mtime,
+            relativePath,
+            sizeBytes: BigInt(fileStats.size),
+          },
+        });
+      } else {
+        upsertedFileAsset = existingFileAsset;
+      }
 
       seenPaths.add(absolutePath);
       scannedFileAssetIds.push(upsertedFileAsset.id);
+      if (shouldUpsert) {
+        existingByPath.set(absolutePath, upsertedFileAsset);
+        setDirectoryFileAsset(fileAssetsByDirectory, upsertedFileAsset);
+      } else {
+        unchangedSeenFileAssetIds.push(upsertedFileAsset.id);
+      }
 
-      if (
-        isFileChanged(existingFileAsset, {
-          mtime: fileStats.mtime,
-          sizeBytes: BigInt(fileStats.size),
-        })
-      ) {
+      if (shouldEnqueueHash) {
         await enqueueJob(LIBRARY_JOB_NAMES.HASH_FILE_ASSET, {
           fileAssetId: upsertedFileAsset.id,
         });
         enqueuedHashJobs.push(upsertedFileAsset.id);
       } else {
-        // Recovery: re-enqueue jobs for existing unchanged files with incomplete processing
-        const recoveryFormatFamily = deriveFormatFamily(upsertedFileAsset.mediaKind);
-        if (recoveryFormatFamily !== null && upsertedFileAsset.fullHash !== null) {
-          // Check EditionFile link FIRST — if matched, skip metadata check and go to work/cover recovery
-          const editionFileLink = await ingestDb.editionFile.findFirst({
-            where: { fileAssetId: upsertedFileAsset.id },
-          });
-
-          if (editionFileLink !== null) {
-            // Already linked to an edition — check work status and cover
-            const edition = await ingestDb.edition.findUnique({
-              where: { id: editionFileLink.editionId },
-            });
-            if (edition) {
-              const work = await ingestDb.work.findUnique({
-                where: { id: edition.workId },
-              });
-              if (work && work.enrichmentStatus === "STUB") {
-                // Work stuck at STUB — for PDF/CBZ, look for OPF sidecar to trigger enrichment
-                if (
-                  upsertedFileAsset.mediaKind === MediaKind.PDF ||
-                  upsertedFileAsset.mediaKind === MediaKind.CBZ
-                ) {
-                  const directory = path.dirname(upsertedFileAsset.absolutePath);
-                  const sidecarSiblings = await ingestDb.fileAsset.findByDirectory({
-                    directoryPath: directory,
-                    mediaKinds: [MediaKind.SIDECAR],
-                  });
-                  const opfSibling = sidecarSiblings.find(
-                    (fa) => getFileExtension(fa.absolutePath) === "opf",
-                  );
-                  if (opfSibling && opfSibling.fullHash !== null) {
-                    logger.info({ fileAssetId: upsertedFileAsset.id, opfFileAssetId: opfSibling.id, workId: work.id, reason: "STUB work with OPF sibling" }, "Recovery: re-enqueueing OPF PARSE");
-                    await enqueueJob(LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA, {
-                      fileAssetId: opfSibling.id,
-                    });
-                    enqueuedRecoveryJobs.push(upsertedFileAsset.id);
-                  } else {
-                    // No OPF sidecar — fall back to MATCH
-                    logger.info({ fileAssetId: upsertedFileAsset.id, workId: work.id, reason: "work stuck at STUB (no OPF)" }, "Recovery: re-enqueueing MATCH");
-                    await enqueueJob(LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, {
-                      fileAssetId: upsertedFileAsset.id,
-                    });
-                    enqueuedRecoveryJobs.push(upsertedFileAsset.id);
-                  }
-                } else {
-                  // EPUB/AUDIO — MATCH can use their own parsed metadata
-                  logger.info({ fileAssetId: upsertedFileAsset.id, workId: work.id, reason: "work stuck at STUB" }, "Recovery: re-enqueueing MATCH");
-                  await enqueueJob(LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, {
-                    fileAssetId: upsertedFileAsset.id,
-                  });
-                  enqueuedRecoveryJobs.push(upsertedFileAsset.id);
-                }
-              }
-              // Separately check for missing covers — runs for both STUB and ENRICHED works
-              if (work && work.coverPath === null) {
-                logger.info({ fileAssetId: upsertedFileAsset.id, workId: work.id, reason: "missing cover" }, "Recovery: re-enqueueing PROCESS_COVER");
-                await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
-                  workId: work.id,
-                  fileAssetId: upsertedFileAsset.id,
-                });
-                if (!enqueuedRecoveryJobs.includes(upsertedFileAsset.id)) {
-                  enqueuedRecoveryJobs.push(upsertedFileAsset.id);
-                }
-              }
-            }
-
-            // Re-parse edition-linked AUDIO files with unparseable metadata
-            // (encoding errors are now handled gracefully, so re-parsing will succeed)
-            const editionLinkedMeta = parseStoredMetadata(upsertedFileAsset.metadata);
-            if (
-              upsertedFileAsset.mediaKind === MediaKind.AUDIO &&
-              editionLinkedMeta?.status === "unparseable"
-            ) {
-              logger.info({ fileAssetId: upsertedFileAsset.id, reason: "edition-linked audio with unparseable metadata" }, "Recovery: re-enqueueing PARSE");
-              await enqueueJob(LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA, {
-                fileAssetId: upsertedFileAsset.id,
-              });
-              if (!enqueuedRecoveryJobs.includes(upsertedFileAsset.id)) {
-                enqueuedRecoveryJobs.push(upsertedFileAsset.id);
-              }
-            }
-
-            // Re-enqueue MATCH_SUGGESTIONS for AUDIO files in AUDIOBOOK editions.
-            // matchSuggestionsImpl is safe to re-run: it skips pairs that already have suggestions.
-            // This ensures match suggestions are generated even when the edition link was
-            // created before MATCH_SUGGESTIONS enqueuing was added.
-            if (
-              upsertedFileAsset.mediaKind === MediaKind.AUDIO &&
-              edition &&
-              edition.formatFamily === FormatFamily.AUDIOBOOK
-            ) {
-              await enqueueJob(LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS, {
-                fileAssetId: upsertedFileAsset.id,
-              });
-              if (!enqueuedRecoveryJobs.includes(upsertedFileAsset.id)) {
-                enqueuedRecoveryJobs.push(upsertedFileAsset.id);
-              }
-            }
-          } else {
-            // Not linked to an edition — recover from earlier in the pipeline
-            const parsedMeta = parseStoredMetadata(upsertedFileAsset.metadata);
-
-            if (!parsedMeta || parsedMeta.status !== "parsed") {
-              // Missing or failed metadata parse — only EPUB and AUDIO are parseable
-              if (
-                upsertedFileAsset.mediaKind === MediaKind.EPUB ||
-                upsertedFileAsset.mediaKind === MediaKind.AUDIO
-              ) {
-                logger.info({ fileAssetId: upsertedFileAsset.id, reason: "missing or failed metadata" }, "Recovery: re-enqueueing PARSE");
-                await enqueueJob(LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA, {
-                  fileAssetId: upsertedFileAsset.id,
-                });
-                enqueuedRecoveryJobs.push(upsertedFileAsset.id);
-              }
-            } else {
-              // Parsed but not matched to edition
-              logger.info({ fileAssetId: upsertedFileAsset.id, reason: "parsed but unmatched" }, "Recovery: re-enqueueing MATCH");
-              await enqueueJob(LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, {
-                fileAssetId: upsertedFileAsset.id,
-              });
-              enqueuedRecoveryJobs.push(upsertedFileAsset.id);
-            }
-          }
-        }
-
-        // Recovery for OPF sidecars: re-enqueue PARSE if hashed but not parsed
-        const isOpfSidecar = upsertedFileAsset.mediaKind === MediaKind.SIDECAR
-          && getFileExtension(upsertedFileAsset.absolutePath) === "opf";
-        if (isOpfSidecar && upsertedFileAsset.fullHash !== null) {
-          const opfMeta = parseStoredMetadata(upsertedFileAsset.metadata);
-          if (!opfMeta || opfMeta.status !== "parsed") {
-            logger.info({ fileAssetId: upsertedFileAsset.id, reason: "OPF hashed but not parsed" }, "Recovery: re-enqueueing OPF PARSE");
-            await enqueueJob(LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA, {
-              fileAssetId: upsertedFileAsset.id,
-            });
-            enqueuedRecoveryJobs.push(upsertedFileAsset.id);
-          }
-        }
+        await recoverUnchangedFile(
+          upsertedFileAsset,
+          {
+            editionById,
+            editionFileByFileAssetId,
+            fileAssetsByDirectory,
+            workById,
+          },
+          logger,
+          enqueueJob,
+          enqueuedRecoveryJobs,
+        );
       }
 
       // Create stub Work/Edition/EditionFile for new files with a content format
@@ -1508,24 +1658,31 @@ export function createIngestServices(
     }
 
     const missingFileAssetIds: string[] = [];
-
     for (const existingFileAsset of existingFileAssets) {
-      if (seenPaths.has(existingFileAsset.absolutePath)) {
-        continue;
+      if (!seenPaths.has(existingFileAsset.absolutePath)) {
+        missingFileAssetIds.push(existingFileAsset.id);
       }
+    }
 
-      await ingestDb.fileAsset.update({
-        where: { id: existingFileAsset.id },
+    if (unchangedSeenFileAssetIds.length > 0) {
+      await ingestDb.fileAsset.updateMany({
+        where: { id: { in: unchangedSeenFileAssetIds } },
+        data: { lastSeenAt: now },
+      });
+    }
+
+    if (missingFileAssetIds.length > 0) {
+      await ingestDb.fileAsset.updateMany({
+        where: { id: { in: missingFileAssetIds } },
         data: {
           availabilityStatus: AvailabilityStatus.MISSING,
         },
       });
-      missingFileAssetIds.push(existingFileAsset.id);
     }
 
     await ingestDb.libraryRoot.update({
       where: { id: libraryRoot.id },
-      data: { lastScannedAt: now },
+      data: { lastScannedAt: now, scanMode: ScanMode.INCREMENTAL },
     });
 
     return {

@@ -187,11 +187,18 @@ function LibraryRootCard({ root }: { root: LibraryRootWithExtras }) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [startingScanButton, setStartingScanButton] = useState<"default" | "full" | null>(null);
 
-  async function handleScan() {
+  async function handleScan(
+    scanMode: "FULL" | "INCREMENTAL",
+    startingButton: "default" | "full",
+  ) {
+    setStartingScanButton(startingButton);
     setScanning(true);
     try {
-      const result = await scanLibraryRootServerFn({ data: { libraryRootId: root.id } });
+      const result = await scanLibraryRootServerFn({
+        data: { libraryRootId: root.id, scanMode },
+      });
       toast.success(`Scan started for "${root.name}"`, {
         action: {
           label: "View Job",
@@ -210,6 +217,7 @@ function LibraryRootCard({ root }: { root: LibraryRootWithExtras }) {
       );
     } finally {
       setScanning(false);
+      setStartingScanButton(null);
     }
   }
 
@@ -253,7 +261,7 @@ function LibraryRootCard({ root }: { root: LibraryRootWithExtras }) {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => { void handleScan(); }}
+                onClick={() => { void handleScan(root.scanMode, "default"); }}
                 disabled={scanning || root.scanProgress !== null}
               >
                 {root.scanProgress ? (
@@ -268,7 +276,7 @@ function LibraryRootCard({ root }: { root: LibraryRootWithExtras }) {
                       Scanning...
                     </>
                   )
-                ) : scanning ? (
+                ) : scanning && startingScanButton === "default" ? (
                   <>
                     <Loader2 className="size-4 animate-spin" />
                     Starting...
@@ -283,6 +291,25 @@ function LibraryRootCard({ root }: { root: LibraryRootWithExtras }) {
               <Button
                 variant="outline"
                 size="sm"
+                onClick={() => { void handleScan("FULL", "full"); }}
+                disabled={scanning || root.scanProgress !== null}
+              >
+                {scanning && startingScanButton === "full" ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Starting...
+                  </>
+                ) : (
+                  <>
+                    <Play className="size-4" />
+                    Full Scan
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label={`Remove ${root.name}`}
                 onClick={() => { setDeleteOpen(true); }}
               >
                 <Trash2 className="size-4" />
@@ -297,7 +324,7 @@ function LibraryRootCard({ root }: { root: LibraryRootWithExtras }) {
               <Badge variant="outline">{root.kind}</Badge>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="text-muted-foreground">Scan Mode:</span>
+              <span className="text-muted-foreground">Default Scan:</span>
               <Badge variant="outline">{root.scanMode}</Badge>
             </div>
             <div className="flex items-center gap-1.5">

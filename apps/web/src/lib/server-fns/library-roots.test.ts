@@ -1,14 +1,29 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type * as SharedModule from "@bookhouse/shared";
+import type { ZodType } from "zod";
 
 vi.mock("@tanstack/react-start", () => ({
   createServerFn: () => {
     type Builder = {
-      inputValidator: () => Builder;
+      inputValidator: (validator: ZodType) => Builder;
       handler: (fn: (a: Record<string, unknown>) => unknown) => (a: Record<string, unknown>) => unknown;
     };
+    let validator: ZodType | null = null;
     const b: Builder = {
-      inputValidator: () => b,
-      handler: (fn) => (a) => fn(a),
+      inputValidator: (nextValidator) => {
+        validator = nextValidator;
+        return b;
+      },
+      handler: (fn) => (a) => {
+        const validatedData: unknown = validator?.parse((a as { data?: unknown }).data);
+        const parsed = validator === null
+          ? a
+          : {
+            ...a,
+            data: validatedData,
+          };
+        return fn(parsed);
+      },
     };
     return b;
   },
@@ -57,20 +72,26 @@ vi.mock("@bookhouse/db", () => ({
   },
 }));
 
-const enqueueLibraryJobMock = vi.fn();
-const getLibraryJobSnapshotMock = vi.fn();
-const getImportJobLiveActivityMock = vi.fn();
-const LIBRARY_JOB_NAMES = {
-  SCAN_LIBRARY_ROOT: "SCAN_LIBRARY_ROOT",
-  PARSE_FILE_ASSET_METADATA: "PARSE_FILE_ASSET_METADATA",
-};
-
-vi.mock("@bookhouse/shared", () => ({
-  enqueueLibraryJob: enqueueLibraryJobMock,
-  getImportJobLiveActivity: getImportJobLiveActivityMock,
-  getLibraryJobSnapshot: getLibraryJobSnapshotMock,
-  LIBRARY_JOB_NAMES,
+const {
+  enqueueLibraryJobMock,
+  getLibraryJobSnapshotMock,
+  getImportJobLiveActivityMock,
+} = vi.hoisted(() => ({
+  enqueueLibraryJobMock: vi.fn(),
+  getLibraryJobSnapshotMock: vi.fn(),
+  getImportJobLiveActivityMock: vi.fn(),
 }));
+
+vi.mock("@bookhouse/shared", async () => {
+  const actual = await vi.importActual<typeof SharedModule>("@bookhouse/shared");
+
+  return {
+    ...actual,
+    enqueueLibraryJob: enqueueLibraryJobMock,
+    getImportJobLiveActivity: getImportJobLiveActivityMock,
+    getLibraryJobSnapshot: getLibraryJobSnapshotMock,
+  };
+});
 
 const parseFileAssetMetadataMock = vi.fn();
 const createIngestServicesMock = vi.fn(() => ({
@@ -94,6 +115,7 @@ import {
   getLibraryIssuesServerFn,
   retryLibraryIssuesServerFn,
 } from "./library-roots";
+import { LIBRARY_JOB_NAMES } from "@bookhouse/shared";
 
 describe("getLibraryRootsServerFn", () => {
   beforeEach(() => {
@@ -131,7 +153,36 @@ describe("addLibraryRootServerFn", () => {
     libraryRootCreateMock.mockReset();
   });
 
-  it("calls db.libraryRoot.create with name, path, kind, scanMode and returns result", async () => {
+  it("defaults new library roots to FULL scan mode", async () => {
+    const fakeRoot = {
+      id: "root-new",
+      name: "Books",
+      path: "/books",
+      kind: "EBOOKS",
+      scanMode: "FULL",
+    };
+    libraryRootCreateMock.mockResolvedValue(fakeRoot);
+
+    const result = await addLibraryRootServerFn({
+      data: {
+        name: "Books",
+        path: "/books",
+        kind: "EBOOKS",
+      },
+    });
+
+    expect(libraryRootCreateMock).toHaveBeenCalledWith({
+      data: {
+        name: "Books",
+        path: "/books",
+        kind: "EBOOKS",
+        scanMode: "FULL",
+      },
+    });
+    expect(result).toBe(fakeRoot);
+  });
+
+  it("preserves an explicit incremental scan mode when provided", async () => {
     const fakeRoot = {
       id: "root-new",
       name: "Books",
@@ -253,6 +304,21 @@ describe("scanLibraryRootServerFn", () => {
     expect(enqueueLibraryJobMock).toHaveBeenCalledWith(
       LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT,
       { libraryRootId: "root-xyz", importJobId: "job-abc" },
+    );
+  });
+
+  it("passes through a manual FULL scan override", async () => {
+    importJobCreateMock.mockResolvedValue({ id: "job-abc" });
+    enqueueLibraryJobMock.mockResolvedValue("bull-job-123");
+    importJobUpdateMock.mockResolvedValue({});
+
+    await scanLibraryRootServerFn({
+      data: { libraryRootId: "root-xyz", scanMode: "FULL" },
+    });
+
+    expect(enqueueLibraryJobMock).toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT,
+      { libraryRootId: "root-xyz", importJobId: "job-abc", scanMode: "FULL" },
     );
   });
 
