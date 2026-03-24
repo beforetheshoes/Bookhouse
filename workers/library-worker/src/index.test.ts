@@ -267,6 +267,32 @@ describe("library worker", () => {
     });
   });
 
+  it("passes a scan mode override through to ingest scanLibraryRoot", async () => {
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor({
+      hashFileAsset: hashFileAssetMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
+      parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
+      scanLibraryRoot: scanLibraryRootMock,
+      enrichWork: enrichWorkMock,
+      detectDuplicates: detectDuplicatesMock,
+      matchSuggestions: matchSuggestionsMock,
+    });
+
+    scanLibraryRootMock.mockResolvedValueOnce({ missingFileAssetIds: [] });
+
+    await processor(createMockJob({
+      data: { libraryRootId: "root-1", scanMode: "FULL" },
+      name: "scan-library-root",
+    }) as never);
+
+    expect(scanLibraryRootMock).toHaveBeenCalledWith({
+      libraryRootId: "root-1",
+      scanMode: "FULL",
+    });
+  });
+
   it("uses /data/covers as the production fallback when COVER_CACHE_DIR is unset", async () => {
     process.env.NODE_ENV = "production";
 

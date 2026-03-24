@@ -159,7 +159,7 @@ describe("LibrariesPage", () => {
     expect(screen.queryByText("Never")).toBeNull();
   });
 
-  it("scan button calls scanLibraryRootServerFn", async () => {
+  it("scan button calls scanLibraryRootServerFn with the root default scan mode", async () => {
     scanLibraryRootServerFnMock.mockResolvedValue({ importJobId: "job-123" });
     mockLoaderData = { roots: [makeRoot()] };
     const { Route } = await import("./libraries");
@@ -171,8 +171,50 @@ describe("LibrariesPage", () => {
 
     await waitFor(() => {
       expect(scanLibraryRootServerFnMock).toHaveBeenCalledWith({
-        data: { libraryRootId: "root-1" },
+        data: { libraryRootId: "root-1", scanMode: "INCREMENTAL" },
       });
+    });
+  });
+
+  it("full scan button triggers a one-off FULL scan", async () => {
+    scanLibraryRootServerFnMock.mockResolvedValue({ importJobId: "job-123" });
+    mockLoaderData = { roots: [makeRoot({ scanMode: "INCREMENTAL" })] };
+    const { Route } = await import("./libraries");
+    const LibrariesPage = (Route.options.component as React.ComponentType);
+    render(<LibrariesPage />);
+
+    fireEvent.click(screen.getByText("Full Scan"));
+
+    await waitFor(() => {
+      expect(scanLibraryRootServerFnMock).toHaveBeenCalledWith({
+        data: { libraryRootId: "root-1", scanMode: "FULL" },
+      });
+    });
+  });
+
+  it("full scan button shows a starting state while the request is in flight", async () => {
+    let resolveScan!: (value: { importJobId: string }) => void;
+    scanLibraryRootServerFnMock.mockReturnValue(
+      new Promise<{ importJobId: string }>((resolve) => {
+        resolveScan = resolve;
+      }),
+    );
+    mockLoaderData = { roots: [makeRoot({ scanMode: "INCREMENTAL" })] };
+    const { Route } = await import("./libraries");
+    const LibrariesPage = (Route.options.component as React.ComponentType);
+    render(<LibrariesPage />);
+
+    const fullScanButton = screen.getByRole("button", { name: "Full Scan" });
+    fireEvent.click(fullScanButton);
+
+    await waitFor(() => {
+      expect(fullScanButton.textContent).toContain("Starting...");
+    });
+
+    resolveScan({ importJobId: "job-123" });
+
+    await waitFor(() => {
+      expect(fullScanButton.textContent).toContain("Full Scan");
     });
   });
 
@@ -199,13 +241,7 @@ describe("LibrariesPage", () => {
     const LibrariesPage = (Route.options.component as React.ComponentType);
     render(<LibrariesPage />);
 
-    // The delete button has a Trash2 icon - find by aria or role
-    // There are two buttons: "Scan Now" and the trash button
-    const buttons = screen.getAllByRole("button");
-    // Trash button is second
-    const trashBtn = buttons.find((b) => !b.textContent.includes("Scan") && !b.textContent.includes("Add"));
-    if (!trashBtn) throw new Error("trash button not found");
-    fireEvent.click(trashBtn);
+    fireEvent.click(screen.getByRole("button", { name: /remove/i }));
 
     await waitFor(() => {
       expect(screen.getByText("Remove Library Root")).toBeTruthy();
@@ -220,10 +256,7 @@ describe("LibrariesPage", () => {
     render(<LibrariesPage />);
 
     // Open delete dialog
-    const buttons = screen.getAllByRole("button");
-    const trashBtn = buttons.find((b) => !b.textContent.includes("Scan") && !b.textContent.includes("Add"));
-    if (!trashBtn) throw new Error("trash button not found");
-    fireEvent.click(trashBtn);
+    fireEvent.click(screen.getByRole("button", { name: /remove/i }));
 
     await waitFor(() => {
       expect(screen.getByText("Remove Library Root")).toBeTruthy();
@@ -282,10 +315,7 @@ describe("LibrariesPage", () => {
     render(<LibrariesPage />);
 
     // Open delete dialog
-    const buttons = screen.getAllByRole("button");
-    const trashBtn = buttons.find((b) => !b.textContent.includes("Scan") && !b.textContent.includes("Add"));
-    if (!trashBtn) throw new Error("trash button not found");
-    fireEvent.click(trashBtn);
+    fireEvent.click(screen.getByRole("button", { name: /remove/i }));
 
     await waitFor(() => {
       expect(screen.getByText("Remove Library Root")).toBeTruthy();
@@ -307,10 +337,7 @@ describe("LibrariesPage", () => {
     render(<LibrariesPage />);
 
     // Open delete dialog
-    const buttons = screen.getAllByRole("button");
-    const trashBtn = buttons.find((b) => !b.textContent.includes("Scan") && !b.textContent.includes("Add"));
-    if (!trashBtn) throw new Error("trash button not found");
-    fireEvent.click(trashBtn);
+    fireEvent.click(screen.getByRole("button", { name: /remove/i }));
 
     await waitFor(() => {
       expect(screen.getByText("Remove Library Root")).toBeTruthy();
@@ -332,10 +359,7 @@ describe("LibrariesPage", () => {
     render(<LibrariesPage />);
 
     // Open delete dialog
-    const buttons = screen.getAllByRole("button");
-    const trashBtn = buttons.find((b) => !b.textContent.includes("Scan") && !b.textContent.includes("Add"));
-    if (!trashBtn) throw new Error("trash button not found");
-    fireEvent.click(trashBtn);
+    fireEvent.click(screen.getByRole("button", { name: /remove/i }));
 
     await waitFor(() => {
       expect(screen.getByText("Remove Library Root")).toBeTruthy();
@@ -353,6 +377,7 @@ describe("LibrariesPage", () => {
   it("loader calls getLibraryRootsServerFn with progress and issue count per root", async () => {
     const mockRoots = [{ id: "root-1", name: "Loader Root", path: "/books", kind: "EBOOKS", scanMode: "INCREMENTAL", isEnabled: true, lastScannedAt: null }];
     getLibraryRootsServerFnMock.mockResolvedValueOnce(mockRoots);
+    getMissingFileBehaviorServerFnMock.mockResolvedValueOnce("manual");
     getScanProgressServerFnMock.mockResolvedValueOnce(null);
     getLibraryIssueCountServerFnMock.mockResolvedValueOnce(0);
     const { Route } = await import("./libraries");
@@ -360,7 +385,10 @@ describe("LibrariesPage", () => {
     expect(getLibraryRootsServerFnMock).toHaveBeenCalled();
     expect(getScanProgressServerFnMock).toHaveBeenCalledWith({ data: { libraryRootId: "root-1" } });
     expect(getLibraryIssueCountServerFnMock).toHaveBeenCalledWith({ data: { libraryRootId: "root-1" } });
-    expect(result).toEqual({ roots: [{ ...mockRoots[0], scanProgress: null, issueCount: 0 }] });
+    expect(result).toEqual({
+      roots: [{ ...mockRoots[0], scanProgress: null, issueCount: 0 }],
+      missingFileBehavior: "manual",
+    });
   });
 
   it("cancel button in delete dialog closes the dialog", async () => {
@@ -370,10 +398,7 @@ describe("LibrariesPage", () => {
     render(<LibrariesPage />);
 
     // Open delete dialog
-    const buttons = screen.getAllByRole("button");
-    const trashBtn = buttons.find((b) => !b.textContent.includes("Scan") && !b.textContent.includes("Add"));
-    if (!trashBtn) throw new Error("trash button not found");
-    fireEvent.click(trashBtn);
+    fireEvent.click(screen.getByRole("button", { name: /remove/i }));
 
     await waitFor(() => {
       expect(screen.getByText("Remove Library Root")).toBeTruthy();

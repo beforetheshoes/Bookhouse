@@ -1,37 +1,56 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+type RuntimeLibraryRoot = {
+  id: string;
+  lastScannedAt: Date | null;
+  path: string;
+  scanMode: "FULL" | "INCREMENTAL";
+};
+
 const enqueueLibraryJobMock = vi.fn(() => Promise.resolve("job-1"));
 const fileAssetFindManyMock = vi.fn(() => Promise.resolve([]));
+const fileAssetUpdateManyMock = vi.fn(() => Promise.resolve({ count: 0 }));
+const fileAssetUpsertMock = vi.fn(() => Promise.resolve({
+  absolutePath: "/tmp/runtime-root/book.epub",
+  availabilityStatus: "PRESENT",
+  fullHash: null,
+  id: "file-1",
+  mtime: new Date("2025-01-01T00:00:00.000Z"),
+  partialHash: null,
+  sizeBytes: 5n,
+}));
+const editionFindManyMock = vi.fn(() => Promise.resolve([]));
+const editionFileFindManyMock = vi.fn(() => Promise.resolve([]));
 const editionUpdateMock = vi.fn(() => Promise.reject(new Error("not used")));
+let runtimeLibraryRoot: RuntimeLibraryRoot = {
+  id: "root-1",
+  lastScannedAt: null,
+  path: "/tmp/runtime-root",
+  scanMode: "INCREMENTAL",
+};
+const libraryRootFindUniqueMock = vi.fn(() => Promise.resolve(runtimeLibraryRoot));
 const workUpdateMock = vi.fn(() => Promise.reject(new Error("not used")));
+const workFindManyMock = vi.fn(() => Promise.resolve([]));
 const seriesCreateMock = vi.fn(() => Promise.resolve({ id: "series-1", name: "test" }));
 
 vi.mock("@bookhouse/db", () => ({
   db: {
     libraryRoot: {
-      findUnique: vi.fn(() => Promise.resolve({
-        id: "root-1",
-        lastScannedAt: null,
-        path: "/tmp/runtime-root",
-      })),
-      update: vi.fn(({ data }: { data: { lastScannedAt: Date } }) => Promise.resolve({
-        id: "root-1",
-        lastScannedAt: data.lastScannedAt,
-        path: "/tmp/runtime-root",
-      })),
+      findUnique: libraryRootFindUniqueMock,
+      update: vi.fn(({ data }: { data: { lastScannedAt: Date; scanMode?: "FULL" | "INCREMENTAL" } }) => {
+        runtimeLibraryRoot = {
+          ...runtimeLibraryRoot,
+          lastScannedAt: data.lastScannedAt,
+          scanMode: data.scanMode ?? runtimeLibraryRoot.scanMode,
+        };
+        return Promise.resolve(runtimeLibraryRoot);
+      }),
     },
     fileAsset: {
       findByDirectory: vi.fn(() => Promise.resolve([])),
       findMany: fileAssetFindManyMock,
-      upsert: vi.fn(() => Promise.resolve({
-        absolutePath: "/tmp/runtime-root/book.epub",
-        availabilityStatus: "PRESENT",
-        fullHash: null,
-        id: "file-1",
-        mtime: new Date("2025-01-01T00:00:00.000Z"),
-        partialHash: null,
-        sizeBytes: 5n,
-      })),
+      updateMany: fileAssetUpdateManyMock,
+      upsert: fileAssetUpsertMock,
       findUnique: vi.fn(() => Promise.resolve(null)),
       update: vi.fn(() => Promise.reject(new Error("not used"))),
     },
@@ -41,6 +60,7 @@ vi.mock("@bookhouse/db", () => ({
     },
     edition: {
       create: vi.fn(() => Promise.reject(new Error("not used"))),
+      findMany: editionFindManyMock,
       findFirst: vi.fn(() => Promise.resolve(null)),
       findUnique: vi.fn(() => Promise.resolve(null)),
       update: editionUpdateMock,
@@ -51,11 +71,12 @@ vi.mock("@bookhouse/db", () => ({
     },
     editionFile: {
       create: vi.fn(() => Promise.reject(new Error("not used"))),
+      findMany: editionFileFindManyMock,
       findFirst: vi.fn(() => Promise.resolve(null)),
     },
     work: {
       create: vi.fn(() => Promise.reject(new Error("not used"))),
-      findMany: vi.fn(() => Promise.resolve([])),
+      findMany: workFindManyMock,
       findUnique: vi.fn(() => Promise.resolve(null)),
       update: workUpdateMock,
     },
@@ -89,6 +110,10 @@ vi.mock("@bookhouse/domain", () => ({
     PDF: "PDF",
     SIDECAR: "SIDECAR",
   },
+  ScanMode: {
+    FULL: "FULL",
+    INCREMENTAL: "INCREMENTAL",
+  },
 }));
 
 vi.mock("@bookhouse/shared", async () => {
@@ -101,7 +126,35 @@ vi.mock("@bookhouse/shared", async () => {
 });
 
 beforeEach(() => {
+  runtimeLibraryRoot = {
+    id: "root-1",
+    lastScannedAt: null,
+    path: "/tmp/runtime-root",
+    scanMode: "INCREMENTAL",
+  };
   enqueueLibraryJobMock.mockClear();
+  editionFileFindManyMock.mockReset();
+  editionFileFindManyMock.mockResolvedValue([]);
+  editionFindManyMock.mockReset();
+  editionFindManyMock.mockResolvedValue([]);
+  fileAssetFindManyMock.mockReset();
+  fileAssetFindManyMock.mockResolvedValue([]);
+  fileAssetUpdateManyMock.mockReset();
+  fileAssetUpdateManyMock.mockResolvedValue({ count: 0 });
+  fileAssetUpsertMock.mockReset();
+  fileAssetUpsertMock.mockResolvedValue({
+    absolutePath: "/tmp/runtime-root/book.epub",
+    availabilityStatus: "PRESENT",
+    fullHash: null,
+    id: "file-1",
+    mtime: new Date("2025-01-01T00:00:00.000Z"),
+    partialHash: null,
+    sizeBytes: 5n,
+  });
+  libraryRootFindUniqueMock.mockReset();
+  libraryRootFindUniqueMock.mockImplementation(() => Promise.resolve(runtimeLibraryRoot));
+  workFindManyMock.mockReset();
+  workFindManyMock.mockResolvedValue([]);
 });
 
 describe("ingest runtime defaults", () => {
@@ -194,7 +247,7 @@ describe("ingest runtime defaults", () => {
     expect(seriesCreateMock).toHaveBeenCalledTimes(1);
   });
 
-  it("uses the default queue enqueuer when no override is provided", async () => {
+  it("uses FULL once for a new root, then requires an explicit override for later full scans", async () => {
     vi.resetModules();
     const { createIngestServices } = await import("./services");
     const services = createIngestServices({
@@ -217,13 +270,177 @@ describe("ingest runtime defaults", () => {
         } as never)),
     });
 
+    runtimeLibraryRoot = {
+      id: "root-1",
+      lastScannedAt: null,
+      path: "/tmp/runtime-root",
+      scanMode: "FULL",
+    };
+    fileAssetFindManyMock
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{
+        absolutePath: "/tmp/runtime-root/book.epub",
+        availabilityStatus: "PRESENT",
+        basename: "book.epub",
+        ctime: new Date("2025-01-01T00:00:00.000Z"),
+        extension: "epub",
+        fullHash: "full",
+        id: "file-1",
+        lastSeenAt: new Date("2025-01-01T00:00:00.000Z"),
+        libraryRootId: "root-1",
+        mediaKind: "EPUB",
+        metadata: null,
+        mtime: new Date("2025-01-01T00:00:00.000Z"),
+        partialHash: "partial",
+        relativePath: "book.epub",
+        sizeBytes: 5n,
+      }] as never);
+    fileAssetUpsertMock.mockResolvedValue({
+      absolutePath: "/tmp/runtime-root/book.epub",
+      availabilityStatus: "PRESENT",
+      fullHash: "full",
+      id: "file-1",
+      mtime: new Date("2025-01-01T00:00:00.000Z"),
+      partialHash: "partial",
+      sizeBytes: 5n,
+    } as never);
+
     const result = await services.scanLibraryRoot({ libraryRootId: "root-1" });
     const secondResult = await services.scanLibraryRoot({ libraryRootId: "root-1" });
+    const thirdResult = await services.scanLibraryRoot({
+      libraryRootId: "root-1",
+      scanMode: "FULL",
+    });
 
     expect(result.enqueuedHashJobs).toEqual(["file-1"]);
-    expect(secondResult.enqueuedHashJobs).toEqual(["file-1"]);
+    expect(secondResult.enqueuedHashJobs).toEqual([]);
+    expect(thirdResult.enqueuedHashJobs).toEqual(["file-1"]);
     expect(enqueueLibraryJobMock).toHaveBeenCalledWith("hash-file-asset", {
       fileAssetId: "file-1",
+    });
+  });
+
+  it("uses the default adapter bulk update for unchanged incremental files", async () => {
+    vi.resetModules();
+    const { createIngestServices } = await import("./services");
+    const services = createIngestServices({
+      listDirectory: (() =>
+        Promise.resolve([
+          {
+            isDirectory: () => false,
+            isFile: () => true,
+            isSymbolicLink: () => false,
+            name: "book.epub",
+          },
+        ] as never)),
+      readStats: (() =>
+        Promise.resolve({
+          ctime: new Date("2025-01-01T00:00:00.000Z"),
+          isFile: () => true,
+          isSymbolicLink: () => false,
+          mtime: new Date("2025-01-01T00:00:00.000Z"),
+          size: 5,
+        } as never)),
+    });
+
+    const unchangedAsset = {
+      absolutePath: "/tmp/runtime-root/book.epub",
+      availabilityStatus: "PRESENT",
+      basename: "book.epub",
+      ctime: new Date("2025-01-01T00:00:00.000Z"),
+      extension: "epub",
+      fullHash: "full",
+      id: "file-1",
+      lastSeenAt: new Date("2024-12-31T00:00:00.000Z"),
+      libraryRootId: "root-1",
+      mediaKind: "EPUB",
+      metadata: null,
+      mtime: new Date("2025-01-01T00:00:00.000Z"),
+      partialHash: "partial",
+      relativePath: "book.epub",
+      sizeBytes: 5n,
+    };
+
+    runtimeLibraryRoot = {
+      id: "root-1",
+      lastScannedAt: null,
+      path: "/tmp/runtime-root",
+      scanMode: "INCREMENTAL",
+    };
+    fileAssetFindManyMock.mockResolvedValue([unchangedAsset] as never);
+
+    const result = await services.scanLibraryRoot({
+      libraryRootId: "root-1",
+      now: new Date("2025-01-01T00:10:00.000Z"),
+    });
+
+    expect(result.enqueuedHashJobs).toEqual([]);
+    expect(fileAssetUpsertMock).not.toHaveBeenCalled();
+    expect(fileAssetUpdateManyMock).toHaveBeenCalledWith({
+      where: { id: { in: ["file-1"] } },
+      data: { lastSeenAt: new Date("2025-01-01T00:10:00.000Z") },
+    });
+  });
+
+  it("uses default adapter preload queries for unchanged recovery paths", async () => {
+    vi.resetModules();
+    const { createIngestServices } = await import("./services");
+    const services = createIngestServices({
+      listDirectory: (() =>
+        Promise.resolve([
+          {
+            isDirectory: () => false,
+            isFile: () => true,
+            isSymbolicLink: () => false,
+            name: "book.epub",
+          },
+        ] as never)),
+      readStats: (() =>
+        Promise.resolve({
+          ctime: new Date("2025-01-01T00:00:00.000Z"),
+          isFile: () => true,
+          isSymbolicLink: () => false,
+          mtime: new Date("2025-01-01T00:00:00.000Z"),
+          size: 5,
+        } as never)),
+    });
+
+    fileAssetFindManyMock.mockResolvedValue([{
+      absolutePath: "/tmp/runtime-root/book.epub",
+      availabilityStatus: "PRESENT",
+      basename: "book.epub",
+      ctime: new Date("2025-01-01T00:00:00.000Z"),
+      extension: "epub",
+      fullHash: "full",
+      id: "file-1",
+      lastSeenAt: new Date("2024-12-31T00:00:00.000Z"),
+      libraryRootId: "root-1",
+      mediaKind: "EPUB",
+      metadata: null,
+      mtime: new Date("2025-01-01T00:00:00.000Z"),
+      partialHash: "partial",
+      relativePath: "book.epub",
+      sizeBytes: 5n,
+    }] as never);
+    editionFileFindManyMock.mockResolvedValue([{ editionId: "edition-1", fileAssetId: "file-1", id: "ef-1", role: "PRIMARY" }] as never);
+    editionFindManyMock.mockResolvedValue([{ formatFamily: "EBOOK", id: "edition-1", workId: "work-1", asin: null, isbn10: null, isbn13: null, publishedAt: null, publisher: null }] as never);
+    workFindManyMock.mockResolvedValue([{ coverPath: null, description: null, enrichmentStatus: "STUB", id: "work-1", language: null, seriesId: null, seriesPosition: null, sortTitle: null, titleCanonical: "book", titleDisplay: "Book" }] as never);
+
+    const result = await services.scanLibraryRoot({
+      libraryRootId: "root-1",
+      now: new Date("2025-01-01T00:10:00.000Z"),
+    });
+
+    expect(result.enqueuedHashJobs).toEqual([]);
+    expect(result.enqueuedRecoveryJobs).toEqual(["file-1"]);
+    expect(editionFileFindManyMock).toHaveBeenCalledWith({
+      where: { fileAssetId: { in: ["file-1"] } },
+    });
+    expect(workFindManyMock).toHaveBeenCalledWith({
+      where: { id: { in: ["work-1"] } },
+    });
+    expect(editionFindManyMock).toHaveBeenCalledWith({
+      where: { id: { in: ["edition-1"] } },
     });
   });
 });

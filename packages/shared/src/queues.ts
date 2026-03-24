@@ -20,6 +20,7 @@ export interface BaseJobPayload {
 
 export interface ScanLibraryRootJobPayload extends BaseJobPayload {
   libraryRootId: string;
+  scanMode?: "FULL" | "INCREMENTAL";
 }
 
 export interface HashFileAssetJobPayload extends BaseJobPayload {

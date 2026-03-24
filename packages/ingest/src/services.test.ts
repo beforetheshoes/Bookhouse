@@ -76,6 +76,7 @@ interface TestState {
   fileAssetsById: Map<string, TestFileAsset>;
   lastScannedAt: Date | null;
   rootPath: string;
+  scanMode: "FULL" | "INCREMENTAL";
   works: Map<string, TestWork>;
 }
 
@@ -123,7 +124,7 @@ interface TestEditionContributor {
   role: ContributorRole;
 }
 
-function createEmptyState(rootPath = "/tmp/root"): TestState {
+function createEmptyState(rootPath = "/tmp/root", scanMode: "FULL" | "INCREMENTAL" = "INCREMENTAL"): TestState {
   return {
     matchSuggestions: new Map(),
     contributors: new Map(),
@@ -136,6 +137,7 @@ function createEmptyState(rootPath = "/tmp/root"): TestState {
     fileAssetsById: new Map(),
     lastScannedAt: null,
     rootPath,
+    scanMode,
     works: new Map(),
   };
 }
@@ -170,6 +172,7 @@ function createTestDb(state: TestState): IngestDb {
           id: "root-1",
           lastScannedAt: state.lastScannedAt,
           path: state.rootPath,
+          scanMode: state.scanMode,
         };
       },
       async update({ data, where }) {
@@ -179,10 +182,14 @@ function createTestDb(state: TestState): IngestDb {
         }
 
         state.lastScannedAt = data.lastScannedAt;
+        if (data.scanMode !== undefined) {
+          state.scanMode = data.scanMode;
+        }
         return {
           id: "root-1",
           lastScannedAt: state.lastScannedAt,
           path: state.rootPath,
+          scanMode: state.scanMode,
         };
       },
     },
@@ -222,6 +229,21 @@ function createTestDb(state: TestState): IngestDb {
         state.fileAssets.set(updated.absolutePath, updated);
         state.fileAssetsById.set(updated.id, updated);
         return updated;
+      },
+      async updateMany({ data, where }) {
+        await Promise.resolve();
+        let count = 0;
+        for (const id of where.id.in) {
+          const existing = state.fileAssetsById.get(id);
+          if (existing === undefined) {
+            continue;
+          }
+          const updated = { ...existing, ...data };
+          state.fileAssets.set(updated.absolutePath, updated);
+          state.fileAssetsById.set(updated.id, updated);
+          count += 1;
+        }
+        return { count };
       },
       async upsert({ create, update, where }) {
         await Promise.resolve();
@@ -271,6 +293,12 @@ function createTestDb(state: TestState): IngestDb {
       async findUnique({ where }) {
         await Promise.resolve();
         return state.works.get(where.id) ?? null;
+      },
+      async findManyByIds({ ids }) {
+        await Promise.resolve();
+        return ids
+          .map((id) => state.works.get(id))
+          .filter((work): work is TestWork => work !== undefined);
       },
       async update({ data, where }) {
         await Promise.resolve();
@@ -338,6 +366,12 @@ function createTestDb(state: TestState): IngestDb {
         await Promise.resolve();
         return state.editions.get(where.id) ?? null;
       },
+      async findManyByIds({ ids }) {
+        await Promise.resolve();
+        return ids
+          .map((id) => state.editions.get(id))
+          .filter((edition): edition is TestEdition => edition !== undefined);
+      },
       async update({ data, where }) {
         await Promise.resolve();
         const existing = state.editions.get(where.id);
@@ -386,7 +420,10 @@ function createTestDb(state: TestState): IngestDb {
         await Promise.resolve();
         return [...state.editionFiles.values()].filter(
           (editionFile) =>
-            (where.fileAssetId === undefined || editionFile.fileAssetId === where.fileAssetId) &&
+            (where.fileAssetId === undefined
+              || (typeof where.fileAssetId === "object"
+                ? where.fileAssetId.in.includes(editionFile.fileAssetId)
+                : editionFile.fileAssetId === where.fileAssetId)) &&
             (where.editionId === undefined || editionFile.editionId === where.editionId),
         );
       },
@@ -893,6 +930,254 @@ describe("ingest services", () => {
     expect(state.fileAssets.get(path.join(directory, "author", "cover.jpg"))?.availabilityStatus).toBe(
       AvailabilityStatus.MISSING,
     );
+  });
+
+  it("uses FULL for the first scan, then defaults later scans back to incremental", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-scan-full-"));
+    tempDirectories.push(directory);
+
+    await writeFile(path.join(directory, "book.epub"), "first");
+
+    const state = createEmptyState(directory, "FULL");
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const firstScan = await services.scanLibraryRoot({
+      libraryRootId: "root-1",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+    expect(firstScan.enqueuedHashJobs).toEqual(["file-1"]);
+    expect(state.scanMode).toBe("INCREMENTAL");
+
+    const fileAsset = state.fileAssetsById.get("file-1");
+    if (fileAsset === undefined) {
+      throw new Error("Expected FULL scan to create file asset");
+    }
+    fileAsset.partialHash = "partial";
+    fileAsset.fullHash = "full";
+
+    const secondScan = await services.scanLibraryRoot({
+      libraryRootId: "root-1",
+      now: new Date("2025-01-01T00:10:00.000Z"),
+    });
+
+    expect(secondScan.enqueuedHashJobs).toEqual([]);
+
+    const thirdScan = await services.scanLibraryRoot({
+      libraryRootId: "root-1",
+      scanMode: "FULL",
+      now: new Date("2025-01-01T00:20:00.000Z"),
+    });
+
+    expect(thirdScan.enqueuedHashJobs).toEqual(["file-1"]);
+    expect(state.scanMode).toBe("INCREMENTAL");
+  });
+
+  it("skips per-file upserts for unchanged hashed files in incremental mode and bulk-refreshes lastSeenAt", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-scan-incremental-"));
+    tempDirectories.push(directory);
+
+    const absolutePath = path.join(directory, "book.epub");
+    await writeFile(absolutePath, "first");
+    const timestamp = new Date("2025-01-01T00:00:00.000Z");
+    await utimes(absolutePath, timestamp, timestamp);
+
+    const state = createEmptyState(directory, "INCREMENTAL");
+    const existingFileAsset: TestFileAsset = {
+      absolutePath,
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.epub",
+      ctime: timestamp,
+      extension: "epub",
+      fullHash: "full",
+      id: "file-1",
+      lastSeenAt: new Date("2024-12-31T00:00:00.000Z"),
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.EPUB,
+      metadata: null,
+      mtime: timestamp,
+      partialHash: "partial",
+      relativePath: "book.epub",
+      sizeBytes: BigInt("first".length),
+    };
+    state.fileAssets.set(existingFileAsset.absolutePath, existingFileAsset);
+    state.fileAssetsById.set(existingFileAsset.id, existingFileAsset);
+
+    const db = createTestDb(state);
+    const upsertSpy = vi.spyOn(db.fileAsset, "upsert");
+    const updateManySpy = vi.spyOn(db.fileAsset, "updateMany");
+    const services = createIngestServices({
+      db,
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+    const scanAt = new Date("2025-01-01T00:10:00.000Z");
+
+    const result = await services.scanLibraryRoot({
+      libraryRootId: "root-1",
+      now: scanAt,
+    });
+
+    expect(result.scannedFileAssetIds).toEqual(["file-1"]);
+    expect(result.enqueuedHashJobs).toEqual([]);
+    expect(upsertSpy).not.toHaveBeenCalled();
+    expect(updateManySpy).toHaveBeenCalledWith({
+      where: { id: { in: ["file-1"] } },
+      data: { lastSeenAt: scanAt },
+    });
+    expect(state.fileAssetsById.get("file-1")?.lastSeenAt).toEqual(scanAt);
+  });
+
+  it("marks missing files with a bulk update", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-scan-missing-"));
+    tempDirectories.push(directory);
+
+    const state = createEmptyState(directory, "INCREMENTAL");
+    const missingFileAsset: TestFileAsset = {
+      absolutePath: path.join(directory, "missing.epub"),
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "missing.epub",
+      ctime: new Date("2025-01-01T00:00:00.000Z"),
+      extension: "epub",
+      fullHash: "full",
+      id: "file-1",
+      lastSeenAt: new Date("2024-12-31T00:00:00.000Z"),
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.EPUB,
+      metadata: null,
+      mtime: new Date("2025-01-01T00:00:00.000Z"),
+      partialHash: "partial",
+      relativePath: "missing.epub",
+      sizeBytes: 5n,
+    };
+    state.fileAssets.set(missingFileAsset.absolutePath, missingFileAsset);
+    state.fileAssetsById.set(missingFileAsset.id, missingFileAsset);
+
+    const db = createTestDb(state);
+    const updateSpy = vi.spyOn(db.fileAsset, "update");
+    const updateManySpy = vi.spyOn(db.fileAsset, "updateMany");
+    const services = createIngestServices({
+      db,
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.scanLibraryRoot({
+      libraryRootId: "root-1",
+      now: new Date("2025-01-01T00:10:00.000Z"),
+    });
+
+    expect(result.missingFileAssetIds).toEqual(["file-1"]);
+    expect(updateSpy).not.toHaveBeenCalled();
+    expect(updateManySpy).toHaveBeenCalledWith({
+      where: { id: { in: ["file-1"] } },
+      data: { availabilityStatus: AvailabilityStatus.MISSING },
+    });
+    expect(state.fileAssetsById.get("file-1")?.availabilityStatus).toBe(AvailabilityStatus.MISSING);
+  });
+
+  it("skips recovery for unchanged hashed files without a recoverable format family", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-scan-cover-"));
+    tempDirectories.push(directory);
+
+    const absolutePath = path.join(directory, "cover.jpg");
+    await writeFile(absolutePath, "cover");
+    const timestamp = new Date("2025-01-01T00:00:00.000Z");
+    await utimes(absolutePath, timestamp, timestamp);
+
+    const state = createEmptyState(directory, "INCREMENTAL");
+    const existingFileAsset: TestFileAsset = {
+      absolutePath,
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "cover.jpg",
+      ctime: timestamp,
+      extension: "jpg",
+      fullHash: "full",
+      id: "file-1",
+      lastSeenAt: new Date("2024-12-31T00:00:00.000Z"),
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.COVER,
+      metadata: null,
+      mtime: timestamp,
+      partialHash: "partial",
+      relativePath: "cover.jpg",
+      sizeBytes: BigInt("cover".length),
+    };
+    state.fileAssets.set(existingFileAsset.absolutePath, existingFileAsset);
+    state.fileAssetsById.set(existingFileAsset.id, existingFileAsset);
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.scanLibraryRoot({
+      libraryRootId: "root-1",
+      now: new Date("2025-01-01T00:10:00.000Z"),
+    });
+
+    expect(result.enqueuedHashJobs).toEqual([]);
+    expect(result.enqueuedRecoveryJobs).toEqual([]);
+  });
+
+  it("skips unchanged recovery when an edition link exists but the linked work is missing", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-scan-missing-work-"));
+    tempDirectories.push(directory);
+
+    const absolutePath = path.join(directory, "book.epub");
+    await writeFile(absolutePath, "book");
+    const timestamp = new Date("2025-01-01T00:00:00.000Z");
+    await utimes(absolutePath, timestamp, timestamp);
+
+    const state = createEmptyState(directory, "INCREMENTAL");
+    const existingFileAsset: TestFileAsset = {
+      absolutePath,
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.epub",
+      ctime: timestamp,
+      extension: "epub",
+      fullHash: "full",
+      id: "file-1",
+      lastSeenAt: new Date("2024-12-31T00:00:00.000Z"),
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.EPUB,
+      metadata: null,
+      mtime: timestamp,
+      partialHash: "partial",
+      relativePath: "book.epub",
+      sizeBytes: BigInt("book".length),
+    };
+    state.fileAssets.set(existingFileAsset.absolutePath, existingFileAsset);
+    state.fileAssetsById.set(existingFileAsset.id, existingFileAsset);
+    state.editions.set("edition-1", {
+      asin: null,
+      formatFamily: FormatFamily.EBOOK,
+      id: "edition-1",
+      isbn10: null,
+      isbn13: null,
+      publishedAt: null,
+      publisher: null,
+      workId: "missing-work",
+    });
+    state.editionFiles.set(getEditionFileKey("edition-1", "file-1"), {
+      editionId: "edition-1",
+      fileAssetId: "file-1",
+      id: "edition-file-1",
+      role: EditionFileRole.PRIMARY,
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.scanLibraryRoot({
+      libraryRootId: "root-1",
+      now: new Date("2025-01-01T00:10:00.000Z"),
+    });
+
+    expect(result.enqueuedHashJobs).toEqual([]);
+    expect(result.enqueuedRecoveryJobs).toEqual([]);
   });
 
   it("skips entries that disappear during scanning", async () => {

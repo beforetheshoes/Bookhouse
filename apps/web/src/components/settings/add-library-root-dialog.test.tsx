@@ -78,7 +78,7 @@ describe("AddLibraryRootDialog", () => {
           name: "My Books",
           path: "/home/books",
           kind: "EBOOKS",
-          scanMode: "INCREMENTAL",
+          scanMode: "FULL",
         },
       });
     });
@@ -191,39 +191,12 @@ describe("AddLibraryRootDialog", () => {
     });
   });
 
-  it("changes ScanMode select value via userEvent", async () => {
-    const user = userEvent.setup();
-    addLibraryRootServerFnMock.mockResolvedValue(undefined);
+  it("does not render a scan mode selector in the add dialog", () => {
     render(<AddLibraryRootDialog />);
     openDialog();
 
-    // Open the ScanMode select (second combobox)
-    const scanModeTrigger = screen.getAllByRole("combobox")[1];
-    if (!scanModeTrigger) throw new Error("scan mode combobox not found");
-    await user.click(scanModeTrigger);
-    // Select "Full" - there may be multiple "Full" texts, pick the one in the select listbox
-    const fullOptions = screen.getAllByText("Full");
-    // Click the last one (which should be the option in the dropdown listbox)
-    const lastFullOption = fullOptions[fullOptions.length - 1];
-    if (!lastFullOption) throw new Error("full option not found");
-    await user.click(lastFullOption);
-
-    // Submit to verify the scanMode value was changed
-    fireEvent.change(screen.getByPlaceholderText("My Library"), {
-      target: { value: "Test" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("/path/to/books"), {
-      target: { value: "/test" },
-    });
-    const form = screen.getByPlaceholderText("My Library").closest("form");
-    if (!form) throw new Error("form not found");
-    fireEvent.submit(form);
-
-    await waitFor(() => {
-      expect(addLibraryRootServerFnMock).toHaveBeenCalledWith({
-        data: expect.objectContaining({ scanMode: "FULL" }) as unknown,
-      });
-    });
+    expect(screen.getAllByRole("combobox")).toHaveLength(1);
+    expect(screen.queryByText("Scan Mode")).toBeNull();
   });
 
   it("resetForm is called after successful submit (form resets to defaults)", async () => {
