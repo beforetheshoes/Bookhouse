@@ -3,7 +3,7 @@ import type * as TanstackRouter from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 
-const mockRouteContext = { user: { name: "Test User", email: "test@test.com", image: null } };
+const mockRouteContext = { user: { name: "Test User", email: "test@test.com", image: null }, theme: "system" as const };
 
 vi.mock("~/components/app-sidebar", () => ({
   AppSidebar: () => <div data-testid="app-sidebar">sidebar</div>,
@@ -20,6 +20,14 @@ vi.mock("~/components/ui/sidebar", () => ({
 
 vi.mock("~/lib/auth-client", () => ({
   getCurrentUserServerFn: vi.fn(),
+}));
+
+vi.mock("~/hooks/use-theme", () => ({
+  ThemeProvider: ({ children }: { children?: React.ReactNode }) => <div data-testid="theme-provider">{children}</div>,
+}));
+
+vi.mock("~/lib/server-fns/app-settings", () => ({
+  getThemeServerFn: vi.fn().mockResolvedValue("system"),
 }));
 
 vi.mock("@tanstack/react-router", async () => {
@@ -73,6 +81,14 @@ describe("_authenticated route", () => {
 
     const beforeLoad2 = Route.options.beforeLoad as unknown as (args: Record<string, unknown>) => Promise<unknown>;
     const result = await beforeLoad2({ context: {} });
-    expect(result).toEqual({ user });
+    expect(result).toEqual({ user, theme: "system" });
+  });
+
+  it("AuthenticatedLayout renders ThemeProvider", async () => {
+    const { Route } = await import("./_authenticated");
+    const Layout = (Route.options.component as React.ComponentType);
+    render(<Layout />);
+
+    expect(screen.getByTestId("theme-provider")).toBeTruthy();
   });
 });

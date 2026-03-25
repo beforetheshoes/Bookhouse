@@ -31,6 +31,8 @@ import {
   setWorkerConcurrencyServerFn,
   getMissingFileBehaviorServerFn,
   setMissingFileBehaviorServerFn,
+  getThemeServerFn,
+  setThemeServerFn,
 } from "./app-settings";
 
 beforeEach(() => {
@@ -103,5 +105,39 @@ describe("setMissingFileBehaviorServerFn", () => {
       update: { value: "auto-cleanup" },
     });
     expect(result).toEqual({ behavior: "auto-cleanup" });
+  });
+});
+
+describe("getThemeServerFn", () => {
+  it("returns stored theme value", async () => {
+    appSettingFindUniqueMock.mockResolvedValue({ key: "theme", value: "dark" });
+
+    const result = await getThemeServerFn({} as never);
+
+    expect(appSettingFindUniqueMock).toHaveBeenCalledWith({ where: { key: "theme" } });
+    expect(result).toBe("dark");
+  });
+
+  it("returns 'system' when no setting exists", async () => {
+    appSettingFindUniqueMock.mockResolvedValue(null);
+
+    const result = await getThemeServerFn({} as never);
+
+    expect(result).toBe("system");
+  });
+});
+
+describe("setThemeServerFn", () => {
+  it("upserts theme setting and returns the value", async () => {
+    appSettingUpsertMock.mockResolvedValue({ key: "theme", value: "dark" });
+
+    const result = await setThemeServerFn({ data: { theme: "dark" } });
+
+    expect(appSettingUpsertMock).toHaveBeenCalledWith({
+      where: { key: "theme" },
+      create: { key: "theme", value: "dark" },
+      update: { value: "dark" },
+    });
+    expect(result).toEqual({ theme: "dark" });
   });
 });

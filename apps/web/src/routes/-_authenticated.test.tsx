@@ -1,9 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
 const getCurrentUserServerFnMock = vi.fn();
+const getThemeServerFnMock = vi.fn().mockResolvedValue("system");
 
 vi.mock("../lib/auth-client", () => ({
   getCurrentUserServerFn: getCurrentUserServerFnMock,
+}));
+
+vi.mock("~/lib/server-fns/app-settings", () => ({
+  getThemeServerFn: (...args: unknown[]): unknown => getThemeServerFnMock(...args),
 }));
 
 describe("_authenticated layout route", () => {
@@ -41,7 +46,7 @@ describe("_authenticated layout route", () => {
       context: { auth: { user } },
     });
 
-    expect(result).toEqual({ user });
+    expect(result).toEqual({ user, theme: "system" });
   });
 
   it("falls back to getCurrentUserServerFn when server context is empty", async () => {
@@ -61,6 +66,27 @@ describe("_authenticated layout route", () => {
 
     const result = await beforeLoad({ context: {} });
 
-    expect(result).toEqual({ user });
+    expect(result).toEqual({ user, theme: "system" });
+  });
+
+  it("returns stored theme preference", async () => {
+    const { Route } = await import("./_authenticated");
+    const user = {
+      id: "user-3",
+      email: "dark@example.com",
+      name: "DarkUser",
+      image: null,
+      issuer: "https://issuer.example.com",
+      subject: "subject-3",
+    };
+    getCurrentUserServerFnMock.mockResolvedValueOnce(user);
+    getThemeServerFnMock.mockResolvedValueOnce("dark");
+    const beforeLoad = Route.options.beforeLoad as unknown as (input: {
+      context?: unknown;
+    }) => Promise<unknown>;
+
+    const result = await beforeLoad({ context: {} });
+
+    expect(result).toEqual({ user, theme: "dark" });
   });
 });

@@ -1,6 +1,6 @@
 import React from "react";
 import { describe, expect, it } from "vitest";
-import { RootComponent, Route } from "./__root";
+import { RootComponent, Route, THEME_INIT_SCRIPT } from "./__root";
 
 describe("root route", () => {
   it("defines document metadata and renders the shell", async () => {
@@ -12,5 +12,11 @@ describe("root route", () => {
     ]);
     expect(head?.links).toBeDefined();
     expect(React.isValidElement(RootComponent())).toBe(true);
+  });
+
+  it("exports THEME_INIT_SCRIPT as a non-empty string", () => {
+    expect(typeof THEME_INIT_SCRIPT).toBe("string");
+    expect(THEME_INIT_SCRIPT.length).toBeGreaterThan(0);
+    expect(THEME_INIT_SCRIPT).toContain("prefers-color-scheme");
   });
 });
