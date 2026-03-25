@@ -170,6 +170,19 @@ describe("useTheme", () => {
     expect(mql.removeEventListener).toHaveBeenCalled();
   });
 
+  it("getSystemDark returns false when matchMedia is unavailable (SSR)", () => {
+    const originalMatchMedia = window.matchMedia;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+    (window as any).matchMedia = undefined;
+    try {
+      const { result } = renderHook(() => useTheme(), { wrapper: wrapper("system") });
+      expect(result.current.resolvedTheme).toBe("light");
+    } finally {
+      window.matchMedia = originalMatchMedia;
+      setupMatchMedia(false);
+    }
+  });
+
   it("shows error toast when server function fails", async () => {
     setThemeServerFnMock.mockRejectedValue(new Error("network error"));
     setupMatchMedia(false);

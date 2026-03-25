@@ -26,6 +26,7 @@ function setThemeCookie(theme: ThemePreference) {
 }
 
 function getSystemDark(): boolean {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
@@ -46,6 +47,7 @@ export function ThemeProvider({
   }, [resolved]);
 
   useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
     const mql = window.matchMedia("(prefers-color-scheme: dark)");
     const handler = () => { setSystemDark(mql.matches); };
     mql.addEventListener("change", handler);
