@@ -51,9 +51,10 @@ import {
 import {
   getMissingFileBehaviorServerFn,
   setMissingFileBehaviorServerFn,
-  getWorkerConcurrencyServerFn,
-  setWorkerConcurrencyServerFn,
+  getAllScanConcurrenciesServerFn,
+  setScanConcurrencyServerFn,
   type MissingFileBehavior,
+  type ScanType,
 } from "~/lib/server-fns/app-settings";
 import type { ThemePreference } from "~/lib/server-fns/app-settings";
 import {
@@ -70,11 +71,11 @@ export interface LibraryRootWithExtras extends LibraryRootRow {
 
 export const Route = createFileRoute("/_authenticated/settings/")({
   loader: async () => {
-    const [roots, missingFileBehavior, jobsResult, concurrency] = await Promise.all([
+    const [roots, missingFileBehavior, jobsResult, concurrencies] = await Promise.all([
       getLibraryRootsServerFn(),
       getMissingFileBehaviorServerFn(),
       getImportJobsServerFn({ data: { page: 1, pageSize: 100 } }),
-      getWorkerConcurrencyServerFn(),
+      getAllScanConcurrenciesServerFn(),
     ]);
     const rootsWithExtras: LibraryRootWithExtras[] = await Promise.all(
       roots.map(async (root) => {
@@ -90,7 +91,7 @@ export const Route = createFileRoute("/_authenticated/settings/")({
       missingFileBehavior,
       jobs: jobsResult.jobs,
       totalCount: jobsResult.totalCount,
-      concurrency,
+      concurrencies,
     };
   },
   pendingComponent: SettingsSkeleton,
@@ -110,7 +111,7 @@ function SettingsSkeleton() {
 }
 
 function SettingsPage() {
-  const { roots, missingFileBehavior, jobs, totalCount, concurrency } = Route.useLoaderData();
+  const { roots, missingFileBehavior, jobs, totalCount, concurrencies } = Route.useLoaderData();
 
   const hasActiveScan = roots.some((r) => r.scanProgress !== null);
   const hasActiveJobs = jobs.some(
@@ -138,7 +139,7 @@ function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="jobs" forceMount className="space-y-6 data-[state=inactive]:hidden">
-          <JobsTab jobs={jobs} totalCount={totalCount} initialConcurrency={concurrency} />
+          <JobsTab jobs={jobs} totalCount={totalCount} initialConcurrencies={concurrencies} />
         </TabsContent>
       </Tabs>
     </div>
@@ -327,20 +328,30 @@ const jobColumns: ColumnDef<ImportJobRow>[] = [
   },
 ];
 
+type ScanConcurrencies = Record<ScanType, number>;
+
+const SCAN_TYPE_LABELS: Record<ScanType, string> = {
+  full: "Full Scan:",
+  onDemand: "On-demand:",
+  incremental: "Incremental:",
+};
+
 function JobsTab({
   jobs,
   totalCount,
-  initialConcurrency,
+  initialConcurrencies,
 }: {
   jobs: ImportJobRow[];
   totalCount: number;
-  initialConcurrency: number;
+  initialConcurrencies: ScanConcurrencies;
 }) {
   const router = useRouter();
   const [stopping, setStopping] = useState(false);
-  const [concurrency, setConcurrency] = useState(initialConcurrency);
+  const [concurrencies, setConcurrencies] = useState<ScanConcurrencies>(initialConcurrencies);
   const [savingConcurrency, setSavingConcurrency] = useState(false);
-  const concurrencyChanged = concurrency !== initialConcurrency;
+  const concurrencyChanged = (Object.keys(concurrencies) as ScanType[]).some(
+    (k) => concurrencies[k] !== initialConcurrencies[k],
+  );
 
   async function handleStopAll() {
     if (!window.confirm("Stop all running and queued jobs? This cannot be undone.")) return;
@@ -352,9 +363,16 @@ function JobsTab({
 
   async function handleSaveConcurrency() {
     setSavingConcurrency(true);
+    const changed = (Object.keys(concurrencies) as ScanType[]).filter(
+      (k) => concurrencies[k] !== initialConcurrencies[k],
+    );
     await runMutation(
-      () => setWorkerConcurrencyServerFn({ data: { concurrency } }),
-      { success: `Worker concurrency set to ${String(concurrency)}` },
+      async () => {
+        for (const scanType of changed) {
+          await setScanConcurrencyServerFn({ data: { scanType, concurrency: concurrencies[scanType] } });
+        }
+      },
+      { success: "Worker concurrency updated" },
     );
     setSavingConcurrency(false);
     void router.invalidate();
@@ -368,15 +386,19 @@ function JobsTab({
         </p>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <label className="text-sm text-muted-foreground whitespace-nowrap">Concurrency:</label>
-            <Input
-              type="number"
-              min={1}
-              max={20}
-              value={concurrency}
-              onChange={(e) => { setConcurrency(Number(e.target.value)); }}
-              className="w-20"
-            />
+            {(Object.keys(SCAN_TYPE_LABELS) as ScanType[]).map((scanType) => (
+              <div key={scanType} className="flex items-center gap-1">
+                <label className="text-sm text-muted-foreground whitespace-nowrap">{SCAN_TYPE_LABELS[scanType]}</label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={concurrencies[scanType]}
+                  onChange={(e) => { setConcurrencies((prev) => ({ ...prev, [scanType]: Number(e.target.value) })); }}
+                  className="w-20"
+                />
+              </div>
+            ))}
             {concurrencyChanged && (
               <Button
                 size="sm"
