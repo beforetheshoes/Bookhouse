@@ -54,3 +54,30 @@ export const setMissingFileBehaviorServerFn = createServerFn({
 
     return { behavior: data.behavior as MissingFileBehavior };
   });
+
+export type ThemePreference = "light" | "dark" | "system";
+
+export const getThemeServerFn = createServerFn({
+  method: "GET",
+}).handler(async () => {
+  const { db } = await import("@bookhouse/db");
+
+  const setting = await db.appSetting.findUnique({ where: { key: "theme" } });
+  return (setting?.value ?? "system") as ThemePreference;
+});
+
+export const setThemeServerFn = createServerFn({
+  method: "POST",
+})
+  .inputValidator(z.object({ theme: z.enum(["light", "dark", "system"]) }))
+  .handler(async ({ data }) => {
+    const { db } = await import("@bookhouse/db");
+
+    await db.appSetting.upsert({
+      where: { key: "theme" },
+      create: { key: "theme", value: data.theme },
+      update: { value: data.theme },
+    });
+
+    return { theme: data.theme as ThemePreference };
+  });

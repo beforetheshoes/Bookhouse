@@ -6,6 +6,8 @@ import {
 } from "~/components/ui/sidebar";
 import { AppSidebar } from "~/components/app-sidebar";
 import { AppHeader } from "~/components/app-header";
+import { ThemeProvider } from "~/hooks/use-theme";
+import { getThemeServerFn } from "~/lib/server-fns/app-settings";
 
 export const Route = createFileRoute("/_authenticated")({
   beforeLoad: async ({ context }) => {
@@ -23,23 +25,27 @@ export const Route = createFileRoute("/_authenticated")({
       throw redirect({ href: "/auth/login" });
     }
 
-    return { user };
+    const theme = await getThemeServerFn();
+
+    return { user, theme };
   },
   component: AuthenticatedLayout,
 });
 
 function AuthenticatedLayout() {
-  const { user } = Route.useRouteContext();
+  const { user, theme } = Route.useRouteContext();
 
   return (
-    <SidebarProvider>
-      <AppSidebar user={user} />
-      <SidebarInset>
-        <AppHeader />
-        <main className="flex-1 p-6">
-          <Outlet />
-        </main>
-      </SidebarInset>
-    </SidebarProvider>
+    <ThemeProvider initialTheme={theme}>
+      <SidebarProvider>
+        <AppSidebar user={user} />
+        <SidebarInset>
+          <AppHeader />
+          <main className="flex-1 p-6">
+            <Outlet />
+          </main>
+        </SidebarInset>
+      </SidebarProvider>
+    </ThemeProvider>
   );
 }
