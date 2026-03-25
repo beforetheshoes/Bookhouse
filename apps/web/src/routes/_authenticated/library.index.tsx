@@ -229,6 +229,10 @@ function LibraryPage() {
         seriesId: filters.seriesId,
         publisher: filters.publisher,
         hasCover: filters.hasCover,
+        enriched: filters.enriched,
+        hasDescription: filters.hasDescription,
+        inSeries: filters.inSeries,
+        hasIsbn: filters.hasIsbn,
       });
     },
     [updateSearch],
@@ -297,9 +301,13 @@ function LibraryPage() {
     seriesId: search.seriesId,
     publisher: search.publisher,
     hasCover: search.hasCover,
+    enriched: search.enriched,
+    hasDescription: search.hasDescription,
+    inSeries: search.inSeries,
+    hasIsbn: search.hasIsbn,
   };
 
-  if (totalCount === 0 && !isScanning && !search.q && !search.format && !search.authorId && !search.seriesId && !search.publisher && search.hasCover === undefined) {
+  if (totalCount === 0 && !isScanning && !search.q && !search.format && !search.authorId && !search.seriesId && !search.publisher && search.hasCover === undefined && search.enriched === undefined && search.hasDescription === undefined && search.inSeries === undefined && search.hasIsbn === undefined) {
     return (
       <div>
         <h1 className="text-2xl font-bold">Library</h1>

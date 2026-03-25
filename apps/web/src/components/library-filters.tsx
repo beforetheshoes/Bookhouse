@@ -4,7 +4,10 @@ import { X } from "lucide-react";
 export interface FacetCounts {
   format: { formatFamily: string; _count: { _all: number } }[];
   hasCover: { withCover: number; withoutCover: number };
-  series: number;
+  enrichment: { enriched: number; unenriched: number };
+  description: { withDescription: number; withoutDescription: number };
+  series: { inSeries: number; standalone: number };
+  isbn: { withIsbn: number; withoutIsbn: number };
 }
 
 export interface LibraryFilterValues {
@@ -13,6 +16,10 @@ export interface LibraryFilterValues {
   seriesId?: string[];
   publisher?: string[];
   hasCover?: boolean;
+  enriched?: boolean;
+  hasDescription?: boolean;
+  inSeries?: boolean;
+  hasIsbn?: boolean;
 }
 
 interface LibraryFiltersProps {
@@ -25,6 +32,10 @@ function hasActiveFilters(filters: LibraryFilterValues): boolean {
   return (
     (filters.format !== undefined && filters.format.length > 0) ||
     filters.hasCover !== undefined ||
+    filters.enriched !== undefined ||
+    filters.hasDescription !== undefined ||
+    filters.inSeries !== undefined ||
+    filters.hasIsbn !== undefined ||
     (filters.authorId !== undefined && filters.authorId.length > 0) ||
     (filters.seriesId !== undefined && filters.seriesId.length > 0) ||
     (filters.publisher !== undefined && filters.publisher.length > 0)
@@ -45,11 +56,11 @@ export function LibraryFilters({
     }
   }
 
-  function toggleHasCover(value: boolean) {
-    if (filters.hasCover === value) {
-      onFiltersChange({ ...filters, hasCover: undefined });
+  function toggleBoolean(key: keyof LibraryFilterValues, value: boolean) {
+    if (filters[key] === value) {
+      onFiltersChange({ ...filters, [key]: undefined });
     } else {
-      onFiltersChange({ ...filters, hasCover: value });
+      onFiltersChange({ ...filters, [key]: value });
     }
   }
 
@@ -91,7 +102,7 @@ export function LibraryFilters({
             variant="outline"
             size="sm"
             data-active={filters.hasCover === true}
-            onClick={() => { toggleHasCover(true); }}
+            onClick={() => { toggleBoolean("hasCover", true); }}
             className="data-[active=true]:bg-accent"
           >
             With Cover ({String(facetCounts.hasCover.withCover)})
@@ -100,10 +111,106 @@ export function LibraryFilters({
             variant="outline"
             size="sm"
             data-active={filters.hasCover === false}
-            onClick={() => { toggleHasCover(false); }}
+            onClick={() => { toggleBoolean("hasCover", false); }}
             className="data-[active=true]:bg-accent"
           >
             Without Cover ({String(facetCounts.hasCover.withoutCover)})
+          </Button>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <h3 className="text-sm font-medium">Enrichment</h3>
+        <div className="flex flex-wrap gap-1">
+          <Button
+            variant="outline"
+            size="sm"
+            data-active={filters.enriched === true}
+            onClick={() => { toggleBoolean("enriched", true); }}
+            className="data-[active=true]:bg-accent"
+          >
+            Enriched ({String(facetCounts.enrichment.enriched)})
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            data-active={filters.enriched === false}
+            onClick={() => { toggleBoolean("enriched", false); }}
+            className="data-[active=true]:bg-accent"
+          >
+            Unenriched ({String(facetCounts.enrichment.unenriched)})
+          </Button>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <h3 className="text-sm font-medium">Description</h3>
+        <div className="flex flex-wrap gap-1">
+          <Button
+            variant="outline"
+            size="sm"
+            data-active={filters.hasDescription === true}
+            onClick={() => { toggleBoolean("hasDescription", true); }}
+            className="data-[active=true]:bg-accent"
+          >
+            Has Description ({String(facetCounts.description.withDescription)})
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            data-active={filters.hasDescription === false}
+            onClick={() => { toggleBoolean("hasDescription", false); }}
+            className="data-[active=true]:bg-accent"
+          >
+            No Description ({String(facetCounts.description.withoutDescription)})
+          </Button>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <h3 className="text-sm font-medium">Series</h3>
+        <div className="flex flex-wrap gap-1">
+          <Button
+            variant="outline"
+            size="sm"
+            data-active={filters.inSeries === true}
+            onClick={() => { toggleBoolean("inSeries", true); }}
+            className="data-[active=true]:bg-accent"
+          >
+            In Series ({String(facetCounts.series.inSeries)})
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            data-active={filters.inSeries === false}
+            onClick={() => { toggleBoolean("inSeries", false); }}
+            className="data-[active=true]:bg-accent"
+          >
+            Standalone ({String(facetCounts.series.standalone)})
+          </Button>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <h3 className="text-sm font-medium">ISBN</h3>
+        <div className="flex flex-wrap gap-1">
+          <Button
+            variant="outline"
+            size="sm"
+            data-active={filters.hasIsbn === true}
+            onClick={() => { toggleBoolean("hasIsbn", true); }}
+            className="data-[active=true]:bg-accent"
+          >
+            Has ISBN ({String(facetCounts.isbn.withIsbn)})
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            data-active={filters.hasIsbn === false}
+            onClick={() => { toggleBoolean("hasIsbn", false); }}
+            className="data-[active=true]:bg-accent"
+          >
+            No ISBN ({String(facetCounts.isbn.withoutIsbn)})
           </Button>
         </div>
       </div>

@@ -46,6 +46,10 @@ const filterSchema = z.object({
   seriesId: z.array(z.string()).optional(),
   publisher: z.array(z.string()).optional(),
   hasCover: z.boolean().optional(),
+  enriched: z.boolean().optional(),
+  hasDescription: z.boolean().optional(),
+  inSeries: z.boolean().optional(),
+  hasIsbn: z.boolean().optional(),
 });
 
 type WhereClause = Record<string, unknown>;
@@ -97,6 +101,32 @@ function buildWhere(data: z.infer<typeof filterSchema>): WhereClause {
     where.coverPath = null;
   }
 
+  if (data.enriched === true) {
+    where.enrichmentStatus = "ENRICHED";
+  } else if (data.enriched === false) {
+    where.enrichmentStatus = "STUB";
+  }
+
+  if (data.hasDescription === true) {
+    where.description = { not: null };
+  } else if (data.hasDescription === false) {
+    where.description = null;
+  }
+
+  if (data.inSeries === true) {
+    where.seriesId = { not: null };
+  } else if (data.inSeries === false) {
+    where.seriesId = null;
+  }
+
+  if (data.hasIsbn === true) {
+    editionConditions.push({
+      OR: [{ isbn13: { not: null } }, { isbn10: { not: null } }],
+    });
+  } else if (data.hasIsbn === false) {
+    editionConditions.push({ isbn13: null, isbn10: null });
+  }
+
   where.AND = [
     {
       editions: {
@@ -139,26 +169,53 @@ export const getFilteredLibraryWorksServerFn = createServerFn({
     // Facet counts exclude their own filter to show meaningful counts
     const whereForCoverFacets = buildWhere({ ...parsed, hasCover: undefined });
     const whereForFormatFacets = buildWhere({ ...parsed, format: undefined });
+    const whereForEnrichmentFacets = buildWhere({ ...parsed, enriched: undefined });
+    const whereForDescriptionFacets = buildWhere({ ...parsed, hasDescription: undefined });
+    const whereForSeriesFacets = buildWhere({ ...parsed, inSeries: undefined, seriesId: undefined });
+    const whereForIsbnFacets = buildWhere({ ...parsed, hasIsbn: undefined });
 
-    const [works, totalCount, formatCounts, withCoverCount, withoutCoverCount, seriesCount] =
-      await Promise.all([
-        db.work.findMany({
-          where,
-          orderBy,
-          skip: (parsed.page - 1) * parsed.pageSize,
-          take: parsed.pageSize,
-          include: WORK_INCLUDE,
-        }),
-        db.work.count({ where }),
-        db.edition.groupBy({
-          by: ["formatFamily"],
-          _count: { _all: true },
-          where: { work: whereForFormatFacets },
-        }),
-        db.work.count({ where: { ...whereForCoverFacets, coverPath: { not: null } } }),
-        db.work.count({ where: { ...whereForCoverFacets, coverPath: null } }),
-        db.series.count(),
-      ]);
+    const [
+      works, totalCount, formatCounts,
+      withCoverCount, withoutCoverCount,
+      enrichedCount, unenrichedCount,
+      withDescriptionCount, withoutDescriptionCount,
+      inSeriesCount, standaloneCount,
+      withIsbnCount, withoutIsbnCount,
+    ] = await Promise.all([
+      db.work.findMany({
+        where,
+        orderBy,
+        skip: (parsed.page - 1) * parsed.pageSize,
+        take: parsed.pageSize,
+        include: WORK_INCLUDE,
+      }),
+      db.work.count({ where }),
+      db.edition.groupBy({
+        by: ["formatFamily"],
+        _count: { _all: true },
+        where: { work: whereForFormatFacets },
+      }),
+      db.work.count({ where: { ...whereForCoverFacets, coverPath: { not: null } } }),
+      db.work.count({ where: { ...whereForCoverFacets, coverPath: null } }),
+      db.work.count({ where: { ...whereForEnrichmentFacets, enrichmentStatus: "ENRICHED" } }),
+      db.work.count({ where: { ...whereForEnrichmentFacets, enrichmentStatus: "STUB" } }),
+      db.work.count({ where: { ...whereForDescriptionFacets, description: { not: null } } }),
+      db.work.count({ where: { ...whereForDescriptionFacets, description: null } }),
+      db.work.count({ where: { ...whereForSeriesFacets, seriesId: { not: null } } }),
+      db.work.count({ where: { ...whereForSeriesFacets, seriesId: null } }),
+      db.work.count({
+        where: {
+          ...whereForIsbnFacets,
+          editions: { some: { OR: [{ isbn13: { not: null } }, { isbn10: { not: null } }] } },
+        },
+      }),
+      db.work.count({
+        where: {
+          ...whereForIsbnFacets,
+          editions: { every: { isbn13: null, isbn10: null } },
+        },
+      }),
+    ]);
 
     return {
       works,
@@ -169,7 +226,22 @@ export const getFilteredLibraryWorksServerFn = createServerFn({
           withCover: withCoverCount,
           withoutCover: withoutCoverCount,
         },
-        series: seriesCount,
+        enrichment: {
+          enriched: enrichedCount,
+          unenriched: unenrichedCount,
+        },
+        description: {
+          withDescription: withDescriptionCount,
+          withoutDescription: withoutDescriptionCount,
+        },
+        series: {
+          inSeries: inSeriesCount,
+          standalone: standaloneCount,
+        },
+        isbn: {
+          withIsbn: withIsbnCount,
+          withoutIsbn: withoutIsbnCount,
+        },
       },
     };
   });

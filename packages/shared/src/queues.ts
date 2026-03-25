@@ -15,12 +15,15 @@ export const LIBRARY_JOB_NAMES = {
 
 export interface BaseJobPayload {
   importJobId?: string;
+  scanJobId?: string;
+  scanQueueName?: string;
   step?: string;
 }
 
 export interface ScanLibraryRootJobPayload extends BaseJobPayload {
   libraryRootId: string;
   scanMode?: "FULL" | "INCREMENTAL";
+  scanTrigger?: "manual" | "scheduled";
 }
 
 export interface HashFileAssetJobPayload extends BaseJobPayload {

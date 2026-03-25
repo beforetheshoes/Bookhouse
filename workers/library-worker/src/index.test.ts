@@ -21,10 +21,6 @@ const matchSuggestionsMock = vi.fn();
 const importJobUpdateMock = vi.fn();
 const importJobUpdateManyMock = vi.fn();
 const appSettingFindUniqueMock = vi.fn();
-const moveToWaitingChildrenMock = vi.fn();
-const getDependenciesCountMock = vi.fn();
-const removeChildDependencyMock = vi.fn();
-const updateDataMock = vi.fn();
 const enqueueLibraryJobMock = vi.fn();
 
 vi.mock("ioredis", () => ({
@@ -39,7 +35,7 @@ vi.mock("ioredis", () => ({
 
 class FakeWaitingChildrenError extends Error {
   constructor() {
-    super("WaitingChildren");
+    super("WaitingChildrenError");
     this.name = "WaitingChildrenError";
   }
 }
@@ -123,17 +119,18 @@ vi.mock("@bookhouse/shared", async () => {
   };
 });
 
+const moveToWaitingChildrenMock = vi.fn().mockResolvedValue(false);
+const updateDataMock = vi.fn().mockResolvedValue(undefined);
+
 function createMockJob(overrides: Record<string, unknown> = {}) {
   return {
     id: "job-1",
     opts: { attempts: 1 },
     queueQualifiedName: "bull:library",
     attemptsMade: 0,
-    moveToWaitingChildren: moveToWaitingChildrenMock,
-    getDependenciesCount: getDependenciesCountMock,
-    removeChildDependency: removeChildDependencyMock,
-    updateData: updateDataMock,
     updateProgress: vi.fn(),
+    moveToWaitingChildren: moveToWaitingChildrenMock,
+    updateData: updateDataMock,
     ...overrides,
   };
 }
@@ -151,17 +148,6 @@ beforeEach(() => {
   importJobUpdateManyMock.mockResolvedValue({ count: 0 });
   enqueueLibraryJobMock.mockReset();
   matchFileAssetToEditionMock.mockReset();
-  moveToWaitingChildrenMock.mockReset();
-  moveToWaitingChildrenMock.mockResolvedValue(false);
-  getDependenciesCountMock.mockReset();
-  getDependenciesCountMock.mockResolvedValue({
-    processed: 0,
-    unprocessed: 0,
-    ignored: 0,
-    failed: 0,
-  });
-  removeChildDependencyMock.mockReset();
-  removeChildDependencyMock.mockResolvedValue(undefined);
   onMock.mockReset();
   parseFileAssetMetadataMock.mockReset();
   processCoverForWorkMock.mockReset();
@@ -169,12 +155,14 @@ beforeEach(() => {
   queueConnectionConfigMock.mockClear();
   redisConstructorMock.mockClear();
   scanLibraryRootMock.mockReset();
-  updateDataMock.mockReset();
-  updateDataMock.mockResolvedValue(undefined);
   workFindUniqueMock.mockReset();
   externalLinkUpsertMock.mockReset();
   workerCloseMock.mockReset();
   workerConstructorMock.mockClear();
+  moveToWaitingChildrenMock.mockReset();
+  moveToWaitingChildrenMock.mockResolvedValue(false);
+  updateDataMock.mockReset();
+  updateDataMock.mockResolvedValue(undefined);
   delete process.env.COVER_CACHE_DIR;
   delete process.env.NODE_ENV;
 });
@@ -285,7 +273,7 @@ describe("library worker", () => {
     await processor(createMockJob({
       data: { libraryRootId: "root-1", scanMode: "FULL" },
       name: "scan-library-root",
-    }) as never);
+    }) as never, "test-token");
 
     expect(scanLibraryRootMock).toHaveBeenCalledWith({
       libraryRootId: "root-1",
@@ -355,7 +343,7 @@ describe("library worker", () => {
     });
   });
 
-  it("updates ImportJob to RUNNING then SUCCEEDED when importJobId is present and no children", async () => {
+  it("updates ImportJob to RUNNING when importJobId is present on scan job", async () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
@@ -374,7 +362,7 @@ describe("library worker", () => {
       data: { libraryRootId: "root-1", importJobId: "ij-1" },
       name: "scan-library-root",
       attemptsMade: 1,
-    }) as never);
+    }) as never, "test-token");
 
     expect(importJobUpdateMock).toHaveBeenCalledTimes(2);
     expect(importJobUpdateMock).toHaveBeenNthCalledWith(1, {
@@ -385,188 +373,6 @@ describe("library worker", () => {
       where: { id: "ij-1", status: "RUNNING" },
       data: { status: "SUCCEEDED", finishedAt: expect.any(Date) as unknown, scanStage: null, bullmqJobId: null },
     });
-  });
-
-  it("completes immediately when dependency counts omit unprocessed", async () => {
-    const { createLibraryWorkerProcessor } = await import("./index");
-    const processor = createLibraryWorkerProcessor({
-      hashFileAsset: hashFileAssetMock,
-      matchFileAssetToEdition: matchFileAssetToEditionMock,
-      parseFileAssetMetadata: parseFileAssetMetadataMock,
-      processCoverForWork: processCoverForWorkMock,
-      scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
-      detectDuplicates: detectDuplicatesMock,
-      matchSuggestions: matchSuggestionsMock,
-    });
-
-    scanLibraryRootMock.mockResolvedValueOnce({ missingFileAssetIds: [] });
-    getDependenciesCountMock.mockResolvedValueOnce({});
-
-    await expect(processor(createMockJob({
-      data: { libraryRootId: "root-1", importJobId: "ij-no-unprocessed" },
-      name: "scan-library-root",
-      attemptsMade: 1,
-    }) as never)).resolves.toEqual({ missingFileAssetIds: [] });
-
-    expect(importJobUpdateMock).toHaveBeenNthCalledWith(2, {
-      where: { id: "ij-no-unprocessed", status: "RUNNING" },
-      data: { status: "SUCCEEDED", finishedAt: expect.any(Date) as unknown, scanStage: null, bullmqJobId: null },
-    });
-  });
-
-  it("waits for children when moveToWaitingChildren returns true", async () => {
-    const { createLibraryWorkerProcessor } = await import("./index");
-    const processor = createLibraryWorkerProcessor({
-      hashFileAsset: hashFileAssetMock,
-      matchFileAssetToEdition: matchFileAssetToEditionMock,
-      parseFileAssetMetadata: parseFileAssetMetadataMock,
-      processCoverForWork: processCoverForWorkMock,
-      scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
-      detectDuplicates: detectDuplicatesMock,
-      matchSuggestions: matchSuggestionsMock,
-    });
-
-    scanLibraryRootMock.mockResolvedValueOnce({ missingFileAssetIds: [] });
-    moveToWaitingChildrenMock.mockResolvedValueOnce(true);
-
-    await expect(
-      processor(
-        createMockJob({
-          data: { libraryRootId: "root-1", importJobId: "ij-wait" },
-          name: "scan-library-root",
-          attemptsMade: 0,
-        }) as never,
-        "lock-token-1",
-      ),
-    ).rejects.toThrow(FakeWaitingChildrenError);
-
-    // RUNNING should be set but NOT SUCCEEDED
-    expect(importJobUpdateMock).toHaveBeenCalledTimes(1);
-    expect(importJobUpdateMock).toHaveBeenCalledWith({
-      where: { id: "ij-wait" },
-      data: { status: "RUNNING", startedAt: expect.any(Date) as unknown, attemptsMade: 0 },
-    });
-
-    // moveToWaitingChildren should be called with the token
-    expect(moveToWaitingChildrenMock).toHaveBeenCalledWith("lock-token-1");
-    // updateData should set step to waiting-children
-    expect(updateDataMock).toHaveBeenCalledWith(
-      expect.objectContaining({ step: "waiting-children" }),
-    );
-  });
-
-  it("waits for children when unresolved dependencies remain even if moveToWaitingChildren returns false", async () => {
-    const { createLibraryWorkerProcessor } = await import("./index");
-    const processor = createLibraryWorkerProcessor({
-      hashFileAsset: hashFileAssetMock,
-      matchFileAssetToEdition: matchFileAssetToEditionMock,
-      parseFileAssetMetadata: parseFileAssetMetadataMock,
-      processCoverForWork: processCoverForWorkMock,
-      scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
-      detectDuplicates: detectDuplicatesMock,
-      matchSuggestions: matchSuggestionsMock,
-    });
-
-    scanLibraryRootMock.mockResolvedValueOnce({ missingFileAssetIds: [] });
-    moveToWaitingChildrenMock.mockResolvedValueOnce(false);
-    getDependenciesCountMock.mockResolvedValueOnce({
-      processed: 0,
-      unprocessed: 1,
-      ignored: 0,
-      failed: 0,
-    });
-
-    await expect(
-      processor(
-        createMockJob({
-          data: { libraryRootId: "root-1", importJobId: "ij-wait-deps" },
-          name: "scan-library-root",
-          attemptsMade: 0,
-        }) as never,
-        "lock-token-2",
-      ),
-    ).rejects.toThrow(FakeWaitingChildrenError);
-
-    expect(importJobUpdateMock).toHaveBeenCalledTimes(1);
-    expect(importJobUpdateMock).toHaveBeenCalledWith({
-      where: { id: "ij-wait-deps" },
-      data: { status: "RUNNING", startedAt: expect.any(Date) as unknown, attemptsMade: 0 },
-    });
-  });
-
-  it("marks ImportJob SUCCEEDED and clears scanStage in completion phase (step=waiting-children)", async () => {
-    const { createLibraryWorkerProcessor } = await import("./index");
-    const processor = createLibraryWorkerProcessor({
-      hashFileAsset: hashFileAssetMock,
-      matchFileAssetToEdition: matchFileAssetToEditionMock,
-      parseFileAssetMetadata: parseFileAssetMetadataMock,
-      processCoverForWork: processCoverForWorkMock,
-      scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
-      detectDuplicates: detectDuplicatesMock,
-      matchSuggestions: matchSuggestionsMock,
-    });
-
-    await processor(createMockJob({
-      data: { libraryRootId: "root-1", importJobId: "ij-complete", step: "waiting-children" },
-      name: "scan-library-root",
-      attemptsMade: 0,
-    }) as never);
-
-    // Should mark SUCCEEDED without dispatching the handler
-    expect(scanLibraryRootMock).not.toHaveBeenCalled();
-    expect(importJobUpdateMock).toHaveBeenCalledTimes(1);
-    expect(importJobUpdateMock).toHaveBeenCalledWith({
-      where: { id: "ij-complete", status: "RUNNING" },
-      data: { status: "SUCCEEDED", finishedAt: expect.any(Date) as unknown, scanStage: null, bullmqJobId: null },
-    });
-  });
-
-  it("returns without ImportJob update in completion phase when importJobId is absent", async () => {
-    const { createLibraryWorkerProcessor } = await import("./index");
-    const processor = createLibraryWorkerProcessor({
-      hashFileAsset: hashFileAssetMock,
-      matchFileAssetToEdition: matchFileAssetToEditionMock,
-      parseFileAssetMetadata: parseFileAssetMetadataMock,
-      processCoverForWork: processCoverForWorkMock,
-      scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
-      detectDuplicates: detectDuplicatesMock,
-      matchSuggestions: matchSuggestionsMock,
-    });
-
-    await processor(createMockJob({
-      data: { fileAssetId: "file-1", step: "waiting-children" },
-      name: "hash-file-asset",
-    }) as never);
-
-    expect(hashFileAssetMock).not.toHaveBeenCalled();
-    expect(importJobUpdateMock).not.toHaveBeenCalled();
-  });
-
-  it("does not mark the parent ImportJob SUCCEEDED when a child job completes its own waiting-children phase", async () => {
-    const { createLibraryWorkerProcessor } = await import("./index");
-    const processor = createLibraryWorkerProcessor({
-      hashFileAsset: hashFileAssetMock,
-      matchFileAssetToEdition: matchFileAssetToEditionMock,
-      parseFileAssetMetadata: parseFileAssetMetadataMock,
-      processCoverForWork: processCoverForWorkMock,
-      scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
-      detectDuplicates: detectDuplicatesMock,
-      matchSuggestions: matchSuggestionsMock,
-    });
-
-    await processor(createMockJob({
-      data: { fileAssetId: "file-1", importJobId: "ij-child", step: "waiting-children" },
-      name: "match-file-asset-to-edition",
-    }) as never);
-
-    expect(matchFileAssetToEditionMock).not.toHaveBeenCalled();
-    expect(importJobUpdateMock).not.toHaveBeenCalled();
   });
 
   it("does not set RUNNING or update parent progress for child jobs with importJobId", async () => {
@@ -636,7 +442,7 @@ describe("library worker", () => {
         data: { libraryRootId: "root-1", importJobId: "ij-2" },
         name: "scan-library-root",
         attemptsMade: 2,
-      }) as never),
+      }) as never, "test-token"),
     ).rejects.toThrow("Disk full");
 
     expect(importJobUpdateMock).toHaveBeenCalledTimes(2);
@@ -673,7 +479,7 @@ describe("library worker", () => {
         data: { libraryRootId: "root-1", importJobId: "ij-3" },
         name: "scan-library-root",
         attemptsMade: 1,
-      }) as never),
+      }) as never, "test-token"),
     ).rejects.toBe("plain string error");
 
     expect(importJobUpdateMock).toHaveBeenNthCalledWith(2, {
@@ -708,7 +514,7 @@ describe("library worker", () => {
       data: { libraryRootId: "root-1" },
       name: "scan-library-root",
       attemptsMade: 0,
-    }) as never);
+    }) as never, "test-token");
 
     expect(importJobUpdateMock).not.toHaveBeenCalled();
   });
@@ -740,7 +546,7 @@ describe("library worker", () => {
       name: "scan-library-root",
       attemptsMade: 0,
       updateProgress: updateProgressMock,
-    }) as never);
+    }) as never, "test-token");
 
     // importJob.update should have been called: RUNNING, progress(totalFiles), progress(processedFiles), SUCCEEDED
     expect(importJobUpdateMock).toHaveBeenCalledWith({
@@ -750,6 +556,10 @@ describe("library worker", () => {
     expect(importJobUpdateMock).toHaveBeenCalledWith({
       where: { id: "ij-progress" },
       data: { processedFiles: 50, errorCount: 1 },
+    });
+    expect(importJobUpdateMock).toHaveBeenCalledWith({
+      where: { id: "ij-progress", status: "RUNNING" },
+      data: { status: "SUCCEEDED", finishedAt: expect.any(Date) as unknown, scanStage: null, bullmqJobId: null },
     });
     // job.updateProgress should have been called for each progress report
     expect(updateProgressMock).toHaveBeenCalledWith({ totalFiles: 100 });
@@ -772,11 +582,7 @@ describe("library worker", () => {
     importJobUpdateMock
       .mockResolvedValueOnce({})
       .mockRejectedValueOnce(new Error("progress db down"))
-      .mockResolvedValueOnce({
-        status: "SUCCEEDED",
-        finishedAt: new Date(),
-        scanStage: null,
-      });
+      .mockResolvedValueOnce({});
 
     scanLibraryRootMock.mockImplementationOnce(async (input: { reportProgress?: (data: unknown) => Promise<void> }) => {
       await input.reportProgress?.({ processedFiles: 50, errorCount: 1, scanStage: "PROCESSING" });
@@ -788,7 +594,7 @@ describe("library worker", () => {
         data: { libraryRootId: "root-1", importJobId: "ij-progress-fail" },
         name: "scan-library-root",
         attemptsMade: 0,
-      }) as never),
+      }) as never, "test-token"),
     ).resolves.toEqual({ missingFileAssetIds: [] });
   });
 
@@ -811,7 +617,7 @@ describe("library worker", () => {
       data: { libraryRootId: "root-1" },
       name: "scan-library-root",
       attemptsMade: 0,
-    }) as never);
+    }) as never, "test-token");
 
     // scanLibraryRoot should be called WITHOUT reportProgress
     expect(scanLibraryRootMock).toHaveBeenCalledWith({ libraryRootId: "root-1" });
@@ -936,14 +742,14 @@ describe("library worker", () => {
       name: "scan-library-root",
       id: "scan-job-42",
       queueQualifiedName: "bull:library",
-    }) as never);
+    }) as never, "test-token");
 
     expect(createIngestServicesMock).toHaveBeenCalledTimes(1);
     const createArgs = createIngestServicesMock.mock.calls[0] as [{ enqueueLibraryJob: unknown }];
     expect(createArgs[0]).toHaveProperty("enqueueLibraryJob");
   });
 
-  it("wrapped enqueue passes parent without removeDependencyOnFailure to enqueueLibraryJob", async () => {
+  it("wrapped enqueue passes payload with scanJobId/scanQueueName and parent option to enqueueLibraryJob", async () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const { enqueueLibraryJob: enqueueLibraryJobMock } = await import("@bookhouse/shared");
     const processor = createLibraryWorkerProcessor();
@@ -955,25 +761,23 @@ describe("library worker", () => {
       name: "scan-library-root",
       id: "scan-job-42",
       queueQualifiedName: "bull:library",
-    }) as never);
+    }) as never, "test-token");
 
     // Get the wrapped enqueue from the createIngestServices call
     const createArgs = createIngestServicesMock.mock.calls[0] as [{ enqueueLibraryJob: (name: string, payload: unknown) => Promise<void> }];
     const wrappedEnqueue = createArgs[0].enqueueLibraryJob;
 
-    // Call the wrapped enqueue and verify it adds parent options
+    // Call the wrapped enqueue and verify it passes scanJobId, scanQueueName and parent option
     await wrappedEnqueue("hash-file-asset", { fileAssetId: "file-1" });
 
     expect(enqueueLibraryJobMock).toHaveBeenCalledWith(
       "hash-file-asset",
-      { fileAssetId: "file-1" },
-      {
-        parent: { id: "scan-job-42", queue: "bull:library" },
-      },
+      { fileAssetId: "file-1", scanJobId: "scan-job-42", scanQueueName: "bull:library" },
+      { parent: { id: "scan-job-42", queue: "bull:library" } },
     );
   });
 
-  it("wrapped enqueue falls back to empty string when job.id is undefined", async () => {
+  it("wrapped enqueue uses empty string for scanJobId when job.id is undefined", async () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const { enqueueLibraryJob: enqueueLibraryJobMock } = await import("@bookhouse/shared");
     const processor = createLibraryWorkerProcessor();
@@ -985,7 +789,7 @@ describe("library worker", () => {
       name: "scan-library-root",
       id: undefined,
       queueQualifiedName: "bull:library",
-    }) as never);
+    }) as never, "test-token");
 
     const createArgs = createIngestServicesMock.mock.calls[0] as [{ enqueueLibraryJob: (name: string, payload: unknown) => Promise<void> }];
     const wrappedEnqueue = createArgs[0].enqueueLibraryJob;
@@ -994,10 +798,8 @@ describe("library worker", () => {
 
     expect(enqueueLibraryJobMock).toHaveBeenCalledWith(
       "hash-file-asset",
-      { fileAssetId: "file-1" },
-      {
-        parent: { id: "", queue: "bull:library" },
-      },
+      { fileAssetId: "file-1", scanJobId: "", scanQueueName: "bull:library" },
+      { parent: { id: "", queue: "bull:library" } },
     );
   });
 
@@ -1013,7 +815,7 @@ describe("library worker", () => {
       name: "scan-library-root",
       id: "scan-job-42",
       queueQualifiedName: "bull:library",
-    }) as never);
+    }) as never, "test-token");
 
     const createArgs = createIngestServicesMock.mock.calls[0] as [{ enqueueLibraryJob: (name: string, payload: unknown) => Promise<void> }];
     const wrappedEnqueue = createArgs[0].enqueueLibraryJob;
@@ -1022,38 +824,8 @@ describe("library worker", () => {
 
     expect(enqueueLibraryJobMock).toHaveBeenCalledWith(
       "hash-file-asset",
-      { fileAssetId: "file-1", importJobId: "ij-42" },
-      {
-        parent: { id: "scan-job-42", queue: "bull:library" },
-      },
-    );
-  });
-
-  it("wrapped enqueue does not inject importJobId when parent lacks it", async () => {
-    const { createLibraryWorkerProcessor } = await import("./index");
-    const { enqueueLibraryJob: enqueueLibraryJobMock } = await import("@bookhouse/shared");
-    const processor = createLibraryWorkerProcessor();
-
-    scanLibraryRootMock.mockResolvedValueOnce({ missingFileAssetIds: [] });
-
-    await processor(createMockJob({
-      data: { libraryRootId: "root-1" },
-      name: "scan-library-root",
-      id: "scan-job-42",
-      queueQualifiedName: "bull:library",
-    }) as never);
-
-    const createArgs = createIngestServicesMock.mock.calls[0] as [{ enqueueLibraryJob: (name: string, payload: unknown) => Promise<void> }];
-    const wrappedEnqueue = createArgs[0].enqueueLibraryJob;
-
-    await wrappedEnqueue("hash-file-asset", { fileAssetId: "file-1" });
-
-    expect(enqueueLibraryJobMock).toHaveBeenCalledWith(
-      "hash-file-asset",
-      { fileAssetId: "file-1" },
-      {
-        parent: { id: "scan-job-42", queue: "bull:library" },
-      },
+      { fileAssetId: "file-1", importJobId: "ij-42", scanJobId: "scan-job-42", scanQueueName: "bull:library" },
+      { parent: { id: "scan-job-42", queue: "bull:library" } },
     );
   });
 
@@ -1075,7 +847,7 @@ describe("library worker", () => {
     await processor(createMockJob({
       data: { libraryRootId: "root-1", importJobId: "ij-new" },
       name: "scan-library-root",
-    }) as never);
+    }) as never, "test-token");
 
     expect(importJobUpdateManyMock).toHaveBeenCalledWith({
       where: {
@@ -1113,7 +885,7 @@ describe("library worker", () => {
     await processor(createMockJob({
       data: { libraryRootId: "root-1", importJobId: "ij-1" },
       name: "scan-library-root",
-    }) as never);
+    }) as never, "test-token");
 
     expect(appSettingFindUniqueMock).toHaveBeenCalledWith({ where: { key: "missingFileBehavior" } });
     expect(cascadeCleanupOrphansMock).toHaveBeenCalledWith(
@@ -1142,7 +914,7 @@ describe("library worker", () => {
     await processor(createMockJob({
       data: { libraryRootId: "root-1", importJobId: "ij-1" },
       name: "scan-library-root",
-    }) as never);
+    }) as never, "test-token");
 
     expect(cascadeCleanupOrphansMock).not.toHaveBeenCalled();
   });
@@ -1165,12 +937,81 @@ describe("library worker", () => {
     await processor(createMockJob({
       data: { libraryRootId: "root-1", importJobId: "ij-1" },
       name: "scan-library-root",
-    }) as never);
+    }) as never, "test-token");
 
     expect(cascadeCleanupOrphansMock).not.toHaveBeenCalled();
   });
 
-  it("calls moveToWaitingChildren and updateData after dispatch", async () => {
+  it("enters completion phase when step is waiting-children and marks SUCCEEDED for scan with importJobId", async () => {
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor({
+      hashFileAsset: hashFileAssetMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
+      parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
+      scanLibraryRoot: scanLibraryRootMock,
+      enrichWork: enrichWorkMock,
+      detectDuplicates: detectDuplicatesMock,
+      matchSuggestions: matchSuggestionsMock,
+    });
+
+    await processor(createMockJob({
+      data: { libraryRootId: "root-1", importJobId: "ij-complete", step: "waiting-children" },
+      name: "scan-library-root",
+    }) as never, "test-token");
+
+    expect(scanLibraryRootMock).not.toHaveBeenCalled();
+    expect(importJobUpdateMock).toHaveBeenCalledWith({
+      where: { id: "ij-complete", status: "RUNNING" },
+      data: { status: "SUCCEEDED", finishedAt: expect.any(Date) as unknown, scanStage: null, bullmqJobId: null },
+    });
+  });
+
+  it("skips activeScanType reset in completion phase for non-scan jobs", async () => {
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor({
+      hashFileAsset: hashFileAssetMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
+      parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
+      scanLibraryRoot: scanLibraryRootMock,
+      enrichWork: enrichWorkMock,
+      detectDuplicates: detectDuplicatesMock,
+      matchSuggestions: matchSuggestionsMock,
+    });
+
+    await processor(createMockJob({
+      data: { fileAssetId: "file-1", step: "waiting-children" },
+      name: "hash-file-asset",
+    }) as never, "test-token");
+
+    expect(hashFileAssetMock).not.toHaveBeenCalled();
+    expect(importJobUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("enters completion phase without updating ImportJob when importJobId is absent", async () => {
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor({
+      hashFileAsset: hashFileAssetMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
+      parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
+      scanLibraryRoot: scanLibraryRootMock,
+      enrichWork: enrichWorkMock,
+      detectDuplicates: detectDuplicatesMock,
+      matchSuggestions: matchSuggestionsMock,
+    });
+
+    await processor(createMockJob({
+      data: { libraryRootId: "root-1", step: "waiting-children" },
+      name: "scan-library-root",
+    }) as never, "test-token");
+
+    expect(scanLibraryRootMock).not.toHaveBeenCalled();
+    expect(importJobUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("calls moveToWaitingChildren and throws WaitingChildrenError when shouldWait is true", async () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
@@ -1184,20 +1025,50 @@ describe("library worker", () => {
     });
 
     scanLibraryRootMock.mockResolvedValueOnce({ missingFileAssetIds: [] });
+    moveToWaitingChildrenMock.mockResolvedValueOnce(true);
 
-    await processor(
-      createMockJob({
-        data: { libraryRootId: "root-1" },
+    await expect(
+      processor(createMockJob({
+        data: { libraryRootId: "root-1", importJobId: "ij-wait" },
         name: "scan-library-root",
-      }) as never,
-      "my-token",
-    );
+      }) as never, "test-token"),
+    ).rejects.toThrow("WaitingChildrenError");
 
     expect(updateDataMock).toHaveBeenCalledWith({
       libraryRootId: "root-1",
+      importJobId: "ij-wait",
       step: "waiting-children",
     });
-    expect(moveToWaitingChildrenMock).toHaveBeenCalledWith("my-token");
+    expect(moveToWaitingChildrenMock).toHaveBeenCalledWith("test-token");
+  });
+
+  it("re-throws WaitingChildrenError without marking ImportJob FAILED", async () => {
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor({
+      hashFileAsset: hashFileAssetMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
+      parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
+      scanLibraryRoot: scanLibraryRootMock,
+      enrichWork: enrichWorkMock,
+      detectDuplicates: detectDuplicatesMock,
+      matchSuggestions: matchSuggestionsMock,
+    });
+
+    scanLibraryRootMock.mockResolvedValueOnce({ missingFileAssetIds: [] });
+    moveToWaitingChildrenMock.mockResolvedValueOnce(true);
+
+    await expect(
+      processor(createMockJob({
+        data: { libraryRootId: "root-1", importJobId: "ij-wait-rethrow" },
+        name: "scan-library-root",
+      }) as never, "test-token"),
+    ).rejects.toThrow("WaitingChildrenError");
+
+    // Should NOT have written FAILED — only RUNNING was written
+    expect(importJobUpdateMock).not.toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: "FAILED" }) as unknown,
+    }));
   });
 
   it("marks the parent scan FAILED when a child job exhausts retries", async () => {
@@ -1220,7 +1091,6 @@ describe("library worker", () => {
         data: { fileAssetId: "file-1", importJobId: "ij-child-fail" },
         opts: { attempts: 1 },
         name: "hash-file-asset",
-        parentKey: "bull:library:parent-final",
       }) as never),
     ).rejects.toThrow("hash failed");
 
@@ -1234,7 +1104,6 @@ describe("library worker", () => {
         bullmqJobId: null,
       },
     });
-    expect(removeChildDependencyMock).toHaveBeenCalledTimes(1);
   });
 
   it("records String(error) for final child job failures when opts are missing", async () => {
@@ -1257,7 +1126,6 @@ describe("library worker", () => {
         data: { fileAssetId: "file-1", importJobId: "ij-child-string-fail" },
         name: "hash-file-asset",
         opts: {},
-        parentKey: "bull:library:parent-string",
       }) as never),
     ).rejects.toBe("plain child failure");
 
@@ -1273,7 +1141,7 @@ describe("library worker", () => {
     });
   });
 
-  it("does not remove a parent dependency when a final child failure has no parentKey", async () => {
+  it("marks ImportJob FAILED for final child failure", async () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
@@ -1306,10 +1174,9 @@ describe("library worker", () => {
         bullmqJobId: null,
       },
     });
-    expect(removeChildDependencyMock).not.toHaveBeenCalled();
   });
 
-  it("does not remove a parent dependency for non-final child failures", async () => {
+  it("does not mark ImportJob FAILED for non-final child failures", async () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
@@ -1330,14 +1197,12 @@ describe("library worker", () => {
         opts: { attempts: 3 },
         attemptsMade: 0,
         name: "hash-file-asset",
-        parentKey: "bull:library:parent-1",
       }) as never),
     ).rejects.toThrow("transient");
 
     expect(importJobUpdateMock).not.toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ id: "ij-child-retry" }) as unknown,
     }));
-    expect(removeChildDependencyMock).not.toHaveBeenCalled();
   });
 
   it("creates and shuts down a redis-backed worker", async () => {
@@ -1404,32 +1269,30 @@ describe("library worker", () => {
     processExitSpy.mockRestore();
   });
 
-  it("polls DB for concurrency and updates worker", async () => {
+  it("polls DB for concurrency using onDemand key when no scan is active", async () => {
     vi.useFakeTimers();
-    appSettingFindUniqueMock.mockResolvedValue({ key: "workerConcurrency", value: "10" });
+    appSettingFindUniqueMock.mockResolvedValue({ key: "concurrencyOnDemand", value: "7" });
     const { createLibraryWorker, shutdownLibraryWorker } = await import("./index");
     const created = createLibraryWorker();
 
-    // Advance past the poll interval (10s)
     await vi.advanceTimersByTimeAsync(10_000);
 
-    expect(appSettingFindUniqueMock).toHaveBeenCalledWith({ where: { key: "workerConcurrency" } });
-    expect(created.worker.concurrency).toBe(10);
+    expect(appSettingFindUniqueMock).toHaveBeenCalledWith({ where: { key: "concurrencyOnDemand" } });
+    expect(created.worker.concurrency).toBe(7);
 
     await shutdownLibraryWorker(created.worker, created.connection, created.pollInterval);
     vi.useRealTimers();
   });
 
-  it("uses default concurrency when no setting exists in DB", async () => {
+  it("uses default onDemand concurrency when no setting exists in DB", async () => {
     vi.useFakeTimers();
     appSettingFindUniqueMock.mockResolvedValue(null);
-    const { createLibraryWorker, shutdownLibraryWorker } = await import("./index");
+    const { createLibraryWorker, shutdownLibraryWorker, SCAN_CONCURRENCY_DEFAULTS } = await import("./index");
     const created = createLibraryWorker();
 
     await vi.advanceTimersByTimeAsync(10_000);
 
-    // Should stay at default (5)
-    expect(created.worker.concurrency).toBe(5);
+    expect(created.worker.concurrency).toBe(SCAN_CONCURRENCY_DEFAULTS.onDemand);
 
     await shutdownLibraryWorker(created.worker, created.connection, created.pollInterval);
     vi.useRealTimers();
@@ -1447,13 +1310,116 @@ describe("library worker", () => {
   it("keeps current concurrency when DB is unavailable", async () => {
     vi.useFakeTimers();
     appSettingFindUniqueMock.mockRejectedValue(new Error("DB down"));
-    const { createLibraryWorker, shutdownLibraryWorker } = await import("./index");
+    const { createLibraryWorker, shutdownLibraryWorker, SCAN_CONCURRENCY_DEFAULTS } = await import("./index");
     const created = createLibraryWorker();
 
     await vi.advanceTimersByTimeAsync(10_000);
 
     // Should still be default concurrency
-    expect(created.worker.concurrency).toBe(5);
+    expect(created.worker.concurrency).toBe(SCAN_CONCURRENCY_DEFAULTS.onDemand);
+
+    await shutdownLibraryWorker(created.worker, created.connection, created.pollInterval);
+    vi.useRealTimers();
+  });
+
+  it("deriveScanType returns full for FULL scanMode", async () => {
+    const { deriveScanType } = await import("./index");
+    expect(deriveScanType({ libraryRootId: "r1", scanMode: "FULL" })).toBe("full");
+    expect(deriveScanType({ libraryRootId: "r1", scanMode: "FULL", scanTrigger: "manual" })).toBe("full");
+    expect(deriveScanType({ libraryRootId: "r1", scanMode: "FULL", scanTrigger: "scheduled" })).toBe("full");
+  });
+
+  it("deriveScanType returns onDemand for INCREMENTAL manual trigger", async () => {
+    const { deriveScanType } = await import("./index");
+    expect(deriveScanType({ libraryRootId: "r1", scanMode: "INCREMENTAL", scanTrigger: "manual" })).toBe("onDemand");
+    expect(deriveScanType({ libraryRootId: "r1", scanMode: "INCREMENTAL" })).toBe("onDemand");
+    expect(deriveScanType({ libraryRootId: "r1" })).toBe("onDemand");
+  });
+
+  it("deriveScanType returns incremental for INCREMENTAL scheduled trigger", async () => {
+    const { deriveScanType } = await import("./index");
+    expect(deriveScanType({ libraryRootId: "r1", scanMode: "INCREMENTAL", scanTrigger: "scheduled" })).toBe("incremental");
+    expect(deriveScanType({ libraryRootId: "r1", scanTrigger: "scheduled" })).toBe("incremental");
+  });
+
+  it("polls concurrency using active scan type when set directly", async () => {
+    appSettingFindUniqueMock.mockResolvedValue({ key: "concurrencyFull", value: "10" });
+    const { _pollConcurrency, _setActiveScanType, _getActiveScanType } = await import("./index");
+
+    _setActiveScanType("full");
+    expect(_getActiveScanType()).toBe("full");
+
+    const fakeWorker = { concurrency: 5 };
+    await _pollConcurrency(fakeWorker);
+
+    expect(appSettingFindUniqueMock).toHaveBeenCalledWith({ where: { key: "concurrencyFull" } });
+    expect(fakeWorker.concurrency).toBe(10);
+
+    _setActiveScanType(null);
+    expect(_getActiveScanType()).toBe("onDemand");
+  });
+
+  it("polls DB using concurrencyIncremental key when an incremental scan is active", async () => {
+    vi.useFakeTimers();
+    appSettingFindUniqueMock.mockImplementation((args: { where: { key: string } }) => {
+      if (args.where.key === "concurrencyIncremental") return Promise.resolve({ key: "concurrencyIncremental", value: "4" });
+      return Promise.resolve(null);
+    });
+    let resolveScan: ((v: { missingFileAssetIds: string[] }) => void) | undefined;
+    scanLibraryRootMock.mockReturnValue(new Promise((r) => { resolveScan = r; }));
+
+    const { createLibraryWorkerProcessor, createLibraryWorker, shutdownLibraryWorker } = await import("./index");
+    const created = createLibraryWorker();
+
+    const processor = createLibraryWorkerProcessor();
+    const scanPromise = processor(createMockJob({
+      data: { libraryRootId: "root-1", scanTrigger: "scheduled" },
+      name: "scan-library-root",
+    }) as never, "test-token");
+
+    // Advance to trigger the poll and flush microtasks so pollConcurrency completes
+    await vi.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(appSettingFindUniqueMock).toHaveBeenCalledWith({ where: { key: "concurrencyIncremental" } });
+    expect(created.worker.concurrency).toBe(4);
+
+    if (resolveScan) resolveScan({ missingFileAssetIds: [] });
+    await scanPromise;
+
+    await shutdownLibraryWorker(created.worker, created.connection, created.pollInterval);
+    vi.useRealTimers();
+  });
+
+  it("polls DB using concurrencyFull key when a full scan is active", async () => {
+    vi.useFakeTimers();
+    appSettingFindUniqueMock.mockImplementation((args: { where: { key: string } }) => {
+      if (args.where.key === "concurrencyFull") return Promise.resolve({ key: "concurrencyFull", value: "12" });
+      return Promise.resolve(null);
+    });
+    // Make the scan hang so activeScanType stays set during the poll
+    let resolveScan: ((v: { missingFileAssetIds: string[] }) => void) | undefined;
+    scanLibraryRootMock.mockReturnValue(new Promise((r) => { resolveScan = r; }));
+
+    const { createLibraryWorkerProcessor, createLibraryWorker, shutdownLibraryWorker } = await import("./index");
+    const created = createLibraryWorker();
+
+    // Start a FULL scan (don't await — it's hanging)
+    const processor = createLibraryWorkerProcessor();
+    const scanPromise = processor(createMockJob({
+      data: { libraryRootId: "root-1", scanMode: "FULL" },
+      name: "scan-library-root",
+    }) as never, "test-token");
+
+    // Poll fires while scan is in progress
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(appSettingFindUniqueMock).toHaveBeenCalledWith({ where: { key: "concurrencyFull" } });
+    expect(created.worker.concurrency).toBe(12);
+
+    // Clean up: resolve the scan and await completion
+    if (resolveScan) resolveScan({ missingFileAssetIds: [] });
+    await scanPromise;
 
     await shutdownLibraryWorker(created.worker, created.connection, created.pollInterval);
     vi.useRealTimers();

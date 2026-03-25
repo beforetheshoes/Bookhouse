@@ -26,6 +26,10 @@ export const librarySearchSchema = z
     seriesId: coerceToArray(z.string()),
     publisher: coerceToArray(z.string()),
     hasCover: coerceBool,
+    enriched: coerceBool,
+    hasDescription: coerceBool,
+    inSeries: coerceBool,
+    hasIsbn: coerceBool,
   })
   .strip();
 

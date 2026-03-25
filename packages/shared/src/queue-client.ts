@@ -24,9 +24,9 @@ function getQueue(): Queue {
   return queueSingleton.queue;
 }
 
+
 export interface EnqueueJobOpts {
   parent?: { id: string; queue: string };
-  removeDependencyOnFailure?: boolean;
 }
 
 export async function obliterateLibraryQueue(): Promise<void> {
@@ -97,10 +97,16 @@ async function getDescendantStatus(jobId: string): Promise<{
 
     const currentState = await currentJob.getState();
     if (currentState === "failed") {
-      return {
-        blockedByFailedChild: true,
-        lastActivityAt,
-      };
+      const maxAttempts = (currentJob as { opts?: { attempts?: number } }).opts?.attempts ?? 1;
+      const attemptsMade = (currentJob as { attemptsMade?: number }).attemptsMade ?? maxAttempts;
+      if (attemptsMade >= maxAttempts) {
+        return {
+          blockedByFailedChild: true,
+          lastActivityAt,
+        };
+      }
+      // Child has retries remaining — not permanently failed
+      continue;
     }
 
     if (currentState !== "waiting-children") {
@@ -157,7 +163,7 @@ export async function getLibraryJobSnapshot(
   };
 }
 
-const LIVE_IMPORT_JOB_SCAN_STATES = ["active", "prioritized", "waiting", "waiting-children"] as const;
+const LIVE_IMPORT_JOB_SCAN_STATES = ["active", "prioritized", "waiting", "waiting-children", "delayed"] as const;
 const LIVE_IMPORT_JOB_BATCH_SIZE = 500;
 
 export async function getImportJobLiveActivity(
@@ -215,7 +221,10 @@ export async function enqueueLibraryJob<TName extends LibraryJobName>(
       attempts: retryConfig.attempts,
       backoff: retryConfig.backoff,
       priority: JOB_PRIORITY[jobName],
-      ...opts,
+      ...(opts?.parent ? {
+        parent: opts.parent,
+        removeDependencyOnFailure: true,
+      } : {}),
     });
     const jobId = job.id ?? "unknown";
     logger.info({ jobName, jobId }, "Job enqueued");

@@ -27,6 +27,28 @@ const logger = createLogger("library-worker");
 const processCoverForWork = processCoverForWorkDefault(db);
 const rateLimiter = new RateLimiter();
 
+export type ScanType = "full" | "onDemand" | "incremental";
+
+export const SCAN_CONCURRENCY_DEFAULTS: Record<ScanType, number> = {
+  full: 8,
+  onDemand: 5,
+  incremental: 3,
+};
+
+const SCAN_CONCURRENCY_KEYS: Record<ScanType, string> = {
+  full: "concurrencyFull",
+  onDemand: "concurrencyOnDemand",
+  incremental: "concurrencyIncremental",
+};
+
+export function deriveScanType(payload: ScanLibraryRootJobPayload): ScanType {
+  if (payload.scanMode === "FULL") return "full";
+  if (payload.scanTrigger === "scheduled") return "incremental";
+  return "onDemand";
+}
+
+let activeScanType: ScanType | null = null;
+
 function getCoverCacheDir(): string {
   if (process.env.COVER_CACHE_DIR) {
     return process.env.COVER_CACHE_DIR;
@@ -53,16 +75,25 @@ export interface LibraryWorkerHandlers {
 function createJobHandlers(
   job: Job<LibraryJobPayload<LibraryJobName>, unknown, LibraryJobName>,
 ): LibraryWorkerHandlers {
-  const parentImportJobId = (job.data as BaseJobPayload).importJobId;
+  const basePayload = job.data as BaseJobPayload;
+  const parentImportJobId = basePayload.importJobId;
+  // All descendants register the scan-library-root job as their direct parent,
+  // flattening the dependency tree to a single level so BullMQ only needs to
+  // resolve one moveToWaitingChildren call on the root scan job.
+  const scanJobId = basePayload.scanJobId ?? job.id ?? "";
+  const scanQueueName = basePayload.scanQueueName ?? job.queueQualifiedName;
   const wrappedEnqueue = async <TName extends LibraryJobName>(
     jobName: TName,
     payload: LibraryJobPayload<TName>,
   ): Promise<void> => {
-    const enrichedPayload = parentImportJobId
-      ? { ...payload, importJobId: parentImportJobId }
-      : payload;
+    const enrichedPayload: LibraryJobPayload<TName> = {
+      ...payload,
+      ...(parentImportJobId ? { importJobId: parentImportJobId } : {}),
+      scanJobId,
+      scanQueueName,
+    } as LibraryJobPayload<TName>;
     await enqueueLibraryJob(jobName, enrichedPayload, {
-      parent: { id: job.id ?? "", queue: job.queueQualifiedName },
+      parent: { id: scanJobId, queue: scanQueueName },
     });
   };
 
@@ -89,6 +120,7 @@ async function dispatch(
   switch (job.name) {
     case LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT: {
       const payload = job.data as ScanLibraryRootJobPayload;
+      activeScanType = deriveScanType(payload);
       let scanResult: ScanLibraryRootResult;
       if (importJobId) {
         const reportProgress = async (data: ScanProgressData) => {
@@ -188,14 +220,18 @@ export function createLibraryWorkerProcessor(
   const totalAttempts = job.opts.attempts ?? 1;
   const finalAttempt = job.attemptsMade + 1 >= totalAttempts;
 
-  // Completion phase — BullMQ re-activated this job after all children finished
+  // Completion phase — BullMQ re-activated the scan-root after all children finished.
+  // Only scan-root uses the step pattern; other jobs complete in a single pass.
   if ((job.data as BaseJobPayload).step === "waiting-children") {
+    logger.info({ jobId: job.id, jobName: job.name }, "All children finished, entering completion phase");
     if (importJobId && isScanJob) {
       await db.importJob.update({
         where: { id: importJobId, status: "RUNNING" },
         data: { status: "SUCCEEDED", finishedAt: new Date(), scanStage: null, bullmqJobId: null },
       });
+      logger.info({ jobId: job.id, importJobId }, "Scan marked SUCCEEDED");
     }
+    if (isScanJob) activeScanType = null;
     return;
   }
 
@@ -234,23 +270,28 @@ export function createLibraryWorkerProcessor(
     try {
       const result = await dispatch(jobHandlers, job);
 
-      // Attempt to wait for any children this job spawned
-      await job.updateData({ ...job.data, step: "waiting-children" });
-      const shouldWait = await job.moveToWaitingChildren(token ?? "");
-      const dependencyCounts = await job.getDependenciesCount();
-      if (shouldWait) {
-        throw new WaitingChildrenError();
-      }
-      if ((dependencyCounts.unprocessed ?? 0) > 0) {
-        throw new WaitingChildrenError();
-      }
+      // Only the scan root job waits for descendants — all children at every
+      // level register it as their direct parent via scanJobId/scanQueueName.
+      // Uses the BullMQ step pattern: moveToWaitingChildren + throw WaitingChildrenError.
+      // When all children complete, BullMQ re-activates the scan root and the
+      // completion phase (step === "waiting-children") fires above.
+      if (isScanJob) {
+        await job.updateData({ ...job.data, step: "waiting-children" });
+        const shouldWait = await job.moveToWaitingChildren(token ?? "");
+        if (shouldWait) {
+          logger.info({ jobId: job.id, jobName: job.name }, "Waiting for child jobs to complete");
+          throw new WaitingChildrenError();
+        }
 
-      // No children (or all already done) — complete immediately
-      if (importJobId && isScanJob) {
-        await db.importJob.update({
-          where: { id: importJobId, status: "RUNNING" },
-          data: { status: "SUCCEEDED", finishedAt: new Date(), scanStage: null, bullmqJobId: null },
-        });
+        // No children (or all already done) — complete immediately
+        if (importJobId) {
+          await db.importJob.update({
+            where: { id: importJobId, status: "RUNNING" },
+            data: { status: "SUCCEEDED", finishedAt: new Date(), scanStage: null, bullmqJobId: null },
+          });
+          logger.info({ jobId: job.id, importJobId }, "Scan completed immediately (no pending children)");
+        }
+        activeScanType = null;
       }
 
       return result;
@@ -258,7 +299,6 @@ export function createLibraryWorkerProcessor(
       if (error instanceof WaitingChildrenError) {
         throw error;
       }
-
       if (importJobId && isScanJob) {
         await db.importJob.update({
           where: { id: importJobId },
@@ -283,10 +323,8 @@ export function createLibraryWorkerProcessor(
             bullmqJobId: null,
           },
         });
-        if (job.parentKey) {
-          await job.removeChildDependency();
-        }
       }
+      if (isScanJob) activeScanType = null;
       throw error;
     }
   };
@@ -303,7 +341,6 @@ const defaultHandlers: LibraryWorkerHandlers = {
   matchSuggestions,
 };
 
-const DEFAULT_WORKER_CONCURRENCY = 5;
 const CONCURRENCY_POLL_INTERVAL_MS = 10_000;
 
 export function createLibraryWorker(
@@ -315,7 +352,7 @@ export function createLibraryWorker(
     createLibraryWorkerProcessor(handlers),
     {
       connection,
-      concurrency: DEFAULT_WORKER_CONCURRENCY,
+      concurrency: SCAN_CONCURRENCY_DEFAULTS.onDemand,
       removeOnComplete: { count: 1000 },
       removeOnFail: { count: 5000 },
     },
@@ -328,10 +365,20 @@ export function createLibraryWorker(
   return { connection, pollInterval, worker };
 }
 
+function getActiveScanType(): ScanType {
+  if (activeScanType !== null) {
+    return activeScanType;
+  }
+  return "onDemand";
+}
+
 async function pollConcurrency(worker: Pick<Worker, "concurrency">): Promise<void> {
   try {
-    const setting = await db.appSetting.findUnique({ where: { key: "workerConcurrency" } });
-    const desired = setting ? Number(setting.value) : DEFAULT_WORKER_CONCURRENCY;
+    const scanType = getActiveScanType();
+    const key = SCAN_CONCURRENCY_KEYS[scanType];
+    const defaultValue = SCAN_CONCURRENCY_DEFAULTS[scanType];
+    const setting = await db.appSetting.findUnique({ where: { key } });
+    const desired = setting ? Number(setting.value) : defaultValue;
     if (!Number.isNaN(desired) && desired >= 1 && desired <= 20 && worker.concurrency !== desired) {
       worker.concurrency = desired;
       logger.info({ concurrency: desired }, "Worker concurrency updated");
@@ -376,6 +423,13 @@ export function bootstrapLibraryWorker(): void {
 
 // Coverage: defaultHandlers referenced to ensure the import is exercised
 export { defaultHandlers as _defaultHandlers };
+
+// Exported for testing only — allows unit tests to call pollConcurrency directly
+// and set the module-level activeScanType without relying on fake timer async races.
+export { pollConcurrency as _pollConcurrency, getActiveScanType as _getActiveScanType };
+export function _setActiveScanType(scanType: ScanType | null): void {
+  activeScanType = scanType;
+}
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   bootstrapLibraryWorker();
