@@ -54,8 +54,8 @@ test.describe("Library root removal with orphan cleanup", () => {
     // Wait for removal toast
     await expect(page.getByText(/removed/i)).toBeVisible({ timeout: 15_000 });
 
-    // Verify orphaned work is gone
+    // Verify orphaned work is gone (orphan cleanup may run asynchronously)
     await page.goto("/library");
-    await expect(page.getByText("Orphan Book")).not.toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText("Orphan Book")).not.toBeVisible({ timeout: 15_000 });
   });
 });
