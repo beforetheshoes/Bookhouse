@@ -7,10 +7,10 @@ test.describe("Add library root", () => {
   });
 
   test("fills and submits the add library root form", async ({ page }) => {
-    await page.goto("/settings/libraries");
+    await page.goto("/settings");
 
     await expect(
-      page.getByRole("heading", { name: "Library Roots" }),
+      page.getByRole("heading", { name: "Settings" }),
     ).toBeVisible();
 
     // Open the dialog

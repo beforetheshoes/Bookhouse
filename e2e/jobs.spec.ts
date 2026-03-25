@@ -11,11 +11,11 @@ test.describe("Jobs page", () => {
     await seedImportJob(root.id, { status: "SUCCEEDED" });
     await seedImportJob(root.id, { status: "FAILED" });
 
-    await page.goto("/settings/jobs");
+    await page.goto("/settings");
 
-    await expect(
-      page.getByRole("heading", { name: "Import Jobs" }),
-    ).toBeVisible();
+    // Switch to the Jobs tab
+    await page.getByRole("tab", { name: "Jobs" }).click();
+
     await expect(page.getByText("SUCCEEDED").first()).toBeVisible();
     await expect(page.getByText("FAILED").first()).toBeVisible();
   });
