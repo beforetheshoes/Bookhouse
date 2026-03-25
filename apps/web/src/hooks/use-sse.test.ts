@@ -69,6 +69,41 @@ it("calling an event handler calls router.invalidate()", () => {
   expect(invalidateMock).toHaveBeenCalledTimes(1);
 });
 
+it("throttles rapid invalidations to at most once per 2 seconds", () => {
+  vi.useFakeTimers();
+  renderHook(() => { useSSE({ enabled: true }); });
+
+  // First event fires immediately
+  eventSourceListeners.get("job:completed")?.({});
+  expect(invalidateMock).toHaveBeenCalledTimes(1);
+
+  // Rapid subsequent events within the throttle window are suppressed
+  eventSourceListeners.get("job:progress")?.({});
+  eventSourceListeners.get("job:active")?.({});
+  eventSourceListeners.get("job:completed")?.({});
+  expect(invalidateMock).toHaveBeenCalledTimes(1);
+
+  // After the throttle window, a trailing call fires
+  vi.advanceTimersByTime(2000);
+  expect(invalidateMock).toHaveBeenCalledTimes(2);
+
+  vi.useRealTimers();
+});
+
+it("does not fire trailing call if no events arrived during throttle window", () => {
+  vi.useFakeTimers();
+  renderHook(() => { useSSE({ enabled: true }); });
+
+  eventSourceListeners.get("job:completed")?.({});
+  expect(invalidateMock).toHaveBeenCalledTimes(1);
+
+  // No more events — advancing past throttle window should not trigger another call
+  vi.advanceTimersByTime(2000);
+  expect(invalidateMock).toHaveBeenCalledTimes(1);
+
+  vi.useRealTimers();
+});
+
 it("does not create EventSource when enabled=false", () => {
   renderHook(() => { useSSE({ enabled: false }); });
   expect(addEventListenerMock).not.toHaveBeenCalled();
@@ -78,6 +113,27 @@ it("calls es.close() on unmount", () => {
   const { unmount } = renderHook(() => { useSSE({ enabled: true }); });
   unmount();
   expect(closeMock).toHaveBeenCalled();
+});
+
+it("cancels pending throttled call on unmount", () => {
+  vi.useFakeTimers();
+  const { unmount } = renderHook(() => { useSSE({ enabled: true }); });
+
+  // First event fires immediately
+  eventSourceListeners.get("job:completed")?.({});
+  expect(invalidateMock).toHaveBeenCalledTimes(1);
+
+  // Second event is throttled (pending)
+  eventSourceListeners.get("job:progress")?.({});
+
+  // Unmount before the trailing call fires
+  unmount();
+
+  // Advancing past throttle window should NOT trigger the pending call
+  vi.advanceTimersByTime(2000);
+  expect(invalidateMock).toHaveBeenCalledTimes(1);
+
+  vi.useRealTimers();
 });
 
 it("calling onerror does nothing (no throw)", () => {

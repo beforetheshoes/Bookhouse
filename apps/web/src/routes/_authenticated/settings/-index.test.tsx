@@ -27,8 +27,8 @@ let mockLoaderData: {
     libraryRoot: { name: string } | null;
   }[];
   totalCount: number;
-  concurrency: number;
-} = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrency: 5 };
+  concurrencies: { full: number; onDemand: number; incremental: number };
+} = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 } };
 
 const getLibraryRootsServerFnMock = vi.fn();
 const scanLibraryRootServerFnMock = vi.fn();
@@ -50,14 +50,14 @@ const getMissingFileBehaviorServerFnMock = vi.fn();
 const setMissingFileBehaviorServerFnMock = vi.fn();
 const getImportJobsServerFnMock = vi.fn();
 const stopAllJobsServerFnMock = vi.fn().mockResolvedValue({ stoppedCount: 0 });
-const getWorkerConcurrencyServerFnMock = vi.fn().mockResolvedValue(5);
-const setWorkerConcurrencyServerFnMock = vi.fn().mockResolvedValue({ concurrency: 5 });
+const getAllScanConcurrenciesServerFnMock = vi.fn().mockResolvedValue({ full: 8, onDemand: 5, incremental: 3 });
+const setScanConcurrencyServerFnMock = vi.fn().mockResolvedValue({ scanType: "full", concurrency: 8 });
 
 vi.mock("~/lib/server-fns/app-settings", () => ({
   getMissingFileBehaviorServerFn: getMissingFileBehaviorServerFnMock,
   setMissingFileBehaviorServerFn: setMissingFileBehaviorServerFnMock,
-  getWorkerConcurrencyServerFn: getWorkerConcurrencyServerFnMock,
-  setWorkerConcurrencyServerFn: setWorkerConcurrencyServerFnMock,
+  getAllScanConcurrenciesServerFn: getAllScanConcurrenciesServerFnMock,
+  setScanConcurrencyServerFn: setScanConcurrencyServerFnMock,
 }));
 
 vi.mock("~/lib/server-fns/import-jobs", () => ({
@@ -171,7 +171,7 @@ const makeJob = (overrides: Partial<{
 describe("SettingsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrency: 5 };
+    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 } };
     mockTheme = "system";
   });
 
@@ -462,14 +462,14 @@ describe("SettingsPage", () => {
     getLibraryRootsServerFnMock.mockResolvedValueOnce(mockRoots);
     getMissingFileBehaviorServerFnMock.mockResolvedValueOnce("manual");
     getImportJobsServerFnMock.mockResolvedValueOnce({ jobs: [], totalCount: 0 });
-    getWorkerConcurrencyServerFnMock.mockResolvedValueOnce(5);
+    getAllScanConcurrenciesServerFnMock.mockResolvedValueOnce({ full: 8, onDemand: 5, incremental: 3 });
     getScanProgressServerFnMock.mockResolvedValueOnce(null);
     getLibraryIssueCountServerFnMock.mockResolvedValueOnce(0);
     const { Route } = await import("./index");
     const result = await (Route.options.loader as (args: Record<string, unknown>) => Promise<unknown>)({});
     expect(getLibraryRootsServerFnMock).toHaveBeenCalled();
     expect(getImportJobsServerFnMock).toHaveBeenCalledWith({ data: { page: 1, pageSize: 100 } });
-    expect(getWorkerConcurrencyServerFnMock).toHaveBeenCalled();
+    expect(getAllScanConcurrenciesServerFnMock).toHaveBeenCalled();
     expect(getScanProgressServerFnMock).toHaveBeenCalledWith({ data: { libraryRootId: "root-1" } });
     expect(getLibraryIssueCountServerFnMock).toHaveBeenCalledWith({ data: { libraryRootId: "root-1" } });
     expect(result).toEqual({
@@ -477,7 +477,7 @@ describe("SettingsPage", () => {
       missingFileBehavior: "manual",
       jobs: [],
       totalCount: 0,
-      concurrency: 5,
+      concurrencies: { full: 8, onDemand: 5, incremental: 3 },
     });
   });
 
@@ -731,7 +731,7 @@ describe("SettingsPage", () => {
 describe("AppearanceCard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrency: 5 };
+    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 } };
     mockTheme = "system";
   });
 
@@ -798,7 +798,7 @@ describe("AppearanceCard", () => {
 describe("JobsTab", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrency: 5 };
+    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 } };
     mockTheme = "system";
   });
 
@@ -868,36 +868,47 @@ describe("JobsTab", () => {
     expect(stopAllJobsServerFnMock).not.toHaveBeenCalled();
   });
 
-  it("renders concurrency input with loader value", async () => {
-    mockLoaderData = { ...mockLoaderData, concurrency: 8 };
+  it("renders three concurrency inputs with loader values", async () => {
+    mockLoaderData = { ...mockLoaderData, concurrencies: { full: 10, onDemand: 7, incremental: 2 } };
     const { Route } = await import("./index");
     const SettingsPage = (Route.options.component as React.ComponentType);
     render(<SettingsPage />);
-    expect(screen.getByDisplayValue("8")).toBeTruthy();
+    expect(screen.getByDisplayValue("10")).toBeTruthy();
+    expect(screen.getByDisplayValue("7")).toBeTruthy();
+    expect(screen.getByDisplayValue("2")).toBeTruthy();
   });
 
-  it("shows Save button when concurrency is changed", async () => {
+  it("renders concurrency labels for each scan type", async () => {
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+    expect(screen.getByText("Full Scan:")).toBeTruthy();
+    expect(screen.getByText("On-demand:")).toBeTruthy();
+    expect(screen.getByText("Incremental:")).toBeTruthy();
+  });
+
+  it("shows Save button when any concurrency is changed", async () => {
     const { Route } = await import("./index");
     const SettingsPage = (Route.options.component as React.ComponentType);
     render(<SettingsPage />);
 
-    const input = screen.getByDisplayValue("5");
-    fireEvent.change(input, { target: { value: "10" } });
+    const input = screen.getByDisplayValue("8");
+    fireEvent.change(input, { target: { value: "12" } });
     expect(screen.getByText("Save")).toBeTruthy();
   });
 
-  it("calls setWorkerConcurrencyServerFn when Save is clicked", async () => {
+  it("calls setScanConcurrencyServerFn for each changed value when Save is clicked", async () => {
     const { Route } = await import("./index");
     const SettingsPage = (Route.options.component as React.ComponentType);
     render(<SettingsPage />);
 
-    const input = screen.getByDisplayValue("5");
-    fireEvent.change(input, { target: { value: "10" } });
+    const fullInput = screen.getByDisplayValue("8");
+    fireEvent.change(fullInput, { target: { value: "12" } });
     const saveBtn = screen.getByText("Save");
     fireEvent.click(saveBtn);
 
     await waitFor(() => {
-      expect(setWorkerConcurrencyServerFnMock).toHaveBeenCalledWith({ data: { concurrency: 10 } });
+      expect(setScanConcurrencyServerFnMock).toHaveBeenCalledWith({ data: { scanType: "full", concurrency: 12 } });
     });
   });
 

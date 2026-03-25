@@ -1,31 +1,56 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
-const DEFAULT_WORKER_CONCURRENCY = 5;
+export type ScanType = "full" | "onDemand" | "incremental";
 
-export const getWorkerConcurrencyServerFn = createServerFn({
+export const SCAN_CONCURRENCY_DEFAULTS: Record<ScanType, number> = {
+  full: 8,
+  onDemand: 5,
+  incremental: 3,
+};
+
+const SCAN_CONCURRENCY_KEYS: Record<ScanType, string> = {
+  full: "concurrencyFull",
+  onDemand: "concurrencyOnDemand",
+  incremental: "concurrencyIncremental",
+};
+
+export const getAllScanConcurrenciesServerFn = createServerFn({
   method: "GET",
 }).handler(async () => {
   const { db } = await import("@bookhouse/db");
 
-  const setting = await db.appSetting.findUnique({ where: { key: "workerConcurrency" } });
-  return setting ? Number(setting.value) : DEFAULT_WORKER_CONCURRENCY;
+  const settings = await db.appSetting.findMany({
+    where: { key: { in: Object.values(SCAN_CONCURRENCY_KEYS) } },
+  });
+
+  const map = new Map(settings.map((s: { key: string; value: string }) => [s.key, s.value]));
+
+  return {
+    full: Number(map.get(SCAN_CONCURRENCY_KEYS.full)) || SCAN_CONCURRENCY_DEFAULTS.full,
+    onDemand: Number(map.get(SCAN_CONCURRENCY_KEYS.onDemand)) || SCAN_CONCURRENCY_DEFAULTS.onDemand,
+    incremental: Number(map.get(SCAN_CONCURRENCY_KEYS.incremental)) || SCAN_CONCURRENCY_DEFAULTS.incremental,
+  };
 });
 
-export const setWorkerConcurrencyServerFn = createServerFn({
+export const setScanConcurrencyServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(z.object({ concurrency: z.number().int().min(1).max(20) }))
+  .inputValidator(z.object({
+    scanType: z.enum(["full", "onDemand", "incremental"]),
+    concurrency: z.number().int().min(1).max(20),
+  }))
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
+    const key = SCAN_CONCURRENCY_KEYS[data.scanType as ScanType];
 
     await db.appSetting.upsert({
-      where: { key: "workerConcurrency" },
-      create: { key: "workerConcurrency", value: String(data.concurrency) },
+      where: { key },
+      create: { key, value: String(data.concurrency) },
       update: { value: String(data.concurrency) },
     });
 
-    return { concurrency: data.concurrency };
+    return { scanType: data.scanType as ScanType, concurrency: data.concurrency };
   });
 
 export type MissingFileBehavior = "auto-cleanup" | "manual";
