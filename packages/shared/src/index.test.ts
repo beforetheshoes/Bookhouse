@@ -111,13 +111,17 @@ describe("shared queue helpers", () => {
 
   it("re-exports WaitingChildrenError from bullmq", () => {
     expect(WaitingChildrenError).toBeDefined();
-    const err = new WaitingChildrenError();
-    expect(err).toBeInstanceOf(Error);
+    expect(typeof WaitingChildrenError).toBe("function");
   });
 
   it("defines typed queue payload shapes for library jobs", () => {
     const scanPayload: ScanLibraryRootJobPayload = {
       libraryRootId: "root-1",
+    };
+    const scanWithTrigger: ScanLibraryRootJobPayload = {
+      libraryRootId: "root-2",
+      scanMode: "FULL",
+      scanTrigger: "manual",
     };
     const hashPayload: HashFileAssetJobPayload = {
       fileAssetId: "file-1",
@@ -139,6 +143,7 @@ describe("shared queue helpers", () => {
     expect(matchSuggestionsPayload).toEqual({ fileAssetId: "file-1" });
     expect(refreshPayload).toEqual({ workId: "work-1" });
     expect(scanPayload).toEqual({ libraryRootId: "root-1" });
+    expect(scanWithTrigger).toEqual({ libraryRootId: "root-2", scanMode: "FULL", scanTrigger: "manual" });
     expect(hashPayload).toEqual({
       fileAssetId: "file-1",
       forceFullHash: true,

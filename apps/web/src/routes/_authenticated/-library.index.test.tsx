@@ -9,7 +9,10 @@ const defaultFacetCounts = {
     { formatFamily: "EBOOK", _count: { _all: 1 } },
   ],
   hasCover: { withCover: 0, withoutCover: 1 },
-  series: 0,
+  enrichment: { enriched: 0, unenriched: 0 },
+  description: { withDescription: 0, withoutDescription: 0 },
+  series: { inSeries: 0, standalone: 0 },
+  isbn: { withIsbn: 0, withoutIsbn: 0 },
 };
 
 let mockLoaderData: {

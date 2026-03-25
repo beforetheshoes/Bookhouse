@@ -149,7 +149,11 @@ export const getScanProgressServerFn = createServerFn({
         : null;
       const queueState = snapshot?.state ?? null;
       const lastActivityAt = Math.max(job.updatedAt.getTime(), snapshot?.lastActivityAt ?? 0);
-      const stale = Date.now() - lastActivityAt > STALE_SCAN_THRESHOLD_MS;
+      // A scan-root in waiting-children is validly waiting for child jobs —
+      // not stalled. The blockedByFailedChild check above catches real stuck cases.
+      const stale = queueState === "waiting-children"
+        ? false
+        : Date.now() - lastActivityAt > STALE_SCAN_THRESHOLD_MS;
 
       if (snapshot?.blockedByFailedChild) {
         await db.importJob.updateMany({
@@ -196,6 +200,7 @@ export const getScanProgressServerFn = createServerFn({
         };
       }
 
+      // No live BullMQ job and no live child activity.
       if (
         stale &&
         (job.status === "QUEUED" || job.status === "RUNNING")
@@ -210,6 +215,20 @@ export const getScanProgressServerFn = createServerFn({
             bullmqJobId: null,
           },
         });
+      } else if (
+        !stale &&
+        (job.status === "QUEUED" || job.status === "RUNNING")
+      ) {
+        // Scan root is likely in waiting-children — keep showing RUNNING
+        // until it completes or becomes stale.
+        return {
+          status: "RUNNING" as const,
+          totalFiles: job.totalFiles,
+          processedFiles: job.processedFiles,
+          errorCount: job.errorCount,
+          scanStage: null,
+          stale: false,
+        };
       }
     }
 
@@ -296,6 +315,7 @@ export const scanLibraryRootServerFn = createServerFn({
       {
         libraryRootId: data.libraryRootId,
         importJobId: importJob.id,
+        scanTrigger: "manual" as const,
         ...(data.scanMode ? { scanMode: data.scanMode } : {}),
       },
     );

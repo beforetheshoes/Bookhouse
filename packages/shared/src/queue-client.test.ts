@@ -149,18 +149,13 @@ describe("enqueueLibraryJob", () => {
     expect(jobId).toBe("unknown");
   });
 
-  it("passes parent and removeDependencyOnFailure options to Queue.add", async () => {
-    addMock.mockResolvedValueOnce({ id: "child-1" });
+  it("passes parent and removeDependencyOnFailure when opts.parent is provided", async () => {
+    addMock.mockResolvedValueOnce({ id: "job-parent" });
     const { enqueueLibraryJob, LIBRARY_JOB_NAMES, RETRY_CONFIG } = await import("./index");
 
-    await enqueueLibraryJob(
-      LIBRARY_JOB_NAMES.HASH_FILE_ASSET,
-      { fileAssetId: "file-1" },
-      {
-        parent: { id: "parent-job-1", queue: "bull:library" },
-        removeDependencyOnFailure: true,
-      },
-    );
+    await enqueueLibraryJob(LIBRARY_JOB_NAMES.HASH_FILE_ASSET, {
+      fileAssetId: "file-1",
+    }, { parent: { id: "scan-1", queue: "bull:library" } });
 
     const config = RETRY_CONFIG[LIBRARY_JOB_NAMES.HASH_FILE_ASSET];
     expect(addMock).toHaveBeenCalledWith(
@@ -170,7 +165,7 @@ describe("enqueueLibraryJob", () => {
         attempts: config.attempts,
         backoff: config.backoff,
         priority: expect.any(Number) as unknown,
-        parent: { id: "parent-job-1", queue: "bull:library" },
+        parent: { id: "scan-1", queue: "bull:library" },
         removeDependencyOnFailure: true,
       },
     );
@@ -312,6 +307,90 @@ describe("getLibraryJobSnapshot", () => {
       lastActivityAt: 150,
       state: "waiting-children",
       progress: { processedFiles: 10, scanStage: "PROCESSING" },
+    });
+  });
+
+  it("does not flag waiting-children when failed descendant has retries remaining", async () => {
+    getJobMock.mockImplementation((jobId: string) => {
+      if (jobId === "job-123") {
+        return {
+          finishedOn: 0,
+          getState: vi.fn().mockResolvedValue("waiting-children"),
+          getDependencies: vi.fn().mockResolvedValue({
+            unprocessed: ["bull:library:child-1"],
+            failed: [],
+          }),
+          processedOn: 100,
+          progress: { processedFiles: 10 },
+          timestamp: 50,
+        };
+      }
+
+      if (jobId === "child-1") {
+        return {
+          finishedOn: 0,
+          getState: vi.fn().mockResolvedValue("failed"),
+          getDependencies: vi.fn(),
+          processedOn: 150,
+          progress: 0,
+          timestamp: 120,
+          attemptsMade: 1,
+          opts: { attempts: 3 },
+        };
+      }
+
+      return null;
+    });
+
+    const { getLibraryJobSnapshot } = await import("./index");
+
+    await expect(getLibraryJobSnapshot("job-123")).resolves.toEqual({
+      blockedByFailedChild: false,
+      lastActivityAt: 150,
+      state: "waiting-children",
+      progress: { processedFiles: 10 },
+    });
+  });
+
+  it("flags waiting-children when failed descendant has exhausted all retries", async () => {
+    getJobMock.mockImplementation((jobId: string) => {
+      if (jobId === "job-123") {
+        return {
+          finishedOn: 0,
+          getState: vi.fn().mockResolvedValue("waiting-children"),
+          getDependencies: vi.fn().mockResolvedValue({
+            unprocessed: ["bull:library:child-1"],
+            failed: [],
+          }),
+          processedOn: 100,
+          progress: { processedFiles: 10 },
+          timestamp: 50,
+        };
+      }
+
+      if (jobId === "child-1") {
+        return {
+          finishedOn: 0,
+          getState: vi.fn().mockResolvedValue("failed"),
+          getDependencies: vi.fn(),
+          processedOn: 150,
+          progress: 0,
+          timestamp: 120,
+          attemptsMade: 3,
+          opts: { attempts: 3 },
+        };
+      }
+
+      return null;
+    });
+
+    const { getLibraryJobSnapshot } = await import("./index");
+
+    await expect(getLibraryJobSnapshot("job-123")).resolves.toEqual({
+      blockedByFailedChild: true,
+      lastActivityAt: 150,
+      state: "waiting-children",
+      progress: { processedFiles: 10 },
     });
   });
 
