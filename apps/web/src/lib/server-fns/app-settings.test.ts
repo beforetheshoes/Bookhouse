@@ -15,62 +15,108 @@ vi.mock("@tanstack/react-start", () => ({
 }));
 
 const appSettingFindUniqueMock = vi.fn();
+const appSettingFindManyMock = vi.fn();
 const appSettingUpsertMock = vi.fn();
 
 vi.mock("@bookhouse/db", () => ({
   db: {
     appSetting: {
       findUnique: (...args: unknown[]): unknown => appSettingFindUniqueMock(...args),
+      findMany: (...args: unknown[]): unknown => appSettingFindManyMock(...args),
       upsert: (...args: unknown[]): unknown => appSettingUpsertMock(...args),
     },
   },
 }));
 
 import {
-  getWorkerConcurrencyServerFn,
-  setWorkerConcurrencyServerFn,
+  getAllScanConcurrenciesServerFn,
+  setScanConcurrencyServerFn,
   getMissingFileBehaviorServerFn,
   setMissingFileBehaviorServerFn,
   getThemeServerFn,
   setThemeServerFn,
+  SCAN_CONCURRENCY_DEFAULTS,
 } from "./app-settings";
 
 beforeEach(() => {
   appSettingFindUniqueMock.mockReset();
+  appSettingFindManyMock.mockReset();
   appSettingUpsertMock.mockReset();
 });
 
-describe("getWorkerConcurrencyServerFn", () => {
-  it("returns stored concurrency value", async () => {
-    appSettingFindUniqueMock.mockResolvedValue({ key: "workerConcurrency", value: "8" });
+describe("getAllScanConcurrenciesServerFn", () => {
+  it("returns stored values for all scan types", async () => {
+    appSettingFindManyMock.mockResolvedValue([
+      { key: "concurrencyFull", value: "10" },
+      { key: "concurrencyOnDemand", value: "6" },
+      { key: "concurrencyIncremental", value: "2" },
+    ]);
 
-    const result = await getWorkerConcurrencyServerFn({} as never);
+    const result = await getAllScanConcurrenciesServerFn({} as never);
 
-    expect(appSettingFindUniqueMock).toHaveBeenCalledWith({ where: { key: "workerConcurrency" } });
-    expect(result).toBe(8);
+    expect(appSettingFindManyMock).toHaveBeenCalledWith({
+      where: { key: { in: ["concurrencyFull", "concurrencyOnDemand", "concurrencyIncremental"] } },
+    });
+    expect(result).toEqual({ full: 10, onDemand: 6, incremental: 2 });
   });
 
-  it("returns default 5 when no setting exists", async () => {
-    appSettingFindUniqueMock.mockResolvedValue(null);
+  it("returns defaults when no settings exist", async () => {
+    appSettingFindManyMock.mockResolvedValue([]);
 
-    const result = await getWorkerConcurrencyServerFn({} as never);
+    const result = await getAllScanConcurrenciesServerFn({} as never);
 
-    expect(result).toBe(5);
+    expect(result).toEqual(SCAN_CONCURRENCY_DEFAULTS);
+  });
+
+  it("returns partial defaults for missing keys", async () => {
+    appSettingFindManyMock.mockResolvedValue([
+      { key: "concurrencyFull", value: "12" },
+    ]);
+
+    const result = await getAllScanConcurrenciesServerFn({} as never);
+
+    expect(result).toEqual({ full: 12, onDemand: SCAN_CONCURRENCY_DEFAULTS.onDemand, incremental: SCAN_CONCURRENCY_DEFAULTS.incremental });
   });
 });
 
-describe("setWorkerConcurrencyServerFn", () => {
-  it("upserts concurrency setting and returns the value", async () => {
-    appSettingUpsertMock.mockResolvedValue({ key: "workerConcurrency", value: "10" });
+describe("setScanConcurrencyServerFn", () => {
+  it("upserts concurrency for full scan type", async () => {
+    appSettingUpsertMock.mockResolvedValue({ key: "concurrencyFull", value: "10" });
 
-    const result = await setWorkerConcurrencyServerFn({ data: { concurrency: 10 } });
+    const result = await setScanConcurrencyServerFn({ data: { scanType: "full", concurrency: 10 } });
 
     expect(appSettingUpsertMock).toHaveBeenCalledWith({
-      where: { key: "workerConcurrency" },
-      create: { key: "workerConcurrency", value: "10" },
+      where: { key: "concurrencyFull" },
+      create: { key: "concurrencyFull", value: "10" },
       update: { value: "10" },
     });
-    expect(result).toEqual({ concurrency: 10 });
+    expect(result).toEqual({ scanType: "full", concurrency: 10 });
+  });
+
+  it("upserts concurrency for onDemand scan type", async () => {
+    appSettingUpsertMock.mockResolvedValue({ key: "concurrencyOnDemand", value: "7" });
+
+    const result = await setScanConcurrencyServerFn({ data: { scanType: "onDemand", concurrency: 7 } });
+
+    expect(appSettingUpsertMock).toHaveBeenCalledWith({
+      where: { key: "concurrencyOnDemand" },
+      create: { key: "concurrencyOnDemand", value: "7" },
+      update: { value: "7" },
+    });
+    expect(result).toEqual({ scanType: "onDemand", concurrency: 7 });
+  });
+
+  it("upserts concurrency for incremental scan type", async () => {
+    appSettingUpsertMock.mockResolvedValue({ key: "concurrencyIncremental", value: "2" });
+
+    const result = await setScanConcurrencyServerFn({ data: { scanType: "incremental", concurrency: 2 } });
+
+    expect(appSettingUpsertMock).toHaveBeenCalledWith({
+      where: { key: "concurrencyIncremental" },
+      create: { key: "concurrencyIncremental", value: "2" },
+      update: { value: "2" },
+    });
+    expect(result).toEqual({ scanType: "incremental", concurrency: 2 });
   });
 });
 
