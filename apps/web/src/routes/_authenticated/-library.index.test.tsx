@@ -28,8 +28,9 @@ let mockLoaderData: {
       series: { id: string; name: string } | null;
       seriesPosition: number | null;
       editions: {
+        id: string;
         formatFamily: string;
-        publisher: string;
+        publisher: string | null;
         isbn13: string | null;
         isbn10: string | null;
         contributors: { role: string; contributor: { nameDisplay: string } }[];
@@ -182,6 +183,24 @@ vi.mock("~/components/data-table", async () => {
   return actual;
 });
 
+// Use real EditableTableCell so column cell renderers execute fully
+vi.mock("~/components/editable-table-cell", async () => {
+  const actual = await vi.importActual("~/components/editable-table-cell");
+  return actual as Record<string, unknown>;
+});
+
+vi.mock("~/lib/server-fns/editing", () => ({
+  updateWorkServerFn: vi.fn(),
+  updateEditionServerFn: vi.fn(),
+  updateWorkAuthorsServerFn: vi.fn(),
+}));
+
+import { updateWorkServerFn, updateEditionServerFn, updateWorkAuthorsServerFn } from "~/lib/server-fns/editing";
+
+const updateWorkServerFnMock = updateWorkServerFn as unknown as ReturnType<typeof vi.fn>;
+const updateEditionServerFnMock = updateEditionServerFn as unknown as ReturnType<typeof vi.fn>;
+const updateWorkAuthorsServerFnMock = updateWorkAuthorsServerFn as unknown as ReturnType<typeof vi.fn>;
+
 vi.mock("~/components/skeletons/grid-page-skeleton", () => ({
   GridPageSkeleton: () => <div>Loading grid...</div>,
 }));
@@ -216,10 +235,11 @@ const makeWork = (title: string, authors: string[] = [], formats: string[] = [],
   seriesPosition: null,
   editions: [
     {
+      id: `edition-${title.toLowerCase().replace(/\s/g, "-")}`,
       formatFamily: formats[0] ?? "EBOOK",
-      publisher: "Test Publisher",
-      isbn13: "1234567890123",
-      isbn10: null,
+      publisher: "Test Publisher" as string | null,
+      isbn13: "1234567890123" as string | null,
+      isbn10: null as string | null,
       contributors: authors.map((name) => ({
         role: "AUTHOR",
         contributor: { nameDisplay: name },
@@ -1181,5 +1201,260 @@ describe("LibraryPage", () => {
 
     // Action bar should disappear
     expect(screen.queryByText(/work selected/)).toBeNull();
+  });
+
+  it("renders edit mode toggle button in table view", async () => {
+    mockView = "table";
+    mockLoaderData.libraryResult.works = [makeWork("Test Book", ["Author"])];
+    mockLoaderData.libraryResult.totalCount = 1;
+
+    const { Route } = await import("./library.index");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+
+    expect(screen.getByTestId("edit-mode-toggle")).toBeTruthy();
+    expect(screen.getByText("Edit")).toBeTruthy();
+  });
+
+  it("toggles edit mode and shows editable inputs", async () => {
+    mockView = "table";
+    mockLoaderData.libraryResult.works = [makeWork("Test Book", ["Author"])];
+    mockLoaderData.libraryResult.totalCount = 1;
+
+    const { Route } = await import("./library.index");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent } = await import("@testing-library/react");
+    render(<Page />);
+
+    // Before edit mode — title is a link, not an input
+    expect(screen.getByText("Test Book").tagName).toBe("A");
+
+    // Toggle edit mode on
+    fireEvent.click(screen.getByTestId("edit-mode-toggle"));
+    expect(screen.getByText("Done")).toBeTruthy();
+
+    // Editable inputs appear
+    expect(screen.getByDisplayValue("Test Book")).toBeTruthy();
+    expect(screen.getByDisplayValue("Author")).toBeTruthy();
+  });
+
+  it("toggles edit mode off and returns to display mode", async () => {
+    mockView = "table";
+    mockLoaderData.libraryResult.works = [makeWork("Test Book", ["Author"])];
+    mockLoaderData.libraryResult.totalCount = 1;
+
+    const { Route } = await import("./library.index");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent } = await import("@testing-library/react");
+    render(<Page />);
+
+    // Toggle on
+    fireEvent.click(screen.getByTestId("edit-mode-toggle"));
+    expect(screen.getByDisplayValue("Test Book")).toBeTruthy();
+
+    // Toggle off
+    fireEvent.click(screen.getByTestId("edit-mode-toggle"));
+    expect(screen.getByText("Edit")).toBeTruthy();
+    // Title reverts to a link
+    expect(screen.getByText("Test Book").tagName).toBe("A");
+  });
+
+  it("calls updateWorkServerFn on title blur in edit mode", async () => {
+    mockView = "table";
+    mockLoaderData.libraryResult.works = [makeWork("Test Book", ["Author"])];
+    mockLoaderData.libraryResult.totalCount = 1;
+    updateWorkServerFnMock.mockResolvedValue({ success: true });
+
+    const { Route } = await import("./library.index");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    render(<Page />);
+
+    fireEvent.click(screen.getByTestId("edit-mode-toggle"));
+    const titleInput = screen.getByDisplayValue("Test Book");
+    fireEvent.change(titleInput, { target: { value: "New Title" } });
+    fireEvent.blur(titleInput);
+
+    await waitFor(() => {
+      expect(updateWorkServerFnMock).toHaveBeenCalledWith({
+        data: { workId: "work-test-book", fields: { titleDisplay: "New Title" } },
+      });
+    });
+  });
+
+  it("calls updateWorkAuthorsServerFn on authors blur in edit mode", async () => {
+    mockView = "table";
+    mockLoaderData.libraryResult.works = [makeWork("Test Book", ["Author One"])];
+    mockLoaderData.libraryResult.totalCount = 1;
+    updateWorkAuthorsServerFnMock.mockResolvedValue({ success: true });
+
+    const { Route } = await import("./library.index");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    render(<Page />);
+
+    fireEvent.click(screen.getByTestId("edit-mode-toggle"));
+    const authorsInput = screen.getByDisplayValue("Author One");
+    fireEvent.change(authorsInput, { target: { value: "Author Two, Author Three" } });
+    fireEvent.blur(authorsInput);
+
+    await waitFor(() => {
+      expect(updateWorkAuthorsServerFnMock).toHaveBeenCalledWith({
+        data: { workId: "work-test-book", authors: ["Author Two", "Author Three"] },
+      });
+    });
+  });
+
+  it("shows empty input for works with no authors in edit mode", async () => {
+    mockView = "table";
+    mockLoaderData.libraryResult.works = [makeWork("No Author Book")];
+    mockLoaderData.libraryResult.totalCount = 1;
+
+    const { Route } = await import("./library.index");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent } = await import("@testing-library/react");
+    render(<Page />);
+
+    fireEvent.click(screen.getByTestId("edit-mode-toggle"));
+    // Authors field should be empty string, not "—"
+    expect(screen.getByDisplayValue("")).toBeTruthy();
+  });
+
+  it("shows empty input for works with no publisher in edit mode", async () => {
+    mockView = "table";
+    const work = makeWork("Test Book", ["Author"]);
+    if (work.editions[0]) work.editions[0].publisher = null as unknown as string;
+    mockLoaderData.libraryResult.works = [work];
+    mockLoaderData.libraryResult.totalCount = 1;
+
+    const { Route } = await import("./library.index");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent } = await import("@testing-library/react");
+    render(<Page />);
+
+    fireEvent.click(screen.getByTestId("edit-mode-toggle"));
+    // Should render without crashing
+    expect(screen.getByDisplayValue("Test Book")).toBeTruthy();
+  });
+
+  it("shows empty input for works with no isbn in edit mode", async () => {
+    mockView = "table";
+    const work = makeWork("Test Book", ["Author"]);
+    if (work.editions[0]) {
+      work.editions[0].isbn13 = null;
+      work.editions[0].isbn10 = null;
+    }
+    mockLoaderData.libraryResult.works = [work];
+    mockLoaderData.libraryResult.totalCount = 1;
+
+    const { Route } = await import("./library.index");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent } = await import("@testing-library/react");
+    render(<Page />);
+
+    fireEvent.click(screen.getByTestId("edit-mode-toggle"));
+    expect(screen.getByDisplayValue("Test Book")).toBeTruthy();
+  });
+
+  it("shows dash for publisher and isbn when work has no editions in edit mode", async () => {
+    mockView = "table";
+    const work = makeWork("Empty Book", ["Author"]);
+    work.editions = [];
+    mockLoaderData.libraryResult.works = [work];
+    mockLoaderData.libraryResult.totalCount = 1;
+
+    const { Route } = await import("./library.index");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent } = await import("@testing-library/react");
+    render(<Page />);
+
+    fireEvent.click(screen.getByTestId("edit-mode-toggle"));
+    // Should show dash for publisher and isbn since no editions
+    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+  });
+
+  it("does not call updateWorkAuthorsServerFn when authors field is empty", async () => {
+    mockView = "table";
+    mockLoaderData.libraryResult.works = [makeWork("Test Book", ["Author"])];
+    mockLoaderData.libraryResult.totalCount = 1;
+
+    const { Route } = await import("./library.index");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent } = await import("@testing-library/react");
+    render(<Page />);
+
+    fireEvent.click(screen.getByTestId("edit-mode-toggle"));
+    const authorsInput = screen.getByDisplayValue("Author");
+    fireEvent.change(authorsInput, { target: { value: "" } });
+    fireEvent.blur(authorsInput);
+
+    expect(updateWorkAuthorsServerFnMock).not.toHaveBeenCalled();
+  });
+
+  it("calls updateEditionServerFn on isbn blur in edit mode", async () => {
+    mockView = "table";
+    mockLoaderData.libraryResult.works = [makeWork("Test Book", ["Author"])];
+    mockLoaderData.libraryResult.totalCount = 1;
+    updateEditionServerFnMock.mockResolvedValue({ success: true });
+
+    const { Route } = await import("./library.index");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    render(<Page />);
+
+    fireEvent.click(screen.getByTestId("edit-mode-toggle"));
+    const isbnInput = screen.getByDisplayValue("1234567890123");
+    fireEvent.change(isbnInput, { target: { value: "9999999999999" } });
+    fireEvent.blur(isbnInput);
+
+    await waitFor(() => {
+      expect(updateEditionServerFnMock).toHaveBeenCalled();
+    });
+  });
+
+  it("calls updateEditionServerFn on publisher blur in edit mode", async () => {
+    mockView = "table";
+    mockLoaderData.libraryResult.works = [makeWork("Test Book", ["Author"])];
+    mockLoaderData.libraryResult.totalCount = 1;
+    updateEditionServerFnMock.mockResolvedValue({ success: true });
+
+    const { Route } = await import("./library.index");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    render(<Page />);
+
+    fireEvent.click(screen.getByTestId("edit-mode-toggle"));
+    const publisherInput = screen.getByDisplayValue("Test Publisher");
+    fireEvent.change(publisherInput, { target: { value: "" } });
+    fireEvent.blur(publisherInput);
+
+    await waitFor(() => {
+      expect(updateEditionServerFnMock).toHaveBeenCalledWith({
+        data: { editionId: "edition-test-book", fields: { publisher: null } },
+      });
+    });
+  });
+
+  it("calls updateEditionServerFn with null isbn when cleared", async () => {
+    mockView = "table";
+    mockLoaderData.libraryResult.works = [makeWork("Test Book", ["Author"])];
+    mockLoaderData.libraryResult.totalCount = 1;
+    updateEditionServerFnMock.mockResolvedValue({ success: true });
+
+    const { Route } = await import("./library.index");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    render(<Page />);
+
+    fireEvent.click(screen.getByTestId("edit-mode-toggle"));
+    const isbnInput = screen.getByDisplayValue("1234567890123");
+    fireEvent.change(isbnInput, { target: { value: "" } });
+    fireEvent.blur(isbnInput);
+
+    await waitFor(() => {
+      expect(updateEditionServerFnMock).toHaveBeenCalledWith({
+        data: { editionId: "edition-test-book", fields: { isbn13: null } },
+      });
+    });
   });
 });

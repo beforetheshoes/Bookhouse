@@ -8,7 +8,6 @@ interface MockWork {
   id: string;
   titleDisplay: string;
   description: string | null;
-  language: string | null;
   coverPath: string | null;
   seriesPosition: number | null;
   series: { id: string; name: string } | null;
@@ -20,6 +19,7 @@ interface MockWork {
     isbn13: string | null;
     isbn10: string | null;
     asin: string | null;
+    language: string | null;
     contributors: { role: string; contributor: { id: string; nameDisplay: string } }[];
     editionFiles: {
       id: string;
@@ -47,7 +47,6 @@ let mockLoaderData: { work: MockWork; progress: MockProgress[]; trackingMode: st
     id: "work-1",
     titleDisplay: "The Name of the Wind",
     description: "A story about Kvothe.",
-    language: "en",
     coverPath: "/covers/work-1",
     seriesPosition: 1,
     series: { id: "series-1", name: "The Kingkiller Chronicle" },
@@ -60,6 +59,7 @@ let mockLoaderData: { work: MockWork; progress: MockProgress[]; trackingMode: st
         isbn13: "9780756404079",
         isbn10: null,
         asin: "B003HV0TN2",
+        language: "en",
         contributors: [
           { role: "AUTHOR", contributor: { id: "contrib-1", nameDisplay: "Patrick Rothfuss" } },
         ],
@@ -145,6 +145,24 @@ vi.mock("~/components/ui/dialog", () => ({
   DialogFooter: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
+vi.mock("~/components/editable-field", () => ({
+  EditableField: ({ value, placeholder, onSave }: { value: string; placeholder?: string; onSave: (v: string) => Promise<void> }) => (
+    <span data-testid="editable-field" onClick={() => { void onSave(value); }}>{value || placeholder || "—"}</span>
+  ),
+}));
+
+vi.mock("~/lib/server-fns/editing", () => ({
+  updateWorkServerFn: vi.fn(),
+  updateEditionServerFn: vi.fn(),
+  updateWorkAuthorsServerFn: vi.fn(),
+}));
+
+import { updateWorkServerFn, updateEditionServerFn, updateWorkAuthorsServerFn } from "~/lib/server-fns/editing";
+
+const updateWorkServerFnMock = updateWorkServerFn as unknown as ReturnType<typeof vi.fn>;
+const updateEditionServerFnMock = updateEditionServerFn as unknown as ReturnType<typeof vi.fn>;
+const updateWorkAuthorsServerFnMock = updateWorkAuthorsServerFn as unknown as ReturnType<typeof vi.fn>;
+
 vi.mock("~/components/enrichment-review", () => ({
   EnrichmentReview: ({ workId, currentDescription }: { workId: string; currentDescription: string | null }) => (
     <div data-testid="enrichment-review" data-work-id={workId} data-description={currentDescription ?? ""} />
@@ -158,7 +176,6 @@ describe("WorkDetailPage", () => {
         id: "work-1",
         titleDisplay: "The Name of the Wind",
         description: "A story about Kvothe.",
-        language: "en",
         coverPath: "/covers/work-1",
         seriesPosition: 1,
         series: { id: "series-1", name: "The Kingkiller Chronicle" },
@@ -171,6 +188,7 @@ describe("WorkDetailPage", () => {
             isbn13: "9780756404079",
             isbn10: null,
             asin: "B003HV0TN2",
+            language: "en",
             contributors: [
               { role: "AUTHOR", contributor: { id: "contrib-1", nameDisplay: "Patrick Rothfuss" } },
             ],
@@ -260,14 +278,11 @@ describe("WorkDetailPage", () => {
     expect(screen.getByTestId("cover-placeholder")).toBeTruthy();
   });
 
-  it("renders authors as links to author pages", async () => {
+  it("renders authors as inline editable text", async () => {
     const { Route } = await import("./library.$workId");
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
-    const authorLinks = screen.getAllByText("Patrick Rothfuss");
-    expect(authorLinks.length).toBeGreaterThan(0);
-    const topAuthorLink = authorLinks[0]?.closest("a");
-    expect(topAuthorLink?.getAttribute("href")).toBe("/authors/$authorId");
+    expect(screen.getAllByText("Patrick Rothfuss").length).toBeGreaterThan(0);
   });
 
   it("renders comma-separated authors when multiple", async () => {
@@ -279,10 +294,8 @@ describe("WorkDetailPage", () => {
     const { Route } = await import("./library.$workId");
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
-    expect(screen.getAllByText("Lev Grossman").length).toBeGreaterThan(0);
-    // Comma separator between multiple authors
-    const authorParagraph = screen.getAllByText("Patrick Rothfuss")[0]?.closest("p");
-    expect(authorParagraph?.textContent).toContain(", ");
+    // Comma separator rendered by editable field mock
+    expect(screen.getByText("Patrick Rothfuss, Lev Grossman")).toBeTruthy();
   });
 
   it("renders description", async () => {
@@ -391,7 +404,6 @@ describe("WorkDetailPage", () => {
 
   it("handles missing optional fields gracefully", async () => {
     mockLoaderData.work.description = null;
-    mockLoaderData.work.language = null;
     mockLoaderData.work.series = null;
     mockLoaderData.work.seriesPosition = null;
     const edition = mockLoaderData.work.editions[0];
@@ -400,6 +412,7 @@ describe("WorkDetailPage", () => {
     edition.publishedAt = null;
     edition.isbn13 = null;
     edition.asin = null;
+    edition.language = null;
     const { Route } = await import("./library.$workId");
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
@@ -415,6 +428,7 @@ describe("WorkDetailPage", () => {
       isbn13: null,
       isbn10: null,
       asin: null,
+      language: null,
       contributors: [
         { role: "NARRATOR", contributor: { id: "contrib-2", nameDisplay: "Nick Podehl" } },
       ],
@@ -502,6 +516,7 @@ describe("WorkDetailPage", () => {
       isbn13: null,
       isbn10: null,
       asin: null,
+      language: null,
       contributors: [],
       editionFiles: [],
     });
@@ -527,6 +542,7 @@ describe("WorkDetailPage", () => {
       isbn13: null,
       isbn10: null,
       asin: null,
+      language: null,
       contributors: [],
       editionFiles: [],
     });
@@ -569,6 +585,7 @@ describe("WorkDetailPage", () => {
       isbn13: null,
       isbn10: null,
       asin: null,
+      language: null,
       contributors: [],
       editionFiles: [],
     });
@@ -592,9 +609,7 @@ describe("WorkDetailPage", () => {
     const { Route } = await import("./library.$workId");
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
-    // There should be at least 2 buttons with trash icons (work + edition)
-    const buttons = screen.getAllByRole("button");
-    expect(buttons.length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByTestId("delete-work-btn")).toBeTruthy();
   });
 
   it("opens delete work confirmation dialog", async () => {
@@ -602,10 +617,7 @@ describe("WorkDetailPage", () => {
     const Page = Route.options.component as React.ComponentType;
     const { fireEvent } = await import("@testing-library/react");
     render(<Page />);
-    // Click the first delete button (work delete)
-    const buttons = screen.getAllByRole("button");
-    const deleteBtn = buttons[0];
-    if (!deleteBtn) throw new Error("expected button");
+    const deleteBtn = screen.getByTestId("delete-work-btn");
     fireEvent.click(deleteBtn);
     expect(screen.getByText("Delete Work")).toBeTruthy();
     expect(screen.getByText(/will remove/)).toBeTruthy();
@@ -619,10 +631,7 @@ describe("WorkDetailPage", () => {
     render(<Page />);
 
     // Open delete work dialog
-    const buttons = screen.getAllByRole("button");
-    const deleteBtn = buttons[0];
-    if (!deleteBtn) throw new Error("expected button");
-    fireEvent.click(deleteBtn);
+    fireEvent.click(screen.getByTestId("delete-work-btn"));
 
     // Confirm deletion
     const confirmBtn = screen.getByText("Delete");
@@ -659,10 +668,7 @@ describe("WorkDetailPage", () => {
     const { fireEvent, waitFor } = await import("@testing-library/react");
     render(<Page />);
 
-    const buttons = screen.getAllByRole("button");
-    const deleteBtn = buttons[0];
-    if (!deleteBtn) throw new Error("expected button");
-    fireEvent.click(deleteBtn);
+    fireEvent.click(screen.getByTestId("delete-work-btn"));
 
     const confirmBtn = screen.getByText("Delete");
     fireEvent.click(confirmBtn);
@@ -677,11 +683,7 @@ describe("WorkDetailPage", () => {
     const Page = Route.options.component as React.ComponentType;
     const { fireEvent } = await import("@testing-library/react");
     render(<Page />);
-    // Second button is the edition delete button
-    const buttons = screen.getAllByRole("button");
-    const editionDeleteBtn = buttons[1];
-    if (!editionDeleteBtn) throw new Error("expected edition delete button");
-    fireEvent.click(editionDeleteBtn);
+    fireEvent.click(screen.getByTestId("delete-edition-edition-1"));
     expect(screen.getByText("Delete Edition")).toBeTruthy();
   });
 
@@ -692,10 +694,7 @@ describe("WorkDetailPage", () => {
     const { fireEvent, waitFor } = await import("@testing-library/react");
     render(<Page />);
 
-    const buttons = screen.getAllByRole("button");
-    const editionDeleteBtn = buttons[1];
-    if (!editionDeleteBtn) throw new Error("expected edition delete button");
-    fireEvent.click(editionDeleteBtn);
+    fireEvent.click(screen.getByTestId("delete-edition-edition-1"));
 
     const confirmBtn = screen.getByText("Delete");
     fireEvent.click(confirmBtn);
@@ -713,10 +712,7 @@ describe("WorkDetailPage", () => {
     const { fireEvent, waitFor } = await import("@testing-library/react");
     render(<Page />);
 
-    const buttons = screen.getAllByRole("button");
-    const editionDeleteBtn = buttons[1];
-    if (!editionDeleteBtn) throw new Error("expected edition delete button");
-    fireEvent.click(editionDeleteBtn);
+    fireEvent.click(screen.getByTestId("delete-edition-edition-1"));
 
     const confirmBtn = screen.getByText("Delete");
     fireEvent.click(confirmBtn);
@@ -768,6 +764,7 @@ describe("WorkDetailPage", () => {
       isbn13: null,
       isbn10: null,
       asin: null,
+      language: null,
       contributors: [],
       editionFiles: [],
     });
@@ -909,16 +906,113 @@ describe("WorkDetailPage", () => {
     const { fireEvent, waitFor } = await import("@testing-library/react");
     render(<Page />);
 
-    const buttons = screen.getAllByRole("button");
-    const editionDeleteBtn = buttons[1];
-    if (!editionDeleteBtn) throw new Error("expected edition delete button");
-    fireEvent.click(editionDeleteBtn);
+    fireEvent.click(screen.getByTestId("delete-edition-edition-1"));
 
     const confirmBtn = screen.getByText("Delete");
     fireEvent.click(confirmBtn);
 
     await waitFor(() => {
       expect(mockToast.error).toHaveBeenCalledWith("Edition delete failed");
+    });
+  });
+
+  it("renders inline editable fields for metadata", async () => {
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+
+    // Editable fields are present
+    const editableFields = screen.getAllByTestId("editable-field");
+    expect(editableFields.length).toBeGreaterThan(0);
+  });
+
+  it("calls updateWorkServerFn when clicking title editable field", async () => {
+    updateWorkServerFnMock.mockResolvedValue({ success: true });
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    render(<Page />);
+
+    // Click the title editable field (first editable-field element)
+    const editableFields = screen.getAllByTestId("editable-field");
+    const titleField = editableFields[0];
+    if (!titleField) throw new Error("expected editable field");
+    fireEvent.click(titleField);
+
+    await waitFor(() => {
+      expect(updateWorkServerFnMock).toHaveBeenCalled();
+    });
+  });
+
+  it("calls updateEditionServerFn when clicking edition metadata field", async () => {
+    updateEditionServerFnMock.mockResolvedValue({ success: true });
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    render(<Page />);
+
+    // Click the language editable field
+    const langField = screen.getByText("en");
+    fireEvent.click(langField);
+
+    await waitFor(() => {
+      expect(updateEditionServerFnMock).toHaveBeenCalled();
+    });
+  });
+
+  it("handles null description field via editable field", async () => {
+    mockLoaderData.work.description = null;
+    updateWorkServerFnMock.mockResolvedValue({ success: true });
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    render(<Page />);
+
+    // Click the "No description" placeholder field (description is empty)
+    const descField = screen.getByText("No description");
+    fireEvent.click(descField);
+
+    await waitFor(() => {
+      // onSave called with "" which converts to null via || null
+      expect(updateWorkServerFnMock).toHaveBeenCalled();
+    });
+  });
+
+  it("exercises all editable field onSave callbacks", async () => {
+    updateWorkServerFnMock.mockResolvedValue({ success: true });
+    updateEditionServerFnMock.mockResolvedValue({ success: true });
+    updateWorkAuthorsServerFnMock.mockResolvedValue({ success: true });
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    render(<Page />);
+
+    // Click all editable fields to exercise their onSave callbacks
+    const editableFields = screen.getAllByTestId("editable-field");
+    for (const field of editableFields) {
+      fireEvent.click(field);
+    }
+
+    await waitFor(() => {
+      // Work fields: title, authors, description = 3 save calls
+      // Edition fields: language, publisher, published, isbn13, isbn10, asin = 6 save calls
+      expect(updateWorkServerFnMock.mock.calls.length + updateEditionServerFnMock.mock.calls.length + updateWorkAuthorsServerFnMock.mock.calls.length).toBeGreaterThan(5);
+    });
+  });
+
+  it("calls updateWorkAuthorsServerFn when clicking authors field", async () => {
+    updateWorkAuthorsServerFnMock.mockResolvedValue({ success: true });
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    render(<Page />);
+
+    // Click the authors editable field - gets first "Patrick Rothfuss" (the work-level one)
+    const authorFields = screen.getAllByText("Patrick Rothfuss");
+    if (authorFields[0]) fireEvent.click(authorFields[0]);
+
+    await waitFor(() => {
+      expect(updateWorkAuthorsServerFnMock).toHaveBeenCalled();
     });
   });
 });

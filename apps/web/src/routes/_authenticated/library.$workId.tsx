@@ -27,6 +27,8 @@ import {
 } from "~/lib/server-fns/work-detail";
 import { getReadingProgressServerFn } from "~/lib/server-fns/reading-progress";
 import { deleteWorkServerFn, deleteEditionServerFn } from "~/lib/server-fns/deletion";
+import { EditableField } from "~/components/editable-field";
+import { updateWorkServerFn, updateEditionServerFn, updateWorkAuthorsServerFn } from "~/lib/server-fns/editing";
 
 export const Route = createFileRoute("/_authenticated/library/$workId")({
   loader: async ({ params }) => {
@@ -151,24 +153,34 @@ function WorkDetailPage() {
 
         <div className="flex-1 space-y-4">
           <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold">{work.titleDisplay}</h1>
+            <div className="flex items-start gap-3">
+              <h1 className="flex-1 text-2xl font-bold">
+                <EditableField
+                  value={work.titleDisplay}
+                  onSave={async (val) => {
+                    await updateWorkServerFn({ data: { workId: work.id, fields: { titleDisplay: val } } });
+                    void router.invalidate();
+                  }}
+                  required
+                  className="text-2xl font-bold"
+                />
+              </h1>
               <Button data-testid="delete-work-btn" variant="outline" size="sm" onClick={() => { setDeleteWorkOpen(true); }}>
                 <Trash2 className="size-4" />
               </Button>
             </div>
-            {authors.length > 0 && (
-              <p className="mt-1 text-lg text-muted-foreground">
-                {authors.map((author, i) => (
-                  <span key={author.id}>
-                    {i > 0 && ", "}
-                    <Link to="/authors/$authorId" params={{ authorId: author.id }} className="hover:text-foreground hover:underline">
-                      {author.name}
-                    </Link>
-                  </span>
-                ))}
-              </p>
-            )}
+            <div className="mt-1 text-lg text-muted-foreground">
+              <EditableField
+                value={authors.map((a) => a.name).join(", ")}
+                required
+                onSave={async (val) => {
+                  const authorList = val.split(",").map((a) => a.trim()).filter((a) => a.length > 0);
+                  await updateWorkAuthorsServerFn({ data: { workId: work.id, authors: authorList } });
+                  void router.invalidate();
+                }}
+                placeholder="No authors"
+              />
+            </div>
           </div>
 
           {work.series && (
@@ -182,18 +194,24 @@ function WorkDetailPage() {
             </div>
           )}
 
-          {work.description && (
-            <p className="text-sm text-muted-foreground">{work.description}</p>
-          )}
-
-          <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
-            <MetadataField label="Language" value={work.language} />
-            <MetadataField label="Publisher" value={work.editions[0]?.publisher} />
-            <MetadataField label="Published" value={work.editions[0]?.publishedAt ? new Date(work.editions[0].publishedAt).toLocaleDateString() : null} />
-            <MetadataField label="ISBN-13" value={work.editions[0]?.isbn13} />
-            <MetadataField label="ISBN-10" value={work.editions[0]?.isbn10} />
-            <MetadataField label="ASIN" value={work.editions[0]?.asin} />
+          <div className="space-y-0.5">
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Description</div>
+            <div className="text-sm leading-relaxed">
+              <EditableField
+                value={work.description ?? ""}
+                onSave={async (val) => {
+                  await updateWorkServerFn({ data: { workId: work.id, fields: { description: val || null } } });
+                  void router.invalidate();
+                }}
+                renderAs="textarea"
+                placeholder="No description"
+              />
+            </div>
           </div>
+
+          {work.editions[0] && (
+            <EditableMetadataGrid edition={work.editions[0]} router={router} />
+          )}
         </div>
       </div>
 
@@ -300,6 +318,7 @@ function WorkDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
     </div>
   );
 }
@@ -364,12 +383,41 @@ function EditionProgress({
   );
 }
 
-function MetadataField({ label, value }: { label: string; value: string | null | undefined }) {
-  if (!value) return null;
+function EditableMetadataGrid({ edition, router }: { edition: WorkDetail["editions"][number]; router: { invalidate: () => void } }) {
+  async function saveEditionField(field: string, val: string) {
+    await updateEditionServerFn({ data: { editionId: edition.id, fields: { [field]: val || null } } });
+    router.invalidate();
+  }
+
   return (
-    <div>
-      <span className="text-muted-foreground">{label}</span>
-      <p>{value}</p>
+    <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
+      <MetadataItem label="Language">
+        <EditableField value={edition.language ?? ""} onSave={(val) => saveEditionField("language", val)} placeholder="—" />
+      </MetadataItem>
+      <MetadataItem label="Publisher">
+        <EditableField value={edition.publisher ?? ""} onSave={(val) => saveEditionField("publisher", val)} placeholder="—" />
+      </MetadataItem>
+      <MetadataItem label="Published">
+        <EditableField value={edition.publishedAt ? new Date(edition.publishedAt).toLocaleDateString() : ""} onSave={(val) => saveEditionField("publishedAt", val)} placeholder="—" />
+      </MetadataItem>
+      <MetadataItem label="ISBN-13">
+        <EditableField value={edition.isbn13 ?? ""} onSave={(val) => saveEditionField("isbn13", val)} placeholder="—" />
+      </MetadataItem>
+      <MetadataItem label="ISBN-10">
+        <EditableField value={edition.isbn10 ?? ""} onSave={(val) => saveEditionField("isbn10", val)} placeholder="—" />
+      </MetadataItem>
+      <MetadataItem label="ASIN">
+        <EditableField value={edition.asin ?? ""} onSave={(val) => saveEditionField("asin", val)} placeholder="—" />
+      </MetadataItem>
+    </div>
+  );
+}
+
+function MetadataItem({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-0.5">
+      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div>{children}</div>
     </div>
   );
 }

@@ -67,9 +67,24 @@ export const applyEnrichmentServerFn = createServerFn({
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
 
+    // Read which fields were manually edited — skip those
+    const work = await db.work.findUnique({
+      where: { id: data.workId },
+      select: { editedFields: true },
+    });
+
+    const editedFields = work?.editedFields ?? [];
+    const filteredFields = Object.fromEntries(
+      Object.entries(data.fields).filter(([key]) => !editedFields.includes(key)),
+    );
+
+    if (Object.keys(filteredFields).length === 0) {
+      return { success: true, skippedAll: true };
+    }
+
     await db.work.update({
       where: { id: data.workId },
-      data: data.fields,
+      data: filteredFields,
     });
 
     return { success: true };

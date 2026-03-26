@@ -5,7 +5,7 @@ import { useSSE } from "~/hooks/use-sse";
 import { useLibraryViewPreference } from "~/hooks/use-library-view-preference";
 import { useLibraryTablePreferences } from "~/hooks/use-library-table-preferences";
 import type { ColumnDef, RowSelectionState } from "@tanstack/react-table";
-import { AlignJustify, BookOpen, Loader2, Trash2, WrapText, X } from "lucide-react";
+import { AlignJustify, BookOpen, Loader2, Pencil, Trash2, WrapText, X } from "lucide-react";
 import { VirtualizedDataTable, DataTableColumnHeader } from "~/components/data-table";
 import { DataTableColumnPicker } from "~/components/data-table/data-table-column-picker";
 import { Badge } from "~/components/ui/badge";
@@ -19,6 +19,8 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog";
 import { bulkDeleteWorksServerFn } from "~/lib/server-fns/deletion";
+import { EditableTableCell } from "~/components/editable-table-cell";
+import { updateWorkServerFn, updateEditionServerFn, updateWorkAuthorsServerFn } from "~/lib/server-fns/editing";
 import { GridPageSkeleton } from "~/components/skeletons/grid-page-skeleton";
 import { LibraryToolbar } from "~/components/library-toolbar";
 import { LibraryGrid } from "~/components/library-grid";
@@ -67,7 +69,7 @@ const COLUMN_PICKER_ITEMS = [
   { id: "isbn", label: "ISBN" },
 ];
 
-function getColumns(scanActive: boolean): ColumnDef<LibraryWork>[] {
+function getColumns(scanActive: boolean, editMode: boolean, router: { invalidate: () => void }): ColumnDef<LibraryWork>[] {
   return [
   {
     id: "select",
@@ -96,16 +98,30 @@ function getColumns(scanActive: boolean): ColumnDef<LibraryWork>[] {
     header: ({ column }) => (
       <DataTableColumnHeader column={column} title="Title" />
     ),
-    cell: ({ row }) => (
-      <Link to="/library/$workId" params={{ workId: row.original.id }} search={{ page: 1, pageSize: 50, sort: "title-asc" as const }} className="flex items-center gap-2">
-        {row.original.titleDisplay}
-        {row.original.enrichmentStatus === "STUB" && scanActive && (
-          <Badge variant="outline" className="animate-pulse px-1.5 py-0 text-[10px]">
-            Processing&hellip;
-          </Badge>
-        )}
-      </Link>
-    ),
+    cell: ({ row }) => {
+      if (editMode) {
+        return (
+          <EditableTableCell
+            value={row.original.titleDisplay}
+            editing={true}
+            onSave={async (val) => {
+              await updateWorkServerFn({ data: { workId: row.original.id, fields: { titleDisplay: val } } });
+              router.invalidate();
+            }}
+          />
+        );
+      }
+      return (
+        <Link to="/library/$workId" params={{ workId: row.original.id }} search={{ page: 1, pageSize: 50, sort: "title-asc" as const }} className="flex items-center gap-2">
+          {row.original.titleDisplay}
+          {row.original.enrichmentStatus === "STUB" && scanActive && (
+            <Badge variant="outline" className="animate-pulse px-1.5 py-0 text-[10px]">
+              Processing&hellip;
+            </Badge>
+          )}
+        </Link>
+      );
+    },
     size: 300,
     enableHiding: false,
   },
@@ -114,7 +130,24 @@ function getColumns(scanActive: boolean): ColumnDef<LibraryWork>[] {
     header: ({ column }) => (
       <DataTableColumnHeader column={column} title="Author(s)" />
     ),
-    accessorFn: (row) => getAuthors(row),
+    cell: ({ row }) => {
+      const authorsStr = getAuthors(row.original);
+      if (editMode) {
+        return (
+          <EditableTableCell
+            value={authorsStr === "—" ? "" : authorsStr}
+            editing={true}
+            onSave={async (val) => {
+              const authors = val.split(",").map((a) => a.trim()).filter((a) => a.length > 0);
+              if (authors.length === 0) return;
+              await updateWorkAuthorsServerFn({ data: { workId: row.original.id, authors } });
+              router.invalidate();
+            }}
+          />
+        );
+      }
+      return <span>{authorsStr}</span>;
+    },
     size: 200,
   },
   {
@@ -133,14 +166,45 @@ function getColumns(scanActive: boolean): ColumnDef<LibraryWork>[] {
     header: ({ column }) => (
       <DataTableColumnHeader column={column} title="Publisher" />
     ),
-    accessorFn: (row) => row.editions[0]?.publisher ?? "—",
+    cell: ({ row }) => {
+      const pub = row.original.editions[0]?.publisher ?? "";
+      const editionId = row.original.editions[0]?.id;
+      if (editMode && editionId) {
+        return (
+          <EditableTableCell
+            value={pub}
+            editing={true}
+            onSave={async (val) => {
+              await updateEditionServerFn({ data: { editionId, fields: { publisher: val || null } } });
+              router.invalidate();
+            }}
+          />
+        );
+      }
+      return <span>{pub || "—"}</span>;
+    },
     size: 150,
   },
   {
     id: "isbn",
     header: "ISBN",
-    accessorFn: (row) =>
-      row.editions[0]?.isbn13 ?? row.editions[0]?.isbn10 ?? "—",
+    cell: ({ row }) => {
+      const isbn = row.original.editions[0]?.isbn13 ?? row.original.editions[0]?.isbn10 ?? "";
+      const editionId = row.original.editions[0]?.id;
+      if (editMode && editionId) {
+        return (
+          <EditableTableCell
+            value={isbn}
+            editing={true}
+            onSave={async (val) => {
+              await updateEditionServerFn({ data: { editionId, fields: { isbn13: val || null } } });
+              router.invalidate();
+            }}
+          />
+        );
+      }
+      return <span>{isbn || "—"}</span>;
+    },
     size: 120,
   },
   ];
@@ -179,6 +243,7 @@ function LibraryPage() {
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [editMode, setEditMode] = useState(false);
   const isScanning = activeJobCount > 0;
   const newCount = totalCount - prevCount;
   const selectedCount = Object.keys(rowSelection).length;
@@ -366,6 +431,16 @@ function LibraryPage() {
           {view === "table" && (
             <div className="flex items-center gap-2 justify-end">
               <Button
+                data-testid="edit-mode-toggle"
+                variant={editMode ? "default" : "outline"}
+                size="sm"
+                onClick={() => { setEditMode(!editMode); }}
+                aria-label={editMode ? "Exit edit mode" : "Enter edit mode"}
+              >
+                <Pencil className="mr-2 h-4 w-4" />
+                {editMode ? "Done" : "Edit"}
+              </Button>
+              <Button
                 variant="outline"
                 size="sm"
                 onClick={handleTextOverflowToggle}
@@ -389,7 +464,7 @@ function LibraryPage() {
             <LibraryGrid works={filteredByReading} progressMap={progressMap} scanActive={isScanning} />
           ) : (
             <VirtualizedDataTable
-              columns={getColumns(isScanning)}
+              columns={getColumns(isScanning, editMode, router)}
               data={filteredByReading}
               showPagination={false}
               columnVisibility={tablePrefs.columnVisibility}

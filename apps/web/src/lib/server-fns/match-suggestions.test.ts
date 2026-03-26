@@ -141,8 +141,8 @@ describe("acceptMatchSuggestionServerFn", () => {
       suggestedWorkId: "work-suggested",
     });
     workFindUniqueOrThrowMock
-      .mockResolvedValueOnce({ id: "work-target", description: "desc", language: "en", coverPath: "/cover", seriesId: null, seriesPosition: null, sortTitle: "title" })
-      .mockResolvedValueOnce({ id: "work-suggested", description: null, language: null, coverPath: null, seriesId: null, seriesPosition: null, sortTitle: null });
+      .mockResolvedValueOnce({ id: "work-target", description: "desc", coverPath: "/cover", seriesId: null, seriesPosition: null, sortTitle: "title" })
+      .mockResolvedValueOnce({ id: "work-suggested", description: null, coverPath: null, seriesId: null, seriesPosition: null, sortTitle: null });
     editionUpdateManyMock.mockResolvedValue({ count: 1 });
     workDeleteMock.mockResolvedValue({});
 
@@ -168,8 +168,8 @@ describe("acceptMatchSuggestionServerFn", () => {
       suggestedWorkId: "work-suggested",
     });
     workFindUniqueOrThrowMock
-      .mockResolvedValueOnce({ id: "work-suggested", description: "enriched desc", language: "en", coverPath: "/cover", seriesId: null, seriesPosition: null, sortTitle: "title" })
-      .mockResolvedValueOnce({ id: "work-target", description: null, language: null, coverPath: null, seriesId: null, seriesPosition: null, sortTitle: null });
+      .mockResolvedValueOnce({ id: "work-suggested", description: "enriched desc", coverPath: "/cover", seriesId: null, seriesPosition: null, sortTitle: "title" })
+      .mockResolvedValueOnce({ id: "work-target", description: null, coverPath: null, seriesId: null, seriesPosition: null, sortTitle: null });
     editionUpdateManyMock.mockResolvedValue({ count: 1 });
     workDeleteMock.mockResolvedValue({});
 
@@ -193,8 +193,8 @@ describe("acceptMatchSuggestionServerFn", () => {
       suggestedWorkId: "work-suggested",
     });
     workFindUniqueOrThrowMock
-      .mockResolvedValueOnce({ id: "work-target", description: null, language: null, coverPath: null, seriesId: null, seriesPosition: null, sortTitle: null })
-      .mockResolvedValueOnce({ id: "work-suggested", description: "suggested desc", language: "fr", coverPath: "/suggested-cover", seriesId: "series-1", seriesPosition: 2, sortTitle: "suggested sort" });
+      .mockResolvedValueOnce({ id: "work-target", description: null, coverPath: null, seriesId: null, seriesPosition: null, sortTitle: null })
+      .mockResolvedValueOnce({ id: "work-suggested", description: "suggested desc", coverPath: "/suggested-cover", seriesId: "series-1", seriesPosition: 2, sortTitle: "suggested sort" });
     workUpdateMock.mockResolvedValue({});
     editionUpdateManyMock.mockResolvedValue({ count: 1 });
     workDeleteMock.mockResolvedValue({});
@@ -205,7 +205,6 @@ describe("acceptMatchSuggestionServerFn", () => {
       where: { id: "work-target" },
       data: {
         description: "suggested desc",
-        language: "fr",
         coverPath: "/suggested-cover",
         seriesId: "series-1",
         seriesPosition: 2,
@@ -220,8 +219,8 @@ describe("acceptMatchSuggestionServerFn", () => {
       suggestedWorkId: "work-suggested",
     });
     workFindUniqueOrThrowMock
-      .mockResolvedValueOnce({ id: "work-target", description: "desc", language: "en", coverPath: "/cover", seriesId: "s1", seriesPosition: 1, sortTitle: "title" })
-      .mockResolvedValueOnce({ id: "work-suggested", description: "other", language: "fr", coverPath: "/other", seriesId: "s2", seriesPosition: 2, sortTitle: "other" });
+      .mockResolvedValueOnce({ id: "work-target", description: "desc", coverPath: "/cover", seriesId: "s1", seriesPosition: 1, sortTitle: "title" })
+      .mockResolvedValueOnce({ id: "work-suggested", description: "other", coverPath: "/other", seriesId: "s2", seriesPosition: 2, sortTitle: "other" });
     editionUpdateManyMock.mockResolvedValue({ count: 1 });
     workDeleteMock.mockResolvedValue({});
 
