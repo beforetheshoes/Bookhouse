@@ -79,33 +79,21 @@ export function createUploadHandler(deps: UploadHandlerDeps) {
   };
 }
 
-/* c8 ignore start — runtime wiring uses native sharp module, tested via integration */
-async function resizeAndSaveDefault(imageBuffer: Buffer, outputDir: string): Promise<void> {
-  // @ts-expect-error — sharp is a native module resolved at runtime
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-  const sharp = (await import("sharp")).default;
-  await mkdir(outputDir, { recursive: true });
-
-  const thumbBuffer = await sharp(imageBuffer)
-    .resize(200, undefined, { fit: "inside", withoutEnlargement: true })
-    .webp()
-    .toBuffer();
-
-  const mediumBuffer = await sharp(imageBuffer)
-    .resize(400, undefined, { fit: "inside", withoutEnlargement: true })
-    .webp()
-    .toBuffer();
-
-  await writeFile(path.join(outputDir, "thumb.webp"), thumbBuffer);
-  await writeFile(path.join(outputDir, "medium.webp"), mediumBuffer);
-}
-
+/* c8 ignore start — runtime wiring, tested via unit tests on createUploadHandler */
 export default defineEventHandler(async (event) => {
   const { db } = await import("@bookhouse/db");
+  const { resizeCoverImage } = await import("@bookhouse/ingest");
+  const sharp = await import("sharp");
+
   const handler = createUploadHandler({
     coverCacheDir: COVER_CACHE_DIR,
     readFormData: readMultipartFormData,
-    resizeAndSave: resizeAndSaveDefault,
+    resizeAndSave: async (imageBuffer, outputDir) => {
+      await resizeCoverImage(
+        { imageBuffer, outputDir },
+        { sharp: sharp.default, mkdir, writeFile },
+      );
+    },
     db: {
       findWork: (id) => db.work.findUnique({ where: { id }, select: { editedFields: true } }),
       updateWork: (id, data) => db.work.update({ where: { id }, data }) as unknown as Promise<void>,

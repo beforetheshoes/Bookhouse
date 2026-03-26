@@ -41,6 +41,9 @@ export default defineConfig({
       ],
     },
   },
+  ssr: {
+    external: ["sharp"],
+  },
   server: {
     port: 3000,
   },
