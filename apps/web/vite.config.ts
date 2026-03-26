@@ -37,8 +37,12 @@ export default defineConfig({
         "@prisma/client",
         ".prisma/client/default",
         ".prisma/client/index-browser",
+        "sharp",
       ],
     },
+  },
+  ssr: {
+    external: ["sharp"],
   },
   server: {
     port: 3000,

@@ -85,7 +85,6 @@ export const acceptMatchSuggestionServerFn = createServerFn({
     // Reconcile metadata: fill nulls on surviving work from losing work
     const reconcileFields = [
       "description",
-      "language",
       "coverPath",
       "seriesId",
       "seriesPosition",

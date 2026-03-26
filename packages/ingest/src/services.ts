@@ -73,10 +73,10 @@ type FileAssetRecord = Pick<
 >;
 
 type LibraryRootRecord = Pick<LibraryRoot, "id" | "lastScannedAt" | "path" | "scanMode">;
-type WorkRecord = Pick<Work, "coverPath" | "description" | "enrichmentStatus" | "id" | "language" | "seriesId" | "seriesPosition" | "sortTitle" | "titleCanonical" | "titleDisplay">;
+type WorkRecord = Pick<Work, "coverPath" | "description" | "enrichmentStatus" | "id" | "seriesId" | "seriesPosition" | "sortTitle" | "titleCanonical" | "titleDisplay">;
 type EditionRecord = Pick<
   Edition,
-  "asin" | "formatFamily" | "id" | "isbn10" | "isbn13" | "publishedAt" | "publisher" | "workId"
+  "asin" | "formatFamily" | "id" | "isbn10" | "isbn13" | "language" | "publishedAt" | "publisher" | "workId"
 >;
 type ContributorRecord = Pick<Contributor, "id" | "nameCanonical" | "nameDisplay">;
 type EditionFileRecord = Pick<EditionFile, "editionId" | "fileAssetId" | "id" | "role">;
@@ -229,7 +229,7 @@ interface EditionFindManyArgs {
 interface EditionCreateArgs {
   data: Pick<
     EditionRecord,
-    "asin" | "formatFamily" | "isbn10" | "isbn13" | "publishedAt" | "publisher" | "workId"
+    "asin" | "formatFamily" | "isbn10" | "isbn13" | "language" | "publishedAt" | "publisher" | "workId"
   >;
 }
 
@@ -292,7 +292,7 @@ export interface IngestDb {
     findMany(args: WorkFindManyArgs): Promise<WorkMatchRecord[]>;
     findManyByIds(args: { ids: string[] }): Promise<WorkRecord[]>;
     findUnique(args: { where: { id: string } }): Promise<WorkRecord | null>;
-    update(args: { where: { id: string }; data: Partial<Pick<Work, "coverPath" | "description" | "enrichmentStatus" | "language" | "seriesId" | "seriesPosition" | "sortTitle" | "titleCanonical" | "titleDisplay">> }): Promise<WorkRecord>;
+    update(args: { where: { id: string }; data: Partial<Pick<Work, "coverPath" | "description" | "enrichmentStatus" | "seriesId" | "seriesPosition" | "sortTitle" | "titleCanonical" | "titleDisplay">> }): Promise<WorkRecord>;
   };
   edition: {
     create(args: EditionCreateArgs): Promise<EditionRecord>;
@@ -300,7 +300,7 @@ export interface IngestDb {
     findMany(args: EditionFindManyArgs): Promise<EditionRecord[]>;
     findManyByIds(args: { ids: string[] }): Promise<EditionRecord[]>;
     findUnique(args: { where: { id: string } }): Promise<EditionRecord | null>;
-    update(args: { where: { id: string }; data: Partial<Pick<Edition, "asin" | "isbn10" | "isbn13" | "publisher" | "publishedAt" | "workId">> }): Promise<EditionRecord>;
+    update(args: { where: { id: string }; data: Partial<Pick<Edition, "asin" | "isbn10" | "isbn13" | "language" | "publisher" | "publishedAt" | "workId">> }): Promise<EditionRecord>;
     updateMany(args: { where: { workId: string }; data: { workId: string } }): Promise<{ count: number }>;
   };
   series: {
@@ -812,7 +812,7 @@ function createDefaultIngestDb(): IngestDb {
           where: { id: { in: args.ids } },
         }) as unknown as Promise<WorkRecord[]>;
       },
-      async update(args: { where: { id: string }; data: Partial<Pick<Work, "coverPath" | "description" | "enrichmentStatus" | "language" | "seriesId" | "seriesPosition" | "sortTitle" | "titleCanonical" | "titleDisplay">> }) {
+      async update(args: { where: { id: string }; data: Partial<Pick<Work, "coverPath" | "description" | "enrichmentStatus" | "seriesId" | "seriesPosition" | "sortTitle" | "titleCanonical" | "titleDisplay">> }) {
         return prisma.work.update(args) as unknown as Promise<WorkRecord>;
       },
     },
@@ -1172,7 +1172,7 @@ async function matchSuggestionPairExists(
 
 const SUBTITLE_CONFIDENCE_PENALTY = 0.9;
 
-const MERGE_METADATA_FIELDS = ["description", "language", "coverPath", "seriesId", "seriesPosition", "sortTitle"] as const;
+const MERGE_METADATA_FIELDS = ["description", "coverPath", "seriesId", "seriesPosition", "sortTitle"] as const;
 
 interface TitleMatchResult {
   similarity: number;
@@ -1584,6 +1584,7 @@ export function createIngestServices(
                     formatFamily,
                     isbn10: null,
                     isbn13: null,
+                    language: null,
                     publishedAt: null,
                     publisher: null,
                     workId: stubWork.id,
@@ -1620,6 +1621,7 @@ export function createIngestServices(
                   formatFamily,
                   isbn10: null,
                   isbn13: null,
+                  language: null,
                   publishedAt: null,
                   publisher: null,
                   workId: stubWork.id,
@@ -1910,7 +1912,13 @@ export function createIngestServices(
 
           const workUpdates: Record<string, unknown> = {};
           if (!work.description && normalized.description) workUpdates.description = normalized.description;
-          if (!work.language && normalized.language) workUpdates.language = normalized.language;
+
+          if (!edition.language && normalized.language) {
+            await ingestDb.edition.update({
+              where: { id: edition.id },
+              data: { language: normalized.language },
+            });
+          }
 
           if (!work.seriesId && normalized.series) {
             const series = await ingestDb.series.upsert({
@@ -2443,7 +2451,6 @@ export function createIngestServices(
                   data: {
                     description: storedMeta.normalized?.description ?? null,
                     enrichmentStatus: "ENRICHED",
-                    language: storedMeta.normalized?.language ?? null,
                     sortTitle: null,
                     titleCanonical: matchableMeta.titleCanonical,
                     titleDisplay: matchableMeta.title,
@@ -2455,6 +2462,7 @@ export function createIngestServices(
                     isbn13: identifiers?.isbn13 ?? null,
                     isbn10: identifiers?.isbn10 ?? null,
                     asin: identifiers?.asin ?? null,
+                    language: storedMeta.normalized?.language ?? null,
                   },
                 });
                 await ensureContributors(ingestDb, existingEdition.id, matchableMeta.authors, ContributorRole.AUTHOR);
@@ -2545,7 +2553,6 @@ export function createIngestServices(
                   data: {
                     description: storedMetadata.normalized?.description ?? null,
                     enrichmentStatus: "ENRICHED",
-                    language: storedMetadata.normalized?.language ?? null,
                     sortTitle: null,
                     titleCanonical: matchableMetadata.titleCanonical,
                     titleDisplay: matchableMetadata.title,
@@ -2560,6 +2567,7 @@ export function createIngestServices(
                   asin: identifiers?.asin ?? siblingEdition.asin,
                   isbn10: identifiers?.isbn10 ?? siblingEdition.isbn10,
                   isbn13: identifiers?.isbn13 ?? siblingEdition.isbn13,
+                  language: storedMetadata.normalized?.language ?? null,
                 },
               });
 
@@ -2680,7 +2688,6 @@ export function createIngestServices(
           data: {
             description: storedMetadata.normalized?.description ?? null,
             enrichmentStatus: "ENRICHED",
-            language: storedMetadata.normalized?.language ?? null,
             sortTitle: null,
             titleCanonical: matchableMetadata.titleCanonical,
             titleDisplay: matchableMetadata.title,
@@ -2702,6 +2709,7 @@ export function createIngestServices(
                 asin: identifiers?.asin ?? existingAudioEdition.asin,
                 isbn10: identifiers?.isbn10 ?? existingAudioEdition.isbn10,
                 isbn13: identifiers?.isbn13 ?? existingAudioEdition.isbn13,
+                language: storedMetadata.normalized?.language ?? null,
               },
             });
 
@@ -2743,6 +2751,7 @@ export function createIngestServices(
         formatFamily,
         isbn10: identifiers?.isbn10 ?? null,
         isbn13: identifiers?.isbn13 ?? null,
+        language: storedMetadata.normalized?.language ?? null,
         publishedAt: null,
         publisher: null,
         workId,

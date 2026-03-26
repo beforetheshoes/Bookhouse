@@ -16,6 +16,7 @@ export const getWorkDetailServerFn = createServerFn({
       where: { id: data.workId },
       include: {
         series: true,
+        tags: { include: { tag: true } },
         editions: {
           include: {
             contributors: { include: { contributor: true } },

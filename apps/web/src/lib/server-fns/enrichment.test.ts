@@ -119,6 +119,7 @@ describe("getEnrichmentDataServerFn", () => {
 
 describe("applyEnrichmentServerFn", () => {
   it("updates work with selected fields from enrichment", async () => {
+    workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: [] });
     workUpdateMock.mockResolvedValue({ id: "w1" });
 
     const result = await applyEnrichmentServerFn({
@@ -128,6 +129,10 @@ describe("applyEnrichmentServerFn", () => {
       },
     });
 
+    expect(workFindUniqueMock).toHaveBeenCalledWith({
+      where: { id: "w1" },
+      select: { editedFields: true },
+    });
     expect(workUpdateMock).toHaveBeenCalledWith({
       where: { id: "w1" },
       data: { description: "A hobbit adventure" },
@@ -136,7 +141,7 @@ describe("applyEnrichmentServerFn", () => {
   });
 
   it("handles empty fields gracefully", async () => {
-    workUpdateMock.mockResolvedValue({ id: "w1" });
+    workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: [] });
 
     const result = await applyEnrichmentServerFn({
       data: {
@@ -145,9 +150,56 @@ describe("applyEnrichmentServerFn", () => {
       },
     });
 
+    expect(workUpdateMock).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: true, skippedAll: true });
+  });
+
+  it("skips fields that were manually edited", async () => {
+    workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: ["description"] });
+    workUpdateMock.mockResolvedValue({ id: "w1" });
+
+    const result = await applyEnrichmentServerFn({
+      data: {
+        workId: "w1",
+        fields: { description: "New desc", sortTitle: "Sort" },
+      },
+    });
+
     expect(workUpdateMock).toHaveBeenCalledWith({
       where: { id: "w1" },
-      data: {},
+      data: { sortTitle: "Sort" },
+    });
+    expect(result).toEqual({ success: true });
+  });
+
+  it("skips all fields when all are manually edited", async () => {
+    workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: ["description", "sortTitle"] });
+
+    const result = await applyEnrichmentServerFn({
+      data: {
+        workId: "w1",
+        fields: { description: "New desc", sortTitle: "Sort" },
+      },
+    });
+
+    expect(workUpdateMock).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: true, skippedAll: true });
+  });
+
+  it("handles work not found gracefully for editedFields", async () => {
+    workFindUniqueMock.mockResolvedValue(null);
+    workUpdateMock.mockResolvedValue({ id: "w1" });
+
+    const result = await applyEnrichmentServerFn({
+      data: {
+        workId: "w1",
+        fields: { description: "Desc" },
+      },
+    });
+
+    expect(workUpdateMock).toHaveBeenCalledWith({
+      where: { id: "w1" },
+      data: { description: "Desc" },
     });
     expect(result).toEqual({ success: true });
   });

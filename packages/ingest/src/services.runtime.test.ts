@@ -218,8 +218,9 @@ describe("ingest runtime defaults", () => {
     fileAssetFindManyMock.mockResolvedValueOnce(epubSibling("file-epub-1", "/tmp/root/Book1/book.epub"));
     vi.mocked(db.editionFile).findFirst.mockResolvedValueOnce({ editionId: "edition-1", fileAssetId: "file-epub-1", id: "ef-1", role: "PRIMARY" } as never);
     vi.mocked(db.edition).findUnique.mockResolvedValueOnce({ id: "edition-1", publisher: null, publishedAt: null, workId: "work-1" } as never);
-    editionUpdateMock.mockResolvedValueOnce({} as never);
-    vi.mocked(db.work).findUnique.mockResolvedValueOnce({ id: "work-1", description: null, language: null, seriesId: null } as never);
+    editionUpdateMock.mockResolvedValueOnce({} as never); // publisher/date update
+    vi.mocked(db.work).findUnique.mockResolvedValueOnce({ id: "work-1", description: null, seriesId: null } as never);
+    editionUpdateMock.mockResolvedValueOnce({} as never); // language update
     workUpdateMock.mockResolvedValueOnce({} as never);
     vi.mocked(db.series).findFirst.mockResolvedValueOnce(null);
     seriesCreateMock.mockResolvedValueOnce({ id: "series-1", name: "The Kingkiller Chronicle" } as never);
@@ -227,7 +228,7 @@ describe("ingest runtime defaults", () => {
     const result1 = await services.parseFileAssetMetadata({ fileAssetId: "file-opf-1", now: new Date("2025-01-01T00:00:00.000Z") });
     expect(result1.availabilityStatus).toBe("PRESENT");
     expect(fileAssetFindManyMock).toHaveBeenCalledTimes(1);
-    expect(editionUpdateMock).toHaveBeenCalledTimes(1);
+    expect(editionUpdateMock).toHaveBeenCalledTimes(2);
     expect(workUpdateMock).toHaveBeenCalledTimes(1);
     expect(seriesCreateMock).toHaveBeenCalledTimes(1);
 
@@ -236,8 +237,9 @@ describe("ingest runtime defaults", () => {
     fileAssetFindManyMock.mockResolvedValueOnce(epubSibling("file-epub-2", "/tmp/root/Book2/book.epub"));
     vi.mocked(db.editionFile).findFirst.mockResolvedValueOnce({ editionId: "edition-2", fileAssetId: "file-epub-2", id: "ef-2", role: "PRIMARY" } as never);
     vi.mocked(db.edition).findUnique.mockResolvedValueOnce({ id: "edition-2", publisher: null, publishedAt: null, workId: "work-2" } as never);
-    editionUpdateMock.mockResolvedValueOnce({} as never);
-    vi.mocked(db.work).findUnique.mockResolvedValueOnce({ id: "work-2", description: null, language: null, seriesId: null } as never);
+    editionUpdateMock.mockResolvedValueOnce({} as never); // publisher/date update
+    vi.mocked(db.work).findUnique.mockResolvedValueOnce({ id: "work-2", description: null, seriesId: null } as never);
+    editionUpdateMock.mockResolvedValueOnce({} as never); // language update
     workUpdateMock.mockResolvedValueOnce({} as never);
     vi.mocked(db.series).findFirst.mockResolvedValueOnce({ id: "series-1", name: "The Kingkiller Chronicle" } as never);
 
@@ -423,8 +425,8 @@ describe("ingest runtime defaults", () => {
       sizeBytes: 5n,
     }] as never);
     editionFileFindManyMock.mockResolvedValue([{ editionId: "edition-1", fileAssetId: "file-1", id: "ef-1", role: "PRIMARY" }] as never);
-    editionFindManyMock.mockResolvedValue([{ formatFamily: "EBOOK", id: "edition-1", workId: "work-1", asin: null, isbn10: null, isbn13: null, publishedAt: null, publisher: null }] as never);
-    workFindManyMock.mockResolvedValue([{ coverPath: null, description: null, enrichmentStatus: "STUB", id: "work-1", language: null, seriesId: null, seriesPosition: null, sortTitle: null, titleCanonical: "book", titleDisplay: "Book" }] as never);
+    editionFindManyMock.mockResolvedValue([{ formatFamily: "EBOOK", id: "edition-1", workId: "work-1", asin: null, isbn10: null, isbn13: null, language: null, publishedAt: null, publisher: null }] as never);
+    workFindManyMock.mockResolvedValue([{ coverPath: null, description: null, enrichmentStatus: "STUB", id: "work-1", seriesId: null, seriesPosition: null, sortTitle: null, titleCanonical: "book", titleDisplay: "Book" }] as never);
 
     const result = await services.scanLibraryRoot({
       libraryRootId: "root-1",

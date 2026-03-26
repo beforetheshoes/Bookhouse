@@ -85,7 +85,6 @@ interface TestWork {
   description: string | null;
   enrichmentStatus: EnrichmentStatus;
   id: string;
-  language: string | null;
   seriesId: string | null;
   seriesPosition: number | null;
   sortTitle: string | null;
@@ -99,6 +98,7 @@ interface TestEdition {
   id: string;
   isbn10: string | null;
   isbn13: string | null;
+  language: string | null;
   publishedAt: Date | null;
   publisher: string | null;
   workId: string;
@@ -278,7 +278,6 @@ function createTestDb(state: TestState): IngestDb {
           description: null,
           enrichmentStatus: "ENRICHED",
           id: `work-${String(workSequence)}`,
-          language: null,
           seriesId: null,
           seriesPosition: null,
           ...data,
@@ -376,7 +375,7 @@ function createTestDb(state: TestState): IngestDb {
         await Promise.resolve();
         const existing = state.editions.get(where.id);
         if (!existing) throw new Error(`Unknown edition: ${where.id}`);
-        const updated = { ...existing, ...data };
+        const updated: TestEdition = { ...existing, ...data } as TestEdition;
         state.editions.set(updated.id, updated);
         return updated;
       },
@@ -565,7 +564,6 @@ function addWork(state: TestState, overrides: Partial<TestWork> = {}): TestWork 
     description: null,
     enrichmentStatus: "ENRICHED",
     id: "work-1",
-    language: null,
     seriesId: null,
     seriesPosition: null,
     sortTitle: null,
@@ -584,6 +582,7 @@ function addEdition(state: TestState, overrides: Partial<TestEdition> = {}): Tes
     id: "edition-1",
     isbn10: null,
     isbn13: null,
+    language: null,
     publishedAt: null,
     publisher: null,
     workId: "work-1",
@@ -1155,6 +1154,7 @@ describe("ingest services", () => {
       id: "edition-1",
       isbn10: null,
       isbn13: null,
+      language: null,
       publishedAt: null,
       publisher: null,
       workId: "missing-work",
@@ -3535,7 +3535,6 @@ describe("ingest services", () => {
       description: null,
       enrichmentStatus: "ENRICHED",
       id: "work-1",
-      language: null,
       seriesId: null,
       seriesPosition: null,
       sortTitle: null,
@@ -4229,9 +4228,11 @@ describe("ingest services", () => {
       publisher: "DAW Books",
     });
     expect(state.editions.get("edition-1")?.publishedAt).toBeInstanceOf(Date);
+    expect(state.editions.get("edition-1")).toMatchObject({
+      language: "en",
+    });
     expect(state.works.get("work-1")).toMatchObject({
       description: "A story.",
-      language: "en",
       seriesId: "series-The Kingkiller Chronicle",
       seriesPosition: 1,
     });
@@ -4359,10 +4360,9 @@ describe("ingest services", () => {
       titleDisplay: "The Name of the Wind",
       titleCanonical: "the name of the wind",
       description: "Existing description",
-      language: "fr",
       seriesId: "existing-series",
     });
-    addEdition(state, { id: "edition-1", workId: "work-1", publisher: "Existing Publisher", publishedAt: new Date("2000-01-01") });
+    addEdition(state, { id: "edition-1", workId: "work-1", publisher: "Existing Publisher", publishedAt: new Date("2000-01-01"), language: "fr" });
     addEditionFile(state, { editionId: "edition-1", fileAssetId: "file-epub" });
 
     const services = createIngestServices({
@@ -4388,10 +4388,9 @@ describe("ingest services", () => {
       now: new Date("2025-01-01T00:00:00.000Z"),
     });
 
-    expect(state.editions.get("edition-1")).toMatchObject({ publisher: "Existing Publisher" });
+    expect(state.editions.get("edition-1")).toMatchObject({ publisher: "Existing Publisher", language: "fr" });
     expect(state.works.get("work-1")).toMatchObject({
       description: "Existing description",
-      language: "fr",
       seriesId: "existing-series",
     });
   });
@@ -8083,6 +8082,7 @@ describe("detectDuplicates", () => {
       id,
       isbn10: null,
       isbn13: null,
+      language: null,
       publishedAt: null,
       publisher: null,
       workId,
@@ -8098,7 +8098,6 @@ describe("detectDuplicates", () => {
       description: null,
       enrichmentStatus: "STUB" as EnrichmentStatus,
       id,
-      language: null,
       seriesId: null,
       seriesPosition: null,
       sortTitle: null,
@@ -8627,7 +8626,6 @@ describe("matchSuggestions", () => {
       description: null,
       enrichmentStatus: "STUB" as EnrichmentStatus,
       id,
-      language: null,
       seriesId: null,
       seriesPosition: null,
       sortTitle: null,
@@ -8645,6 +8643,7 @@ describe("matchSuggestions", () => {
       id,
       isbn10: null,
       isbn13: null,
+      language: null,
       publishedAt: null,
       publisher: null,
       workId,
@@ -9150,12 +9149,12 @@ describe("matchSuggestions", () => {
     addAudioFileAsset(state, "file-audio", "/tmp/root/audiobooks/gatsby.m4b", MediaKind.AUDIO);
     const audioWork = addAudioWork(state, "work-audio", "the great gatsby", "The Great Gatsby");
     audioWork.description = "A novel about the American Dream";
-    audioWork.language = "en";
-    addAudioEdition(state, "edition-audio", "work-audio", { formatFamily: FormatFamily.AUDIOBOOK });
+    const audioEdition = addAudioEdition(state, "edition-audio", "work-audio", { formatFamily: FormatFamily.AUDIOBOOK });
+    audioEdition.language = "en";
     addAudioEditionFile(state, "ef-audio", "edition-audio", "file-audio");
     addAudioContributor(state, "c-audio", "F Scott Fitzgerald");
     addAudioEditionContributor(state, "ec-audio", "edition-audio", "c-audio");
-    // Ebook work has null description and language
+    // Ebook work has null description; ebook edition has null language
     addAudioFileAsset(state, "file-ebook", "/tmp/root/ebooks/gatsby.epub");
     addAudioWork(state, "work-ebook", "the great gatsby", "The Great Gatsby");
     addAudioEdition(state, "edition-ebook", "work-ebook", { formatFamily: FormatFamily.EBOOK });
@@ -9173,7 +9172,8 @@ describe("matchSuggestions", () => {
     // Ebook work does NOT get metadata from audiobook work (no merge)
     const ebookWork = state.works.get("work-ebook");
     expect(ebookWork?.description).toBeNull();
-    expect(ebookWork?.language).toBeNull();
+    const ebookEdition = state.editions.get("edition-ebook");
+    expect(ebookEdition?.language).toBeNull();
   });
 
   it("preserves both works metadata during matchSuggestions — no merge", async () => {
@@ -9762,7 +9762,6 @@ describe("mergeWorksById", () => {
       titleDisplay: "The Great Gatsby",
     });
     losingWork.description = "A novel about the American Dream";
-    losingWork.language = "en";
     losingWork.coverPath = "/covers/losing.jpg";
 
     const services = createIngestServices({ db: createTestDb(state) });
@@ -9770,7 +9769,6 @@ describe("mergeWorksById", () => {
 
     const surviving = state.works.get("work-surviving");
     expect(surviving?.description).toBe("A novel about the American Dream");
-    expect(surviving?.language).toBe("en");
     expect(surviving?.coverPath).toBe("/covers/losing.jpg");
   });
 
