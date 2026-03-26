@@ -133,7 +133,7 @@ function WorkDetailPage() {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch(`/api/covers/${work.id}/upload`, {
+      const res = await fetch(`/api/upload-cover/${work.id}`, {
         method: "POST",
         body: formData,
       });

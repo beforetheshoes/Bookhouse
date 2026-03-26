@@ -83,7 +83,7 @@ export function createUploadHandler(deps: UploadHandlerDeps) {
 export default defineEventHandler(async (event) => {
   const { db } = await import("@bookhouse/db");
   const { resizeCoverImage } = await import("@bookhouse/ingest");
-  const sharp = await import("sharp");
+  const sharpModule = await import("sharp");
 
   const handler = createUploadHandler({
     coverCacheDir: COVER_CACHE_DIR,
@@ -91,7 +91,8 @@ export default defineEventHandler(async (event) => {
     resizeAndSave: async (imageBuffer, outputDir) => {
       await resizeCoverImage(
         { imageBuffer, outputDir },
-        { sharp: sharp.default, mkdir, writeFile },
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        { sharp: sharpModule.default as never, mkdir, writeFile },
       );
     },
     db: {

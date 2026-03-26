@@ -1075,7 +1075,7 @@ describe("WorkDetailPage", () => {
 
     await waitFor(() => {
       expect(mockFetch).toHaveBeenCalledWith(
-        "/api/covers/work-1/upload",
+        "/api/upload-cover/work-1",
         expect.objectContaining({ method: "POST" }) as Record<string, unknown>,
       );
     });

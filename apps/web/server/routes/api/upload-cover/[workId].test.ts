@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createUploadHandler, type UploadHandlerDeps } from "./upload";
+import { createUploadHandler, type UploadHandlerDeps } from "./[workId]";
 
 // JPEG magic bytes (0xFF 0xD8 0xFF) + padding
 const VALID_JPEG = Buffer.from([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10]);
