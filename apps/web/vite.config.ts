@@ -53,6 +53,6 @@ export default defineConfig({
       srcDirectory: "src",
     }),
     viteReact(),
-    nitro({ serverDir: true }),
+    nitro({ serverDir: true, ignore: ["**/*.test.ts"] }),
   ],
 });
