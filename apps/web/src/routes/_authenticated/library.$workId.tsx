@@ -30,7 +30,6 @@ import { deleteWorkServerFn, deleteEditionServerFn } from "~/lib/server-fns/dele
 import { EditableField } from "~/components/editable-field";
 import { updateWorkServerFn, updateEditionServerFn, updateWorkAuthorsServerFn } from "~/lib/server-fns/editing";
 import { updateWorkTagsServerFn } from "~/lib/server-fns/tags";
-import { uploadCoverServerFn } from "~/lib/server-fns/cover-upload";
 
 export const Route = createFileRoute("/_authenticated/library/$workId")({
   loader: async ({ params }) => {
@@ -132,14 +131,16 @@ function WorkDetailPage() {
     if (!file) return;
     setUploadingCover(true);
     try {
-      const buffer = await file.arrayBuffer();
-      const bytes = new Uint8Array(buffer);
-      let binary = "";
-      for (let i = 0; i < bytes.length; i++) {
-        binary += String.fromCharCode(bytes[i] as number);
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`/api/covers/${work.id}/upload`, {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Upload failed");
       }
-      const base64 = btoa(binary);
-      await uploadCoverServerFn({ data: { workId: work.id, imageBase64: base64 } });
       toast.success("Cover updated");
       setImgFailed(false);
       void router.invalidate();
