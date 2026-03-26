@@ -1,11 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createUploadHandler, type UploadHandlerDeps } from "./upload";
 
+// JPEG magic bytes (0xFF 0xD8 0xFF) + padding
+const VALID_JPEG = Buffer.from([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10]);
+const VALID_PNG = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A]);
+
 function createMockDeps(overrides: Partial<UploadHandlerDeps> = {}): UploadHandlerDeps {
   return {
     coverCacheDir: "/data/covers",
     readFormData: vi.fn().mockResolvedValue([
-      { name: "file", data: Buffer.from("fake-image"), type: "image/jpeg" },
+      { name: "file", data: VALID_JPEG, type: "image/jpeg" },
     ]),
     resizeAndSave: vi.fn().mockResolvedValue(undefined),
     db: {
@@ -128,15 +132,41 @@ describe("cover upload handler", () => {
     });
   });
 
-  it("allows upload without MIME type", async () => {
+  it("allows upload without MIME type if magic bytes are valid", async () => {
     deps = createMockDeps({
       readFormData: vi.fn().mockResolvedValue([
-        { name: "file", data: Buffer.from("data") },
+        { name: "file", data: VALID_PNG },
       ]),
     });
     const handler = createUploadHandler(deps);
     const result = await handler(createMockEvent("work-1") as never);
     expect(result).toEqual({ success: true });
+  });
+
+  it("rejects file with invalid magic bytes", async () => {
+    deps = createMockDeps({
+      readFormData: vi.fn().mockResolvedValue([
+        { name: "file", data: Buffer.from("not an image"), type: "image/jpeg" },
+      ]),
+    });
+    const handler = createUploadHandler(deps);
+    await expect(handler(createMockEvent("work-1") as never)).rejects.toMatchObject({
+      statusCode: 400,
+      statusMessage: "File is not a valid image",
+    });
+  });
+
+  it("rejects file that is too small for magic byte check", async () => {
+    deps = createMockDeps({
+      readFormData: vi.fn().mockResolvedValue([
+        { name: "file", data: Buffer.from([0xFF, 0xD8]) },
+      ]),
+    });
+    const handler = createUploadHandler(deps);
+    await expect(handler(createMockEvent("work-1") as never)).rejects.toMatchObject({
+      statusCode: 400,
+      statusMessage: "File is not a valid image",
+    });
   });
 
   it("throws 404 when work is not found", async () => {

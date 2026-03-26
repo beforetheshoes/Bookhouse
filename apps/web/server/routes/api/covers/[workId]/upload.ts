@@ -19,6 +19,21 @@ const VALID_WORK_ID = /^[a-zA-Z0-9_-]+$/;
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
+// Magic byte signatures for supported image formats
+const IMAGE_SIGNATURES: [number[], string][] = [
+  [[0xFF, 0xD8, 0xFF], "JPEG"],
+  [[0x89, 0x50, 0x4E, 0x47], "PNG"],
+  [[0x52, 0x49, 0x46, 0x46], "WebP"], // RIFF header (WebP starts with RIFF....WEBP)
+  [[0x47, 0x49, 0x46, 0x38], "GIF"],
+];
+
+function isValidImageData(data: Uint8Array): boolean {
+  if (data.length < 4) return false;
+  return IMAGE_SIGNATURES.some(([sig]) =>
+    sig.every((byte, i) => data[i] === byte),
+  );
+}
+
 export function createUploadHandler(deps: UploadHandlerDeps) {
   return async (event: H3Event) => {
     const params = event.context.params as { workId: string };
@@ -41,6 +56,10 @@ export function createUploadHandler(deps: UploadHandlerDeps) {
 
     if (fileField.type && !ALLOWED_MIME_TYPES.has(fileField.type)) {
       throw createError({ statusCode: 400, statusMessage: "Invalid image type" });
+    }
+
+    if (!isValidImageData(fileField.data)) {
+      throw createError({ statusCode: 400, statusMessage: "File is not a valid image" });
     }
 
     const imageBuffer = Buffer.from(fileField.data);
