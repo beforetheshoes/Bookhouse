@@ -133,7 +133,12 @@ function WorkDetailPage() {
     setUploadingCover(true);
     try {
       const buffer = await file.arrayBuffer();
-      const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+      const bytes = new Uint8Array(buffer);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i] as number);
+      }
+      const base64 = btoa(binary);
       await uploadCoverServerFn({ data: { workId: work.id, imageBase64: base64 } });
       toast.success("Cover updated");
       setImgFailed(false);
