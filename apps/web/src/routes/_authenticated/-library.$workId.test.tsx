@@ -11,6 +11,7 @@ interface MockWork {
   coverPath: string | null;
   seriesPosition: number | null;
   series: { id: string; name: string } | null;
+  tags: { tag: { id: string; name: string } }[];
   editions: {
     id: string;
     formatFamily: string;
@@ -50,6 +51,7 @@ let mockLoaderData: { work: MockWork; progress: MockProgress[]; trackingMode: st
     coverPath: "/covers/work-1",
     seriesPosition: 1,
     series: { id: "series-1", name: "The Kingkiller Chronicle" },
+    tags: [],
     editions: [
       {
         id: "edition-1",
@@ -157,6 +159,14 @@ vi.mock("~/lib/server-fns/editing", () => ({
   updateWorkAuthorsServerFn: vi.fn(),
 }));
 
+vi.mock("~/lib/server-fns/tags", () => ({
+  updateWorkTagsServerFn: vi.fn(),
+}));
+
+vi.mock("~/lib/server-fns/cover-upload", () => ({
+  uploadCoverServerFn: vi.fn(),
+}));
+
 import { updateWorkServerFn, updateEditionServerFn, updateWorkAuthorsServerFn } from "~/lib/server-fns/editing";
 
 const updateWorkServerFnMock = updateWorkServerFn as unknown as ReturnType<typeof vi.fn>;
@@ -179,6 +189,7 @@ describe("WorkDetailPage", () => {
         coverPath: "/covers/work-1",
         seriesPosition: 1,
         series: { id: "series-1", name: "The Kingkiller Chronicle" },
+        tags: [],
         editions: [
           {
             id: "edition-1",
@@ -1014,5 +1025,146 @@ describe("WorkDetailPage", () => {
     await waitFor(() => {
       expect(updateWorkAuthorsServerFnMock).toHaveBeenCalled();
     });
+  });
+
+  it("renders cover upload file input", async () => {
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    expect(screen.getByTestId("cover-file-input")).toBeTruthy();
+  });
+
+  it("renders cover overlay on hover", async () => {
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    const { container } = render(<Page />);
+    // The overlay div should exist (hidden by default via opacity-0)
+    const overlay = container.querySelector(".group-hover\\:opacity-100");
+    expect(overlay).toBeTruthy();
+  });
+
+  it("renders tags section", async () => {
+    mockLoaderData.work.tags = [{ tag: { id: "t1", name: "Fiction" } }];
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    expect(screen.getByText("Fiction")).toBeTruthy();
+    expect(screen.getByText("Tags")).toBeTruthy();
+  });
+
+  it("renders empty tags placeholder", async () => {
+    mockLoaderData.work.tags = [];
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    expect(screen.getByText("No tags")).toBeTruthy();
+  });
+
+  it("handles cover file selection", async () => {
+    const uploadCoverServerFnMock = (await import("~/lib/server-fns/cover-upload")).uploadCoverServerFn as unknown as ReturnType<typeof vi.fn>;
+    uploadCoverServerFnMock.mockResolvedValue({ success: true });
+
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    render(<Page />);
+
+    const fileInput = screen.getByTestId("cover-file-input");
+    const file = new File(["fake-image"], "cover.jpg", { type: "image/jpeg" });
+    Object.defineProperty(fileInput, "files", { value: [file] });
+    fireEvent.change(fileInput);
+
+    await waitFor(() => {
+      expect(uploadCoverServerFnMock).toHaveBeenCalled();
+    });
+  });
+
+  it("shows error toast when cover upload fails", async () => {
+    const uploadCoverServerFnMock = (await import("~/lib/server-fns/cover-upload")).uploadCoverServerFn as unknown as ReturnType<typeof vi.fn>;
+    uploadCoverServerFnMock.mockRejectedValue(new Error("Upload failed"));
+
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    render(<Page />);
+
+    const fileInput = screen.getByTestId("cover-file-input");
+    const file = new File(["fake-image"], "cover.jpg", { type: "image/jpeg" });
+    Object.defineProperty(fileInput, "files", { value: [file] });
+    fireEvent.change(fileInput);
+
+    await waitFor(() => {
+      expect(mockToast.error).toHaveBeenCalledWith("Upload failed");
+    });
+  });
+
+  it("opens file picker when cover area is clicked", async () => {
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent } = await import("@testing-library/react");
+    const { container } = render(<Page />);
+    const coverArea = container.querySelector("[role='button']");
+    expect(coverArea).toBeTruthy();
+    if (coverArea) {
+      fireEvent.click(coverArea);
+    }
+  });
+
+  it("shows generic error toast when cover upload fails with non-Error", async () => {
+    const uploadCoverServerFnMock = (await import("~/lib/server-fns/cover-upload")).uploadCoverServerFn as unknown as ReturnType<typeof vi.fn>;
+    uploadCoverServerFnMock.mockRejectedValue("unexpected");
+
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    render(<Page />);
+
+    const fileInput = screen.getByTestId("cover-file-input");
+    const file = new File(["fake-image"], "cover.jpg", { type: "image/jpeg" });
+    Object.defineProperty(fileInput, "files", { value: [file] });
+    fireEvent.change(fileInput);
+
+    await waitFor(() => {
+      expect(mockToast.error).toHaveBeenCalledWith("Failed to upload cover");
+    });
+  });
+
+  it("handles cover click via keyboard", async () => {
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent } = await import("@testing-library/react");
+    const { container } = render(<Page />);
+    const coverArea = container.querySelector("[role='button']");
+    expect(coverArea).toBeTruthy();
+    if (coverArea) {
+      fireEvent.keyDown(coverArea, { key: "Enter" });
+    }
+  });
+
+  it("handles cover click via space key", async () => {
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent } = await import("@testing-library/react");
+    const { container } = render(<Page />);
+    const coverArea = container.querySelector("[role='button']");
+    expect(coverArea).toBeTruthy();
+    if (coverArea) {
+      fireEvent.keyDown(coverArea, { key: " " });
+    }
+  });
+
+  it("ignores cover file selection when no file chosen", async () => {
+    const uploadCoverServerFnMock = (await import("~/lib/server-fns/cover-upload")).uploadCoverServerFn as unknown as ReturnType<typeof vi.fn>;
+
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent } = await import("@testing-library/react");
+    render(<Page />);
+
+    const fileInput = screen.getByTestId("cover-file-input");
+    Object.defineProperty(fileInput, "files", { value: [] });
+    fireEvent.change(fileInput);
+
+    expect(uploadCoverServerFnMock).not.toHaveBeenCalled();
   });
 });

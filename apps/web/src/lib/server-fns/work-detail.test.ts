@@ -36,6 +36,7 @@ describe("getWorkDetailServerFn", () => {
       where: { id: "work-1" },
       include: {
         series: true,
+        tags: { include: { tag: true } },
         editions: {
           include: {
             contributors: { include: { contributor: true } },

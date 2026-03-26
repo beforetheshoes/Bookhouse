@@ -220,6 +220,8 @@ model Work {
   collections CollectionItem[]
   progressPreferences WorkProgressPreference[]
 
+  tags WorkTag[]
+
   targetMatchSuggestions    MatchSuggestion[] @relation("TargetWork")
   suggestedMatchSuggestions MatchSuggestion[] @relation("SuggestedWork")
 
@@ -430,4 +432,26 @@ model ImportJob {
 model AppSetting {
   key   String @id
   value String
+}
+
+model Tag {
+  id            String    @id @default(cuid())
+  name          String    @unique
+  nameCanonical String    @unique
+  createdAt     DateTime  @default(now())
+
+  works WorkTag[]
+
+  @@index([nameCanonical])
+}
+
+model WorkTag {
+  id     String @id @default(cuid())
+  workId String
+  tagId  String
+
+  work Work @relation(fields: [workId], references: [id], onDelete: Cascade)
+  tag  Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([workId, tagId])
 }

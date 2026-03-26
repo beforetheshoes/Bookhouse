@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { BookOpen, ChevronRight, Trash2 } from "lucide-react";
+import { BookOpen, ChevronRight, ImagePlus, Loader2, Trash2 } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -29,6 +29,8 @@ import { getReadingProgressServerFn } from "~/lib/server-fns/reading-progress";
 import { deleteWorkServerFn, deleteEditionServerFn } from "~/lib/server-fns/deletion";
 import { EditableField } from "~/components/editable-field";
 import { updateWorkServerFn, updateEditionServerFn, updateWorkAuthorsServerFn } from "~/lib/server-fns/editing";
+import { updateWorkTagsServerFn } from "~/lib/server-fns/tags";
+import { uploadCoverServerFn } from "~/lib/server-fns/cover-upload";
 
 export const Route = createFileRoute("/_authenticated/library/$workId")({
   loader: async ({ params }) => {
@@ -87,6 +89,8 @@ function WorkDetailPage() {
   const [deletingWork, setDeletingWork] = useState(false);
   const [deleteEditionOpen, setDeleteEditionOpen] = useState<string | null>(null);
   const [deletingEdition, setDeletingEdition] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
+  const coverInputRef = useRef<HTMLInputElement>(null);
   const showPlaceholder = !work.coverPath || imgFailed;
   const authors = getAuthors(work);
 
@@ -123,6 +127,25 @@ function WorkDetailPage() {
     }
   }
 
+  async function handleCoverUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingCover(true);
+    try {
+      const buffer = await file.arrayBuffer();
+      const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+      await uploadCoverServerFn({ data: { workId: work.id, imageBase64: base64 } });
+      toast.success("Cover updated");
+      setImgFailed(false);
+      void router.invalidate();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to upload cover");
+    } finally {
+      setUploadingCover(false);
+      e.target.value = "";
+    }
+  }
+
   return (
     <div className="space-y-6">
       <nav className="flex items-center gap-1 text-sm text-muted-foreground">
@@ -135,7 +158,13 @@ function WorkDetailPage() {
 
       <div className="flex gap-8">
         <div className="w-48 shrink-0">
-          <div className="aspect-[2/3] overflow-hidden rounded-lg bg-muted">
+          <div
+            className="group relative aspect-[2/3] cursor-pointer overflow-hidden rounded-lg bg-muted"
+            onClick={() => { coverInputRef.current?.click(); }}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === "Enter") coverInputRef.current?.click(); }}
+          >
             {showPlaceholder ? (
               <div data-testid="cover-placeholder" className="flex size-full items-center justify-center text-muted-foreground">
                 <BookOpen className="size-12" />
@@ -148,7 +177,22 @@ function WorkDetailPage() {
                 className="size-full object-cover"
               />
             )}
+            <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+              {uploadingCover ? (
+                <Loader2 className="size-8 animate-spin text-white" />
+              ) : (
+                <ImagePlus className="size-8 text-white" />
+              )}
+            </div>
           </div>
+          <input
+            ref={coverInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            data-testid="cover-file-input"
+            onChange={(e) => { void handleCoverUpload(e); }}
+          />
         </div>
 
         <div className="flex-1 space-y-4">
@@ -212,6 +256,18 @@ function WorkDetailPage() {
           {work.editions[0] && (
             <EditableMetadataGrid edition={work.editions[0]} router={router} />
           )}
+
+          <MetadataItem label="Tags">
+            <EditableField
+              value={work.tags.map((wt) => wt.tag.name).join(", ")}
+              onSave={async (val) => {
+                const tagList = val.split(",").map((t) => t.trim()).filter((t) => t.length > 0);
+                await updateWorkTagsServerFn({ data: { workId: work.id, tags: tagList } });
+                void router.invalidate();
+              }}
+              placeholder="No tags"
+            />
+          </MetadataItem>
         </div>
       </div>
 
