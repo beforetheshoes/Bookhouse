@@ -291,4 +291,18 @@ describe("CoverSearchDialog", () => {
 
     await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
   });
+
+  it("closes dialog when Cancel button is clicked", async () => {
+    searchEnrichmentMock.mockResolvedValue(searchResults);
+    const onOpenChange = vi.fn();
+    const user = userEvent.setup();
+
+    render(<CoverSearchDialog {...baseProps} onOpenChange={onOpenChange} />);
+
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
 });
