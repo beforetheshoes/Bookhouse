@@ -7,6 +7,7 @@ export type EnrichmentProvider = "openlibrary" | "googlebooks" | "hardcover";
 
 export interface EnrichmentWorkData {
   title: string;
+  authors: string[];
   description: string | null;
   subjects: string[];
   coverUrl: string | null;
@@ -49,6 +50,7 @@ function normalizeOL(search: OLSearchResult, work: OLWork | null, edition: OLEdi
     externalId: search.olid,
     work: {
       title: search.title,
+      authors: search.authors,
       description: work?.description ?? null,
       subjects: work?.subjects ?? [],
       coverUrl: coverId !== null ? `https://covers.openlibrary.org/b/id/${String(coverId)}-L.jpg` : null,
@@ -70,6 +72,7 @@ function normalizeGB(vol: GBVolume): SourceResult {
     externalId: vol.googleBooksId,
     work: {
       title: vol.title,
+      authors: vol.authors,
       description: vol.description,
       subjects: vol.categories,
       coverUrl: vol.thumbnailUrl,
@@ -91,6 +94,7 @@ function normalizeHC(book: HCBook): SourceResult {
     externalId: book.hardcoverId,
     work: {
       title: book.title,
+      authors: book.authors,
       description: book.description,
       subjects: book.categories,
       coverUrl: book.imageUrl,

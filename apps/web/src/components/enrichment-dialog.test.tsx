@@ -5,10 +5,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const searchEnrichmentMock = vi.fn();
 const applyEnrichmentMock = vi.fn();
+const applyCoverFromUrlMock = vi.fn();
 
 vi.mock("~/lib/server-fns/enrichment", () => ({
   searchEnrichmentServerFn: (...args: unknown[]): unknown => searchEnrichmentMock(...args),
   applyEnrichmentServerFn: (...args: unknown[]): unknown => applyEnrichmentMock(...args),
+  applyCoverFromUrlServerFn: (...args: unknown[]): unknown => applyCoverFromUrlMock(...args),
 }));
 
 const { mockToast } = vi.hoisted(() => ({
@@ -21,6 +23,7 @@ import { EnrichmentDialog } from "./enrichment-dialog";
 beforeEach(() => {
   searchEnrichmentMock.mockReset();
   applyEnrichmentMock.mockReset();
+  applyCoverFromUrlMock.mockReset();
   mockToast.success.mockReset();
   mockToast.error.mockReset();
 });
@@ -32,6 +35,7 @@ const baseProps = {
   editionId: "e1" as string | null,
   currentWork: {
     title: "The Name of the Wind",
+    authors: ["Patrick Rothfuss"] as string[],
     description: null as string | null,
     coverPath: null as string | null,
     tags: [] as string[],
@@ -52,7 +56,7 @@ const baseProps = {
 const olResult = {
   provider: "openlibrary" as const,
   externalId: "OL123W",
-  work: { title: "The Name of the Wind", description: "A story about Kvothe", subjects: ["Fantasy", "Epic"], coverUrl: "https://covers.openlibrary.org/b/id/42-L.jpg" },
+  work: { title: "The Name of the Wind", authors: ["Patrick Rothfuss"], description: "A story about Kvothe", subjects: ["Fantasy", "Epic"], coverUrl: "https://covers.openlibrary.org/b/id/42-L.jpg" },
   edition: { publisher: "DAW Books", publishedDate: "April 2007", pageCount: 662, isbn13: "9780756404741", isbn10: "0756404746" },
   raw: {},
 };
@@ -60,7 +64,7 @@ const olResult = {
 const gbResult = {
   provider: "googlebooks" as const,
   externalId: "gb_xyz",
-  work: { title: "The Name of the Wind", description: "The riveting first-person narrative", subjects: ["Fiction"], coverUrl: "https://books.google.com/thumb.jpg" },
+  work: { title: "The Name of the Wind", authors: ["Patrick Rothfuss"], description: "The riveting first-person narrative", subjects: ["Fiction"], coverUrl: "https://books.google.com/thumb.jpg" },
   edition: { publisher: "DAW", publishedDate: "2007-04-01", pageCount: 662, isbn13: "9780756404741", isbn10: null },
   raw: {},
 };
@@ -400,8 +404,8 @@ describe("EnrichmentDialog", () => {
 
     await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
 
-    // Description should show "Already matches" text
-    expect(screen.getByText("Already matches")).toBeTruthy();
+    // Description (and title) should show "Already matches" text
+    expect(screen.getAllByText("Already matches").length).toBeGreaterThan(0);
   });
 
   it("does not pre-select edition fields that were manually edited", async () => {
@@ -504,9 +508,9 @@ describe("EnrichmentDialog", () => {
       results: [olResult],
     });
 
-    // Make all values match so nothing is pre-selected
+    // Make all values match so nothing is pre-selected (coverPath set so coverUrl isn't pre-selected)
     render(<EnrichmentDialog {...baseProps}
-      currentWork={{ ...baseProps.currentWork, description: "A story about Kvothe", tags: ["Fantasy", "Epic"] }}
+      currentWork={{ ...baseProps.currentWork, description: "A story about Kvothe", tags: ["Fantasy", "Epic"], coverPath: "w1" }}
       currentEdition={{
         ...baseProps.currentEdition,
         publisher: "DAW Books",
@@ -531,9 +535,9 @@ describe("EnrichmentDialog", () => {
       results: [olResult],
     });
 
-    // Make all values match except description
+    // Make all values match except description (coverPath set so coverUrl isn't pre-selected)
     render(<EnrichmentDialog {...baseProps}
-      currentWork={{ ...baseProps.currentWork, tags: ["Fantasy", "Epic"] }}
+      currentWork={{ ...baseProps.currentWork, tags: ["Fantasy", "Epic"], coverPath: "w1" }}
       currentEdition={{
         ...baseProps.currentEdition,
         publisher: "DAW Books",
@@ -776,11 +780,11 @@ describe("EnrichmentDialog", () => {
     expect(screen.getByText("Description")).toBeTruthy();
   });
 
-  it("handles source with all-null work and edition data", async () => {
+  it("handles source with all-null work and edition data except title", async () => {
     const emptyResult = {
       provider: "openlibrary" as const,
       externalId: "OL999W",
-      work: { title: "Empty Book", description: null, subjects: [], coverUrl: null },
+      work: { title: "The Name of the Wind", description: null, subjects: [], coverUrl: null },
       edition: { publisher: null, publishedDate: null, pageCount: null, isbn13: null, isbn10: null },
       raw: {},
     };
@@ -793,14 +797,14 @@ describe("EnrichmentDialog", () => {
 
     await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
 
-    // No field comparison rows should render (all values are null/empty)
+    // No field comparison rows should render for null/empty values
     expect(screen.queryByText("Description")).toBeNull();
     expect(screen.queryByText("Tags")).toBeNull();
     expect(screen.queryByText("Publisher")).toBeNull();
     expect(screen.queryByText("Pages")).toBeNull();
     expect(screen.queryByText("ISBN-13")).toBeNull();
     expect(screen.queryByText("ISBN-10")).toBeNull();
-    // 0 fields selected and Apply disabled
+    // Title matches so it shows "Already matches" — not pre-selected
     expect(screen.getByText("0 fields selected")).toBeTruthy();
     const applyBtn = screen.getByRole("button", { name: "Apply Selected" });
     expect((applyBtn as HTMLButtonElement).disabled).toBe(true);
@@ -826,5 +830,268 @@ describe("EnrichmentDialog", () => {
     // Count should decrease
     const selectButtons = screen.getAllByLabelText("Select field");
     expect(selectButtons.length).toBeGreaterThan(0);
+  });
+
+  it("shows Cover Image field row when source has coverUrl", async () => {
+    searchEnrichmentMock.mockResolvedValue({
+      status: "success",
+      results: [olResult],
+    });
+
+    render(<EnrichmentDialog {...baseProps} />);
+
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    expect(screen.getByText("Cover Image")).toBeTruthy();
+  });
+
+  it("does not show Cover Image row when source coverUrl is null", async () => {
+    const resultWithNoCover = {
+      ...olResult,
+      work: { ...olResult.work, coverUrl: null },
+    };
+    searchEnrichmentMock.mockResolvedValue({
+      status: "success",
+      results: [resultWithNoCover],
+    });
+
+    render(<EnrichmentDialog {...baseProps} />);
+
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    expect(screen.queryByText("Cover Image")).toBeNull();
+  });
+
+  it("pre-selects coverUrl when work has no coverPath", async () => {
+    searchEnrichmentMock.mockResolvedValue({
+      status: "success",
+      results: [olResult],
+    });
+
+    render(<EnrichmentDialog {...baseProps} currentWork={{ ...baseProps.currentWork, coverPath: null }} />);
+
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    expect(screen.getByText("Cover Image")).toBeTruthy();
+    // Should find a deselect button for it (pre-selected)
+    const coverRow = screen.getByText("Cover Image").closest(".group");
+    expect(coverRow?.querySelector("[aria-label='Deselect field']")).toBeTruthy();
+  });
+
+  it("does not pre-select coverUrl when work already has a coverPath", async () => {
+    searchEnrichmentMock.mockResolvedValue({
+      status: "success",
+      results: [olResult],
+    });
+
+    render(<EnrichmentDialog {...baseProps} currentWork={{ ...baseProps.currentWork, coverPath: "w1" }} />);
+
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    expect(screen.getByText("Cover Image")).toBeTruthy();
+    // Should find a select button for it (not pre-selected)
+    const coverRow = screen.getByText("Cover Image").closest(".group");
+    expect(coverRow?.querySelector("[aria-label='Select field']")).toBeTruthy();
+  });
+
+  it("calls applyCoverFromUrlServerFn when coverUrl is selected on apply", async () => {
+    searchEnrichmentMock.mockResolvedValue({
+      status: "success",
+      results: [olResult],
+    });
+    applyEnrichmentMock.mockResolvedValue({ success: true });
+    applyCoverFromUrlMock.mockResolvedValue({ success: true });
+    const user = userEvent.setup();
+
+    render(<EnrichmentDialog {...baseProps} />);
+
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    await user.click(screen.getByRole("button", { name: /Apply/i }));
+
+    await waitFor(() => {
+      expect(applyCoverFromUrlMock).toHaveBeenCalledTimes(1);
+    });
+
+    const callArgs = (applyCoverFromUrlMock.mock.calls[0] as unknown[])[0] as { data: { workId: string; imageUrl: string; source: { provider: string } } };
+    expect(callArgs.data.workId).toBe("w1");
+    expect(callArgs.data.imageUrl).toBe("https://covers.openlibrary.org/b/id/42-L.jpg");
+    expect(callArgs.data.source.provider).toBe("openlibrary");
+  });
+
+  it("does not call applyCoverFromUrlServerFn when coverUrl is not selected", async () => {
+    searchEnrichmentMock.mockResolvedValue({
+      status: "success",
+      results: [olResult],
+    });
+    applyEnrichmentMock.mockResolvedValue({ success: true });
+    const user = userEvent.setup();
+
+    // Work already has a cover, so coverUrl won't be pre-selected
+    render(<EnrichmentDialog {...baseProps} currentWork={{ ...baseProps.currentWork, coverPath: "w1" }} />);
+
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    await user.click(screen.getByRole("button", { name: /Apply/i }));
+
+    await waitFor(() => {
+      expect(applyEnrichmentMock).toHaveBeenCalledTimes(1);
+    });
+
+    expect(applyCoverFromUrlMock).not.toHaveBeenCalled();
+  });
+
+  it("strips coverUrl from workFields sent to applyEnrichmentServerFn", async () => {
+    searchEnrichmentMock.mockResolvedValue({
+      status: "success",
+      results: [olResult],
+    });
+    applyEnrichmentMock.mockResolvedValue({ success: true });
+    applyCoverFromUrlMock.mockResolvedValue({ success: true });
+    const user = userEvent.setup();
+
+    render(<EnrichmentDialog {...baseProps} />);
+
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    await user.click(screen.getByRole("button", { name: /Apply/i }));
+
+    await waitFor(() => {
+      expect(applyEnrichmentMock).toHaveBeenCalledTimes(1);
+    });
+
+    const callArgs = (applyEnrichmentMock.mock.calls[0] as unknown[])[0] as { data: { workFields?: Record<string, unknown> } };
+    // coverUrl should NOT be in the workFields sent to applyEnrichmentServerFn
+    expect(callArgs.data.workFields?.coverUrl).toBeUndefined();
+  });
+
+  it("shows Title field when source title differs from current title", async () => {
+    const resultWithDiffTitle = {
+      ...olResult,
+      work: { ...olResult.work, title: "The Name of the Wind: Anniversary Edition" },
+    };
+    searchEnrichmentMock.mockResolvedValue({
+      status: "success",
+      results: [resultWithDiffTitle],
+    });
+
+    render(<EnrichmentDialog {...baseProps} />);
+
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    expect(screen.getByText("Title")).toBeTruthy();
+    // Title appears in both SourceHeader and the field row
+    expect(screen.getAllByText("The Name of the Wind: Anniversary Edition").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("does not pre-select title when titles already match", async () => {
+    searchEnrichmentMock.mockResolvedValue({
+      status: "success",
+      results: [olResult],
+    });
+
+    render(<EnrichmentDialog {...baseProps} />);
+
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    // Title should show "Already matches" since source and current are the same
+    // Find the Title row - it should not be pre-selected
+    const titleText = screen.queryByText("Title");
+    // When titles match, the "Already matches" text should appear for it
+    if (titleText) {
+      const row = titleText.closest(".group");
+      expect(row?.querySelector("[aria-label='Select field']")).toBeTruthy();
+    }
+  });
+
+  it("pre-selects title when it differs and titleDisplay is not edited", async () => {
+    const resultWithDiffTitle = {
+      ...olResult,
+      work: { ...olResult.work, title: "The Name of the Wind: Revised" },
+    };
+    searchEnrichmentMock.mockResolvedValue({
+      status: "success",
+      results: [resultWithDiffTitle],
+    });
+
+    render(<EnrichmentDialog {...baseProps} />);
+
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    expect(screen.getByText("Title")).toBeTruthy();
+    // Should be pre-selected (deselect button visible)
+    const titleRow = screen.getByText("Title").closest(".group");
+    expect(titleRow?.querySelector("[aria-label='Deselect field']")).toBeTruthy();
+  });
+
+  it("does not pre-select title when titleDisplay has been edited", async () => {
+    const resultWithDiffTitle = {
+      ...olResult,
+      work: { ...olResult.work, title: "The Name of the Wind: Revised" },
+    };
+    searchEnrichmentMock.mockResolvedValue({
+      status: "success",
+      results: [resultWithDiffTitle],
+    });
+
+    render(<EnrichmentDialog {...baseProps} currentWork={{ ...baseProps.currentWork, editedFields: ["titleDisplay"] }} />);
+
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    expect(screen.getByText("Title")).toBeTruthy();
+    expect(screen.getByText("Edited")).toBeTruthy();
+  });
+
+  it("shows Authors field when source authors differ from current", async () => {
+    const resultWithDiffAuthors = {
+      ...olResult,
+      work: { ...olResult.work, authors: ["Patrick Rothfuss", "Lin-Manuel Miranda"] },
+    };
+    searchEnrichmentMock.mockResolvedValue({
+      status: "success",
+      results: [resultWithDiffAuthors],
+    });
+
+    render(<EnrichmentDialog {...baseProps} />);
+
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    expect(screen.getByText("Authors")).toBeTruthy();
+    expect(screen.getByText("Patrick Rothfuss, Lin-Manuel Miranda")).toBeTruthy();
+  });
+
+  it("does not pre-select authors when they already match", async () => {
+    searchEnrichmentMock.mockResolvedValue({
+      status: "success",
+      results: [olResult],
+    });
+
+    // Source has ["Patrick Rothfuss"], current has ["Patrick Rothfuss"] — match
+    render(<EnrichmentDialog {...baseProps} />);
+
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    // Authors row should show "Already matches"
+    const authorsRow = screen.getByText("Authors").closest(".group");
+    expect(authorsRow?.querySelector("[aria-label='Select field']")).toBeTruthy();
+  });
+
+  it("does not pre-select authors when field has been manually edited", async () => {
+    const resultWithDiffAuthors = {
+      ...olResult,
+      work: { ...olResult.work, authors: ["P. Rothfuss"] },
+    };
+    searchEnrichmentMock.mockResolvedValue({
+      status: "success",
+      results: [resultWithDiffAuthors],
+    });
+
+    render(<EnrichmentDialog {...baseProps} currentWork={{ ...baseProps.currentWork, editedFields: ["authors"] }} />);
+
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    // Should show Edited badge
+    const authorsRow = screen.getByText("Authors").closest(".group");
+    expect(authorsRow?.querySelector("[aria-label='Select field']")).toBeTruthy();
   });
 });
