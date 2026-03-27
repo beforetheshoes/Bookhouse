@@ -28,7 +28,8 @@ let mockLoaderData: {
   }[];
   totalCount: number;
   concurrencies: { full: number; onDemand: number; incremental: number };
-} = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 } };
+  integrations: Record<string, { configured: boolean; label: string }>;
+} = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } } };
 
 const getLibraryRootsServerFnMock = vi.fn();
 const scanLibraryRootServerFnMock = vi.fn();
@@ -60,6 +61,17 @@ vi.mock("~/lib/server-fns/app-settings", () => ({
   setScanConcurrencyServerFn: setScanConcurrencyServerFnMock,
 }));
 
+vi.mock("~/lib/server-fns/integrations", () => ({
+  getIntegrationStatusServerFn: vi.fn().mockResolvedValue({
+    openlibrary: { configured: true, label: "Open Library" },
+    googlebooks: { configured: false, label: "Google Books" },
+    hardcover: { configured: false, label: "Hardcover" },
+  }),
+  validateApiKeyServerFn: vi.fn().mockResolvedValue({ valid: true }),
+  setApiKeyServerFn: vi.fn().mockResolvedValue({ provider: "googlebooks" }),
+  removeApiKeyServerFn: vi.fn().mockResolvedValue({ provider: "googlebooks" }),
+}));
+
 vi.mock("~/lib/server-fns/import-jobs", () => ({
   getImportJobsServerFn: getImportJobsServerFnMock,
   stopAllJobsServerFn: stopAllJobsServerFnMock,
@@ -76,6 +88,21 @@ vi.mock("~/hooks/use-theme", () => ({
   useTheme: () => ({
     theme: mockTheme,
     setTheme: mockSetTheme,
+  }),
+}));
+
+const mockSetColorMode = vi.fn();
+const mockSetAccentColor = vi.fn();
+let mockColorMode = "book";
+let mockAccentColor: string | null = null;
+
+vi.mock("~/hooks/use-app-color", () => ({
+  useAppColor: () => ({
+    colorMode: mockColorMode,
+    setColorMode: mockSetColorMode,
+    accentColor: mockAccentColor,
+    setAccentColor: mockSetAccentColor,
+    setBookColors: vi.fn(),
   }),
 }));
 
@@ -171,8 +198,10 @@ const makeJob = (overrides: Partial<{
 describe("SettingsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 } };
+    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } } };
     mockTheme = "system";
+    mockColorMode = "book";
+    mockAccentColor = null;
   });
 
   it("renders 'Settings' heading", async () => {
@@ -478,6 +507,11 @@ describe("SettingsPage", () => {
       jobs: [],
       totalCount: 0,
       concurrencies: { full: 8, onDemand: 5, incremental: 3 },
+      integrations: {
+        openlibrary: { configured: true, label: "Open Library" },
+        googlebooks: { configured: false, label: "Google Books" },
+        hardcover: { configured: false, label: "Hardcover" },
+      },
     });
   });
 
@@ -731,8 +765,10 @@ describe("SettingsPage", () => {
 describe("AppearanceCard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 } };
+    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } } };
     mockTheme = "system";
+    mockColorMode = "book";
+    mockAccentColor = null;
   });
 
   it("renders the Theme card", async () => {
@@ -795,11 +831,131 @@ describe("AppearanceCard", () => {
   });
 });
 
+describe("ColorCard", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } } };
+    mockTheme = "system";
+    mockColorMode = "book";
+    mockAccentColor = null;
+  });
+
+  it("renders the Color card", async () => {
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+    expect(screen.getByText("Color")).toBeTruthy();
+  });
+
+  it("renders four color mode radio options", async () => {
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+    expect(screen.getByDisplayValue("off")).toBeTruthy();
+    expect(screen.getByDisplayValue("book")).toBeTruthy();
+    expect(screen.getByDisplayValue("page")).toBeTruthy();
+    expect(screen.getByDisplayValue("accent")).toBeTruthy();
+  });
+
+  it("book radio is checked when colorMode is book", async () => {
+    mockColorMode = "book";
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+    const bookRadio = screen.getByDisplayValue("book");
+    expect((bookRadio as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("calls setColorMode when clicking a different color mode", async () => {
+    mockColorMode = "book";
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+    fireEvent.click(screen.getByDisplayValue("off"));
+    expect(mockSetColorMode).toHaveBeenCalledWith("off");
+  });
+
+  it("shows hex input when colorMode is accent", async () => {
+    mockColorMode = "accent";
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+    expect(screen.getByPlaceholderText("#3366cc")).toBeTruthy();
+  });
+
+  it("does not show hex input when colorMode is not accent", async () => {
+    mockColorMode = "book";
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+    expect(screen.queryByPlaceholderText("#3366cc")).toBeNull();
+  });
+
+  it("calls setAccentColor on blur with valid hex", async () => {
+    mockColorMode = "accent";
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+    const input = screen.getByPlaceholderText("#3366cc");
+    fireEvent.change(input, { target: { value: "#ff0000" } });
+    fireEvent.blur(input);
+    expect(mockSetAccentColor).toHaveBeenCalledWith("#ff0000");
+  });
+
+  it("does not call setAccentColor on blur with invalid hex", async () => {
+    mockColorMode = "accent";
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+    const input = screen.getByPlaceholderText("#3366cc");
+    fireEvent.change(input, { target: { value: "not-a-hex" } });
+    fireEvent.blur(input);
+    expect(mockSetAccentColor).not.toHaveBeenCalled();
+  });
+
+  it("does not call setAccentColor for 3-char shorthand hex '#f00'", async () => {
+    mockColorMode = "accent";
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+    const input = screen.getByPlaceholderText("#3366cc");
+    fireEvent.change(input, { target: { value: "#f00" } });
+    fireEvent.blur(input);
+    // Regex requires exactly 6 hex digits, so 3-char shorthand is rejected
+    expect(mockSetAccentColor).not.toHaveBeenCalled();
+  });
+
+  it("calls setColorMode with 'book' when switching from accent to book", async () => {
+    mockColorMode = "accent";
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+    // Hex input visible in accent mode
+    expect(screen.getByPlaceholderText("#3366cc")).toBeTruthy();
+
+    // Click book radio
+    fireEvent.click(screen.getByDisplayValue("book"));
+    expect(mockSetColorMode).toHaveBeenCalledWith("book");
+  });
+
+  it("uses existing accentColor as initial hex input value", async () => {
+    mockColorMode = "accent";
+    mockAccentColor = "#aabbcc";
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+    const input = screen.getByPlaceholderText("#3366cc");
+    expect((input as HTMLInputElement).value).toBe("#aabbcc");
+  });
+});
+
 describe("JobsTab", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 } };
+    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } } };
     mockTheme = "system";
+    mockColorMode = "book";
+    mockAccentColor = null;
   });
 
   it("renders jobs description", async () => {
@@ -1023,5 +1179,255 @@ describe("JobsTab", () => {
     const createdBtn = screen.getByRole("button", { name: /created/i });
     fireEvent.click(createdBtn);
     expect(createdBtn).toBeTruthy();
+  });
+});
+
+describe("Integrations Tab", () => {
+  it("renders the Integrations tab trigger", async () => {
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    expect(screen.getByRole("tab", { name: "Integrations" })).toBeTruthy();
+  });
+
+  it("shows all three providers with correct status", async () => {
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    // Switch to integrations tab
+    fireEvent.click(screen.getByRole("tab", { name: "Integrations" }));
+
+    expect(screen.getByText("Open Library")).toBeTruthy();
+    expect(screen.getByText("Google Books")).toBeTruthy();
+    expect(screen.getByText("Hardcover")).toBeTruthy();
+  });
+
+  it("shows Connected badge for configured providers", async () => {
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Integrations" }));
+
+    expect(screen.getByText("Connected")).toBeTruthy();
+    expect(screen.getAllByText("Not configured")).toHaveLength(2);
+  });
+
+  it("shows no API key required for Open Library", async () => {
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Integrations" }));
+
+    expect(screen.getByText("No API key required. Always available.")).toBeTruthy();
+  });
+
+  it("shows API key input for unconfigured providers", async () => {
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Integrations" }));
+
+    // Google Books and Hardcover should show input fields
+    const inputs = screen.getAllByPlaceholderText("Enter API key");
+    expect(inputs).toHaveLength(2);
+  });
+
+  it("shows remove button for configured providers", async () => {
+    mockLoaderData = {
+      ...mockLoaderData,
+      integrations: {
+        openlibrary: { configured: true, label: "Open Library" },
+        googlebooks: { configured: true, label: "Google Books" },
+        hardcover: { configured: false, label: "Hardcover" },
+      },
+    };
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Integrations" }));
+
+    expect(screen.getByText("API key configured")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Remove" })).toBeTruthy();
+  });
+
+  it("validates and saves key, then shows saved state", async () => {
+    const { validateApiKeyServerFn, setApiKeyServerFn } = await import("~/lib/server-fns/integrations");
+    const validateMock = validateApiKeyServerFn as unknown as ReturnType<typeof vi.fn>;
+    const setApiKeyMock = setApiKeyServerFn as unknown as ReturnType<typeof vi.fn>;
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Integrations" }));
+
+    const inputs = screen.getAllByPlaceholderText("Enter API key");
+    fireEvent.change(inputs[0] as HTMLElement, { target: { value: "test-gb-key" } });
+
+    const saveButtons = screen.getAllByRole("button", { name: "Save Key" });
+    fireEvent.click(saveButtons[0] as HTMLElement);
+
+    await waitFor(() => {
+      expect(validateMock).toHaveBeenCalled();
+      expect(setApiKeyMock).toHaveBeenCalled();
+    });
+
+    // Button should show saved state
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "✓ Saved" })).toBeTruthy();
+    });
+  });
+
+  it("calls removeApiKeyServerFn when removing a key", async () => {
+    mockLoaderData = {
+      ...mockLoaderData,
+      integrations: {
+        openlibrary: { configured: true, label: "Open Library" },
+        googlebooks: { configured: true, label: "Google Books" },
+        hardcover: { configured: false, label: "Hardcover" },
+      },
+    };
+    const { removeApiKeyServerFn } = await import("~/lib/server-fns/integrations");
+    const removeApiKeyMock = removeApiKeyServerFn as unknown as ReturnType<typeof vi.fn>;
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Integrations" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+
+    await waitFor(() => {
+      expect(removeApiKeyMock).toHaveBeenCalled();
+    });
+  });
+
+  it("shows validation error when API key is invalid", async () => {
+    const { validateApiKeyServerFn, setApiKeyServerFn } = await import("~/lib/server-fns/integrations");
+    const validateMock = validateApiKeyServerFn as unknown as ReturnType<typeof vi.fn>;
+    const setApiKeyMock = setApiKeyServerFn as unknown as ReturnType<typeof vi.fn>;
+    validateMock.mockClear();
+    setApiKeyMock.mockClear();
+    validateMock.mockResolvedValueOnce({ valid: false, error: "Invalid API key" });
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Integrations" }));
+
+    const inputs = screen.getAllByPlaceholderText("Enter API key");
+    fireEvent.change(inputs[0] as HTMLElement, { target: { value: "bad-key" } });
+
+    const saveButtons = screen.getAllByRole("button", { name: "Save Key" });
+    fireEvent.click(saveButtons[0] as HTMLElement);
+
+    await waitFor(() => {
+      expect(screen.getByText("Invalid API key")).toBeTruthy();
+    });
+
+    // Should not have called setApiKeyServerFn
+    expect(setApiKeyMock).not.toHaveBeenCalled();
+  });
+
+  it("shows fallback error when validation returns no error message", async () => {
+    const { validateApiKeyServerFn } = await import("~/lib/server-fns/integrations");
+    const validateMock = validateApiKeyServerFn as unknown as ReturnType<typeof vi.fn>;
+    validateMock.mockClear();
+    validateMock.mockResolvedValueOnce({ valid: false });
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Integrations" }));
+
+    const inputs = screen.getAllByPlaceholderText("Enter API key");
+    fireEvent.change(inputs[0] as HTMLElement, { target: { value: "bad-key" } });
+
+    const saveButtons = screen.getAllByRole("button", { name: "Save Key" });
+    fireEvent.click(saveButtons[0] as HTMLElement);
+
+    await waitFor(() => {
+      expect(screen.getByText("API key validation failed")).toBeTruthy();
+    });
+  });
+
+  it("shows error when save fails after validation passes", async () => {
+    const { setApiKeyServerFn } = await import("~/lib/server-fns/integrations");
+    const setApiKeyMock = setApiKeyServerFn as unknown as ReturnType<typeof vi.fn>;
+    setApiKeyMock.mockRejectedValueOnce(new Error("Network error"));
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Integrations" }));
+
+    const inputs = screen.getAllByPlaceholderText("Enter API key");
+    fireEvent.change(inputs[0] as HTMLElement, { target: { value: "good-key" } });
+
+    const saveButtons = screen.getAllByRole("button", { name: "Save Key" });
+    fireEvent.click(saveButtons[0] as HTMLElement);
+
+    await waitFor(() => {
+      expect(screen.getByText("Failed to save: Network error")).toBeTruthy();
+    });
+  });
+
+  it("shows Unknown error when save throws non-Error", async () => {
+    const { setApiKeyServerFn } = await import("~/lib/server-fns/integrations");
+    const setApiKeyMock = setApiKeyServerFn as unknown as ReturnType<typeof vi.fn>;
+    setApiKeyMock.mockRejectedValueOnce("string error");
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Integrations" }));
+
+    const inputs = screen.getAllByPlaceholderText("Enter API key");
+    fireEvent.change(inputs[0] as HTMLElement, { target: { value: "some-key" } });
+
+    const saveButtons = screen.getAllByRole("button", { name: "Save Key" });
+    fireEvent.click(saveButtons[0] as HTMLElement);
+
+    await waitFor(() => {
+      expect(screen.getByText("Failed to save: Unknown error")).toBeTruthy();
+    });
+  });
+
+  it("shows error toast when removing API key fails", async () => {
+    mockToast.error.mockClear();
+    mockLoaderData = {
+      ...mockLoaderData,
+      integrations: {
+        openlibrary: { configured: true, label: "Open Library" },
+        googlebooks: { configured: true, label: "Google Books" },
+        hardcover: { configured: false, label: "Hardcover" },
+      },
+    };
+    const { removeApiKeyServerFn } = await import("~/lib/server-fns/integrations");
+    const removeApiKeyMock = removeApiKeyServerFn as unknown as ReturnType<typeof vi.fn>;
+    removeApiKeyMock.mockRejectedValueOnce(new Error("Network error"));
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Integrations" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+
+    await waitFor(() => {
+      expect(mockToast.error).toHaveBeenCalledWith("Failed to remove API key");
+    });
   });
 });

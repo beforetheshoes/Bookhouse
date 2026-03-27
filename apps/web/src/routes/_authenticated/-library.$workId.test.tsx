@@ -9,9 +9,11 @@ interface MockWork {
   titleDisplay: string;
   description: string | null;
   coverPath: string | null;
+  coverColors: string[] | null;
   seriesPosition: number | null;
   series: { id: string; name: string } | null;
   tags: { tag: { id: string; name: string } }[];
+  editedFields: string[];
   editions: {
     id: string;
     formatFamily: string;
@@ -21,6 +23,8 @@ interface MockWork {
     isbn10: string | null;
     asin: string | null;
     language: string | null;
+    pageCount: number | null;
+    editedFields: string[];
     contributors: { role: string; contributor: { id: string; nameDisplay: string } }[];
     editionFiles: {
       id: string;
@@ -49,9 +53,11 @@ let mockLoaderData: { work: MockWork; progress: MockProgress[]; trackingMode: st
     titleDisplay: "The Name of the Wind",
     description: "A story about Kvothe.",
     coverPath: "/covers/work-1",
+    coverColors: null,
     seriesPosition: 1,
     series: { id: "series-1", name: "The Kingkiller Chronicle" },
     tags: [],
+    editedFields: [],
     editions: [
       {
         id: "edition-1",
@@ -62,6 +68,8 @@ let mockLoaderData: { work: MockWork; progress: MockProgress[]; trackingMode: st
         isbn10: null,
         asin: "B003HV0TN2",
         language: "en",
+        pageCount: null,
+        editedFields: [],
         contributors: [
           { role: "AUTHOR", contributor: { id: "contrib-1", nameDisplay: "Patrick Rothfuss" } },
         ],
@@ -105,6 +113,17 @@ vi.mock("@tanstack/react-router", async () => {
 
 const mockToast = { success: vi.fn(), error: vi.fn() };
 vi.mock("sonner", () => ({ toast: mockToast }));
+
+const mockSetBookColors = vi.fn();
+vi.mock("~/hooks/use-app-color", () => ({
+  useAppColor: () => ({
+    colorMode: "book" as const,
+    setColorMode: vi.fn(),
+    accentColor: null,
+    setAccentColor: vi.fn(),
+    setBookColors: mockSetBookColors,
+  }),
+}));
 
 const getWorkDetailServerFnMock = vi.fn();
 vi.mock("~/lib/server-fns/work-detail", () => ({
@@ -166,15 +185,54 @@ vi.mock("~/lib/server-fns/tags", () => ({
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
 
-import { updateWorkServerFn, updateEditionServerFn, updateWorkAuthorsServerFn } from "~/lib/server-fns/editing";
+import { updateWorkServerFn, updateWorkAuthorsServerFn } from "~/lib/server-fns/editing";
 
 const updateWorkServerFnMock = updateWorkServerFn as unknown as ReturnType<typeof vi.fn>;
-const updateEditionServerFnMock = updateEditionServerFn as unknown as ReturnType<typeof vi.fn>;
 const updateWorkAuthorsServerFnMock = updateWorkAuthorsServerFn as unknown as ReturnType<typeof vi.fn>;
 
-vi.mock("~/components/enrichment-review", () => ({
-  EnrichmentReview: ({ workId, currentDescription }: { workId: string; currentDescription: string | null }) => (
-    <div data-testid="enrichment-review" data-work-id={workId} data-description={currentDescription ?? ""} />
+let capturedEnrichmentProps: { onOpenChange?: (open: boolean) => void; onApplied?: () => void } = {};
+
+vi.mock("~/components/enrichment-dialog", () => ({
+  EnrichmentDialog: ({ workId, currentWork, onOpenChange, onApplied }: { workId: string; currentWork: { description: string | null }; onOpenChange: (open: boolean) => void; onApplied: () => void }) => {
+    capturedEnrichmentProps = { onOpenChange, onApplied };
+    return <div data-testid="enrichment-dialog" data-work-id={workId} data-description={currentWork.description ?? ""} />;
+  },
+}));
+
+let capturedTabsOnValueChange: ((v: string) => void) | null = null;
+
+vi.mock("~/components/ui/tabs", () => ({
+  Tabs: ({ children, value, onValueChange }: { children: React.ReactNode; value: string; onValueChange: (v: string) => void }) => {
+    capturedTabsOnValueChange = onValueChange;
+    return <div data-testid="tabs" data-value={value} data-on-value-change={typeof onValueChange}>{children}</div>;
+  },
+  TabsList: ({ children }: { children: React.ReactNode }) => <div data-testid="tabs-list">{children}</div>,
+  TabsTrigger: ({ children, value }: { children: React.ReactNode; value: string }) => (
+    <button data-testid={`tab-trigger-${value}`}>{children}</button>
+  ),
+  TabsContent: ({ children, value }: { children: React.ReactNode; value: string }) => (
+    <div data-testid={`tab-content-${value}`}>{children}</div>
+  ),
+}));
+
+let capturedEditionFieldSavedCallbacks: Record<string, () => void> = {};
+
+vi.mock("~/components/edition-tab-panel", () => ({
+  EditionTabPanel: ({ edition, onDeleteEdition, onEditionFieldSaved }: { edition: { id: string; formatFamily: string }; onDeleteEdition: () => void; onEditionFieldSaved: () => void }) => {
+    capturedEditionFieldSavedCallbacks[edition.id] = onEditionFieldSaved;
+    return (
+      <div data-testid={`edition-panel-${edition.id}`} data-format={edition.formatFamily}>
+        <button data-testid={`delete-edition-${edition.id}`} onClick={onDeleteEdition}>
+          Delete Edition
+        </button>
+      </div>
+    );
+  },
+}));
+
+vi.mock("~/components/metadata-item", () => ({
+  MetadataItem: ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div data-testid={`metadata-${label}`}><span>{label}</span>{children}</div>
   ),
 }));
 
@@ -187,9 +245,11 @@ describe("WorkDetailPage", () => {
         titleDisplay: "The Name of the Wind",
         description: "A story about Kvothe.",
         coverPath: "/covers/work-1",
+        coverColors: null,
         seriesPosition: 1,
         series: { id: "series-1", name: "The Kingkiller Chronicle" },
         tags: [],
+        editedFields: [],
         editions: [
           {
             id: "edition-1",
@@ -200,6 +260,8 @@ describe("WorkDetailPage", () => {
             isbn10: null,
             asin: "B003HV0TN2",
             language: "en",
+            pageCount: null,
+            editedFields: [],
             contributors: [
               { role: "AUTHOR", contributor: { id: "contrib-1", nameDisplay: "Patrick Rothfuss" } },
             ],
@@ -224,6 +286,9 @@ describe("WorkDetailPage", () => {
     };
     capturedDialogProps.length = 0;
     forceRenderClosed = false;
+    capturedEnrichmentProps = {};
+    capturedTabsOnValueChange = null;
+    capturedEditionFieldSavedCallbacks = {};
     vi.clearAllMocks();
   });
 
@@ -335,83 +400,20 @@ describe("WorkDetailPage", () => {
     expect(screen.queryByText(/Kingkiller/)).toBeNull();
   });
 
-  it("renders metadata fields", async () => {
+  it("renders edition tab panel for each edition", async () => {
     const { Route } = await import("./library.$workId");
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
-    expect(screen.getAllByText("DAW Books").length).toBeGreaterThan(0);
-    expect(screen.getByText("9780756404079")).toBeTruthy();
-    expect(screen.getByText("B003HV0TN2")).toBeTruthy();
-    expect(screen.getByText("en")).toBeTruthy();
+    expect(screen.getByTestId("edition-panel-edition-1")).toBeTruthy();
   });
 
-  it("renders edition with format badge", async () => {
+  it("renders edition tab trigger with format family", async () => {
     const { Route } = await import("./library.$workId");
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
     expect(screen.getByText("EBOOK")).toBeTruthy();
   });
 
-  it("renders file information", async () => {
-    const { Route } = await import("./library.$workId");
-    const Page = Route.options.component as React.ComponentType;
-    render(<Page />);
-    expect(screen.getByText("the-name-of-the-wind.epub")).toBeTruthy();
-  });
-
-  it("formats file sizes in bytes and KB", async () => {
-    const edition = mockLoaderData.work.editions[0];
-    if (!edition) throw new Error("expected edition");
-    edition.editionFiles = [
-      {
-        id: "ef-small",
-        role: "PRIMARY",
-        fileAsset: {
-          id: "fa-small",
-          basename: "small.epub",
-          sizeBytes: 512n,
-          mediaKind: "EPUB",
-          availabilityStatus: "PRESENT",
-        },
-      },
-      {
-        id: "ef-medium",
-        role: "SUPPLEMENT",
-        fileAsset: {
-          id: "fa-medium",
-          basename: "medium.epub",
-          sizeBytes: 51200n,
-          mediaKind: "EPUB",
-          availabilityStatus: "PRESENT",
-        },
-      },
-    ];
-    const { Route } = await import("./library.$workId");
-    const Page = Route.options.component as React.ComponentType;
-    render(<Page />);
-    expect(screen.getByText("512 B")).toBeTruthy();
-    expect(screen.getByText("50.0 KB")).toBeTruthy();
-  });
-
-  it("shows dash when file size is null", async () => {
-    const ef = mockLoaderData.work.editions[0]?.editionFiles[0];
-    if (!ef) throw new Error("expected edition file");
-    ef.fileAsset.sizeBytes = null as unknown as bigint;
-    const { Route } = await import("./library.$workId");
-    const Page = Route.options.component as React.ComponentType;
-    render(<Page />);
-    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
-  });
-
-  it("renders destructive badge for missing file", async () => {
-    const ef = mockLoaderData.work.editions[0]?.editionFiles[0];
-    if (!ef) throw new Error("expected edition file");
-    ef.fileAsset.availabilityStatus = "MISSING";
-    const { Route } = await import("./library.$workId");
-    const Page = Route.options.component as React.ComponentType;
-    render(<Page />);
-    expect(screen.getByText("MISSING")).toBeTruthy();
-  });
 
   it("handles missing optional fields gracefully", async () => {
     mockLoaderData.work.description = null;
@@ -430,7 +432,7 @@ describe("WorkDetailPage", () => {
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("The Name of the Wind");
   });
 
-  it("renders multiple editions", async () => {
+  it("renders multiple editions as tabs", async () => {
     mockLoaderData.work.editions.push({
       id: "edition-2",
       formatFamily: "AUDIOBOOK",
@@ -440,6 +442,8 @@ describe("WorkDetailPage", () => {
       isbn10: null,
       asin: null,
       language: null,
+      pageCount: null,
+      editedFields: [],
       contributors: [
         { role: "NARRATOR", contributor: { id: "contrib-2", nameDisplay: "Nick Podehl" } },
       ],
@@ -448,10 +452,12 @@ describe("WorkDetailPage", () => {
     const { Route } = await import("./library.$workId");
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
-    // EBOOK appears in editions section and linked formats section
+    // Tab triggers for each edition format
     expect(screen.getAllByText("EBOOK").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("AUDIOBOOK").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("Nick Podehl")).toBeTruthy();
+    // Edition panels rendered via mocked EditionTabPanel
+    expect(screen.getByTestId("edition-panel-edition-1")).toBeTruthy();
+    expect(screen.getByTestId("edition-panel-edition-2")).toBeTruthy();
   });
 
   it("renders reading progress section heading", async () => {
@@ -528,6 +534,8 @@ describe("WorkDetailPage", () => {
       isbn10: null,
       asin: null,
       language: null,
+      pageCount: null,
+      editedFields: [],
       contributors: [],
       editionFiles: [],
     });
@@ -554,6 +562,8 @@ describe("WorkDetailPage", () => {
       isbn10: null,
       asin: null,
       language: null,
+      pageCount: null,
+      editedFields: [],
       contributors: [],
       editionFiles: [],
     });
@@ -571,13 +581,75 @@ describe("WorkDetailPage", () => {
     expect(screen.getByText("75%")).toBeTruthy();
   });
 
-  it("renders enrichment review component", async () => {
+  it("renders enrichment dialog component", async () => {
     const { Route } = await import("./library.$workId");
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
-    const review = screen.getByTestId("enrichment-review");
-    expect(review.getAttribute("data-work-id")).toBe("work-1");
-    expect(review.getAttribute("data-description")).toBe("A story about Kvothe.");
+    const dialog = screen.getByTestId("enrichment-dialog");
+    expect(dialog.getAttribute("data-work-id")).toBe("work-1");
+    expect(dialog.getAttribute("data-description")).toBe("A story about Kvothe.");
+  });
+
+  it("calls setBookColors with cover colors on mount", async () => {
+    (mockLoaderData.work as MockWork & { coverColors: string[] | null }).coverColors = ["#1a2b3c", "#4d5e6f", "#a0b1c2"];
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+
+    expect(mockSetBookColors).toHaveBeenCalledWith(["#1a2b3c", "#4d5e6f", "#a0b1c2"]);
+  });
+
+  it("calls setBookColors with null when no cover colors", async () => {
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+
+    expect(mockSetBookColors).toHaveBeenCalledWith(null);
+  });
+
+  it("renders enrich button", async () => {
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    expect(screen.getByRole("button", { name: /Enrich/ })).toBeTruthy();
+  });
+
+  it("opens enrichment dialog when Enrich button is clicked", async () => {
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent } = await import("@testing-library/react");
+    render(<Page />);
+
+    const enrichBtn = screen.getByRole("button", { name: /Enrich/ });
+    fireEvent.click(enrichBtn);
+
+    // The enrichment dialog mock should have received onOpenChange
+    expect(capturedEnrichmentProps.onOpenChange).toBeDefined();
+  });
+
+  it("calls router.invalidate when enrichment onApplied is called", async () => {
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    const { act } = await import("@testing-library/react");
+    render(<Page />);
+
+    expect(capturedEnrichmentProps.onApplied).toBeDefined();
+    act(() => { capturedEnrichmentProps.onApplied?.(); });
+
+    expect(mockInvalidate).toHaveBeenCalled();
+  });
+
+  it("passes null editionId and currentEdition when no editions exist", async () => {
+    mockLoaderData.work.editions = [];
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+
+    // The enrichment dialog should still render
+    const dialog = screen.getByTestId("enrichment-dialog");
+    expect(dialog).toBeTruthy();
+    // No edition tab panels should render
+    expect(screen.queryByTestId("edition-panel-edition-1")).toBeNull();
   });
 
   it("renders pending skeleton component", async () => {
@@ -585,35 +657,6 @@ describe("WorkDetailPage", () => {
     const Skeleton = Route.options.pendingComponent as React.ComponentType;
     render(<Skeleton />);
     expect(screen.getByTestId("work-detail-skeleton")).toBeTruthy();
-  });
-
-  it("renders linked formats section when work has multiple format families", async () => {
-    mockLoaderData.work.editions.push({
-      id: "edition-2",
-      formatFamily: "AUDIOBOOK",
-      publisher: null,
-      publishedAt: null,
-      isbn13: null,
-      isbn10: null,
-      asin: null,
-      language: null,
-      contributors: [],
-      editionFiles: [],
-    });
-    const { Route } = await import("./library.$workId");
-    const Page = Route.options.component as React.ComponentType;
-    render(<Page />);
-    expect(screen.getByRole("heading", { level: 2, name: "Linked Formats" })).toBeTruthy();
-    // Both format badges rendered inside the linked formats section
-    const badges = screen.getAllByText(/EBOOK|AUDIOBOOK/);
-    expect(badges.length).toBeGreaterThanOrEqual(2);
-  });
-
-  it("does not render linked formats section when only one format family exists", async () => {
-    const { Route } = await import("./library.$workId");
-    const Page = Route.options.component as React.ComponentType;
-    render(<Page />);
-    expect(screen.queryByRole("heading", { level: 2, name: "Linked Formats" })).toBeNull();
   });
 
   it("renders delete work button", async () => {
@@ -695,7 +738,7 @@ describe("WorkDetailPage", () => {
     const { fireEvent } = await import("@testing-library/react");
     render(<Page />);
     fireEvent.click(screen.getByTestId("delete-edition-edition-1"));
-    expect(screen.getByText("Delete Edition")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Delete Edition" })).toBeTruthy();
   });
 
   it("calls deleteEditionServerFn and invalidates on confirm when work survives", async () => {
@@ -762,7 +805,7 @@ describe("WorkDetailPage", () => {
     const editionDeleteBtn = screen.getByTestId("delete-edition-edition-1");
     fireEvent.click(editionDeleteBtn);
 
-    expect(screen.getByText("Delete Edition")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Delete Edition" })).toBeTruthy();
     expect(screen.getByText(/Since it is the last edition, the work will also be removed/)).toBeTruthy();
   });
 
@@ -776,6 +819,8 @@ describe("WorkDetailPage", () => {
       isbn10: null,
       asin: null,
       language: null,
+      pageCount: null,
+      editedFields: [],
       contributors: [],
       editionFiles: [],
     });
@@ -788,7 +833,7 @@ describe("WorkDetailPage", () => {
     const editionDeleteBtn = screen.getByTestId("delete-edition-edition-1");
     fireEvent.click(editionDeleteBtn);
 
-    expect(screen.getByText("Delete Edition")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Delete Edition" })).toBeTruthy();
     expect(screen.queryByText(/Since it is the last edition/)).toBeNull();
   });
 
@@ -801,7 +846,7 @@ describe("WorkDetailPage", () => {
     // Open delete edition dialog
     const editionDeleteBtn = screen.getByTestId("delete-edition-edition-1");
     fireEvent.click(editionDeleteBtn);
-    expect(screen.getByText("Delete Edition")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Delete Edition" })).toBeTruthy();
 
     // Click Cancel
     fireEvent.click(screen.getByText("Cancel"));
@@ -816,7 +861,7 @@ describe("WorkDetailPage", () => {
     // Open delete edition dialog
     const editionDeleteBtn = screen.getByTestId("delete-edition-edition-1");
     fireEvent.click(editionDeleteBtn);
-    expect(screen.getByText("Delete Edition")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Delete Edition" })).toBeTruthy();
 
     const editionDialogProps = capturedDialogProps[capturedDialogProps.length - 1];
     if (!editionDialogProps?.onOpenChange) throw new Error("expected onOpenChange");
@@ -852,7 +897,7 @@ describe("WorkDetailPage", () => {
     // Open delete edition dialog
     const editionDeleteBtn = screen.getByTestId("delete-edition-edition-1");
     fireEvent.click(editionDeleteBtn);
-    expect(screen.getByText("Delete Edition")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Delete Edition" })).toBeTruthy();
 
     // Find the edition dialog's onOpenChange (it's the last captured one after opening)
     const editionDialogProps = capturedDialogProps[capturedDialogProps.length - 1];
@@ -863,7 +908,7 @@ describe("WorkDetailPage", () => {
     act(() => { onOpenChange(true); });
 
     // Dialog should still be open
-    expect(screen.getByText("Delete Edition")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Delete Edition" })).toBeTruthy();
   });
 
   it("exercises edition dialog onOpenChange with true (no-op branch)", async () => {
@@ -883,7 +928,7 @@ describe("WorkDetailPage", () => {
     // Call with true (exercises if (!open) false branch on line 283)
     act(() => { editionOnOpenChange(true); });
 
-    expect(screen.getByText("Delete Edition")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Delete Edition" })).toBeTruthy();
   });
 
   it("exercises edition delete confirm with null deleteEditionOpen (guard branch)", async () => {
@@ -955,21 +1000,6 @@ describe("WorkDetailPage", () => {
     });
   });
 
-  it("calls updateEditionServerFn when clicking edition metadata field", async () => {
-    updateEditionServerFnMock.mockResolvedValue({ success: true });
-    const { Route } = await import("./library.$workId");
-    const Page = Route.options.component as React.ComponentType;
-    const { fireEvent, waitFor } = await import("@testing-library/react");
-    render(<Page />);
-
-    // Click the language editable field
-    const langField = screen.getByText("en");
-    fireEvent.click(langField);
-
-    await waitFor(() => {
-      expect(updateEditionServerFnMock).toHaveBeenCalled();
-    });
-  });
 
   it("handles null description field via editable field", async () => {
     mockLoaderData.work.description = null;
@@ -991,7 +1021,6 @@ describe("WorkDetailPage", () => {
 
   it("exercises all editable field onSave callbacks", async () => {
     updateWorkServerFnMock.mockResolvedValue({ success: true });
-    updateEditionServerFnMock.mockResolvedValue({ success: true });
     updateWorkAuthorsServerFnMock.mockResolvedValue({ success: true });
     const { Route } = await import("./library.$workId");
     const Page = Route.options.component as React.ComponentType;
@@ -1005,9 +1034,8 @@ describe("WorkDetailPage", () => {
     }
 
     await waitFor(() => {
-      // Work fields: title, authors, description = 3 save calls
-      // Edition fields: language, publisher, published, isbn13, isbn10, asin = 6 save calls
-      expect(updateWorkServerFnMock.mock.calls.length + updateEditionServerFnMock.mock.calls.length + updateWorkAuthorsServerFnMock.mock.calls.length).toBeGreaterThan(5);
+      // Work fields: title, authors, description, tags = 4 editable fields
+      expect(updateWorkServerFnMock.mock.calls.length + updateWorkAuthorsServerFnMock.mock.calls.length).toBeGreaterThanOrEqual(3);
     });
   });
 
@@ -1181,5 +1209,163 @@ describe("WorkDetailPage", () => {
     fireEvent.change(fileInput);
 
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("switches active edition tab via onValueChange", async () => {
+    mockLoaderData.work.editions.push({
+      id: "edition-2",
+      formatFamily: "AUDIOBOOK",
+      publisher: null,
+      publishedAt: null,
+      isbn13: null,
+      isbn10: null,
+      asin: null,
+      language: null,
+      pageCount: null,
+      editedFields: [],
+      contributors: [],
+      editionFiles: [],
+    });
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    const { act } = await import("@testing-library/react");
+    render(<Page />);
+
+    // Initially tabs value should be edition-1
+    expect(screen.getByTestId("tabs").getAttribute("data-value")).toBe("edition-1");
+
+    // Switch to edition-2 via onValueChange
+    expect(capturedTabsOnValueChange).toBeDefined();
+    act(() => { (capturedTabsOnValueChange as (val: string) => void)("edition-2"); });
+
+    // After switching, tabs value should update
+    expect(screen.getByTestId("tabs").getAttribute("data-value")).toBe("edition-2");
+  });
+
+  it("ignores onValueChange for non-existent edition id", async () => {
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    const { act } = await import("@testing-library/react");
+    render(<Page />);
+
+    expect(screen.getByTestId("tabs").getAttribute("data-value")).toBe("edition-1");
+
+    // Call with a non-existent id — idx will be -1, so setActiveEditionIdx should not be called
+    act(() => { (capturedTabsOnValueChange as (val: string) => void)("non-existent-id"); });
+
+    // Value should remain edition-1
+    expect(screen.getByTestId("tabs").getAttribute("data-value")).toBe("edition-1");
+  });
+
+  it("shows earliest publish year when multiple editions have dates", async () => {
+    mockLoaderData.work.editions.push({
+      id: "edition-2",
+      formatFamily: "AUDIOBOOK",
+      publisher: null,
+      publishedAt: "2020-06-15T00:00:00.000Z",
+      isbn13: null,
+      isbn10: null,
+      asin: null,
+      language: null,
+      pageCount: null,
+      editedFields: [],
+      contributors: [],
+      editionFiles: [],
+    });
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+
+    // edition-1 is 2007, edition-2 is 2020; should display 2007
+    expect(screen.getByText(/First published 2007/)).toBeTruthy();
+  });
+
+  it("covers the d >= earliest branch when later edition comes first in array", async () => {
+    // Put the later date first to exercise the d < earliest false branch
+    mockLoaderData.work.editions = [
+      {
+        id: "edition-later",
+        formatFamily: "AUDIOBOOK",
+        publisher: null,
+        publishedAt: "2020-06-15T00:00:00.000Z",
+        isbn13: null,
+        isbn10: null,
+        asin: null,
+        language: null,
+        pageCount: null,
+        editedFields: [],
+        contributors: [
+          { role: "AUTHOR", contributor: { id: "contrib-1", nameDisplay: "Patrick Rothfuss" } },
+        ],
+        editionFiles: [],
+      },
+      {
+        id: "edition-earlier",
+        formatFamily: "EBOOK",
+        publisher: null,
+        publishedAt: "2007-03-27T00:00:00.000Z",
+        isbn13: null,
+        isbn10: null,
+        asin: null,
+        language: null,
+        pageCount: null,
+        editedFields: [],
+        contributors: [],
+        editionFiles: [],
+      },
+    ];
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+
+    // Should still display 2007 as earliest
+    expect(screen.getByText(/First published 2007/)).toBeTruthy();
+  });
+
+  it("calls router.invalidate when onEditionFieldSaved is triggered", async () => {
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    const { act } = await import("@testing-library/react");
+    render(<Page />);
+
+    expect(capturedEditionFieldSavedCallbacks["edition-1"]).toBeDefined();
+    act(() => { (capturedEditionFieldSavedCallbacks["edition-1"] as () => void)(); });
+
+    expect(mockInvalidate).toHaveBeenCalled();
+  });
+
+  it("handles activeEditionIdx pointing beyond editions array", async () => {
+    // Start with 2 editions and switch to the second tab
+    mockLoaderData.work.editions.push({
+      id: "edition-2",
+      formatFamily: "AUDIOBOOK",
+      publisher: null,
+      publishedAt: null,
+      isbn13: null,
+      isbn10: null,
+      asin: null,
+      language: null,
+      pageCount: null,
+      editedFields: [],
+      contributors: [],
+      editionFiles: [],
+    });
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    const { act } = await import("@testing-library/react");
+    const { rerender } = render(<Page />);
+
+    // Switch to edition-2 (index 1)
+    act(() => { (capturedTabsOnValueChange as (val: string) => void)("edition-2"); });
+    expect(screen.getByTestId("tabs").getAttribute("data-value")).toBe("edition-2");
+
+    // Now remove the second edition from mock data and rerender
+    mockLoaderData.work.editions = [mockLoaderData.work.editions[0] as (typeof mockLoaderData.work.editions)[number]];
+    rerender(<Page />);
+
+    // activeEditionIdx is still 1, but editions only has 1 element
+    // This exercises the ?. and ?? "" fallback on line 316
+    const tabs = screen.getByTestId("tabs");
+    expect(tabs.getAttribute("data-value")).toBe("");
   });
 });

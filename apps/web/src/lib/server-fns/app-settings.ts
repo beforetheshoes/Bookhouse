@@ -106,3 +106,67 @@ export const setThemeServerFn = createServerFn({
 
     return { theme: data.theme as ThemePreference };
   });
+
+export type ColorMode = "off" | "book" | "page" | "accent";
+
+export const getColorModeServerFn = createServerFn({
+  method: "GET",
+}).handler(async () => {
+  const { db } = await import("@bookhouse/db");
+
+  const setting = await db.appSetting.findUnique({ where: { key: "colorMode" } });
+  return (setting?.value ?? "book") as ColorMode;
+});
+
+export const setColorModeServerFn = createServerFn({
+  method: "POST",
+})
+  .inputValidator(z.object({ mode: z.enum(["off", "book", "page", "accent"]) }))
+  .handler(async ({ data }) => {
+    const { db } = await import("@bookhouse/db");
+
+    await db.appSetting.upsert({
+      where: { key: "colorMode" },
+      create: { key: "colorMode", value: data.mode },
+      update: { value: data.mode },
+    });
+
+    return { mode: data.mode as ColorMode };
+  });
+
+export const getAccentColorServerFn = createServerFn({
+  method: "GET",
+}).handler(async () => {
+  const { db } = await import("@bookhouse/db");
+
+  const setting = await db.appSetting.findUnique({ where: { key: "accentColor" } });
+  return setting?.value ?? null;
+});
+
+export const setAccentColorServerFn = createServerFn({
+  method: "POST",
+})
+  .inputValidator(z.object({ color: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable() }))
+  .handler(async ({ data }) => {
+    const { db } = await import("@bookhouse/db");
+
+    if (data.color === null) {
+      try {
+        await db.appSetting.delete({ where: { key: "accentColor" } });
+      } catch (error: unknown) {
+        if (error instanceof Error && "code" in error && (error as { code: string }).code === "P2025") {
+          return { color: null };
+        }
+        throw error;
+      }
+      return { color: null };
+    }
+
+    await db.appSetting.upsert({
+      where: { key: "accentColor" },
+      create: { key: "accentColor", value: data.color },
+      update: { value: data.color },
+    });
+
+    return { color: data.color };
+  });

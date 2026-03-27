@@ -208,6 +208,7 @@ model Work {
   sortTitle      String?
   description    String?
   coverPath      String?
+  coverColors    Json?
   seriesId         String?
   seriesPosition   Float?
   enrichmentStatus EnrichmentStatus @default(ENRICHED)
@@ -224,6 +225,7 @@ model Work {
 
   targetMatchSuggestions    MatchSuggestion[] @relation("TargetWork")
   suggestedMatchSuggestions MatchSuggestion[] @relation("SuggestedWork")
+  externalLinks             ExternalLink[]
 
   @@index([titleCanonical])
 }
@@ -238,6 +240,7 @@ model Edition {
   isbn10       String?
   asin         String?
   language     String?
+  pageCount    Int?
   editedFields String[]     @default([])
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
@@ -376,16 +379,22 @@ model MatchSuggestion {
 }
 
 model ExternalLink {
-  id           String   @id @default(cuid())
-  editionId    String
-  provider     String
-  externalId   String
-  metadata     Json?
-  lastSyncedAt DateTime?
+  id            String   @id @default(cuid())
+  editionId     String?
+  workId        String?
+  provider      String
+  externalId    String
+  metadata      Json?
+  lastSyncedAt  DateTime?
+  appliedAt     DateTime?
+  appliedFields String[] @default([])
 
-  edition Edition @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  edition Edition? @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  work    Work?    @relation(fields: [workId], references: [id], onDelete: Cascade)
 
   @@unique([editionId, provider, externalId])
+  @@unique([workId, provider, externalId])
+  @@index([workId])
 }
 
 model DuplicateCandidate {

@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 const getCurrentUserServerFnMock = vi.fn();
 const getThemeServerFnMock = vi.fn().mockResolvedValue("system");
+const getColorModeServerFnMock = vi.fn().mockResolvedValue("book");
+const getAccentColorServerFnMock = vi.fn().mockResolvedValue(null);
 
 vi.mock("../lib/auth-client", () => ({
   getCurrentUserServerFn: getCurrentUserServerFnMock,
@@ -9,6 +11,8 @@ vi.mock("../lib/auth-client", () => ({
 
 vi.mock("~/lib/server-fns/app-settings", () => ({
   getThemeServerFn: (...args: unknown[]): unknown => getThemeServerFnMock(...args),
+  getColorModeServerFn: (...args: unknown[]): unknown => getColorModeServerFnMock(...args),
+  getAccentColorServerFn: (...args: unknown[]): unknown => getAccentColorServerFnMock(...args),
 }));
 
 describe("_authenticated layout route", () => {
@@ -46,7 +50,7 @@ describe("_authenticated layout route", () => {
       context: { auth: { user } },
     });
 
-    expect(result).toEqual({ user, theme: "system" });
+    expect(result).toEqual({ user, theme: "system", colorMode: "book", accentColor: null });
   });
 
   it("falls back to getCurrentUserServerFn when server context is empty", async () => {
@@ -66,7 +70,7 @@ describe("_authenticated layout route", () => {
 
     const result = await beforeLoad({ context: {} });
 
-    expect(result).toEqual({ user, theme: "system" });
+    expect(result).toEqual({ user, theme: "system", colorMode: "book", accentColor: null });
   });
 
   it("returns stored theme preference", async () => {
@@ -87,6 +91,6 @@ describe("_authenticated layout route", () => {
 
     const result = await beforeLoad({ context: {} });
 
-    expect(result).toEqual({ user, theme: "dark" });
+    expect(result).toEqual({ user, theme: "dark", colorMode: "book", accentColor: null });
   });
 });

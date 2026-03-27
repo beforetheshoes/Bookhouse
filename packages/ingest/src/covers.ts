@@ -6,6 +6,7 @@ import { MediaKind } from "@bookhouse/domain";
 import { createLogger } from "@bookhouse/shared";
 import { classifyMediaKind } from "./classification";
 import { extractEpubCover, type EpubCoverResult } from "./epub";
+import { extractDominantColors } from "./cover-colors";
 
 type ListDirectoryFn = (path: string, options: { withFileTypes: true }) => Promise<Dirent[]>;
 type ReadFileFn = (path: string) => Promise<Buffer>;
@@ -35,7 +36,7 @@ export interface CoverDb {
   };
   work: {
     findUnique(args: { where: { id: string } }): Promise<{ id: string } | null>;
-    update(args: { where: { id: string }; data: { coverPath: string } }): Promise<unknown>;
+    update(args: { where: { id: string }; data: { coverPath: string; coverColors?: string[] } }): Promise<unknown>;
   };
 }
 
@@ -54,6 +55,7 @@ export interface CoverDependencies {
   readFile: ReadFileFn;
   detectAdjacentCover: (directory: string, listDirectory?: ListDirectoryFn) => Promise<string | null>;
   resizeCoverImage: (input: { imageBuffer: Buffer; outputDir: string }, deps: ResizeCoverDeps) => Promise<{ thumbPath: string; mediumPath: string }>;
+  extractColors: (imageBuffer: Buffer) => Promise<string[]>;
   db: CoverDb;
   logger?: CoverLogger;
 }
@@ -175,9 +177,16 @@ export async function processCoverForWork(
   const outputDir = path.join(input.coverCacheDir, input.workId);
   await deps.resizeCoverImage({ imageBuffer, outputDir }, {} as ResizeCoverDeps);
 
+  let coverColors: string[] | undefined;
+  try {
+    coverColors = await deps.extractColors(imageBuffer);
+  } catch {
+    deps.logger?.info({ workId: input.workId }, "Color extraction failed, proceeding without colors");
+  }
+
   await deps.db.work.update({
     where: { id: input.workId },
-    data: { coverPath: input.workId },
+    data: { coverPath: input.workId, coverColors },
   });
 
   deps.logger?.info({ workId: input.workId, source }, "Cover processed successfully");
@@ -195,5 +204,6 @@ export function processCoverForWorkDefault(db: CoverDb) {
       detectAdjacentCover: (directory) => detectAdjacentCover(directory, readdir),
       resizeCoverImage: (resizeInput) =>
         resizeCoverImage(resizeInput, { sharp: sharp as never, mkdir, writeFile }),
+      extractColors: (buf) => extractDominantColors(buf, sharp as never),
     });
 }

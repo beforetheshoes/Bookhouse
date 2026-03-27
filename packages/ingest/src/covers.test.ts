@@ -133,6 +133,7 @@ describe("processCoverForWork", () => {
         thumbPath: "/data/covers/work-1/thumb.webp",
         mediumPath: "/data/covers/work-1/medium.webp",
       }),
+      extractColors: vi.fn().mockResolvedValue(["#1a2b3c", "#4d5e6f", "#a0b1c2"]),
       db: {
         fileAsset: {
           findUnique: vi.fn().mockResolvedValue({
@@ -184,7 +185,7 @@ describe("processCoverForWork", () => {
     expect(deps.resizeCoverImage).toHaveBeenCalled();
     expect(workUpdate).toHaveBeenCalledWith({
       where: { id: "work-1" },
-      data: { coverPath: "work-1" },
+      data: { coverPath: "work-1", coverColors: ["#1a2b3c", "#4d5e6f", "#a0b1c2"] },
     });
     expect(result.source).toBe("epub");
     expect(result.updated).toBe(true);
@@ -336,6 +337,33 @@ describe("processCoverForWork", () => {
       'File asset "fa-1" was not found',
     );
   });
+
+  it("proceeds without colors when extractColors fails", async () => {
+    const workUpdate = vi.fn().mockResolvedValue({});
+    const deps = createMockDeps({
+      extractEpubCover: vi.fn().mockResolvedValue({ buffer: Buffer.from("img") }),
+      extractColors: vi.fn().mockRejectedValue(new Error("sharp crash")),
+      db: {
+        fileAsset: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: "fa-1",
+            absolutePath: "/books/book.epub",
+            mediaKind: MediaKind.EPUB,
+          }),
+        },
+        work: { findUnique: vi.fn().mockResolvedValue({ id: "w-1" }), update: workUpdate },
+      },
+    });
+
+    const result = await processCoverForWork(createInput(), deps);
+
+    expect(result.source).toBe("epub");
+    expect(result.updated).toBe(true);
+    expect(workUpdate).toHaveBeenCalledWith({
+      where: { id: "work-1" },
+      data: { coverPath: "work-1", coverColors: undefined },
+    });
+  });
 });
 
 describe("processCoverForWorkDefault", () => {
@@ -390,7 +418,10 @@ describe("processCoverForWorkDefault", () => {
     const handler = processCoverForWorkDefault(db);
     const result = await handler({ workId: "w-1", fileAssetId: "fa-1", coverCacheDir: dir });
     expect(result).toEqual({ source: "adjacent", updated: true });
-    expect(db.work.update).toHaveBeenCalledWith({ where: { id: "w-1" }, data: { coverPath: "w-1" } });
+    expect(db.work.update).toHaveBeenCalledWith({
+      where: { id: "w-1" },
+      data: { coverPath: "w-1", coverColors: expect.arrayContaining([expect.stringMatching(/^#[0-9a-f]{6}$/)]) as unknown },
+    });
   });
 
   it("skips cover processing when work no longer exists", async () => {

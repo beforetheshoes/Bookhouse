@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useSSE } from "~/hooks/use-sse";
 import { useTheme } from "~/hooks/use-theme";
+import { useAppColor } from "~/hooks/use-app-color";
 import { VirtualizedDataTable, DataTableColumnHeader } from "~/components/data-table";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -56,7 +57,14 @@ import {
   type MissingFileBehavior,
   type ScanType,
 } from "~/lib/server-fns/app-settings";
-import type { ThemePreference } from "~/lib/server-fns/app-settings";
+import type { ThemePreference, ColorMode } from "~/lib/server-fns/app-settings";
+import {
+  getIntegrationStatusServerFn,
+  setApiKeyServerFn,
+  removeApiKeyServerFn,
+  validateApiKeyServerFn,
+  type IntegrationProvider,
+} from "~/lib/server-fns/integrations";
 import {
   getImportJobsServerFn,
   stopAllJobsServerFn,
@@ -71,11 +79,12 @@ export interface LibraryRootWithExtras extends LibraryRootRow {
 
 export const Route = createFileRoute("/_authenticated/settings/")({
   loader: async () => {
-    const [roots, missingFileBehavior, jobsResult, concurrencies] = await Promise.all([
+    const [roots, missingFileBehavior, jobsResult, concurrencies, integrations] = await Promise.all([
       getLibraryRootsServerFn(),
       getMissingFileBehaviorServerFn(),
       getImportJobsServerFn({ data: { page: 1, pageSize: 100 } }),
       getAllScanConcurrenciesServerFn(),
+      getIntegrationStatusServerFn(),
     ]);
     const rootsWithExtras: LibraryRootWithExtras[] = await Promise.all(
       roots.map(async (root) => {
@@ -92,6 +101,7 @@ export const Route = createFileRoute("/_authenticated/settings/")({
       jobs: jobsResult.jobs,
       totalCount: jobsResult.totalCount,
       concurrencies,
+      integrations,
     };
   },
   pendingComponent: SettingsSkeleton,
@@ -111,7 +121,7 @@ function SettingsSkeleton() {
 }
 
 function SettingsPage() {
-  const { roots, missingFileBehavior, jobs, totalCount, concurrencies } = Route.useLoaderData();
+  const { roots, missingFileBehavior, jobs, totalCount, concurrencies, integrations } = Route.useLoaderData();
 
   const hasActiveScan = roots.some((r) => r.scanProgress !== null);
   const hasActiveJobs = jobs.some(
@@ -128,6 +138,7 @@ function SettingsPage() {
           <TabsTrigger value="library" className="px-4 py-1.5">Library</TabsTrigger>
           <TabsTrigger value="appearance" className="px-4 py-1.5">Appearance</TabsTrigger>
           <TabsTrigger value="jobs" className="px-4 py-1.5">Jobs</TabsTrigger>
+          <TabsTrigger value="integrations" className="px-4 py-1.5">Integrations</TabsTrigger>
         </TabsList>
 
         <TabsContent value="library" forceMount className="space-y-6 data-[state=inactive]:hidden">
@@ -136,10 +147,15 @@ function SettingsPage() {
 
         <TabsContent value="appearance" forceMount className="space-y-6 data-[state=inactive]:hidden">
           <AppearanceCard />
+          <ColorCard />
         </TabsContent>
 
         <TabsContent value="jobs" forceMount className="space-y-6 data-[state=inactive]:hidden">
           <JobsTab jobs={jobs} totalCount={totalCount} initialConcurrencies={concurrencies} />
+        </TabsContent>
+
+        <TabsContent value="integrations" forceMount className="space-y-6 data-[state=inactive]:hidden">
+          <IntegrationsTab integrations={integrations} />
         </TabsContent>
       </Tabs>
     </div>
@@ -230,6 +246,69 @@ function AppearanceCard() {
             );
           })}
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+const COLOR_MODE_OPTIONS: { value: ColorMode; label: string; description: string }[] = [
+  { value: "off", label: "Off", description: "No ambient color" },
+  { value: "book", label: "Book", description: "Last viewed book's cover colors" },
+  { value: "page", label: "Page", description: "Color by page type" },
+  { value: "accent", label: "Custom", description: "Your chosen accent color" },
+];
+
+function ColorCard() {
+  const { colorMode, setColorMode, accentColor, setAccentColor } = useAppColor();
+  const [hexInput, setHexInput] = useState(accentColor ?? "#3366cc");
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Color</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Choose how Bookhouse uses ambient color.
+        </p>
+        <div className="space-y-2">
+          {COLOR_MODE_OPTIONS.map((option) => (
+            <label key={option.value} className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="radio"
+                name="colorMode"
+                value={option.value}
+                checked={colorMode === option.value}
+                onChange={() => { setColorMode(option.value); }}
+                className="mt-1"
+              />
+              <div>
+                <p className="text-sm font-medium">{option.label}</p>
+                <p className="text-xs text-muted-foreground">{option.description}</p>
+              </div>
+            </label>
+          ))}
+        </div>
+        {colorMode === "accent" && (
+          <div className="flex items-center gap-3 pl-6">
+            <div
+              className="size-8 rounded-md border"
+              style={{ backgroundColor: hexInput }}
+            />
+            <Input
+              type="text"
+              value={hexInput}
+              onChange={(e) => { setHexInput(e.target.value); }}
+              onBlur={() => {
+                if (/^#[0-9a-fA-F]{6}$/.test(hexInput)) {
+                  setAccentColor(hexInput);
+                }
+              }}
+              placeholder="#3366cc"
+              className="w-28 font-mono text-sm"
+            />
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -735,5 +814,142 @@ function LibraryRootCard({ root }: { root: LibraryRootWithExtras }) {
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Integrations Tab
+// ---------------------------------------------------------------------------
+
+type IntegrationStatus = { configured: boolean; label: string };
+
+function IntegrationsTab({
+  integrations,
+}: {
+  integrations: Record<string, IntegrationStatus>;
+}) {
+  return (
+    <>
+      <p className="text-sm text-muted-foreground">
+        Connect to external metadata sources. Open Library is always available. Google Books and Hardcover require API keys.
+      </p>
+      <div className="grid gap-4">
+        {Object.entries(integrations).map(([provider, status]) => (
+          <IntegrationCard key={provider} provider={provider} status={status} />
+        ))}
+      </div>
+    </>
+  );
+}
+
+type SaveState = "idle" | "validating" | "saving" | "saved" | "error";
+
+function IntegrationCard({ provider, status }: { provider: string; status: IntegrationStatus }) {
+  const router = useRouter();
+  const [apiKey, setApiKey] = useState("");
+  const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [removing, setRemoving] = useState(false);
+  const requiresKey = provider !== "openlibrary";
+
+  async function handleSave() {
+    const trimmedKey = apiKey.trim();
+    setSaveError(null);
+    setSaveState("validating");
+
+    try {
+      const validation = await validateApiKeyServerFn({
+        data: { provider: provider as IntegrationProvider, apiKey: trimmedKey },
+      }) as { valid: boolean; error?: string };
+
+      if (!validation.valid) {
+        setSaveState("error");
+        setSaveError(validation.error ?? "API key validation failed");
+        return;
+      }
+
+      setSaveState("saving");
+      await setApiKeyServerFn({ data: { provider: provider as IntegrationProvider, apiKey: trimmedKey } });
+      setSaveState("saved");
+      setApiKey("");
+      void router.invalidate();
+    } catch (error: unknown) {
+      setSaveState("error");
+      const message = error instanceof Error ? error.message : "Unknown error";
+      setSaveError(`Failed to save: ${message}`);
+    }
+  }
+
+  async function handleRemove() {
+    setRemoving(true);
+    try {
+      await removeApiKeyServerFn({ data: { provider: provider as IntegrationProvider } });
+      toast.success(`${status.label} API key removed`);
+      void router.invalidate();
+    } catch {
+      toast.error("Failed to remove API key");
+    } finally {
+      setRemoving(false);
+    }
+  }
+
+  const isBusy = saveState === "validating" || saveState === "saving";
+  const SAVE_BUTTON_LABELS: Record<SaveState, string> = {
+    idle: "Save Key",
+    validating: "Validating...",
+    saving: "Saving...",
+    saved: "✓ Saved",
+    error: "Save Key",
+  };
+  const buttonLabel = SAVE_BUTTON_LABELS[saveState];
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-base">
+          {status.label}
+          <Badge variant={status.configured ? "default" : "secondary"}>
+            {status.configured ? "Connected" : "Not configured"}
+          </Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {!requiresKey && (
+          <p className="text-sm text-muted-foreground">No API key required. Always available.</p>
+        )}
+        {requiresKey && !status.configured && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Input
+                type="password"
+                placeholder="Enter API key"
+                value={apiKey}
+                onChange={(e) => { setApiKey(e.target.value); setSaveState("idle"); setSaveError(null); }}
+                className="max-w-sm"
+              />
+              <Button
+                size="sm"
+                variant={saveState === "saved" ? "default" : saveState === "error" ? "destructive" : "default"}
+                onClick={() => { void handleSave(); }}
+                disabled={isBusy || !apiKey.trim()}
+              >
+                {buttonLabel}
+              </Button>
+            </div>
+            {saveState === "error" && saveError && (
+              <p className="text-sm text-destructive">{saveError}</p>
+            )}
+          </div>
+        )}
+        {requiresKey && status.configured && (
+          <div className="flex items-center gap-2">
+            <p className="text-sm text-muted-foreground">API key configured</p>
+            <Button variant="outline" size="sm" onClick={() => { void handleRemove(); }} disabled={removing}>
+              {removing ? "Removing..." : "Remove"}
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
