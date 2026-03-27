@@ -9,7 +9,7 @@ vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
     ...actual,
-    Link: ({ children, to, ...props }: { children?: React.ReactNode; to: string; [key: string]: unknown }) => <a href={to} {...props}>{children}</a>,
+    Link: ({ children, to, ...props }: { children?: React.ReactNode; to: string; [key: string]: string | undefined | React.ReactNode | Record<string, string> | (() => void) }) => <a href={to} {...props}>{children}</a>,
     useRouter: () => ({ invalidate: vi.fn(), navigate: vi.fn() }),
     useRouterState: () => ({ location: { pathname: "/library" } }),
   };
@@ -20,7 +20,7 @@ const mockUser = { name: "John Doe", email: "john@example.com", image: null };
 function renderSidebar(user: { name: string | null; email: string | null; image: string | null } = mockUser) {
   return render(
     <SidebarProvider>
-      <AppSidebar user={user as unknown as Parameters<typeof AppSidebar>[0]["user"]} />
+      <AppSidebar user={user as Parameters<typeof AppSidebar>[0]["user"]} />
     </SidebarProvider>
   );
 }

@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import type { Prisma } from "@bookhouse/db";
 
 export const getMatchSuggestionsServerFn = createServerFn({
   method: "GET",
@@ -91,13 +92,13 @@ export const acceptMatchSuggestionServerFn = createServerFn({
       "sortTitle",
     ] as const;
 
-    const updates: Record<string, unknown> = {};
+    const updates: Prisma.WorkUpdateInput = {};
     for (const field of reconcileFields) {
       if (
         survivingWork[field as keyof typeof survivingWork] == null &&
         losingWork[field as keyof typeof losingWork] != null
       ) {
-        updates[field] = losingWork[field as keyof typeof losingWork];
+        (updates as Record<string, string | number | null | undefined>)[field] = losingWork[field as keyof typeof losingWork] as string | number | null;
       }
     }
 

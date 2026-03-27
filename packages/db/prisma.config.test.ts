@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("prisma/config", () => ({
-  defineConfig: (input: unknown) => input,
+  defineConfig: (input: object) => input,
   env: (name: string) => `env:${name}`,
 }));
 

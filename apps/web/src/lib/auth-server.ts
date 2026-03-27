@@ -20,12 +20,7 @@ import {
 
 const authConfig = loadAuthConfig();
 
-type AuthSessionManager = {
-  readonly id: string | undefined;
-  readonly data: Partial<AuthSessionData>;
-  update: (update: Partial<AuthSessionData>) => Promise<unknown>;
-  clear: () => Promise<unknown>;
-};
+type AuthSessionManager = Awaited<ReturnType<typeof useSession<AuthSessionData>>>;
 
 function appUrl(pathname: string): string {
   return new URL(pathname, `${authConfig.appUrl}/`).toString();

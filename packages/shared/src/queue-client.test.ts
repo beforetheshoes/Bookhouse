@@ -9,9 +9,9 @@ const getDependenciesMock = vi.fn();
 const redisConstructorMock = vi.fn();
 
 vi.mock("ioredis", () => ({
-  default: function FakeRedis(config: unknown) {
+  default: function FakeRedis(config: object) {
     redisConstructorMock(config);
-    (this as Record<string, unknown>).flushdb = flushdbMock;
+    (this as { flushdb: typeof flushdbMock }).flushdb = flushdbMock;
   },
 }));
 
@@ -51,7 +51,7 @@ describe("enqueueLibraryJob", () => {
     expect(addMock).toHaveBeenCalledWith(
       "scan-library-root",
       { libraryRootId: "root-1" },
-      { attempts: config.attempts, backoff: config.backoff, priority: expect.any(Number) as unknown },
+      { attempts: config.attempts, backoff: config.backoff, priority: expect.any(Number) as number },
     );
     // IORedis and Queue constructors should only have been called once (singleton)
     expect(redisConstructorMock).toHaveBeenCalledTimes(1);
@@ -69,7 +69,7 @@ describe("enqueueLibraryJob", () => {
     expect(addMock).toHaveBeenCalledWith(
       "hash-file-asset",
       { fileAssetId: "file-1" },
-      { attempts: config.attempts, backoff: config.backoff, priority: expect.any(Number) as unknown },
+      { attempts: config.attempts, backoff: config.backoff, priority: expect.any(Number) as number },
     );
   });
 
@@ -85,7 +85,7 @@ describe("enqueueLibraryJob", () => {
     expect(addMock).toHaveBeenCalledWith(
       "parse-file-asset-metadata",
       { fileAssetId: "file-2" },
-      { attempts: config.attempts, backoff: config.backoff, priority: expect.any(Number) as unknown },
+      { attempts: config.attempts, backoff: config.backoff, priority: expect.any(Number) as number },
     );
   });
 
@@ -101,7 +101,7 @@ describe("enqueueLibraryJob", () => {
     expect(addMock).toHaveBeenCalledWith(
       "match-file-asset-to-edition",
       { fileAssetId: "file-3" },
-      { attempts: config.attempts, backoff: config.backoff, priority: expect.any(Number) as unknown },
+      { attempts: config.attempts, backoff: config.backoff, priority: expect.any(Number) as number },
     );
   });
 
@@ -118,7 +118,7 @@ describe("enqueueLibraryJob", () => {
     expect(addMock).toHaveBeenCalledWith(
       "process-cover",
       { workId: "work-1", fileAssetId: "file-4" },
-      { attempts: config.attempts, backoff: config.backoff, priority: expect.any(Number) as unknown },
+      { attempts: config.attempts, backoff: config.backoff, priority: expect.any(Number) as number },
     );
   });
 
@@ -134,7 +134,7 @@ describe("enqueueLibraryJob", () => {
     expect(addMock).toHaveBeenCalledWith(
       "detect-duplicates",
       { fileAssetId: "file-5" },
-      { attempts: config.attempts, backoff: config.backoff, priority: expect.any(Number) as unknown },
+      { attempts: config.attempts, backoff: config.backoff, priority: expect.any(Number) as number },
     );
   });
 
@@ -164,7 +164,7 @@ describe("enqueueLibraryJob", () => {
       {
         attempts: config.attempts,
         backoff: config.backoff,
-        priority: expect.any(Number) as unknown,
+        priority: expect.any(Number) as number,
         parent: { id: "scan-1", queue: "bull:library" },
         removeDependencyOnFailure: true,
       },
@@ -183,7 +183,7 @@ describe("enqueueLibraryJob", () => {
     expect(addMock).toHaveBeenCalledWith(
       "hash-file-asset",
       { fileAssetId: "file-1" },
-      { attempts: config.attempts, backoff: config.backoff, priority: expect.any(Number) as unknown },
+      { attempts: config.attempts, backoff: config.backoff, priority: expect.any(Number) as number },
     );
   });
 

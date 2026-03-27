@@ -3,10 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import type { ReactNode } from "react";
 
-const setThemeServerFnMock = vi.fn();
+const { setThemeServerFnMock } = vi.hoisted(() => ({ setThemeServerFnMock: vi.fn() }));
 
 vi.mock("~/lib/server-fns/app-settings", () => ({
-  setThemeServerFn: (...args: unknown[]): unknown => setThemeServerFnMock(...args),
+  setThemeServerFn: setThemeServerFnMock,
 }));
 
 vi.mock("sonner", () => ({

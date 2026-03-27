@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { xmlParser, ensureArray, getTextContent, getIdentifierScheme, type ParsedEpubIdentifier } from "./xml-helpers";
+import { xmlParser, ensureArray, getTextContent, getIdentifierScheme, type ParsedEpubIdentifier, type XmlValue } from "./xml-helpers";
 
 export interface ParsedOpfMetadataRaw {
   title?: string;
@@ -20,7 +20,7 @@ export async function parseOpfSidecar(absolutePath: string): Promise<ParsedOpfMe
 
 export function parseOpfXml(opfXml: string): ParsedOpfMetadataRaw {
   const parsed = xmlParser.parse(opfXml) as {
-    package?: { metadata?: Record<string, unknown> };
+    package?: { metadata?: Record<string, XmlValue> };
   };
 
   const metadata = parsed.package?.metadata;
@@ -40,10 +40,9 @@ export function parseOpfXml(opfXml: string): ParsedOpfMetadataRaw {
       let fileAs: string | undefined;
       let role: string | undefined;
 
-      if (typeof author === "object" && author !== null) {
-        const authorObj = author as Record<string, unknown>;
-        if (typeof authorObj["file-as"] === "string") fileAs = authorObj["file-as"];
-        if (typeof authorObj.role === "string") role = authorObj.role;
+      if (typeof author === "object" && author !== null && !Array.isArray(author)) {
+        if (typeof author["file-as"] === "string") fileAs = author["file-as"];
+        if (typeof author.role === "string") role = author.role;
       }
 
       return { name, fileAs, role };
@@ -82,13 +81,12 @@ export function parseOpfXml(opfXml: string): ParsedOpfMetadataRaw {
   let seriesIndex: number | undefined;
   const metaEntries = ensureArray(metadata.meta);
   for (const entry of metaEntries) {
-    if (entry && typeof entry === "object") {
-      const metaObj = entry as Record<string, unknown>;
-      if (metaObj.name === "calibre:series" && typeof metaObj.content === "string") {
-        seriesName = metaObj.content;
+    if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+      if (entry.name === "calibre:series" && typeof entry.content === "string") {
+        seriesName = entry.content;
       }
-      if (metaObj.name === "calibre:series_index" && typeof metaObj.content === "string") {
-        const parsed = parseFloat(metaObj.content);
+      if (entry.name === "calibre:series_index" && typeof entry.content === "string") {
+        const parsed = parseFloat(entry.content);
         if (!isNaN(parsed)) seriesIndex = parsed;
       }
     }

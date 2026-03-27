@@ -1,12 +1,12 @@
 import { describe, it, expect, vi } from "vitest";
 import { searchGoogleBooks, getGoogleBooksVolume, type GBVolume } from "./google-books";
 
-function fakeFetch(body: unknown, status = 200): typeof fetch {
+function fakeFetch(body: object | string | null, status = 200): typeof fetch {
   return vi.fn().mockResolvedValue({
     ok: status >= 200 && status < 300,
     status,
     json: () => Promise.resolve(body),
-  }) as unknown as typeof fetch;
+  }) as object as typeof fetch;
 }
 
 const sampleVolumeInfo = {
@@ -55,7 +55,7 @@ describe("searchGoogleBooks", () => {
 
     await searchGoogleBooks("The Hobbit", "Tolkien", "my-key", fetcher);
 
-    const url = ((fetcher as ReturnType<typeof vi.fn>).mock.calls[0] as unknown[])[0] as string;
+    const [[url]] = (fetcher as ReturnType<typeof vi.fn>).mock.calls as object as [[string]];
     expect(url).toContain("intitle%3AThe+Hobbit");
     expect(url).toContain("inauthor%3ATolkien");
     expect(url).toContain("key=my-key");
@@ -67,7 +67,7 @@ describe("searchGoogleBooks", () => {
 
     await searchGoogleBooks("Dune", undefined, "key", fetcher);
 
-    const url = ((fetcher as ReturnType<typeof vi.fn>).mock.calls[0] as unknown[])[0] as string;
+    const [[url]] = (fetcher as ReturnType<typeof vi.fn>).mock.calls as object as [[string]];
     expect(url).toContain("intitle%3ADune");
     expect(url).not.toContain("inauthor%3A");
   });
@@ -187,7 +187,7 @@ describe("getGoogleBooksVolume", () => {
 
     await getGoogleBooksVolume("vol_xyz", "my-key", fetcher);
 
-    const url = ((fetcher as ReturnType<typeof vi.fn>).mock.calls[0] as unknown[])[0] as string;
+    const [[url]] = (fetcher as ReturnType<typeof vi.fn>).mock.calls as object as [[string]];
     expect(url).toContain("/volumes/vol_xyz");
     expect(url).toContain("key=my-key");
   });

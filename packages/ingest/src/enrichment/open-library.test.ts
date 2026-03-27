@@ -5,13 +5,13 @@ import {
   getOpenLibraryWork,
 } from "./open-library";
 
-function fakeFetch(body: unknown, status = 200): typeof fetch {
+function fakeFetch(body: object | string | null, status = 200): typeof fetch {
   return (() =>
     Promise.resolve({
       ok: status >= 200 && status < 300,
       status,
       json: () => Promise.resolve(body),
-    })) as unknown as typeof fetch;
+    })) as object as typeof fetch;
 }
 
 describe("searchOpenLibrary", () => {
@@ -74,7 +74,7 @@ describe("searchOpenLibrary", () => {
   });
 
   it("throws on network error", async () => {
-    const errorFetch = (() => Promise.reject(new Error("network down"))) as unknown as typeof fetch;
+    const errorFetch = (() => Promise.reject(new Error("network down"))) as object as typeof fetch;
     await expect(searchOpenLibrary("test", undefined, errorFetch)).rejects.toThrow("network down");
   });
 
@@ -91,7 +91,7 @@ describe("searchOpenLibrary", () => {
         status: 200,
         json: () => Promise.resolve({ docs: [] }),
       });
-    }) as unknown as typeof fetch;
+    }) as object as typeof fetch;
 
     await searchOpenLibrary("War & Peace", "Tolstoy", captureFetch);
     expect(calledUrl).toContain("War+%26+Peace");
@@ -159,7 +159,7 @@ describe("getOpenLibraryEdition", () => {
   });
 
   it("throws on network error", async () => {
-    const errorFetch = (() => Promise.reject(new Error("timeout"))) as unknown as typeof fetch;
+    const errorFetch = (() => Promise.reject(new Error("timeout"))) as object as typeof fetch;
     await expect(getOpenLibraryEdition("123", errorFetch)).rejects.toThrow("timeout");
   });
 });
@@ -220,7 +220,7 @@ describe("getOpenLibraryWork", () => {
   });
 
   it("throws on network error", async () => {
-    const errorFetch = (() => Promise.reject(new Error("dns fail"))) as unknown as typeof fetch;
+    const errorFetch = (() => Promise.reject(new Error("dns fail"))) as object as typeof fetch;
     await expect(getOpenLibraryWork("OL000W", errorFetch)).rejects.toThrow("dns fail");
   });
 });

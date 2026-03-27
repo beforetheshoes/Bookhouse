@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import type { Prisma } from "@bookhouse/db";
 
 const updateWorkSchema = z.object({
   workId: z.string().min(1),
@@ -34,13 +35,14 @@ export const updateWorkServerFn = createServerFn({
     const newFieldKeys = Object.keys(data.fields);
     const mergedEdited = [...new Set([...existingEdited, ...newFieldKeys])];
 
-    const updateData: Record<string, unknown> = { ...data.fields };
+    const updateData: Prisma.WorkUpdateInput = {
+      ...data.fields,
+      editedFields: mergedEdited,
+    };
 
     if (data.fields.titleDisplay !== undefined) {
       updateData.titleCanonical = canonicalizeBookTitle(data.fields.titleDisplay);
     }
-
-    updateData.editedFields = mergedEdited;
 
     await db.work.update({
       where: { id: data.workId },
@@ -78,13 +80,15 @@ export const updateEditionServerFn = createServerFn({
     const newFieldKeys = Object.keys(data.fields);
     const mergedEdited = [...new Set([...existingEdited, ...newFieldKeys])];
 
-    const updateData: Record<string, unknown> = { ...data.fields };
+    const { publishedAt: publishedAtStr, ...otherFields } = data.fields;
+    const updateData: Prisma.EditionUpdateInput = {
+      ...otherFields,
+      editedFields: mergedEdited,
+    };
 
-    if (data.fields.publishedAt !== undefined && data.fields.publishedAt !== null) {
-      updateData.publishedAt = new Date(data.fields.publishedAt);
+    if (publishedAtStr !== undefined) {
+      updateData.publishedAt = publishedAtStr !== null ? new Date(publishedAtStr) : null;
     }
-
-    updateData.editedFields = mergedEdited;
 
     await db.edition.update({
       where: { id: data.editionId },

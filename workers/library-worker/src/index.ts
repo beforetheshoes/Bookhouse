@@ -2,7 +2,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import IORedis from "ioredis";
 import { type Job, WaitingChildrenError, Worker } from "bullmq";
 import { db } from "@bookhouse/db";
-import { cascadeCleanupOrphans, createIngestServices, matchSuggestions, matchFileAssetToEdition, parseFileAssetMetadata, processCoverForWorkDefault, scanLibraryRoot, type ScanProgressData, type ScanLibraryRootResult, enrichWork, searchOpenLibrary, getOpenLibraryWork, RateLimiter, type EnrichWorkDeps, detectDuplicates, hashFileAsset } from "@bookhouse/ingest";
+import { cascadeCleanupOrphans, createIngestServices, matchSuggestions, matchFileAssetToEdition, parseFileAssetMetadata, processCoverForWorkDefault, scanLibraryRoot, type ScanProgressData, type ScanLibraryRootResult, enrichWork, searchOpenLibrary, getOpenLibraryWork, RateLimiter, type EnrichWorkDeps, detectDuplicates, hashFileAsset, type ProcessCoverResult, type HashFileAssetResult, type ParseFileAssetMetadataResult, type MatchFileAssetToEditionResult, type DetectDuplicatesResult, type MatchSuggestionsResult, type EnrichWorkResult } from "@bookhouse/ingest";
 import {
   LIBRARY_JOB_NAMES,
   type BaseJobPayload,
@@ -26,6 +26,17 @@ const logger = createLogger("library-worker");
 
 const processCoverForWork = processCoverForWorkDefault(db);
 const rateLimiter = new RateLimiter();
+
+export type LibraryJobResult =
+  | ScanLibraryRootResult
+  | HashFileAssetResult
+  | ParseFileAssetMetadataResult
+  | MatchFileAssetToEditionResult
+  | ProcessCoverResult
+  | DetectDuplicatesResult
+  | MatchSuggestionsResult
+  | EnrichWorkResult
+  | undefined;
 
 export type ScanType = "full" | "onDemand" | "incremental";
 
@@ -65,7 +76,7 @@ export interface LibraryWorkerHandlers {
   hashFileAsset: typeof hashFileAsset;
   matchFileAssetToEdition: typeof matchFileAssetToEdition;
   parseFileAssetMetadata: typeof parseFileAssetMetadata;
-  processCoverForWork: (input: { workId: string; fileAssetId: string; coverCacheDir: string }) => Promise<unknown>;
+  processCoverForWork: (input: { workId: string; fileAssetId: string; coverCacheDir: string }) => Promise<ProcessCoverResult>;
   scanLibraryRoot: typeof scanLibraryRoot;
   enrichWork: typeof enrichWork;
   detectDuplicates: typeof detectDuplicates;
@@ -73,7 +84,7 @@ export interface LibraryWorkerHandlers {
 }
 
 function createJobHandlers(
-  job: Job<LibraryJobPayload<LibraryJobName>, unknown, LibraryJobName>,
+  job: Job<LibraryJobPayload<LibraryJobName>, LibraryJobResult, LibraryJobName>,
 ): LibraryWorkerHandlers {
   const basePayload = job.data as BaseJobPayload;
   const parentImportJobId = basePayload.importJobId;
@@ -85,14 +96,14 @@ function createJobHandlers(
   const wrappedEnqueue = async <TName extends LibraryJobName>(
     jobName: TName,
     payload: LibraryJobPayload<TName>,
-  ): Promise<void> => {
+  ): Promise<string | undefined> => {
     const enrichedPayload: LibraryJobPayload<TName> = {
       ...payload,
       ...(parentImportJobId ? { importJobId: parentImportJobId } : {}),
       scanJobId,
       scanQueueName,
     } as LibraryJobPayload<TName>;
-    await enqueueLibraryJob(jobName, enrichedPayload, {
+    return enqueueLibraryJob(jobName, enrichedPayload, {
       parent: { id: scanJobId, queue: scanQueueName },
     });
   };
@@ -113,7 +124,7 @@ function createJobHandlers(
 
 async function dispatch(
   handlers: LibraryWorkerHandlers,
-  job: Job<LibraryJobPayload<LibraryJobName>, unknown, LibraryJobName>,
+  job: Job<LibraryJobPayload<LibraryJobName>, LibraryJobResult, LibraryJobName>,
 ) {
   const importJobId = (job.data as BaseJobPayload).importJobId;
 
@@ -187,8 +198,8 @@ async function dispatch(
           }),
         searchOL: (title, author) => searchOpenLibrary(title, author, fetch),
         getOLWork: (olid) => getOpenLibraryWork(olid, fetch),
-        upsertExternalLink: (data) =>
-          db.externalLink.upsert({
+        upsertExternalLink: async (data) => {
+          await db.externalLink.upsert({
             where: {
               editionId_provider_externalId: {
                 editionId: data.editionId,
@@ -198,7 +209,8 @@ async function dispatch(
             },
             create: { ...data, metadata: data.metadata as object, lastSyncedAt: new Date() },
             update: { metadata: data.metadata as object, lastSyncedAt: new Date() },
-          }),
+          });
+        },
         checkRateLimit: () => rateLimiter.check(),
       };
       return handlers.enrichWork(refreshPayload.workId, deps);
@@ -212,7 +224,7 @@ export function createLibraryWorkerProcessor(
   handlers?: LibraryWorkerHandlers,
 ) {
   return async (
-    job: Job<LibraryJobPayload<LibraryJobName>, unknown, LibraryJobName>,
+    job: Job<LibraryJobPayload<LibraryJobName>, LibraryJobResult, LibraryJobName>,
     token?: string,
   ) => {
   const importJobId = (job.data as BaseJobPayload).importJobId;

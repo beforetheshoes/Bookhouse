@@ -100,9 +100,9 @@ vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
     ...actual,
-    Link: ({ children, to, ...props }: { children?: React.ReactNode; to: string; [key: string]: unknown }) => <a href={to} {...props}>{children}</a>,
+    Link: ({ children, to, ...props }: { children?: React.ReactNode; to: string; [key: string]: string | undefined | React.ReactNode | Record<string, string> | (() => void) }) => <a href={to} {...props}>{children}</a>,
     useRouter: () => ({ navigate: mockNavigate, invalidate: mockInvalidate }),
-    createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
+    createFileRoute: (_path: string) => (opts: Record<string, string | boolean | object | ((...a: object[]) => object | undefined | Promise<object>)>) => ({
       ...opts,
       options: opts,
       useLoaderData: () => mockLoaderData,
@@ -187,8 +187,8 @@ globalThis.fetch = mockFetch;
 
 import { updateWorkServerFn, updateWorkAuthorsServerFn } from "~/lib/server-fns/editing";
 
-const updateWorkServerFnMock = updateWorkServerFn as unknown as ReturnType<typeof vi.fn>;
-const updateWorkAuthorsServerFnMock = updateWorkAuthorsServerFn as unknown as ReturnType<typeof vi.fn>;
+const updateWorkServerFnMock = vi.mocked(updateWorkServerFn);
+const updateWorkAuthorsServerFnMock = vi.mocked(updateWorkAuthorsServerFn);
 
 let capturedEnrichmentProps: { onOpenChange?: (open: boolean) => void; onApplied?: () => void } = {};
 
@@ -212,7 +212,7 @@ vi.mock("~/components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: React.ReactNode }) => <div data-testid="cover-dropdown">{children}</div>,
   DropdownMenuTrigger: ({ children }: { children: React.ReactNode; asChild?: boolean }) => <div data-testid="cover-dropdown-trigger">{children}</div>,
   DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <div data-testid="cover-dropdown-content">{children}</div>,
-  DropdownMenuItem: ({ children, onClick, ...props }: { children: React.ReactNode; onClick?: () => void; [key: string]: unknown }) => (
+  DropdownMenuItem: ({ children, onClick, ...props }: { children: React.ReactNode; onClick?: () => void; [key: string]: string | undefined | React.ReactNode | Record<string, string> | (() => void) }) => (
     <button data-testid={props["data-testid"] as string} onClick={onClick}>{children}</button>
   ),
 }));
@@ -315,7 +315,7 @@ describe("WorkDetailPage", () => {
     getWorkDetailServerFnMock.mockResolvedValueOnce(mockLoaderData.work);
     getReadingProgressServerFnMock.mockResolvedValueOnce({ progress: [], trackingMode: "BY_EDITION" });
     const { Route } = await import("./library.$workId");
-    const result = await (Route.options.loader as (args: { params: { workId: string } }) => Promise<unknown>)({
+    const result = await (Route.options.loader as (args: { params: { workId: string } }) => Promise<object>)({
       params: { workId: "work-1" },
     });
     expect(getWorkDetailServerFnMock).toHaveBeenCalledWith({
@@ -1123,7 +1123,7 @@ describe("WorkDetailPage", () => {
     await waitFor(() => {
       expect(mockFetch).toHaveBeenCalledWith(
         "/api/upload-cover/work-1",
-        expect.objectContaining({ method: "POST" }) as Record<string, unknown>,
+        expect.objectContaining({ method: "POST" }) as object,
       );
     });
   });

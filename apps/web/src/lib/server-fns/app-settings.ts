@@ -153,7 +153,7 @@ export const setAccentColorServerFn = createServerFn({
     if (data.color === null) {
       try {
         await db.appSetting.delete({ where: { key: "accentColor" } });
-      } catch (error: unknown) {
+      } catch (error) {
         if (error instanceof Error && "code" in error && (error as { code: string }).code === "P2025") {
           return { color: null };
         }

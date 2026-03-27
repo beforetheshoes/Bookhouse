@@ -1,13 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
 import { searchHardcover, getHardcoverBook, type HCBook } from "./hardcover";
 
-function fakeFetch(body: unknown, status = 200): typeof fetch {
+function fakeFetch(body: object | string | null, status = 200): typeof fetch {
   return vi.fn().mockResolvedValue({
     ok: status >= 200 && status < 300,
     status,
     json: () => Promise.resolve(body),
     text: () => Promise.resolve(typeof body === "string" ? body : JSON.stringify(body)),
-  }) as unknown as typeof fetch;
+  }) as object as typeof fetch;
 }
 
 const sampleSearchResult = {
@@ -92,10 +92,8 @@ describe("searchHardcover", () => {
 
     await searchHardcover("The Hobbit", "Tolkien", "key", fetcher);
 
-    const call = (fetcher as ReturnType<typeof vi.fn>).mock.calls[0] as unknown[];
-    const url = call[0] as string;
+    const [[url, opts]] = (fetcher as ReturnType<typeof vi.fn>).mock.calls as object as [[string, { headers: Record<string, string>; body: string; method: string }]];
     expect(url).toBe("https://api.hardcover.app/v1/graphql");
-    const opts = call[1] as { headers: Record<string, string>; body: string; method: string };
     expect(opts.method).toBe("POST");
     expect(opts.headers.authorization).toBe("Bearer key");
     const body = JSON.parse(opts.body) as { variables: { query: string } };
@@ -107,7 +105,7 @@ describe("searchHardcover", () => {
 
     await searchHardcover("Dune", undefined, "Bearer my-token", fetcher);
 
-    const opts = ((fetcher as ReturnType<typeof vi.fn>).mock.calls[0] as unknown[])[1] as { headers: Record<string, string> };
+    const [[, opts]] = (fetcher as ReturnType<typeof vi.fn>).mock.calls as object as [[string, { headers: Record<string, string> }]];
     expect(opts.headers.authorization).toBe("Bearer my-token");
   });
 
@@ -116,7 +114,7 @@ describe("searchHardcover", () => {
 
     await searchHardcover("Dune", undefined, "key", fetcher);
 
-    const opts = ((fetcher as ReturnType<typeof vi.fn>).mock.calls[0] as unknown[])[1] as { body: string };
+    const [[, opts]] = (fetcher as ReturnType<typeof vi.fn>).mock.calls as object as [[string, { body: string }]];
     const body = JSON.parse(opts.body) as { variables: { query: string } };
     expect(body.variables.query).toBe("Dune");
   });
@@ -132,7 +130,7 @@ describe("searchHardcover", () => {
       ok: false,
       status: 403,
       text: () => Promise.reject(new Error("read failed")),
-    }) as unknown as typeof fetch;
+    }) as object as typeof fetch;
 
     await expect(searchHardcover("Error", undefined, "key", fetcher)).rejects.toThrow("Hardcover API error 403: ");
   });

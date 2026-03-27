@@ -3,7 +3,7 @@ import type { H3Event } from "h3";
 
 export interface CoverHandlerDeps {
   existsSync: (path: string) => boolean;
-  createReadStream: (path: string) => unknown;
+  createReadStream: (path: string) => NodeJS.ReadableStream;
   coverCacheDir: string;
 }
 

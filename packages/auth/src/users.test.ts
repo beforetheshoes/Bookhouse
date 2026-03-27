@@ -1,5 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
+import type { AuthenticatedUser } from "./types";
 import { resolveAuthenticatedUser, upsertOidcUser } from "./users";
+
+interface MockTransactionClient {
+  userIdentity: {
+    findUnique: ReturnType<typeof vi.fn>;
+    update?: ReturnType<typeof vi.fn>;
+    create?: ReturnType<typeof vi.fn>;
+  };
+  user: {
+    update?: ReturnType<typeof vi.fn>;
+    findUnique?: ReturnType<typeof vi.fn>;
+    create?: ReturnType<typeof vi.fn>;
+  };
+}
 
 describe("user linking", () => {
   it("updates an existing identity-linked user", async () => {
@@ -11,7 +25,7 @@ describe("user linking", () => {
     });
     const updateIdentity = vi.fn().mockResolvedValue(undefined);
     const db = {
-      $transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+      $transaction: async (callback: (tx: MockTransactionClient) => Promise<AuthenticatedUser>) =>
         callback({
           userIdentity: {
             findUnique: vi.fn().mockResolvedValue({
@@ -78,7 +92,7 @@ describe("user linking", () => {
       image: "https://avatar.example.com/original.png",
     });
     const db = {
-      $transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+      $transaction: async (callback: (tx: MockTransactionClient) => Promise<AuthenticatedUser>) =>
         callback({
           userIdentity: {
             findUnique: vi.fn().mockResolvedValue({
@@ -136,7 +150,7 @@ describe("user linking", () => {
     const createIdentity = vi.fn().mockResolvedValue(undefined);
     const createUser = vi.fn();
     const db = {
-      $transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+      $transaction: async (callback: (tx: MockTransactionClient) => Promise<AuthenticatedUser>) =>
         callback({
           userIdentity: {
             findUnique: vi.fn().mockResolvedValue(null),
@@ -196,7 +210,7 @@ describe("user linking", () => {
     });
     const createIdentity = vi.fn().mockResolvedValue(undefined);
     const db = {
-      $transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+      $transaction: async (callback: (tx: MockTransactionClient) => Promise<AuthenticatedUser>) =>
         callback({
           userIdentity: {
             findUnique: vi.fn().mockResolvedValue(null),
@@ -248,7 +262,7 @@ describe("user linking", () => {
       image: null,
     });
     const db = {
-      $transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+      $transaction: async (callback: (tx: MockTransactionClient) => Promise<AuthenticatedUser>) =>
         callback({
           userIdentity: {
             findUnique: vi.fn().mockResolvedValue(null),

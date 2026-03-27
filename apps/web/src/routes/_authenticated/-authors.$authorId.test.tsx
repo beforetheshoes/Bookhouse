@@ -29,7 +29,7 @@ vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
     ...actual,
-    Link: ({ children, to, params, ...props }: { children?: React.ReactNode; to: string; params?: Record<string, string>; [key: string]: unknown }) => {
+    Link: ({ children, to, params, ...props }: { children?: React.ReactNode; to: string; params?: Record<string, string>; [key: string]: string | undefined | React.ReactNode | Record<string, string> | (() => void) }) => {
       let href = to;
       if (params) {
         for (const [key, value] of Object.entries(params)) {
@@ -38,7 +38,7 @@ vi.mock("@tanstack/react-router", async () => {
       }
       return <a href={href} {...props}>{children}</a>;
     },
-    createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
+    createFileRoute: (_path: string) => (opts: Record<string, string | boolean | object | ((...a: object[]) => object | undefined | Promise<object>)>) => ({
       ...opts,
       options: opts,
       useLoaderData: () => mockLoaderData,
@@ -84,7 +84,7 @@ describe("AuthorDetailPage", () => {
   it("loader calls getAuthorDetailServerFn with authorId", async () => {
     getAuthorDetailServerFnMock.mockResolvedValueOnce(mockLoaderData.author);
     const { Route } = await import("./authors.$authorId");
-    const result = await (Route.options.loader as (args: { params: { authorId: string } }) => Promise<unknown>)({
+    const result = await (Route.options.loader as (args: { params: { authorId: string } }) => Promise<object>)({
       params: { authorId: "a1" },
     });
     expect(getAuthorDetailServerFnMock).toHaveBeenCalledWith({

@@ -3,12 +3,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import type { ReactNode } from "react";
 
-const setColorModeServerFnMock = vi.fn();
-const setAccentColorServerFnMock = vi.fn();
+const { setColorModeServerFnMock, setAccentColorServerFnMock } = vi.hoisted(() => ({
+  setColorModeServerFnMock: vi.fn(),
+  setAccentColorServerFnMock: vi.fn(),
+}));
 
 vi.mock("~/lib/server-fns/app-settings", () => ({
-  setColorModeServerFn: (...args: unknown[]): unknown => setColorModeServerFnMock(...args),
-  setAccentColorServerFn: (...args: unknown[]): unknown => setAccentColorServerFnMock(...args),
+  setColorModeServerFn: setColorModeServerFnMock,
+  setAccentColorServerFn: setAccentColorServerFnMock,
 }));
 
 let mockResolvedTheme = "light";

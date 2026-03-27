@@ -7,7 +7,8 @@ function readFromStorage(): string[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
+    type JsonValue = string[] | Record<string, string> | string | number | boolean | null;
+    const parsed = JSON.parse(raw) as JsonValue;
     if (!Array.isArray(parsed)) return [];
     return parsed.filter((s): s is string => typeof s === "string");
   } catch {

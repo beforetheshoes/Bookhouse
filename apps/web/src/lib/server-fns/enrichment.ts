@@ -1,13 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import type { SearchSourcesDeps, RateLimitResult, CoverFromUrlDeps, CoverFromUrlDbDeps } from "@bookhouse/ingest";
+import type { SearchSourcesDeps, RateLimitResult, CoverFromUrlDeps, CoverFromUrlDbDeps, OLSearchResult, OLWork, OLEdition, GBVolume, HCBook } from "@bookhouse/ingest";
 
 interface SearchFns {
-  searchOpenLibrary: (title: string, author: string | undefined, fetcher: typeof fetch) => Promise<unknown>;
-  getOpenLibraryWork: (olid: string, fetcher: typeof fetch) => Promise<unknown>;
-  getOpenLibraryEdition: (isbn: string, fetcher: typeof fetch) => Promise<unknown>;
-  searchGoogleBooks: (title: string, author: string | undefined, apiKey: string, fetcher: typeof fetch) => Promise<unknown>;
-  searchHardcover: (title: string, author: string | undefined, apiKey: string, fetcher: typeof fetch) => Promise<unknown>;
+  searchOpenLibrary: (title: string, author: string | undefined, fetcher: typeof fetch) => Promise<OLSearchResult[] | null>;
+  getOpenLibraryWork: (olid: string, fetcher: typeof fetch) => Promise<OLWork | null>;
+  getOpenLibraryEdition: (isbn: string, fetcher: typeof fetch) => Promise<OLEdition | null>;
+  searchGoogleBooks: (title: string, author: string | undefined, apiKey: string, fetcher: typeof fetch) => Promise<GBVolume[] | null>;
+  searchHardcover: (title: string, author: string | undefined, apiKey: string, fetcher: typeof fetch) => Promise<HCBook[] | null>;
 }
 
 export function buildSearchDeps(
@@ -18,14 +18,14 @@ export function buildSearchDeps(
   fns: SearchFns,
 ): SearchSourcesDeps {
   return {
-    searchOL: (title, a) => fns.searchOpenLibrary(title, a, fetcher) as ReturnType<SearchSourcesDeps["searchOL"]>,
-    getOLWork: (olid) => fns.getOpenLibraryWork(olid, fetcher) as ReturnType<SearchSourcesDeps["getOLWork"]>,
-    getOLEdition: (isbn) => fns.getOpenLibraryEdition(isbn, fetcher) as ReturnType<SearchSourcesDeps["getOLEdition"]>,
+    searchOL: (title, a) => fns.searchOpenLibrary(title, a, fetcher),
+    getOLWork: (olid) => fns.getOpenLibraryWork(olid, fetcher),
+    getOLEdition: (isbn) => fns.getOpenLibraryEdition(isbn, fetcher),
     searchGB: gbKey
-      ? (title, a) => fns.searchGoogleBooks(title, a, gbKey, fetcher) as ReturnType<SearchSourcesDeps["searchGB"]>
+      ? (title, a) => fns.searchGoogleBooks(title, a, gbKey, fetcher)
       : () => Promise.resolve(null),
     searchHC: hcKey
-      ? (title, a) => fns.searchHardcover(title, a, hcKey, fetcher) as ReturnType<SearchSourcesDeps["searchHC"]>
+      ? (title, a) => fns.searchHardcover(title, a, hcKey, fetcher)
       : () => Promise.resolve(null),
     checkRateLimit: () => rateLimiter.check(),
   };
@@ -113,8 +113,7 @@ export const searchEnrichmentServerFn = createServerFn({
       searchHardcover,
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any
-    return await searchAllSources(work.titleDisplay, author, deps) as any;
+    return await searchAllSources(work.titleDisplay, author, deps);
   });
 
 const getSchema = z.object({
@@ -156,8 +155,8 @@ export const getEnrichmentDataServerFn = createServerFn({
 const applySchema = z.object({
   workId: z.string(),
   editionId: z.string().optional(),
-  workFields: z.record(z.unknown()).optional(),
-  editionFields: z.record(z.unknown()).optional(),
+  workFields: z.record(z.union([z.string(), z.array(z.string()), z.number(), z.null()])).optional(),
+  editionFields: z.record(z.union([z.string(), z.array(z.string()), z.number(), z.null()])).optional(),
   source: z.object({
     provider: z.string(),
     externalId: z.string(),
@@ -286,15 +285,15 @@ export const applyEnrichmentServerFn = createServerFn({
         select: { editedFields: true },
       });
       const editedFields = edition?.editedFields ?? [];
-      const filteredFields = Object.fromEntries(
+      const filteredFields: Record<string, string | string[] | number | Date | null> = Object.fromEntries(
         Object.entries(data.editionFields).filter(([key]) => !editedFields.includes(key)),
       );
 
       // Map enrichment field names to Prisma column names
       if ("publishedDate" in filteredFields) {
-        const val = filteredFields.publishedDate;
+        const val = filteredFields.publishedDate as string | null;
         delete filteredFields.publishedDate;
-        filteredFields.publishedAt = val ? new Date(val as string) : null;
+        filteredFields.publishedAt = val ? new Date(val) : null;
       }
 
       if (Object.keys(filteredFields).length > 0) {
@@ -386,7 +385,7 @@ export const applyCoverFromUrlServerFn = createServerFn({
 
     const dbDeps: CoverFromUrlDbDeps = {
       findWork: (id) => db.work.findUnique({ where: { id }, select: { editedFields: true } }),
-      updateWork: (id, updateData) => db.work.update({ where: { id }, data: updateData }) as unknown as Promise<void>,
+      updateWork: async (id, updateData) => { await db.work.update({ where: { id }, data: updateData }); },
     };
     /* c8 ignore stop */
 

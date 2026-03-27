@@ -873,7 +873,7 @@ function IntegrationCard({ provider, status }: { provider: string; status: Integ
       setSaveState("saved");
       setApiKey("");
       void router.invalidate();
-    } catch (error: unknown) {
+    } catch (error) {
       setSaveState("error");
       const message = error instanceof Error ? error.message : "Unknown error";
       setSaveError(`Failed to save: ${message}`);

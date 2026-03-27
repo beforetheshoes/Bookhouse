@@ -22,7 +22,7 @@ const mockOnClosed = vi.fn((cb: () => void) => {
 });
 
 vi.mock("h3", () => ({
-  defineEventHandler: (fn: unknown) => fn,
+  defineEventHandler: (fn: (event: object) => object | Promise<object>) => fn,
   createEventStream: () => ({
     push: mockPush,
     send: mockSend,
@@ -40,7 +40,7 @@ describe("events route", () => {
 
   it("creates stream and subscribes to queue events", async () => {
     const mod = await import("./events");
-    const handler = mod.default as (event: unknown) => Promise<unknown>;
+    const handler = mod.default as (event: object) => Promise<object>;
 
     const result = await handler({});
 
@@ -52,7 +52,7 @@ describe("events route", () => {
 
   it("pushes SSE events to stream", async () => {
     const mod = await import("./events");
-    const handler = mod.default as (event: unknown) => Promise<unknown>;
+    const handler = mod.default as (event: object) => Promise<object>;
 
     await handler({});
 
@@ -69,7 +69,7 @@ describe("events route", () => {
 
   it("sends heartbeat every 30 seconds", async () => {
     const mod = await import("./events");
-    const handler = mod.default as (event: unknown) => Promise<unknown>;
+    const handler = mod.default as (event: object) => Promise<object>;
 
     await handler({});
 
@@ -83,7 +83,7 @@ describe("events route", () => {
 
   it("cleans up on close", async () => {
     const mod = await import("./events");
-    const handler = mod.default as (event: unknown) => Promise<unknown>;
+    const handler = mod.default as (event: object) => Promise<object>;
 
     await handler({});
 

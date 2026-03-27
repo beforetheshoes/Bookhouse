@@ -331,8 +331,8 @@ export interface IngestDb {
 }
 
 export interface IngestLogger {
-  info(obj: Record<string, unknown>, msg: string): void;
-  warn(obj: Record<string, unknown>, msg: string): void;
+  info(obj: Record<string, string | number | boolean | null>, msg: string): void;
+  warn(obj: Record<string, string | number | boolean | null>, msg: string): void;
 }
 
 export interface IngestDependencies {
@@ -340,7 +340,7 @@ export interface IngestDependencies {
   enqueueLibraryJob<TName extends LibraryJobName>(
     jobName: TName,
     payload: LibraryJobPayload<TName>,
-  ): Promise<void>;
+  ): Promise<string | undefined>;
   listDirectory: ListDirectoryFn;
   logger: IngestLogger;
   readStats: ReadStatsFn;
@@ -536,13 +536,12 @@ function setDirectoryFileAsset(
   fileAssetsByDirectory.set(directoryPath, nextDirectoryAssets);
 }
 
-function getErrorCode(error: unknown): string | undefined {
-  return typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    typeof error.code === "string"
-    ? error.code
-    : undefined;
+interface NodeError extends Error {
+  code?: string;
+}
+
+function getErrorCode(error: NodeError): string | undefined {
+  return error.code;
 }
 
 /** Transient infrastructure errors that should be retried, not permanently stored as "unparseable". */
@@ -558,17 +557,17 @@ const TRANSIENT_ERROR_CODES = new Set([
   "ECONNABORTED",// connection aborted
 ]);
 
-function isTransientError(error: unknown): boolean {
+function isTransientError(error: NodeError): boolean {
   const code = getErrorCode(error);
   return code !== undefined && TRANSIENT_ERROR_CODES.has(code);
 }
 
 function parseStoredMetadata(metadata: FileAsset["metadata"]): ParsedFileAssetMetadata | undefined {
-  if (metadata === null || typeof metadata !== "object") {
+  if (metadata === null || typeof metadata !== "object" || Array.isArray(metadata)) {
     return undefined;
   }
 
-  const candidate = metadata as Record<string, unknown>;
+  const candidate = metadata;
   const source = candidate["source"];
   const status = candidate["status"];
 
@@ -579,7 +578,7 @@ function parseStoredMetadata(metadata: FileAsset["metadata"]): ParsedFileAssetMe
     return undefined;
   }
 
-  return candidate as unknown as ParsedFileAssetMetadata;
+  return candidate as object as ParsedFileAssetMetadata;
 }
 
 function getAuthorCanonicalsForWork(work: WorkMatchRecord): string[] {
@@ -790,46 +789,46 @@ async function getExistingLibraryRootOrThrow(ingestDb: IngestDb, libraryRootId: 
 function createDefaultIngestDb(): IngestDb {
   const prisma = db;
   return {
-    libraryRoot: prisma.libraryRoot as unknown as IngestDb["libraryRoot"],
+    libraryRoot: prisma.libraryRoot as object as IngestDb["libraryRoot"],
     fileAsset: {
-      ...(prisma.fileAsset as unknown as Omit<IngestDb["fileAsset"], "findByDirectory">),
+      ...(prisma.fileAsset as object as Omit<IngestDb["fileAsset"], "findByDirectory">),
       async findByDirectory(args: { directoryPath: string; mediaKinds: MediaKind[] }) {
         return prisma.fileAsset.findMany({
           where: {
             absolutePath: { startsWith: args.directoryPath + "/" },
             mediaKind: { in: args.mediaKinds },
           },
-        }) as unknown as Promise<FileAssetRecord[]>;
+        }) as object as Promise<FileAssetRecord[]>;
       },
       async updateMany(args: FileAssetUpdateManyArgs) {
-        return prisma.fileAsset.updateMany(args as never) as unknown as Promise<{ count: number }>;
+        return prisma.fileAsset.updateMany(args as never) as object as Promise<{ count: number }>;
       },
     },
     work: {
-      ...(prisma.work as unknown as Omit<IngestDb["work"], "findManyByIds" | "update">),
+      ...(prisma.work as object as Omit<IngestDb["work"], "findManyByIds" | "update">),
       async findManyByIds(args: { ids: string[] }) {
         return prisma.work.findMany({
           where: { id: { in: args.ids } },
-        }) as unknown as Promise<WorkRecord[]>;
+        }) as object as Promise<WorkRecord[]>;
       },
       async update(args: { where: { id: string }; data: Partial<Pick<Work, "coverPath" | "description" | "enrichmentStatus" | "seriesId" | "seriesPosition" | "sortTitle" | "titleCanonical" | "titleDisplay">> }) {
-        return prisma.work.update(args) as unknown as Promise<WorkRecord>;
+        return prisma.work.update(args) as object as Promise<WorkRecord>;
       },
     },
     edition: {
-      ...(prisma.edition as unknown as Omit<IngestDb["edition"], "findManyByIds" | "update">),
+      ...(prisma.edition as object as Omit<IngestDb["edition"], "findManyByIds" | "update">),
       async findManyByIds(args: { ids: string[] }) {
         return prisma.edition.findMany({
           where: { id: { in: args.ids } },
-        }) as unknown as Promise<EditionRecord[]>;
+        }) as object as Promise<EditionRecord[]>;
       },
       async update(args: { where: { id: string }; data: Partial<Pick<Edition, "asin" | "isbn10" | "isbn13" | "publisher" | "publishedAt" | "workId">> }) {
-        return prisma.edition.update(args) as unknown as Promise<EditionRecord>;
+        return prisma.edition.update(args) as object as Promise<EditionRecord>;
       },
     },
-    editionFile: prisma.editionFile as unknown as IngestDb["editionFile"],
-    contributor: prisma.contributor as unknown as IngestDb["contributor"],
-    editionContributor: prisma.editionContributor as unknown as IngestDb["editionContributor"],
+    editionFile: prisma.editionFile as object as IngestDb["editionFile"],
+    contributor: prisma.contributor as object as IngestDb["contributor"],
+    editionContributor: prisma.editionContributor as object as IngestDb["editionContributor"],
     series: {
       async upsert(args: { name: string }) {
         const existing = await prisma.series.findFirst({ where: { name: args.name } });
@@ -838,8 +837,8 @@ function createDefaultIngestDb(): IngestDb {
         return { id: created.id, name: created.name };
       },
     },
-    duplicateCandidate: prisma.duplicateCandidate as unknown as IngestDb["duplicateCandidate"],
-    matchSuggestion: prisma.matchSuggestion as unknown as IngestDb["matchSuggestion"],
+    duplicateCandidate: prisma.duplicateCandidate as object as IngestDb["duplicateCandidate"],
+    matchSuggestion: prisma.matchSuggestion as object as IngestDb["matchSuggestion"],
   };
 }
 
@@ -860,7 +859,7 @@ async function recoverUnchangedFile(
   upsertedFileAsset: FileAssetRecord,
   recoveryContext: ScanRecoveryContext,
   logger: IngestLogger,
-  enqueueJob: <TName extends LibraryJobName>(jobName: TName, payload: LibraryJobPayload<TName>) => Promise<unknown>,
+  enqueueJob: <TName extends LibraryJobName>(jobName: TName, payload: LibraryJobPayload<TName>) => Promise<string | undefined>,
   enqueuedRecoveryJobs: string[],
 ): Promise<void> {
   const recoveryFormatFamily = deriveFormatFamily(upsertedFileAsset.mediaKind);
@@ -1261,7 +1260,7 @@ async function mergeWorks(
   let hasUpdates = false;
   for (const field of MERGE_METADATA_FIELDS) {
     if (survivingWork[field] === null && losingWork[field] !== null) {
-      (updates as Record<string, unknown>)[field] = losingWork[field];
+      (updates as Record<string, string | number | null | undefined>)[field] = losingWork[field];
       hasUpdates = true;
     }
   }
@@ -1788,7 +1787,7 @@ export function createIngestServices(
         partialHash: hashes.partialHash,
       };
     } catch (error) {
-      const errorCode = getErrorCode(error);
+      const errorCode = getErrorCode(error as NodeError);
 
       if (errorCode === "ENOENT") {
         await ingestDb.fileAsset.update({
@@ -1861,7 +1860,7 @@ export function createIngestServices(
           data: {
             availabilityStatus: AvailabilityStatus.PRESENT,
             lastSeenAt: now,
-            metadata: metadata as unknown as FileAsset["metadata"],
+            metadata: metadata as object as FileAsset["metadata"],
           },
         });
 
@@ -1886,7 +1885,7 @@ export function createIngestServices(
           if (!edition) continue;
 
           // Update edition fields (only if null — supplement, not override)
-          const editionUpdates: Record<string, unknown> = {};
+          const editionUpdates: Partial<Pick<EditionRecord, "publisher" | "publishedAt" | "isbn13" | "isbn10" | "asin">> = {};
           if (!edition.publisher && normalized.publisher) editionUpdates.publisher = normalized.publisher;
           if (!edition.publishedAt && normalized.date) {
             const parsedDate = new Date(normalized.date);
@@ -1910,7 +1909,7 @@ export function createIngestServices(
 
           if (!work) continue;
 
-          const workUpdates: Record<string, unknown> = {};
+          const workUpdates: Partial<Pick<WorkRecord, "description" | "seriesId" | "seriesPosition" | "titleDisplay" | "titleCanonical" | "enrichmentStatus">> = {};
           if (!work.description && normalized.description) workUpdates.description = normalized.description;
 
           if (!edition.language && normalized.language) {
@@ -1965,7 +1964,7 @@ export function createIngestServices(
           skipped: false,
         };
       } catch (error) {
-        const errorCode = getErrorCode(error);
+        const errorCode = getErrorCode(error as NodeError);
 
         if (errorCode === "ENOENT") {
           await ingestDb.fileAsset.update({
@@ -1978,7 +1977,7 @@ export function createIngestServices(
           return { availabilityStatus: AvailabilityStatus.MISSING, fileAssetId: fileAsset.id, skipped: false };
         }
 
-        if (isTransientError(error)) {
+        if (isTransientError(error as NodeError)) {
           throw error;
         }
 
@@ -1996,7 +1995,7 @@ export function createIngestServices(
           data: {
             availabilityStatus: AvailabilityStatus.PRESENT,
             lastSeenAt: now,
-            metadata: metadata as unknown as FileAsset["metadata"],
+            metadata: metadata as object as FileAsset["metadata"],
           },
         });
 
@@ -2046,7 +2045,7 @@ export function createIngestServices(
           data: {
             availabilityStatus: AvailabilityStatus.PRESENT,
             lastSeenAt: now,
-            metadata: metadata as unknown as FileAsset["metadata"],
+            metadata: metadata as object as FileAsset["metadata"],
           },
         });
 
@@ -2061,7 +2060,7 @@ export function createIngestServices(
           skipped: false,
         };
       } catch (error) {
-        const errorCode = getErrorCode(error);
+        const errorCode = getErrorCode(error as NodeError);
 
         if (errorCode === "ENOENT") {
           await ingestDb.fileAsset.update({
@@ -2074,7 +2073,7 @@ export function createIngestServices(
           return { availabilityStatus: AvailabilityStatus.MISSING, fileAssetId: fileAsset.id, skipped: false };
         }
 
-        if (isTransientError(error)) {
+        if (isTransientError(error as NodeError)) {
           throw error;
         }
 
@@ -2092,7 +2091,7 @@ export function createIngestServices(
           data: {
             availabilityStatus: AvailabilityStatus.PRESENT,
             lastSeenAt: now,
-            metadata: metadata as unknown as FileAsset["metadata"],
+            metadata: metadata as object as FileAsset["metadata"],
           },
         });
 
@@ -2186,7 +2185,7 @@ export function createIngestServices(
           data: {
             availabilityStatus: AvailabilityStatus.PRESENT,
             lastSeenAt: now,
-            metadata: metadata as unknown as FileAsset["metadata"],
+            metadata: metadata as object as FileAsset["metadata"],
           },
         });
 
@@ -2209,7 +2208,7 @@ export function createIngestServices(
           skipped: false,
         };
       } catch (error) {
-        const errorCode = getErrorCode(error);
+        const errorCode = getErrorCode(error as NodeError);
 
         if (errorCode === "ENOENT") {
           await ingestDb.fileAsset.update({
@@ -2222,7 +2221,7 @@ export function createIngestServices(
           return { availabilityStatus: AvailabilityStatus.MISSING, fileAssetId: fileAsset.id, skipped: false };
         }
 
-        if (isTransientError(error)) {
+        if (isTransientError(error as NodeError)) {
           throw error;
         }
 
@@ -2240,7 +2239,7 @@ export function createIngestServices(
           data: {
             availabilityStatus: AvailabilityStatus.PRESENT,
             lastSeenAt: now,
-            metadata: metadata as unknown as FileAsset["metadata"],
+            metadata: metadata as object as FileAsset["metadata"],
           },
         });
 
@@ -2273,7 +2272,7 @@ export function createIngestServices(
         data: {
           availabilityStatus: AvailabilityStatus.PRESENT,
           lastSeenAt: now,
-          metadata: metadata as unknown as FileAsset["metadata"],
+          metadata: metadata as object as FileAsset["metadata"],
         },
       });
 
@@ -2288,7 +2287,7 @@ export function createIngestServices(
         skipped: false,
       };
     } catch (error) {
-      const errorCode = getErrorCode(error);
+      const errorCode = getErrorCode(error as NodeError);
 
       if (errorCode === "ENOENT") {
         await ingestDb.fileAsset.update({
@@ -2306,7 +2305,7 @@ export function createIngestServices(
         };
       }
 
-      if (isTransientError(error)) {
+      if (isTransientError(error as NodeError)) {
         throw error;
       }
 
@@ -2324,7 +2323,7 @@ export function createIngestServices(
         data: {
           availabilityStatus: AvailabilityStatus.PRESENT,
           lastSeenAt: now,
-          metadata: metadata as unknown as FileAsset["metadata"],
+          metadata: metadata as object as FileAsset["metadata"],
         },
       });
 

@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
+/** Cast route option function types that have no overlap with simple function types */
+function asBeforeLoad<TResult>(fn: object): (input: { context?: object }) => Promise<TResult> {
+  return fn as ((input: { context?: object }) => Promise<TResult>) & typeof fn;
+}
+
 const getCurrentUserServerFnMock = vi.fn();
 const getThemeServerFnMock = vi.fn().mockResolvedValue("system");
 const getColorModeServerFnMock = vi.fn().mockResolvedValue("book");
@@ -10,18 +15,16 @@ vi.mock("../lib/auth-client", () => ({
 }));
 
 vi.mock("~/lib/server-fns/app-settings", () => ({
-  getThemeServerFn: (...args: unknown[]): unknown => getThemeServerFnMock(...args),
-  getColorModeServerFn: (...args: unknown[]): unknown => getColorModeServerFnMock(...args),
-  getAccentColorServerFn: (...args: unknown[]): unknown => getAccentColorServerFnMock(...args),
+  getThemeServerFn: getThemeServerFnMock,
+  getColorModeServerFn: getColorModeServerFnMock,
+  getAccentColorServerFn: getAccentColorServerFnMock,
 }));
 
 describe("_authenticated layout route", () => {
   it("redirects unauthenticated requests to login", async () => {
     const { Route } = await import("./_authenticated");
     getCurrentUserServerFnMock.mockResolvedValueOnce(null);
-    const beforeLoad = Route.options.beforeLoad as unknown as (input: {
-      context?: unknown;
-    }) => Promise<unknown>;
+    const beforeLoad = asBeforeLoad<object>(Route.options.beforeLoad as object);
 
     await expect(
       beforeLoad({ context: undefined }),
@@ -42,9 +45,7 @@ describe("_authenticated layout route", () => {
       issuer: "https://issuer.example.com",
       subject: "subject-1",
     };
-    const beforeLoad = Route.options.beforeLoad as unknown as (input: {
-      context?: unknown;
-    }) => Promise<{ user: typeof user }>;
+    const beforeLoad = asBeforeLoad<{ user: typeof user }>(Route.options.beforeLoad as object);
 
     const result = await beforeLoad({
       context: { auth: { user } },
@@ -64,9 +65,7 @@ describe("_authenticated layout route", () => {
       subject: "subject-2",
     };
     getCurrentUserServerFnMock.mockResolvedValueOnce(user);
-    const beforeLoad = Route.options.beforeLoad as unknown as (input: {
-      context?: unknown;
-    }) => Promise<{ user: typeof user }>;
+    const beforeLoad = asBeforeLoad<{ user: typeof user }>(Route.options.beforeLoad as object);
 
     const result = await beforeLoad({ context: {} });
 
@@ -85,9 +84,7 @@ describe("_authenticated layout route", () => {
     };
     getCurrentUserServerFnMock.mockResolvedValueOnce(user);
     getThemeServerFnMock.mockResolvedValueOnce("dark");
-    const beforeLoad = Route.options.beforeLoad as unknown as (input: {
-      context?: unknown;
-    }) => Promise<unknown>;
+    const beforeLoad = asBeforeLoad<object>(Route.options.beforeLoad as object);
 
     const result = await beforeLoad({ context: {} });
 

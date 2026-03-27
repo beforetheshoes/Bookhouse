@@ -5,7 +5,7 @@ const CI = !!process.env.CI;
 const E2E_ENV = {
   DATABASE_URL:
     process.env.DATABASE_URL ??
-    "postgresql://bookhouse:bookhouse@localhost:5432/bookhouse",
+    "postgresql://bookhouse:bookhouse@localhost:5432/bookhouse_test",
   QUEUE_URL: process.env.QUEUE_URL ?? "redis://localhost:6379",
   AUTH_SECRET: "e2e-test-secret-at-least-32-chars!!",
   AUTH_OIDC_ISSUER: "http://localhost:9090",

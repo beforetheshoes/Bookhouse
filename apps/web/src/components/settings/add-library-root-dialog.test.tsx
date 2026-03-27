@@ -186,7 +186,7 @@ describe("AddLibraryRootDialog", () => {
 
     await waitFor(() => {
       expect(addLibraryRootServerFnMock).toHaveBeenCalledWith({
-        data: expect.objectContaining({ kind: "AUDIOBOOKS" }) as unknown,
+        data: expect.objectContaining({ kind: "AUDIOBOOKS" }) as object,
       });
     });
   });

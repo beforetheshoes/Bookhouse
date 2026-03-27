@@ -1,6 +1,17 @@
 import { fileURLToPath } from "node:url";
 import type * as SharedModule from "@bookhouse/shared";
+import type { QueueProgressData } from "@bookhouse/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+type WrappedEnqueue = (name: string, payload: Record<string, string | undefined>) => Promise<void>;
+type IngestServicesConfig = { enqueueLibraryJob: WrappedEnqueue };
+type EnrichDeps = {
+  findWork: (id: string) => Promise<object | null>;
+  searchOL: (title: string, author: string) => Promise<object | null>;
+  getOLWork: (olid: string) => Promise<object | null>;
+  upsertExternalLink: (data: { editionId: string; provider: string; externalId: string; metadata: Record<string, string | number | boolean | null> }) => Promise<object>;
+  checkRateLimit: () => { allowed: boolean };
+};
 
 const addMock = vi.fn();
 const onMock = vi.fn();
@@ -25,7 +36,7 @@ const enqueueLibraryJobMock = vi.fn();
 
 vi.mock("ioredis", () => ({
   default: class FakeRedis {
-    constructor(config: unknown) {
+    constructor(config: object) {
       redisConstructorMock(config);
     }
 
@@ -44,7 +55,7 @@ vi.mock("bullmq", () => ({
   Worker: class FakeWorker {
     concurrency = 5;
 
-    constructor(...args: unknown[]) {
+    constructor(...args: object[]) {
       workerConstructorMock(...args);
     }
 
@@ -66,24 +77,24 @@ const externalLinkUpsertMock = vi.fn();
 vi.mock("@bookhouse/db", () => ({
   db: {
     appSetting: {
-      findUnique: (...args: unknown[]): unknown => appSettingFindUniqueMock(...args),
+      findUnique: appSettingFindUniqueMock,
     },
     importJob: {
       update: importJobUpdateMock,
       updateMany: importJobUpdateManyMock,
     },
     work: {
-      findUnique: (...args: unknown[]): unknown => workFindUniqueMock(...args),
+      findUnique: workFindUniqueMock,
     },
     externalLink: {
-      upsert: (...args: unknown[]): unknown => externalLinkUpsertMock(...args),
+      upsert: externalLinkUpsertMock,
     },
   },
 }));
 
 vi.mock("@bookhouse/ingest", () => ({
-  createIngestServices: (...args: unknown[]) => {
-    createIngestServicesMock(...args);
+  createIngestServices: (deps?: object) => {
+    createIngestServicesMock(deps);
     return {
       hashFileAsset: hashFileAssetMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
@@ -113,7 +124,7 @@ vi.mock("@bookhouse/shared", async () => {
   );
 
   return {
-    ...(actual as Record<string, unknown>),
+    ...actual,
     getQueueConnectionConfig: queueConnectionConfigMock,
     enqueueLibraryJob: enqueueLibraryJobMock,
   };
@@ -122,7 +133,7 @@ vi.mock("@bookhouse/shared", async () => {
 const moveToWaitingChildrenMock = vi.fn().mockResolvedValue(false);
 const updateDataMock = vi.fn().mockResolvedValue(undefined);
 
-function createMockJob(overrides: Record<string, unknown> = {}) {
+function createMockJob(overrides: Record<string, string | number | boolean | object | null | undefined> = {}) {
   return {
     id: "job-1",
     opts: { attempts: 1 },
@@ -367,11 +378,11 @@ describe("library worker", () => {
     expect(importJobUpdateMock).toHaveBeenCalledTimes(2);
     expect(importJobUpdateMock).toHaveBeenNthCalledWith(1, {
       where: { id: "ij-1" },
-      data: { status: "RUNNING", startedAt: expect.any(Date) as unknown, attemptsMade: 1 },
+      data: { status: "RUNNING", startedAt: expect.any(Date) as Date, attemptsMade: 1 },
     });
     expect(importJobUpdateMock).toHaveBeenNthCalledWith(2, {
       where: { id: "ij-1", status: "RUNNING" },
-      data: { status: "SUCCEEDED", finishedAt: expect.any(Date) as unknown, scanStage: null, bullmqJobId: null },
+      data: { status: "SUCCEEDED", finishedAt: expect.any(Date) as Date, scanStage: null, bullmqJobId: null },
     });
   });
 
@@ -450,7 +461,7 @@ describe("library worker", () => {
       where: { id: "ij-2" },
       data: {
         status: "FAILED",
-        finishedAt: expect.any(Date) as unknown,
+        finishedAt: expect.any(Date) as Date,
         error: "Disk full",
         attemptsMade: 2,
         scanStage: null,
@@ -486,7 +497,7 @@ describe("library worker", () => {
       where: { id: "ij-3" },
       data: {
         status: "FAILED",
-        finishedAt: expect.any(Date) as unknown,
+        finishedAt: expect.any(Date) as Date,
         error: "plain string error",
         attemptsMade: 1,
         scanStage: null,
@@ -533,7 +544,7 @@ describe("library worker", () => {
     });
 
     const updateProgressMock = vi.fn();
-    scanLibraryRootMock.mockImplementationOnce(async (input: { reportProgress?: (data: unknown) => Promise<void> }) => {
+    scanLibraryRootMock.mockImplementationOnce(async (input: { reportProgress?: (data: QueueProgressData) => Promise<void> }) => {
       if (input.reportProgress) {
         await input.reportProgress({ totalFiles: 100 });
         await input.reportProgress({ processedFiles: 50, errorCount: 1 });
@@ -559,7 +570,7 @@ describe("library worker", () => {
     });
     expect(importJobUpdateMock).toHaveBeenCalledWith({
       where: { id: "ij-progress", status: "RUNNING" },
-      data: { status: "SUCCEEDED", finishedAt: expect.any(Date) as unknown, scanStage: null, bullmqJobId: null },
+      data: { status: "SUCCEEDED", finishedAt: expect.any(Date) as Date, scanStage: null, bullmqJobId: null },
     });
     // job.updateProgress should have been called for each progress report
     expect(updateProgressMock).toHaveBeenCalledWith({ totalFiles: 100 });
@@ -584,7 +595,7 @@ describe("library worker", () => {
       .mockRejectedValueOnce(new Error("progress db down"))
       .mockResolvedValueOnce({});
 
-    scanLibraryRootMock.mockImplementationOnce(async (input: { reportProgress?: (data: unknown) => Promise<void> }) => {
+    scanLibraryRootMock.mockImplementationOnce(async (input: { reportProgress?: (data: QueueProgressData) => Promise<void> }) => {
       await input.reportProgress?.({ processedFiles: 50, errorCount: 1, scanStage: "PROCESSING" });
       return { missingFileAssetIds: [] };
     });
@@ -645,21 +656,15 @@ describe("library worker", () => {
 
     expect(result).toEqual({ status: "enriched", workOlid: "OL123W" });
     expect(enrichWorkMock).toHaveBeenCalledWith("work-1", expect.objectContaining({
-      findWork: expect.any(Function) as unknown,
-      searchOL: expect.any(Function) as unknown,
-      getOLWork: expect.any(Function) as unknown,
-      upsertExternalLink: expect.any(Function) as unknown,
-      checkRateLimit: expect.any(Function) as unknown,
+      findWork: expect.any(Function) as (() => void),
+      searchOL: expect.any(Function) as (() => void),
+      getOLWork: expect.any(Function) as (() => void),
+      upsertExternalLink: expect.any(Function) as (() => void),
+      checkRateLimit: expect.any(Function) as (() => void),
     }));
 
     // Exercise the deps callbacks for coverage
-    const deps = (enrichWorkMock.mock.calls[0] as unknown[])[1] as {
-      findWork: (id: string) => unknown;
-      searchOL: (title: string, author: string) => unknown;
-      getOLWork: (olid: string) => unknown;
-      upsertExternalLink: (data: { editionId: string; provider: string; externalId: string; metadata: Record<string, unknown> }) => unknown;
-      checkRateLimit: () => unknown;
-    };
+    const [[, deps]] = enrichWorkMock.mock.calls as object as [[string, EnrichDeps]];
 
     workFindUniqueMock.mockResolvedValueOnce({ id: "w1" });
     await deps.findWork("w1");
@@ -675,8 +680,8 @@ describe("library worker", () => {
       },
     });
 
-    deps.searchOL("title", "author");
-    deps.getOLWork("OL1W");
+    void deps.searchOL("title", "author");
+    void deps.getOLWork("OL1W");
 
     externalLinkUpsertMock.mockResolvedValueOnce({ id: "el1" });
     await deps.upsertExternalLink({
@@ -698,11 +703,11 @@ describe("library worker", () => {
         provider: "openlibrary",
         externalId: "OL1W",
         metadata: { title: "Test" },
-        lastSyncedAt: expect.any(Date) as unknown,
+        lastSyncedAt: expect.any(Date) as Date,
       },
       update: {
         metadata: { title: "Test" },
-        lastSyncedAt: expect.any(Date) as unknown,
+        lastSyncedAt: expect.any(Date) as Date,
       },
     });
 
@@ -745,8 +750,8 @@ describe("library worker", () => {
     }) as never, "test-token");
 
     expect(createIngestServicesMock).toHaveBeenCalledTimes(1);
-    const createArgs = createIngestServicesMock.mock.calls[0] as [{ enqueueLibraryJob: unknown }];
-    expect(createArgs[0]).toHaveProperty("enqueueLibraryJob");
+    const [[firstArg]] = createIngestServicesMock.mock.calls as object as [[IngestServicesConfig]];
+    expect(firstArg).toHaveProperty("enqueueLibraryJob");
   });
 
   it("wrapped enqueue passes payload with scanJobId/scanQueueName and parent option to enqueueLibraryJob", async () => {
@@ -764,8 +769,7 @@ describe("library worker", () => {
     }) as never, "test-token");
 
     // Get the wrapped enqueue from the createIngestServices call
-    const createArgs = createIngestServicesMock.mock.calls[0] as [{ enqueueLibraryJob: (name: string, payload: unknown) => Promise<void> }];
-    const wrappedEnqueue = createArgs[0].enqueueLibraryJob;
+    const [[{ enqueueLibraryJob: wrappedEnqueue }]] = createIngestServicesMock.mock.calls as object as [[IngestServicesConfig]];
 
     // Call the wrapped enqueue and verify it passes scanJobId, scanQueueName and parent option
     await wrappedEnqueue("hash-file-asset", { fileAssetId: "file-1" });
@@ -791,8 +795,7 @@ describe("library worker", () => {
       queueQualifiedName: "bull:library",
     }) as never, "test-token");
 
-    const createArgs = createIngestServicesMock.mock.calls[0] as [{ enqueueLibraryJob: (name: string, payload: unknown) => Promise<void> }];
-    const wrappedEnqueue = createArgs[0].enqueueLibraryJob;
+    const [[{ enqueueLibraryJob: wrappedEnqueue }]] = createIngestServicesMock.mock.calls as object as [[IngestServicesConfig]];
 
     await wrappedEnqueue("hash-file-asset", { fileAssetId: "file-1" });
 
@@ -817,8 +820,7 @@ describe("library worker", () => {
       queueQualifiedName: "bull:library",
     }) as never, "test-token");
 
-    const createArgs = createIngestServicesMock.mock.calls[0] as [{ enqueueLibraryJob: (name: string, payload: unknown) => Promise<void> }];
-    const wrappedEnqueue = createArgs[0].enqueueLibraryJob;
+    const [[{ enqueueLibraryJob: wrappedEnqueue }]] = createIngestServicesMock.mock.calls as object as [[IngestServicesConfig]];
 
     await wrappedEnqueue("hash-file-asset", { fileAssetId: "file-1" });
 
@@ -858,7 +860,7 @@ describe("library worker", () => {
       data: {
         status: "FAILED",
         error: "Superseded by new scan",
-        finishedAt: expect.any(Date) as unknown,
+        finishedAt: expect.any(Date) as Date,
         bullmqJobId: null,
       },
     });
@@ -963,7 +965,7 @@ describe("library worker", () => {
     expect(scanLibraryRootMock).not.toHaveBeenCalled();
     expect(importJobUpdateMock).toHaveBeenCalledWith({
       where: { id: "ij-complete", status: "RUNNING" },
-      data: { status: "SUCCEEDED", finishedAt: expect.any(Date) as unknown, scanStage: null, bullmqJobId: null },
+      data: { status: "SUCCEEDED", finishedAt: expect.any(Date) as Date, scanStage: null, bullmqJobId: null },
     });
   });
 
@@ -1067,7 +1069,7 @@ describe("library worker", () => {
 
     // Should NOT have written FAILED — only RUNNING was written
     expect(importJobUpdateMock).not.toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ status: "FAILED" }) as unknown,
+      data: expect.objectContaining({ status: "FAILED" }) as object,
     }));
   });
 
@@ -1099,7 +1101,7 @@ describe("library worker", () => {
       data: {
         status: "FAILED",
         error: "Child job hash-file-asset failed: hash failed",
-        finishedAt: expect.any(Date) as unknown,
+        finishedAt: expect.any(Date) as Date,
         scanStage: null,
         bullmqJobId: null,
       },
@@ -1134,7 +1136,7 @@ describe("library worker", () => {
       data: {
         status: "FAILED",
         error: "Child job hash-file-asset failed: plain child failure",
-        finishedAt: expect.any(Date) as unknown,
+        finishedAt: expect.any(Date) as Date,
         scanStage: null,
         bullmqJobId: null,
       },
@@ -1169,7 +1171,7 @@ describe("library worker", () => {
       data: {
         status: "FAILED",
         error: "Child job hash-file-asset failed: hash failed",
-        finishedAt: expect.any(Date) as unknown,
+        finishedAt: expect.any(Date) as Date,
         scanStage: null,
         bullmqJobId: null,
       },
@@ -1201,7 +1203,7 @@ describe("library worker", () => {
     ).rejects.toThrow("transient");
 
     expect(importJobUpdateMock).not.toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ id: "ij-child-retry" }) as unknown,
+      where: expect.objectContaining({ id: "ij-child-retry" }) as object,
     }));
   });
 
@@ -1215,7 +1217,7 @@ describe("library worker", () => {
       "library",
       expect.any(Function),
       {
-        connection: expect.any(Object) as unknown,
+        connection: expect.any(Object) as object,
         concurrency: 5,
         removeOnComplete: { count: 1000 },
         removeOnFail: { count: 5000 },
@@ -1258,10 +1260,10 @@ describe("library worker", () => {
     const readyCallback = onMock.mock.calls.find(([e]) => e === "ready")?.[1] as () => void;
     readyCallback();
 
-    const completedCallback = onMock.mock.calls.find(([e]) => e === "completed")?.[1] as (job: unknown) => void;
+    const completedCallback = onMock.mock.calls.find(([e]) => e === "completed")?.[1] as (job: { id?: string; name?: string } | undefined) => void;
     completedCallback({ id: "job-1", name: "scan-library-root" });
 
-    const failedCallback = onMock.mock.calls.find(([e]) => e === "failed")?.[1] as (job: unknown, err: Error) => void;
+    const failedCallback = onMock.mock.calls.find(([e]) => e === "failed")?.[1] as (job: { id?: string; name?: string } | undefined, err: Error) => void;
     failedCallback({ id: "job-1", name: "scan-library-root" }, new Error("disk full"));
     failedCallback(undefined, new Error("no job ref"));
 

@@ -4,9 +4,10 @@ import type { ZodType } from "zod";
 
 vi.mock("@tanstack/react-start", () => ({
   createServerFn: () => {
+    type ServerFnInput = Record<string, string | number | boolean | null | string[] | Date | undefined | object>;
     type Builder = {
       inputValidator: (validator: ZodType) => Builder;
-      handler: (fn: (a: Record<string, unknown>) => unknown) => (a: Record<string, unknown>) => unknown;
+      handler: (fn: (a: ServerFnInput) => ServerFnInput | Promise<ServerFnInput>) => (a: ServerFnInput) => ServerFnInput | Promise<ServerFnInput>;
     };
     let validator: ZodType | null = null;
     const b: Builder = {
@@ -15,7 +16,7 @@ vi.mock("@tanstack/react-start", () => ({
         return b;
       },
       handler: (fn) => (a) => {
-        const validatedData: unknown = validator?.parse((a as { data?: unknown }).data);
+        const validatedData: ServerFnInput | undefined = validator?.parse((a as { data?: ServerFnInput }).data) as ServerFnInput | undefined;
         const parsed = validator === null
           ? a
           : {
@@ -41,11 +42,11 @@ const importJobUpdateMock = vi.fn();
 const importJobUpdateManyMock = vi.fn();
 const importJobDeleteManyMock = vi.fn();
 const importJobFindManyMock = vi.fn();
-const transactionMock = vi.fn(async (fnOrOps: unknown) => {
+const transactionMock = vi.fn(async (fnOrOps: ((tx: object) => Promise<void>) | Array<Promise<void>>) => {
   if (typeof fnOrOps === "function") {
-    return (fnOrOps as (tx: unknown) => Promise<unknown>)(null);
+    return fnOrOps({});
   }
-  return Promise.all(fnOrOps as Promise<unknown>[]);
+  return Promise.all(fnOrOps);
 });
 
 vi.mock("@bookhouse/db", () => ({
@@ -94,9 +95,11 @@ vi.mock("@bookhouse/shared", async () => {
 });
 
 const parseFileAssetMetadataMock = vi.fn();
-const createIngestServicesMock = vi.fn(() => ({
-  parseFileAssetMetadata: parseFileAssetMetadataMock,
-}));
+const createIngestServicesMock = vi.fn(
+  (_deps: { enqueueLibraryJob: (jobName: string, payload: object) => Promise<void> }) => ({
+    parseFileAssetMetadata: parseFileAssetMetadataMock,
+  }),
+);
 
 const cascadeCleanupOrphansMock = vi.fn();
 
@@ -225,11 +228,11 @@ describe("removeLibraryRootServerFn", () => {
       importJob: { deleteMany: importJobDeleteManyMock },
       libraryRoot: { delete: libraryRootDeleteMock },
     };
-    transactionMock.mockImplementation(async (fn: unknown) => {
+    transactionMock.mockImplementation(async (fn: ((tx: object) => Promise<void>) | Array<Promise<void>>) => {
       if (typeof fn === "function") {
-        return (fn as (tx: unknown) => Promise<unknown>)(txClient);
+        return fn(txClient);
       }
-      return Promise.all(fn as Promise<unknown>[]);
+      return Promise.all(fn);
     });
     fileAssetFindManyMock.mockResolvedValue([]);
     cascadeCleanupOrphansMock.mockResolvedValue({ deletedEditionFileCount: 0, deletedEditionIds: [], deletedWorkIds: [] });
@@ -542,7 +545,7 @@ describe("getScanProgressServerFn", () => {
       data: {
         status: "FAILED",
         error: "Scan job is no longer active in BullMQ",
-        finishedAt: expect.any(Date) as unknown,
+        finishedAt: expect.any(Date) as Date,
         scanStage: null,
         bullmqJobId: null,
       },
@@ -576,7 +579,7 @@ describe("getScanProgressServerFn", () => {
       data: {
         status: "FAILED",
         error: "Scan job is blocked by a failed child job",
-        finishedAt: expect.any(Date) as unknown,
+        finishedAt: expect.any(Date) as Date,
         scanStage: null,
         bullmqJobId: null,
       },
@@ -931,17 +934,16 @@ describe("retryLibraryIssuesServerFn", () => {
     });
 
     expect(createIngestServicesMock).toHaveBeenCalledWith({
-      enqueueLibraryJob: expect.any(Function) as unknown,
+      enqueueLibraryJob: expect.any(Function) as () => void,
     });
 
     // Verify the wrapper delegates to the real enqueueLibraryJob
-    const calls = createIngestServicesMock.mock.calls as unknown as Array<
-      Array<{ enqueueLibraryJob: (jobName: string, payload: unknown) => Promise<void> }>
-    >;
-    const firstCall = calls[0];
-    if (!firstCall) throw new Error("expected createIngestServices call");
-    const firstArg = firstCall[0];
-    if (!firstArg) throw new Error("expected createIngestServices argument");
+    expect(createIngestServicesMock).toHaveBeenCalled();
+    const lastCall = createIngestServicesMock.mock.lastCall;
+    expect(lastCall).toBeTruthy();
+    if (!lastCall) throw new Error("lastCall is null");
+    const firstArg = lastCall[0];
+    expect(firstArg).toBeTruthy();
     enqueueLibraryJobMock.mockResolvedValue("job-id");
     await firstArg.enqueueLibraryJob("SOME_JOB", { fileAssetId: "fa-99" });
     expect(enqueueLibraryJobMock).toHaveBeenCalledWith("SOME_JOB", { fileAssetId: "fa-99" });

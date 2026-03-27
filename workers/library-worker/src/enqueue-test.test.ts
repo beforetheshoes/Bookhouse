@@ -11,7 +11,7 @@ const waitUntilReadyMock = vi.fn(() => Promise.resolve(undefined));
 
 vi.mock("ioredis", () => ({
   default: class FakeRedis {
-    constructor(config: unknown) {
+    constructor(config: object) {
       redisConstructorMock(config);
     }
 
@@ -22,7 +22,7 @@ vi.mock("ioredis", () => ({
 
 vi.mock("bullmq", () => ({
   QueueEvents: class FakeQueueEvents {
-    constructor(...args: unknown[]) {
+    constructor(...args: object[]) {
       queueEventsConstructorMock(...args);
     }
 
@@ -37,7 +37,7 @@ vi.mock("@bookhouse/shared", async () => {
   );
 
   return {
-    ...(actual as Record<string, unknown>),
+    ...actual,
     enqueueLibraryJob: enqueueLibraryJobMock,
     getQueueConnectionConfig: () => ({ host: "localhost", port: 6379 }),
   };
@@ -61,7 +61,7 @@ describe("enqueue test script", () => {
 
     expect(redisConstructorMock).toHaveBeenCalledWith({ host: "localhost", port: 6379 });
     expect(queueEventsConstructorMock).toHaveBeenCalledWith("library", {
-      connection: expect.any(Object) as unknown,
+      connection: expect.any(Object) as object,
     });
     expect(waitUntilReadyMock).toHaveBeenCalledTimes(1);
     expect(enqueueLibraryJobMock).toHaveBeenCalledWith("scan-library-root", {

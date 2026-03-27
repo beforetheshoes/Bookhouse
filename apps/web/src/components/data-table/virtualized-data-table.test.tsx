@@ -43,7 +43,7 @@ describe("VirtualizedDataTable", () => {
   it("renders data rows (virtualized) with top and bottom spacers", () => {
     // start=48 > 0 → top spacer rendered
     // end=96 < totalSize (4*48*3=576) → bottom spacer rendered
-    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => unknown; estimateSize: () => number }) => {
+    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => HTMLElement | null; estimateSize: () => number }) => {
       getScrollElement();
       estimateSize();
       return makeVirtualizer(count);
@@ -54,7 +54,7 @@ describe("VirtualizedDataTable", () => {
 
   it("renders data rows without bottom spacer when end >= totalSize", () => {
     // end >= totalSize → no bottom spacer (covers lastItem.end < totalSize = false branch)
-    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => unknown; estimateSize: () => number }) => {
+    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => HTMLElement | null; estimateSize: () => number }) => {
       getScrollElement();
       estimateSize();
       return makeVirtualizer(count, { start: 48, end: 96, totalSize: 96 });
@@ -64,7 +64,7 @@ describe("VirtualizedDataTable", () => {
   });
 
   it("shows 'No results.' when data is empty", () => {
-    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => unknown; estimateSize: () => number }) => {
+    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => HTMLElement | null; estimateSize: () => number }) => {
       getScrollElement();
       estimateSize();
       return makeVirtualizer(count);
@@ -74,7 +74,7 @@ describe("VirtualizedDataTable", () => {
   });
 
   it("renders toolbar when filterColumn is provided", () => {
-    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => unknown; estimateSize: () => number }) => {
+    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => HTMLElement | null; estimateSize: () => number }) => {
       getScrollElement();
       estimateSize();
       return makeVirtualizer(count);
@@ -91,7 +91,7 @@ describe("VirtualizedDataTable", () => {
   });
 
   it("renders pagination", () => {
-    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => unknown; estimateSize: () => number }) => {
+    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => HTMLElement | null; estimateSize: () => number }) => {
       getScrollElement();
       estimateSize();
       return makeVirtualizer(count);
@@ -101,7 +101,7 @@ describe("VirtualizedDataTable", () => {
   });
 
   it("hides built-in pagination when showPagination is false", () => {
-    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => unknown; estimateSize: () => number }) => {
+    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => HTMLElement | null; estimateSize: () => number }) => {
       getScrollElement();
       estimateSize();
       return makeVirtualizer(count);
@@ -111,7 +111,7 @@ describe("VirtualizedDataTable", () => {
   });
 
   it("renders with custom pageSize and containerHeight", () => {
-    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => unknown; estimateSize: () => number }) => {
+    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => HTMLElement | null; estimateSize: () => number }) => {
       getScrollElement();
       estimateSize();
       return makeVirtualizer(count);
@@ -132,7 +132,7 @@ describe("VirtualizedDataTable", () => {
   it("renders grouped column headers with placeholder (isPlaceholder branch)", () => {
     // Mix a grouped column with a flat column — the flat column in the top header row
     // becomes a placeholder (isPlaceholder=true) in TanStack Table.
-    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => unknown; estimateSize: () => number }) => {
+    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => HTMLElement | null; estimateSize: () => number }) => {
       getScrollElement();
       estimateSize();
       return makeVirtualizer(count);
@@ -156,7 +156,7 @@ describe("VirtualizedDataTable", () => {
   it("skips out-of-bounds virtual rows (null return branch)", () => {
     // Virtualizer reports a row at index 999 which is outside the actual rows array.
     // The component should render without crashing (the null branch is hit and skipped).
-    useVirtualizerMock.mockImplementation(({ getScrollElement, estimateSize }: { count: number; getScrollElement: () => unknown; estimateSize: () => number }) => {
+    useVirtualizerMock.mockImplementation(({ getScrollElement, estimateSize }: { count: number; getScrollElement: () => HTMLElement | null; estimateSize: () => number }) => {
       getScrollElement();
       estimateSize();
       return {
@@ -169,7 +169,7 @@ describe("VirtualizedDataTable", () => {
   });
 
   it("hides a column when columnVisibility marks it false", () => {
-    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => unknown; estimateSize: () => number }) => {
+    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => HTMLElement | null; estimateSize: () => number }) => {
       getScrollElement();
       estimateSize();
       return makeVirtualizer(count);
@@ -191,7 +191,7 @@ describe("VirtualizedDataTable", () => {
   });
 
   it("applies whitespace-normal class when textOverflow is 'wrap'", () => {
-    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => unknown; estimateSize: () => number }) => {
+    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => HTMLElement | null; estimateSize: () => number }) => {
       getScrollElement();
       estimateSize();
       return makeVirtualizer(count);
@@ -209,7 +209,7 @@ describe("VirtualizedDataTable", () => {
   });
 
   it("applies overflow-hidden and text-ellipsis when textOverflow is 'truncate'", () => {
-    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => unknown; estimateSize: () => number }) => {
+    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => HTMLElement | null; estimateSize: () => number }) => {
       getScrollElement();
       estimateSize();
       return makeVirtualizer(count);
@@ -227,7 +227,7 @@ describe("VirtualizedDataTable", () => {
   });
 
   it("defaults textOverflow to 'truncate' (no explicit prop)", () => {
-    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => unknown; estimateSize: () => number }) => {
+    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => HTMLElement | null; estimateSize: () => number }) => {
       getScrollElement();
       estimateSize();
       return makeVirtualizer(count);
@@ -239,7 +239,7 @@ describe("VirtualizedDataTable", () => {
   });
 
   it("applies table-fixed class to the table element", () => {
-    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => unknown; estimateSize: () => number }) => {
+    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => HTMLElement | null; estimateSize: () => number }) => {
       getScrollElement();
       estimateSize();
       return makeVirtualizer(count);
@@ -250,7 +250,7 @@ describe("VirtualizedDataTable", () => {
   });
 
   it("applies column width style from column size definition", () => {
-    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => unknown; estimateSize: () => number }) => {
+    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => HTMLElement | null; estimateSize: () => number }) => {
       getScrollElement();
       estimateSize();
       return makeVirtualizer(count);
@@ -265,7 +265,7 @@ describe("VirtualizedDataTable", () => {
 
   it("renders selected row (getIsSelected=true branch covers && 'selected')", () => {
     // TanStack Table uses row index "0" as the default row ID
-    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => unknown; estimateSize: () => number }) => {
+    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => HTMLElement | null; estimateSize: () => number }) => {
       getScrollElement();
       estimateSize();
       return makeVirtualizer(count);

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 
 vi.mock("h3", () => ({
-  defineEventHandler: (fn: unknown) => fn,
+  defineEventHandler: (fn: (event: object) => object | Promise<object>) => fn,
 }));
 
 describe("cover route", () => {

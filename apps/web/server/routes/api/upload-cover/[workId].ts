@@ -88,7 +88,7 @@ export default defineEventHandler(async (event) => {
     extractColors: (buf) => extractDominantColors(buf, sharpModule.default as never),
     db: {
       findWork: (id) => db.work.findUnique({ where: { id }, select: { editedFields: true } }),
-      updateWork: (id, data) => db.work.update({ where: { id }, data }) as unknown as Promise<void>,
+      updateWork: async (id, data) => { await db.work.update({ where: { id }, data }); },
     },
   });
   return handler(event);

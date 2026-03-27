@@ -3,12 +3,14 @@ import { render, screen, act, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const searchEnrichmentMock = vi.fn();
-const applyCoverFromUrlMock = vi.fn();
+const { searchEnrichmentMock, applyCoverFromUrlMock } = vi.hoisted(() => ({
+  searchEnrichmentMock: vi.fn(),
+  applyCoverFromUrlMock: vi.fn(),
+}));
 
 vi.mock("~/lib/server-fns/enrichment", () => ({
-  searchEnrichmentServerFn: (...args: unknown[]): unknown => searchEnrichmentMock(...args),
-  applyCoverFromUrlServerFn: (...args: unknown[]): unknown => applyCoverFromUrlMock(...args),
+  searchEnrichmentServerFn: searchEnrichmentMock,
+  applyCoverFromUrlServerFn: applyCoverFromUrlMock,
 }));
 
 const { mockToast } = vi.hoisted(() => ({
@@ -136,7 +138,7 @@ describe("CoverSearchDialog", () => {
       expect(applyCoverFromUrlMock).toHaveBeenCalledTimes(1);
     });
 
-    const callArgs = (applyCoverFromUrlMock.mock.calls[0] as unknown[])[0] as { data: { workId: string; imageUrl: string; source: { provider: string } } };
+    const callArgs = applyCoverFromUrlMock.mock.calls[0]?.[0] as { data: { workId: string; imageUrl: string; source: { provider: string } } };
     expect(callArgs.data.workId).toBe("w1");
     expect(callArgs.data.imageUrl).toBe("https://covers.openlibrary.org/b/id/42-L.jpg");
     expect(callArgs.data.source.provider).toBe("openlibrary");
@@ -161,7 +163,7 @@ describe("CoverSearchDialog", () => {
       expect(applyCoverFromUrlMock).toHaveBeenCalledTimes(1);
     });
 
-    const callArgs = (applyCoverFromUrlMock.mock.calls[0] as unknown[])[0] as { data: { workId: string; imageUrl: string; source?: unknown } };
+    const callArgs = applyCoverFromUrlMock.mock.calls[0]?.[0] as { data: { workId: string; imageUrl: string; source?: object } };
     expect(callArgs.data.workId).toBe("w1");
     expect(callArgs.data.imageUrl).toBe("https://example.com/my-cover.jpg");
     expect(callArgs.data.source).toBeUndefined();
@@ -244,7 +246,7 @@ describe("CoverSearchDialog", () => {
   });
 
   it("cancels in-flight search when dialog unmounts", async () => {
-    let resolveSearch: ((value: unknown) => void) | undefined;
+    let resolveSearch: ((value: object) => void) | undefined;
     searchEnrichmentMock.mockImplementation(() => new Promise((resolve) => {
       resolveSearch = resolve;
     }));
@@ -276,7 +278,7 @@ describe("CoverSearchDialog", () => {
   });
 
   it("cancels in-flight search error when dialog unmounts", async () => {
-    let rejectSearch: ((reason: unknown) => void) | undefined;
+    let rejectSearch: ((reason: Error) => void) | undefined;
     searchEnrichmentMock.mockImplementation(() => new Promise((_resolve, reject) => {
       rejectSearch = reject;
     }));

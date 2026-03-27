@@ -4,6 +4,11 @@ import { describe, it, expect, vi } from "vitest";
 import type { Column } from "@tanstack/react-table";
 import { DataTableColumnHeader } from "./data-table-column-header";
 
+/** Cast helper that bypasses TS overlap check for test mocks */
+function asColumn(partial: object): Column<object> {
+  return partial as Column<object>;
+}
+
 describe("DataTableColumnHeader", () => {
   it("renders a div with title when column cannot sort", () => {
     const column = {
@@ -12,7 +17,7 @@ describe("DataTableColumnHeader", () => {
       toggleSorting: vi.fn(),
     };
     const { container } = render(
-      <DataTableColumnHeader column={column as unknown as Column<unknown>} title="Name" />
+      <DataTableColumnHeader column={asColumn(column)} title="Name" />
     );
     expect(screen.getByText("Name")).toBeTruthy();
     // Should be a div, not a button
@@ -27,7 +32,7 @@ describe("DataTableColumnHeader", () => {
       toggleSorting: vi.fn(),
     };
     const { container } = render(
-      <DataTableColumnHeader column={column as unknown as Column<unknown>} title="Name" />
+      <DataTableColumnHeader column={asColumn(column)} title="Name" />
     );
     expect(container.querySelector("button")).toBeTruthy();
     // ChevronsUpDown icon renders as svg
@@ -42,7 +47,7 @@ describe("DataTableColumnHeader", () => {
       toggleSorting: vi.fn(),
     };
     const { container } = render(
-      <DataTableColumnHeader column={column as unknown as Column<unknown>} title="Name" />
+      <DataTableColumnHeader column={asColumn(column)} title="Name" />
     );
     expect(container.querySelector("button")).toBeTruthy();
     // ArrowDown icon renders as svg
@@ -57,7 +62,7 @@ describe("DataTableColumnHeader", () => {
       toggleSorting: vi.fn(),
     };
     const { container } = render(
-      <DataTableColumnHeader column={column as unknown as Column<unknown>} title="Name" />
+      <DataTableColumnHeader column={asColumn(column)} title="Name" />
     );
     expect(container.querySelector("button")).toBeTruthy();
   });
@@ -70,7 +75,7 @@ describe("DataTableColumnHeader", () => {
       toggleSorting,
     };
     const { container } = render(
-      <DataTableColumnHeader column={column as unknown as Column<unknown>} title="Name" />
+      <DataTableColumnHeader column={asColumn(column)} title="Name" />
     );
     const button = container.querySelector("button");
     if (!button) throw new Error("button not found");
@@ -87,7 +92,7 @@ describe("DataTableColumnHeader", () => {
       toggleSorting,
     };
     const { container } = render(
-      <DataTableColumnHeader column={column as unknown as Column<unknown>} title="Name" />
+      <DataTableColumnHeader column={asColumn(column)} title="Name" />
     );
     const button = container.querySelector("button");
     if (!button) throw new Error("button not found");

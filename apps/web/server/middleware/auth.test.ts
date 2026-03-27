@@ -16,7 +16,7 @@ function createMockDeps(
 function createMockEvent(pathname: string): H3Event {
   return {
     path: pathname,
-  } as unknown as H3Event;
+  } as H3Event;
 }
 
 const validUser: AuthenticatedUser = {

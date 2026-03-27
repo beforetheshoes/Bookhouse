@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, to, params, ...props }: { children?: React.ReactNode; to: string; params?: Record<string, string>; [key: string]: unknown }) => {
+  Link: ({ children, to, params, ...props }: { children?: React.ReactNode; to: string; params?: Record<string, string>; [key: string]: string | undefined | React.ReactNode | Record<string, string> | (() => void) }) => {
     let href = to;
     if (params) {
       for (const [key, value] of Object.entries(params)) {
@@ -15,9 +15,9 @@ vi.mock("@tanstack/react-router", () => ({
   },
 }));
 
-const searchMock = vi.fn();
+const { searchMock } = vi.hoisted(() => ({ searchMock: vi.fn() }));
 vi.mock("~/lib/server-fns/search", () => ({
-  searchLibraryServerFn: (...args: unknown[]): unknown => searchMock(...args),
+  searchLibraryServerFn: searchMock,
 }));
 
 vi.mock("~/hooks/use-recent-searches", () => ({

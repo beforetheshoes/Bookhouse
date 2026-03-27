@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import type { Prisma } from "@bookhouse/db";
 
 const WORK_INCLUDE = {
   series: true,
@@ -52,10 +53,8 @@ const filterSchema = z.object({
   hasIsbn: z.boolean().optional(),
 });
 
-type WhereClause = Record<string, unknown>;
-
-function buildWhere(data: z.infer<typeof filterSchema>): WhereClause {
-  const where: WhereClause = {};
+function buildWhere(data: z.infer<typeof filterSchema>): Prisma.WorkWhereInput {
+  const where: Prisma.WorkWhereInput = {};
 
   if (data.q) {
     where.OR = [
@@ -64,7 +63,7 @@ function buildWhere(data: z.infer<typeof filterSchema>): WhereClause {
     ];
   }
 
-  const editionConditions: Record<string, unknown>[] = [];
+  const editionConditions: Prisma.EditionWhereInput[] = [];
 
   if (data.format && data.format.length > 0) {
     editionConditions.push({ formatFamily: { in: data.format } });

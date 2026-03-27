@@ -6,7 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 # E2E environment — must match playwright.config.ts and e2e/oidc-mock.ts
-export DATABASE_URL="postgresql://bookhouse:bookhouse@localhost:5432/bookhouse"
+export DATABASE_URL="postgresql://bookhouse:bookhouse@localhost:5432/bookhouse_test"
 export QUEUE_URL="redis://localhost:6379"
 export AUTH_SECRET="e2e-test-secret-at-least-32-chars!!"
 export AUTH_OIDC_ISSUER="http://localhost:9090"
@@ -80,6 +80,11 @@ fi
 
 echo "Starting local infrastructure (postgres + valkey)"
 docker compose up -d db queue
+
+echo "Ensuring test database exists"
+docker compose exec -T db psql -U bookhouse -tc \
+  "SELECT 1 FROM pg_database WHERE datname = 'bookhouse_test'" | grep -q 1 \
+  || docker compose exec -T db createdb -U bookhouse bookhouse_test
 
 echo "Applying database migrations"
 pnpm db:migrate

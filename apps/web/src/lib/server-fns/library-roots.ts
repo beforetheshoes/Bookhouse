@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import type { QueueProgressData } from "@bookhouse/shared";
 
 const LIVE_SCAN_JOB_STATES = new Set([
   "active",
@@ -11,15 +12,15 @@ const GHOST_SCAN_ERROR = "Scan job is no longer active in BullMQ";
 const DEADLOCKED_SCAN_ERROR = "Scan job is blocked by a failed child job";
 
 function isScanProgressObject(
-  value: unknown,
-): value is { processedFiles?: number; errorCount?: number; scanStage?: "DISCOVERY" | "PROCESSING" } {
-  return typeof value === "object" && value !== null;
+  value: QueueProgressData | null,
+): value is QueueProgressData {
+  return value !== null;
 }
 
 function getEffectiveScanStage(
   persistedStage: "DISCOVERY" | "PROCESSING" | null,
   queueState: string | null,
-  queueProgress: unknown,
+  queueProgress: QueueProgressData | null,
 ) {
   if (isScanProgressObject(queueProgress) && queueProgress.scanStage) {
     return queueProgress.scanStage;
@@ -148,6 +149,7 @@ export const getScanProgressServerFn = createServerFn({
         ? await getLibraryJobSnapshot(job.bullmqJobId)
         : null;
       const queueState = snapshot?.state ?? null;
+      const queueProgress = snapshot?.progress ?? null;
       const lastActivityAt = Math.max(job.updatedAt.getTime(), snapshot?.lastActivityAt ?? 0);
       // A scan-root in waiting-children is validly waiting for child jobs —
       // not stalled. The blockedByFailedChild check above catches real stuck cases.
@@ -170,7 +172,6 @@ export const getScanProgressServerFn = createServerFn({
       }
 
       if (LIVE_SCAN_JOB_STATES.has(queueState ?? "")) {
-        const queueProgress = snapshot?.progress;
         return {
           status: "RUNNING" as const,
           totalFiles: job.totalFiles,
@@ -346,8 +347,8 @@ export const retryLibraryIssuesServerFn = createServerFn({
     });
 
     const services = createIngestServices({
-      async enqueueLibraryJob(jobName, payload) {
-        await enqueueLibraryJob(jobName, payload);
+      enqueueLibraryJob(jobName, payload) {
+        return enqueueLibraryJob(jobName, payload);
       },
     });
     for (const issue of issues) {

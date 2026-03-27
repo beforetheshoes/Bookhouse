@@ -21,6 +21,10 @@ export interface AuthSessionData {
   login?: AuthLoginState;
 }
 
+import type { JsonValue } from "openid-client";
+
+export type OidcClaimsRecord = Record<string, JsonValue | undefined>;
+
 export interface NormalizedOidcClaims {
   sub: string;
   email: string | null;
@@ -28,7 +32,7 @@ export interface NormalizedOidcClaims {
   name: string | null;
   preferredUsername: string | null;
   image: string | null;
-  raw: Record<string, unknown>;
+  raw: OidcClaimsRecord;
 }
 
 export interface AuthenticatedUser {

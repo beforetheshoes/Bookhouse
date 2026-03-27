@@ -3,6 +3,11 @@ import type * as TanstackRouter from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 
+/** Cast route option function types that have no overlap with simple function types */
+function asBeforeLoad<TArgs, TResult>(fn: ((args: TArgs) => Promise<TResult>) | object): (args: TArgs) => Promise<TResult> {
+  return fn as ((args: TArgs) => Promise<TResult>) & typeof fn;
+}
+
 const mockRouteContext = { user: { name: "Test User", email: "test@test.com", image: null }, theme: "system" as const, colorMode: "book" as const, accentColor: null };
 
 vi.mock("~/components/app-sidebar", () => ({
@@ -42,11 +47,11 @@ vi.mock("@tanstack/react-router", async () => {
     ...actual,
     Outlet: () => <div data-testid="outlet">outlet</div>,
     useRouter: () => ({ invalidate: vi.fn(), navigate: vi.fn() }),
-    redirect: (args: Record<string, unknown>) => {
+    redirect: (args: Record<string, string>) => {
       const e = Object.assign(new Error("redirect"), args);
       throw e;
     },
-    createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
+    createFileRoute: (_path: string) => (opts: Record<string, string | boolean | object | ((...a: object[]) => object | undefined | Promise<object>)>) => ({
       ...opts,
       options: opts,
       useLoaderData: () => ({}),
@@ -68,11 +73,11 @@ describe("_authenticated route", () => {
 
   it("beforeLoad redirects when no user", async () => {
     const { getCurrentUserServerFn } = await import("~/lib/auth-client");
-    (getCurrentUserServerFn as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    (vi.mocked(getCurrentUserServerFn)).mockResolvedValue(null);
 
     const { Route } = await import("./_authenticated");
 
-    const beforeLoad = Route.options.beforeLoad as unknown as (args: Record<string, unknown>) => Promise<unknown>;
+    const beforeLoad = asBeforeLoad<Record<string, string | object>, object>(Route.options.beforeLoad as object);
     await expect(
       beforeLoad({ context: {} })
     ).rejects.toMatchObject({ href: "/auth/login" });
@@ -80,12 +85,12 @@ describe("_authenticated route", () => {
 
   it("beforeLoad returns user when authenticated", async () => {
     const { getCurrentUserServerFn } = await import("~/lib/auth-client");
-    const user = { name: "Test", email: "t@t.com", image: null };
-    (getCurrentUserServerFn as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(user);
+    const user = { id: "u1", name: "Test", email: "t@t.com", image: null, issuer: "test", subject: "s1" };
+    (vi.mocked(getCurrentUserServerFn)).mockResolvedValue(user);
 
     const { Route } = await import("./_authenticated");
 
-    const beforeLoad2 = Route.options.beforeLoad as unknown as (args: Record<string, unknown>) => Promise<unknown>;
+    const beforeLoad2 = asBeforeLoad<Record<string, string | object>, object>(Route.options.beforeLoad as object);
     const result = await beforeLoad2({ context: {} });
     expect(result).toEqual({ user, theme: "system", colorMode: "book", accentColor: null });
   });

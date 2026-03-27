@@ -9,7 +9,7 @@ vi.mock("sonner", () => ({
 import { toast } from "sonner";
 import { EditableTableCell } from "./editable-table-cell";
 
-const mockToastError = (toast as unknown as { error: ReturnType<typeof vi.fn> }).error;
+const mockToastError = vi.mocked(toast.error);
 
 beforeEach(() => {
   mockToastError.mockReset();

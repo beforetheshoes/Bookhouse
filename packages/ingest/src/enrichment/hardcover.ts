@@ -40,6 +40,37 @@ interface HCDetailBook {
   }>;
 }
 
+// The results field from Hardcover can be a JSON string, an array, an object, or
+// an unexpected primitive (number, boolean) — we need to handle all cases at runtime.
+type HCRawResults = HCSearchHit[] | string | HCResultsObject | number | boolean;
+
+interface HCResultsObject {
+  hits?: Array<HCHitsEntry>;
+  [key: string]: HCSearchHit[] | Array<HCHitsEntry> | undefined;
+}
+
+interface HCHitsEntry {
+  document?: HCSearchHit;
+  [key: string]: HCSearchHit | undefined;
+}
+
+interface HCSearchResult {
+  results?: HCRawResults | null;
+}
+
+interface HCSearchData {
+  search?: HCSearchResult | null;
+}
+
+interface HCBooksData {
+  books?: HCDetailBook[];
+}
+
+interface HCGraphQLResponse<T> {
+  data?: T;
+  errors?: Array<{ message?: string }>;
+}
+
 const SEARCH_QUERY = `
   query SearchBooks($query: String!) {
     search(query: $query, query_type: "Book", per_page: 5, page: 1) {
@@ -104,12 +135,12 @@ function parseDetailBook(raw: HCDetailBook): HCBook {
   };
 }
 
-async function graphqlRequest(
+async function graphqlRequest<T>(
   query: string,
-  variables: Record<string, unknown>,
+  variables: Record<string, string | number | boolean>,
   apiKey: string,
   fetcher: typeof fetch,
-): Promise<unknown> {
+): Promise<T | null> {
   const response = await fetcher(HC_BASE, {
     method: "POST",
     headers: {
@@ -123,7 +154,7 @@ async function graphqlRequest(
     const body = await response.text().catch(() => "");
     throw new Error(`Hardcover API error ${String(response.status)}: ${body.slice(0, 200)}`);
   }
-  const json = (await response.json()) as { data?: unknown; errors?: Array<{ message?: string }> };
+  const json = (await response.json()) as HCGraphQLResponse<T>;
   if (json.errors && json.errors.length > 0) {
     const msg = json.errors[0]?.message ?? "Unknown GraphQL error";
     throw new Error(`Hardcover GraphQL error: ${msg}`);
@@ -131,24 +162,24 @@ async function graphqlRequest(
   return json.data ?? null;
 }
 
-function extractHits(data: unknown): HCSearchHit[] {
-  if (Array.isArray(data)) return data as HCSearchHit[];
-
-  if (typeof data === "object" && data !== null) {
-    const obj = data as Record<string, unknown>;
-    // Typesense format: { hits: [{ document: {...} }], found: N }
-    if (Array.isArray(obj.hits)) {
-      const hits = obj.hits as Array<Record<string, unknown>>;
-      return hits.map((h) => (h.document ?? h) as HCSearchHit);
-    }
-    // Direct array under another key
-    for (const val of Object.values(obj)) {
-      if (Array.isArray(val)) return val as HCSearchHit[];
-    }
-    throw new Error(`Hardcover results object has no array. Keys: ${Object.keys(obj).join(", ")}`);
+function extractHitsFromObject(obj: HCResultsObject): HCSearchHit[] {
+  // Typesense format: { hits: [{ document: {...} }], found: N }
+  if (Array.isArray(obj.hits)) {
+    return obj.hits.map((h) => (h.document ?? h) as HCSearchHit);
   }
+  // Direct array under another key
+  for (const val of Object.values(obj)) {
+    if (Array.isArray(val)) return val as HCSearchHit[];
+  }
+  throw new Error(`Hardcover results object has no array. Keys: ${Object.keys(obj).join(", ")}`);
+}
 
-  throw new Error(`Hardcover results unexpected shape: ${typeof data}`);
+type HCParsedResults = HCSearchHit[] | HCResultsObject | string | number | boolean | null;
+
+function extractHitsFromParsed(parsed: HCParsedResults): HCSearchHit[] {
+  if (Array.isArray(parsed)) return parsed;
+  if (typeof parsed === "object" && parsed !== null) return extractHitsFromObject(parsed);
+  throw new Error(`Hardcover results unexpected shape: ${typeof parsed}`);
 }
 
 export async function searchHardcover(
@@ -158,28 +189,28 @@ export async function searchHardcover(
   fetcher: typeof fetch,
 ): Promise<HCBook[] | null> {
   const query = author ? `${title} ${author}` : title;
-  const data = await graphqlRequest(SEARCH_QUERY, { query }, apiKey, fetcher);
+  const data = await graphqlRequest<HCSearchData>(SEARCH_QUERY, { query }, apiKey, fetcher);
   if (data === null) {
     throw new Error("Hardcover returned no data (check API key and query)");
   }
 
-  const search = (data as { search?: { results?: unknown } }).search;
+  const search = data.search;
   if (!search) {
-    throw new Error(`Hardcover response missing 'search' field. Got keys: ${Object.keys(data as Record<string, unknown>).join(", ")}`);
+    throw new Error(`Hardcover response missing 'search' field. Got keys: ${Object.keys(data).join(", ")}`);
   }
   if (search.results === undefined || search.results === null) {
-    throw new Error(`Hardcover search has no 'results'. Got keys: ${Object.keys(search as Record<string, unknown>).join(", ")}`);
+    throw new Error(`Hardcover search has no 'results'. Got keys: ${Object.keys(search).join(", ")}`);
   }
 
   // results can be: a JSON string, an array, or an object with a `hits` array (Typesense format)
   let results: HCSearchHit[];
   if (typeof search.results === "string") {
-    const parsed: unknown = JSON.parse(search.results);
-    results = extractHits(parsed);
+    const parsed = JSON.parse(search.results) as HCParsedResults;
+    results = extractHitsFromParsed(parsed);
   } else if (Array.isArray(search.results)) {
-    results = search.results as HCSearchHit[];
+    results = search.results;
   } else if (typeof search.results === "object") {
-    results = extractHits(search.results);
+    results = extractHitsFromObject(search.results);
   } else {
     throw new Error(`Hardcover results unexpected type: ${typeof search.results}`);
   }
@@ -193,10 +224,10 @@ export async function getHardcoverBook(
   apiKey: string,
   fetcher: typeof fetch,
 ): Promise<HCBook | null> {
-  const data = await graphqlRequest(GET_BOOK_QUERY, { id: Number(bookId) }, apiKey, fetcher);
+  const data = await graphqlRequest<HCBooksData>(GET_BOOK_QUERY, { id: Number(bookId) }, apiKey, fetcher);
   if (data === null) return null;
 
-  const books = (data as { books?: HCDetailBook[] }).books;
+  const books = data.books;
   if (!books?.[0]) return null;
 
   return parseDetailBook(books[0]);

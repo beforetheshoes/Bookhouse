@@ -78,7 +78,7 @@ vi.mock("~/lib/server-fns/import-jobs", () => ({
 }));
 
 vi.mock("~/lib/mutation", () => ({
-  runMutation: vi.fn(async (fn: () => Promise<unknown>) => fn()),
+  runMutation: vi.fn(async (fn: () => Promise<object>) => fn()),
 }));
 
 const mockSetTheme = vi.fn();
@@ -113,7 +113,7 @@ vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
     ...actual,
-    Link: ({ children, to, params, ...props }: { children?: React.ReactNode; to: string; params?: Record<string, string>; [key: string]: unknown }) => {
+    Link: ({ children, to, params, ...props }: { children?: React.ReactNode; to: string; params?: Record<string, string>; [key: string]: string | undefined | React.ReactNode | Record<string, string> | (() => void) }) => {
       let href = to;
       if (params) {
         for (const [key, value] of Object.entries(params)) {
@@ -123,7 +123,7 @@ vi.mock("@tanstack/react-router", async () => {
       return <a href={href} {...props}>{children}</a>;
     },
     useRouter: () => ({ invalidate: mockInvalidate, navigate: mockNavigate }),
-    createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
+    createFileRoute: (_path: string) => (opts: Record<string, string | boolean | object | ((...a: object[]) => object | undefined | Promise<object>)>) => ({
       ...opts,
       options: opts,
       useLoaderData: () => mockLoaderData,
@@ -495,7 +495,7 @@ describe("SettingsPage", () => {
     getScanProgressServerFnMock.mockResolvedValueOnce(null);
     getLibraryIssueCountServerFnMock.mockResolvedValueOnce(0);
     const { Route } = await import("./index");
-    const result = await (Route.options.loader as (args: Record<string, unknown>) => Promise<unknown>)({});
+    const result = await (Route.options.loader as (args: Record<string, string | object>) => Promise<object>)({});
     expect(getLibraryRootsServerFnMock).toHaveBeenCalled();
     expect(getImportJobsServerFnMock).toHaveBeenCalledWith({ data: { page: 1, pageSize: 100 } });
     expect(getAllScanConcurrenciesServerFnMock).toHaveBeenCalled();
@@ -1258,8 +1258,8 @@ describe("Integrations Tab", () => {
 
   it("validates and saves key, then shows saved state", async () => {
     const { validateApiKeyServerFn, setApiKeyServerFn } = await import("~/lib/server-fns/integrations");
-    const validateMock = validateApiKeyServerFn as unknown as ReturnType<typeof vi.fn>;
-    const setApiKeyMock = setApiKeyServerFn as unknown as ReturnType<typeof vi.fn>;
+    const validateMock = vi.mocked(validateApiKeyServerFn);
+    const setApiKeyMock = vi.mocked(setApiKeyServerFn);
 
     const { Route } = await import("./index");
     const SettingsPage = (Route.options.component as React.ComponentType);
@@ -1294,7 +1294,7 @@ describe("Integrations Tab", () => {
       },
     };
     const { removeApiKeyServerFn } = await import("~/lib/server-fns/integrations");
-    const removeApiKeyMock = removeApiKeyServerFn as unknown as ReturnType<typeof vi.fn>;
+    const removeApiKeyMock = vi.mocked(removeApiKeyServerFn);
 
     const { Route } = await import("./index");
     const SettingsPage = (Route.options.component as React.ComponentType);
@@ -1311,8 +1311,8 @@ describe("Integrations Tab", () => {
 
   it("shows validation error when API key is invalid", async () => {
     const { validateApiKeyServerFn, setApiKeyServerFn } = await import("~/lib/server-fns/integrations");
-    const validateMock = validateApiKeyServerFn as unknown as ReturnType<typeof vi.fn>;
-    const setApiKeyMock = setApiKeyServerFn as unknown as ReturnType<typeof vi.fn>;
+    const validateMock = vi.mocked(validateApiKeyServerFn);
+    const setApiKeyMock = vi.mocked(setApiKeyServerFn);
     validateMock.mockClear();
     setApiKeyMock.mockClear();
     validateMock.mockResolvedValueOnce({ valid: false, error: "Invalid API key" });
@@ -1339,9 +1339,9 @@ describe("Integrations Tab", () => {
 
   it("shows fallback error when validation returns no error message", async () => {
     const { validateApiKeyServerFn } = await import("~/lib/server-fns/integrations");
-    const validateMock = validateApiKeyServerFn as unknown as ReturnType<typeof vi.fn>;
+    const validateMock = vi.mocked(validateApiKeyServerFn);
     validateMock.mockClear();
-    validateMock.mockResolvedValueOnce({ valid: false });
+    validateMock.mockResolvedValueOnce({ valid: false, error: null as string & null });
 
     const { Route } = await import("./index");
     const SettingsPage = (Route.options.component as React.ComponentType);
@@ -1362,7 +1362,7 @@ describe("Integrations Tab", () => {
 
   it("shows error when save fails after validation passes", async () => {
     const { setApiKeyServerFn } = await import("~/lib/server-fns/integrations");
-    const setApiKeyMock = setApiKeyServerFn as unknown as ReturnType<typeof vi.fn>;
+    const setApiKeyMock = vi.mocked(setApiKeyServerFn);
     setApiKeyMock.mockRejectedValueOnce(new Error("Network error"));
 
     const { Route } = await import("./index");
@@ -1384,7 +1384,7 @@ describe("Integrations Tab", () => {
 
   it("shows Unknown error when save throws non-Error", async () => {
     const { setApiKeyServerFn } = await import("~/lib/server-fns/integrations");
-    const setApiKeyMock = setApiKeyServerFn as unknown as ReturnType<typeof vi.fn>;
+    const setApiKeyMock = vi.mocked(setApiKeyServerFn);
     setApiKeyMock.mockRejectedValueOnce("string error");
 
     const { Route } = await import("./index");
@@ -1415,7 +1415,7 @@ describe("Integrations Tab", () => {
       },
     };
     const { removeApiKeyServerFn } = await import("~/lib/server-fns/integrations");
-    const removeApiKeyMock = removeApiKeyServerFn as unknown as ReturnType<typeof vi.fn>;
+    const removeApiKeyMock = vi.mocked(removeApiKeyServerFn);
     removeApiKeyMock.mockRejectedValueOnce(new Error("Network error"));
 
     const { Route } = await import("./index");
