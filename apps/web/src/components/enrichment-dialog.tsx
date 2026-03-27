@@ -105,7 +105,6 @@ function formatValue(value: unknown): string {
 }
 
 function getCurrentWorkValue(field: FieldDef, currentWork: EnrichmentDialogProps["currentWork"]): string {
-  if (field.key === "coverUrl") return currentWork.coverPath ? "Current cover" : "";
   if (field.key === "title") return currentWork.title;
   if (field.key === "authors") return currentWork.authors.join(", ");
   if (field.key === "description") return currentWork.description ?? "";

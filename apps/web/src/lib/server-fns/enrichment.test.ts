@@ -90,7 +90,7 @@ vi.mock("@bookhouse/ingest", () => {
     applyCoverFromUrl: (...args: unknown[]): unknown => applyCoverFromUrlMock(...args),
     resizeCoverImage: vi.fn(),
     extractDominantColors: vi.fn(),
-    canonicalizeContributorName: (name: string) => name.toLowerCase(),
+    canonicalizeContributorName: (name: string) => name === "UNKNOWN" ? null : name.toLowerCase(),
   };
 });
 
@@ -589,6 +589,50 @@ describe("applyEnrichmentServerFn", () => {
       skipDuplicates: true,
     });
     expect(result).toEqual({ success: true });
+  });
+
+  it("falls back to lowercase when canonicalizeContributorName returns null", async () => {
+    workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: [] });
+    editionFindManyMock.mockResolvedValue([{ id: "e1" }]);
+    contributorFindFirstMock.mockResolvedValueOnce(null);
+    contributorCreateMock.mockResolvedValueOnce({ id: "c1", nameDisplay: "UNKNOWN" });
+    editionContributorDeleteManyMock.mockResolvedValue({});
+    editionContributorCreateManyMock.mockResolvedValue({});
+    externalLinkUpsertMock.mockResolvedValue({});
+
+    await applyEnrichmentServerFn({
+      data: {
+        workId: "w1",
+        workFields: { authors: ["UNKNOWN"] },
+        source: { provider: "openlibrary", externalId: "OL123W" },
+      },
+    });
+
+    // canonicalizeContributorName("UNKNOWN") returns null, so fallback to "unknown"
+    expect(contributorFindFirstMock).toHaveBeenCalledWith({ where: { nameCanonical: "unknown" } });
+    expect(contributorCreateMock).toHaveBeenCalledWith({
+      data: { nameDisplay: "UNKNOWN", nameCanonical: "unknown" },
+    });
+  });
+
+  it("skips empty author names in authors array", async () => {
+    workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: [] });
+    editionFindManyMock.mockResolvedValue([{ id: "e1" }]);
+    contributorFindFirstMock.mockResolvedValueOnce({ id: "c1", nameDisplay: "Frank Herbert" });
+    editionContributorDeleteManyMock.mockResolvedValue({});
+    editionContributorCreateManyMock.mockResolvedValue({});
+    externalLinkUpsertMock.mockResolvedValue({});
+
+    await applyEnrichmentServerFn({
+      data: {
+        workId: "w1",
+        workFields: { authors: ["Frank Herbert", "", "  "] },
+        source: { provider: "openlibrary", externalId: "OL123W" },
+      },
+    });
+
+    // Only "Frank Herbert" should be resolved; "" and "  " are trimmed and skipped
+    expect(contributorFindFirstMock).toHaveBeenCalledTimes(1);
   });
 
   it("maps title to titleDisplay in work update", async () => {
