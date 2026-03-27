@@ -36,7 +36,7 @@ export interface CoverDb {
   };
   work: {
     findUnique(args: { where: { id: string } }): Promise<{ id: string } | null>;
-    update(args: { where: { id: string }; data: { coverPath: string; coverColors?: string[] } }): Promise<unknown>;
+    update(args: { where: { id: string }; data: { coverPath: string; coverColors?: string[] } }): Promise<{ id: string }>;
   };
 }
 
@@ -47,7 +47,7 @@ export interface ResizeCoverDeps {
 }
 
 export interface CoverLogger {
-  info(obj: Record<string, unknown>, msg: string): void;
+  info(obj: Record<string, string | number | boolean | null>, msg: string): void;
 }
 
 export interface CoverDependencies {

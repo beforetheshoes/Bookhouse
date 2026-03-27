@@ -18,7 +18,7 @@ interface CleanupDbClient {
     deleteMany(args: { where: { id: { in: string[] } } }): Promise<{ count: number }>;
   };
   duplicateCandidate: {
-    deleteMany(args: { where: { OR: Record<string, unknown>[] } }): Promise<{ count: number }>;
+    deleteMany(args: { where: { OR: Array<{ leftFileAssetId?: { in: string[] }; rightFileAssetId?: { in: string[] }; leftEditionId?: { in: string[] }; rightEditionId?: { in: string[] } }> } }): Promise<{ count: number }>;
   };
   edition: {
     findMany(args: { where: { id: { in: string[] } }; select: { id: true; workId: true } }): Promise<{ id: string; workId: string }[]>;

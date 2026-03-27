@@ -4,9 +4,14 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+/** Extract Route from dynamic import with type that doesn't directly overlap */
+function extractRoute<T>(mod: { Route: T } | object): T {
+  return (mod as { Route: T } & typeof mod).Route;
+}
+
 let mockLoaderData: {
   libraryRootId: string;
-  issues: { items: Array<{ id: string; relativePath: string; mediaKind: string; metadata: unknown; lastSeenAt: string | null }>; total: number };
+  issues: { items: Array<{ id: string; relativePath: string; mediaKind: string; metadata: object | null; lastSeenAt: string | null }>; total: number };
 } = { libraryRootId: "root-1", issues: { items: [], total: 0 } };
 
 const getLibraryIssuesServerFnMock = vi.fn();
@@ -24,7 +29,7 @@ vi.mock("sonner", () => ({
 interface MockRoute {
   options: {
     component: React.ComponentType;
-    loader: (args: { params: { libraryRootId: string } }) => Promise<unknown>;
+    loader: (args: { params: { libraryRootId: string } }) => Promise<object>;
   };
   useLoaderData: () => typeof mockLoaderData;
 }
@@ -33,9 +38,9 @@ vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
     ...actual,
-    Link: ({ children, to, ...props }: { children?: React.ReactNode; to: string; [key: string]: unknown }) => <a href={to} {...props}>{children}</a>,
+    Link: ({ children, to, ...props }: { children?: React.ReactNode; to: string; [key: string]: string | undefined | React.ReactNode | Record<string, string> | (() => void) }) => <a href={to} {...props}>{children}</a>,
     useRouter: () => ({ invalidate: vi.fn(), navigate: vi.fn() }),
-    createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
+    createFileRoute: (_path: string) => (opts: Record<string, string | boolean | object | ((...a: object[]) => object | undefined | Promise<object>)>) => ({
       ...opts,
       options: opts,
       useLoaderData: () => mockLoaderData,
@@ -52,7 +57,7 @@ describe("LibraryIssuesPage", () => {
 
   it("renders heading and back link", async () => {
     const mod = await import("./library-issues.$libraryRootId");
-    const { Route } = mod as unknown as { Route: MockRoute };
+    const Route = extractRoute<MockRoute>(mod);
     const Page = Route.options.component;
     render(<Page />);
     expect(screen.getByText("Library Issues")).toBeTruthy();
@@ -61,7 +66,7 @@ describe("LibraryIssuesPage", () => {
 
   it("shows empty state when no issues", async () => {
     const mod = await import("./library-issues.$libraryRootId");
-    const { Route } = mod as unknown as { Route: MockRoute };
+    const Route = extractRoute<MockRoute>(mod);
     const Page = Route.options.component;
     render(<Page />);
     expect(screen.getByText("No issues found for this library.")).toBeTruthy();
@@ -84,7 +89,7 @@ describe("LibraryIssuesPage", () => {
       },
     };
     const mod = await import("./library-issues.$libraryRootId");
-    const { Route } = mod as unknown as { Route: MockRoute };
+    const Route = extractRoute<MockRoute>(mod);
     const Page = Route.options.component;
     render(<Page />);
     expect(screen.getByText("author/book.epub")).toBeTruthy();
@@ -98,7 +103,7 @@ describe("LibraryIssuesPage", () => {
       issues: { items: [], total: 42 },
     };
     const mod = await import("./library-issues.$libraryRootId");
-    const { Route } = mod as unknown as { Route: MockRoute };
+    const Route = extractRoute<MockRoute>(mod);
     const Page = Route.options.component;
     render(<Page />);
     expect(screen.getByText("42 total issues")).toBeTruthy();
@@ -107,7 +112,7 @@ describe("LibraryIssuesPage", () => {
   it("loader calls getLibraryIssuesServerFn", async () => {
     getLibraryIssuesServerFnMock.mockResolvedValueOnce({ items: [], total: 0 });
     const mod = await import("./library-issues.$libraryRootId");
-    const { Route } = mod as unknown as { Route: MockRoute };
+    const Route = extractRoute<MockRoute>(mod);
     const loader = Route.options.loader;
     await loader({ params: { libraryRootId: "root-abc" } });
     expect(getLibraryIssuesServerFnMock).toHaveBeenCalledWith({
@@ -132,7 +137,7 @@ describe("LibraryIssuesPage", () => {
       },
     };
     const mod = await import("./library-issues.$libraryRootId");
-    const { Route } = mod as unknown as { Route: MockRoute };
+    const Route = extractRoute<MockRoute>(mod);
     const Page = Route.options.component;
     render(<Page />);
     expect(screen.getByText("author/broken.epub")).toBeTruthy();
@@ -155,7 +160,7 @@ describe("LibraryIssuesPage", () => {
       },
     };
     const mod = await import("./library-issues.$libraryRootId");
-    const { Route } = mod as unknown as { Route: MockRoute };
+    const Route = extractRoute<MockRoute>(mod);
     const Page = Route.options.component;
     render(<Page />);
     expect(screen.getByRole("button", { name: /retry all/i })).toBeTruthy();
@@ -163,7 +168,7 @@ describe("LibraryIssuesPage", () => {
 
   it("does not render Retry All button when no issues", async () => {
     const mod = await import("./library-issues.$libraryRootId");
-    const { Route } = mod as unknown as { Route: MockRoute };
+    const Route = extractRoute<MockRoute>(mod);
     const Page = Route.options.component;
     render(<Page />);
     expect(screen.queryByRole("button", { name: /retry all/i })).toBeNull();
@@ -189,7 +194,7 @@ describe("LibraryIssuesPage", () => {
       .mockResolvedValueOnce({ retriedCount: 1 })
       .mockResolvedValueOnce({ retriedCount: 3 });
     const mod = await import("./library-issues.$libraryRootId");
-    const { Route } = mod as unknown as { Route: MockRoute };
+    const Route = extractRoute<MockRoute>(mod);
     const Page = Route.options.component;
     const { unmount } = render(<Page />);
 
@@ -224,7 +229,7 @@ describe("LibraryIssuesPage", () => {
     };
     retryLibraryIssuesServerFnMock.mockRejectedValue(new Error("Queue connection failed"));
     const mod = await import("./library-issues.$libraryRootId");
-    const { Route } = mod as unknown as { Route: MockRoute };
+    const Route = extractRoute<MockRoute>(mod);
     const Page = Route.options.component;
     render(<Page />);
 
@@ -252,7 +257,7 @@ describe("LibraryIssuesPage", () => {
     };
     retryLibraryIssuesServerFnMock.mockRejectedValue("non-error rejection");
     const mod = await import("./library-issues.$libraryRootId");
-    const { Route } = mod as unknown as { Route: MockRoute };
+    const Route = extractRoute<MockRoute>(mod);
     const Page = Route.options.component;
     render(<Page />);
 

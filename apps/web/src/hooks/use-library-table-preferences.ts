@@ -14,9 +14,9 @@ const DEFAULTS: LibraryTablePreferences = {
   textOverflow: "truncate",
 };
 
-function isValidPrefs(value: unknown): value is LibraryTablePreferences {
-  if (typeof value !== "object" || value === null) return false;
-  const obj = value as Record<string, unknown>;
+function isValidPrefs(value: object | string | number | boolean | null): value is LibraryTablePreferences {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const obj = value as Record<string, object | string | number | boolean | null>;
   if (typeof obj.columnVisibility !== "object" || obj.columnVisibility === null)
     return false;
   if (obj.textOverflow !== "wrap" && obj.textOverflow !== "truncate")
@@ -37,7 +37,7 @@ function getSnapshot(): LibraryTablePreferences {
     return DEFAULTS;
   }
   try {
-    const parsed: unknown = JSON.parse(stored);
+    const parsed = JSON.parse(stored) as object | string | number | boolean | null;
     cachedPrefs = isValidPrefs(parsed) ? parsed : DEFAULTS;
   } catch {
     cachedPrefs = DEFAULTS;

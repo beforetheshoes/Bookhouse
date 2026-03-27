@@ -4,7 +4,7 @@ vi.mock("@tanstack/react-start", () => ({
   createServerFn: () => {
     type Builder = {
       inputValidator: () => Builder;
-      handler: (fn: (a: Record<string, unknown>) => unknown) => (a: Record<string, unknown>) => unknown;
+      handler: <T extends Record<string, string | number | boolean | null | string[] | Date | undefined>>(fn: (a: T) => T | Promise<T>) => (a: T) => T | Promise<T>;
     };
     const b: Builder = {
       inputValidator: () => b,
@@ -137,7 +137,7 @@ describe("getDuplicatesServerFn", () => {
     expect(findManyMock).toHaveBeenCalledWith(
       expect.objectContaining({ orderBy: { confidence: "desc" } }),
     );
-    const lastCallArgs = findManyMock.mock.lastCall as [Record<string, unknown>];
+    const lastCallArgs = findManyMock.mock.lastCall as [Record<string, object>];
     expect("where" in lastCallArgs[0]).toBe(false);
   });
 });
@@ -183,7 +183,7 @@ describe("mergeDuplicateServerFn", () => {
       rightEditionId: "ed-2",
     });
     // The transaction callback should be called with a function
-    transactionMock.mockImplementation(async (fn: (tx: unknown) => Promise<void>) => {
+    transactionMock.mockImplementation(async (fn: (tx: object) => Promise<void>) => {
       const tx = {
         editionFile: { updateMany: editionFileUpdateManyMock },
         readingProgress: { updateMany: readingProgressUpdateManyMock },
@@ -243,7 +243,7 @@ describe("mergeDuplicateServerFn", () => {
       leftEditionId: "ed-1",
       rightEditionId: "ed-2",
     });
-    transactionMock.mockImplementation(async (fn: (tx: unknown) => Promise<void>) => {
+    transactionMock.mockImplementation(async (fn: (tx: object) => Promise<void>) => {
       const tx = {
         editionFile: { updateMany: editionFileUpdateManyMock },
         readingProgress: { updateMany: readingProgressUpdateManyMock },
@@ -279,7 +279,7 @@ describe("mergeDuplicateServerFn", () => {
       leftEditionId: "ed-1",
       rightEditionId: "ed-2",
     });
-    transactionMock.mockImplementation(async (fn: (tx: unknown) => Promise<void>) => {
+    transactionMock.mockImplementation(async (fn: (tx: object) => Promise<void>) => {
       const tx = {
         editionFile: { updateMany: editionFileUpdateManyMock },
         readingProgress: { updateMany: readingProgressUpdateManyMock },
@@ -312,7 +312,7 @@ describe("mergeDuplicateServerFn", () => {
       leftEditionId: "ed-1",
       rightEditionId: "ed-2",
     });
-    transactionMock.mockImplementation(async (fn: (tx: unknown) => Promise<void>) => {
+    transactionMock.mockImplementation(async (fn: (tx: object) => Promise<void>) => {
       const tx = {
         editionFile: { updateMany: editionFileUpdateManyMock },
         readingProgress: { updateMany: readingProgressUpdateManyMock },

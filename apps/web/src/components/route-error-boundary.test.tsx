@@ -4,6 +4,11 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { RouteErrorBoundary } from "./route-error-boundary";
 
+/** Force-cast for testing type-mismatch scenarios */
+function forceCast<T>(value: T | string | number | boolean | object): T {
+  return value as T & typeof value;
+}
+
 const mockInvalidate = vi.fn();
 
 vi.mock("@tanstack/react-router", async () => {
@@ -40,7 +45,7 @@ describe("RouteErrorBoundary", () => {
   it("shows generic message when error is not an Error instance", () => {
     render(
       <RouteErrorBoundary
-        error={"plain string error" as unknown as Error}
+        error={forceCast<Error>("plain string error")}
         reset={vi.fn()}
         info={{ componentStack: "" }}
       />

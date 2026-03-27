@@ -21,7 +21,7 @@ describe("start entry", () => {
     expect(middleware?.options.server).toBeTypeOf("function");
     await expect(
       middleware?.options.server?.({
-        next: ({ context }: { context?: unknown } = {}) =>
+        next: ({ context }: { context?: object } = {}) =>
           Promise.resolve({
             context,
             pathname: "/",

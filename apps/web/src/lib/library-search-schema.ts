@@ -1,11 +1,10 @@
 import { z } from "zod";
 
 function coerceToArray<T extends z.ZodTypeAny>(itemSchema: T) {
-  return z.preprocess((val): unknown[] | undefined => {
-    if (Array.isArray(val)) return val as unknown[];
-    if (val === undefined || val === null) return undefined;
-    return [val];
-  }, z.array(itemSchema).optional());
+  return z.union([
+    z.array(itemSchema),
+    itemSchema.transform((val: z.infer<T>) => [val]),
+  ]).optional();
 }
 
 const coerceBool = z.preprocess((val) => {

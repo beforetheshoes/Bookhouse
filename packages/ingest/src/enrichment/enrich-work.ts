@@ -15,6 +15,15 @@ interface WorkWithEditions {
   editions: WorkEdition[];
 }
 
+export interface ExternalLinkMetadata {
+  title: string;
+  description: string | null;
+  coverIds: number[];
+  subjects: string[];
+  firstPublishYear: number | null;
+  coverId: number | null;
+}
+
 export interface EnrichWorkDeps {
   findWork: (workId: string) => Promise<WorkWithEditions | null>;
   searchOL: (title: string, author: string | undefined) => Promise<OLSearchResult[] | null>;
@@ -23,8 +32,8 @@ export interface EnrichWorkDeps {
     editionId: string;
     provider: string;
     externalId: string;
-    metadata: Record<string, unknown>;
-  }) => Promise<unknown>;
+    metadata: ExternalLinkMetadata;
+  }) => Promise<void>;
   checkRateLimit: () => RateLimitResult;
 }
 

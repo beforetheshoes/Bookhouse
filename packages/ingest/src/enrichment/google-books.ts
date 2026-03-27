@@ -20,33 +20,56 @@ interface IndustryIdentifier {
   identifier: string;
 }
 
+interface GBRawVolumeInfo {
+  title?: string;
+  subtitle?: string;
+  authors?: string[];
+  publisher?: string;
+  publishedDate?: string;
+  description?: string;
+  pageCount?: number;
+  categories?: string[];
+  industryIdentifiers?: IndustryIdentifier[];
+  imageLinks?: { thumbnail?: string };
+}
+
+interface GBRawVolume {
+  id: string;
+  volumeInfo?: GBRawVolumeInfo;
+}
+
+interface GBRawSearchResponse {
+  totalItems?: number;
+  items?: GBRawVolume[];
+}
+
 function extractIsbn(identifiers: IndustryIdentifier[] | undefined, type: string): string | null {
   if (!identifiers) return null;
   const match = identifiers.find((id) => id.type === type);
   return match?.identifier ?? null;
 }
 
-async function checkedJson(response: Response): Promise<unknown> {
+async function checkedJson<T>(response: Response): Promise<T | null> {
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`Google Books API error: ${String(response.status)}`);
-  return response.json();
+  return response.json() as Promise<T>;
 }
 
-function parseVolume(item: Record<string, unknown>): GBVolume {
-  const info = (item.volumeInfo ?? {}) as Record<string, unknown>;
-  const identifiers = info.industryIdentifiers as IndustryIdentifier[] | undefined;
-  const imageLinks = info.imageLinks as { thumbnail?: string } | undefined;
+function parseVolume(item: GBRawVolume): GBVolume {
+  const info = item.volumeInfo ?? {};
+  const identifiers = info.industryIdentifiers;
+  const imageLinks = info.imageLinks;
 
   return {
-    googleBooksId: item.id as string,
-    title: (info.title as string | undefined) ?? "",
-    subtitle: (info.subtitle as string | undefined) ?? null,
-    authors: (info.authors as string[] | undefined) ?? [],
-    publisher: (info.publisher as string | undefined) ?? null,
-    publishedDate: (info.publishedDate as string | undefined) ?? null,
-    description: (info.description as string | undefined) ?? null,
-    pageCount: (info.pageCount as number | undefined) ?? null,
-    categories: (info.categories as string[] | undefined) ?? [],
+    googleBooksId: item.id,
+    title: info.title ?? "",
+    subtitle: info.subtitle ?? null,
+    authors: info.authors ?? [],
+    publisher: info.publisher ?? null,
+    publishedDate: info.publishedDate ?? null,
+    description: info.description ?? null,
+    pageCount: info.pageCount ?? null,
+    categories: info.categories ?? [],
     isbn13: extractIsbn(identifiers, "ISBN_13"),
     isbn10: extractIsbn(identifiers, "ISBN_10"),
     thumbnailUrl: imageLinks?.thumbnail ?? null,
@@ -64,13 +87,12 @@ export async function searchGoogleBooks(
 
   const params = new URLSearchParams({ q, key: apiKey, maxResults: "5" });
   const response = await fetcher(`${GB_BASE}/volumes?${params.toString()}`);
-  const data = await checkedJson(response);
+  const data = await checkedJson<GBRawSearchResponse>(response);
   if (data === null) return null;
 
-  const body = data as { totalItems?: number; items?: Array<Record<string, unknown>> };
-  if (!body.items || body.totalItems === 0) return [];
+  if (!data.items || data.totalItems === 0) return [];
 
-  return body.items.map(parseVolume);
+  return data.items.map(parseVolume);
 }
 
 export async function getGoogleBooksVolume(
@@ -80,8 +102,8 @@ export async function getGoogleBooksVolume(
 ): Promise<GBVolume | null> {
   const params = new URLSearchParams({ key: apiKey });
   const response = await fetcher(`${GB_BASE}/volumes/${volumeId}?${params.toString()}`);
-  const data = await checkedJson(response);
+  const data = await checkedJson<GBRawVolume>(response);
   if (data === null) return null;
 
-  return parseVolume(data as Record<string, unknown>);
+  return parseVolume(data);
 }

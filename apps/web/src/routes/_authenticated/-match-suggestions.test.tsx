@@ -35,9 +35,9 @@ vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
     ...actual,
-    Link: ({ children, to, ...props }: { children?: React.ReactNode; to: string; [key: string]: unknown }) => <a href={to} {...props}>{children}</a>,
+    Link: ({ children, to, ...props }: { children?: React.ReactNode; to: string; [key: string]: string | undefined | React.ReactNode | Record<string, string> | (() => void) }) => <a href={to} {...props}>{children}</a>,
     useRouter: () => ({ invalidate: invalidateMock, navigate: vi.fn() }),
-    createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
+    createFileRoute: (_path: string) => (opts: Record<string, string | boolean | object | ((...a: object[]) => object | undefined | Promise<object>)>) => ({
       ...opts,
       options: opts,
       useLoaderData: () => mockLoaderData,
@@ -70,7 +70,7 @@ vi.mock("~/components/data-table/virtualized-data-table", () => ({
       <table>
         <thead>
           <tr>
-            {columns.map((col: { id?: string; header?: unknown }) => (
+            {columns.map((col: { id?: string; header?: string | (() => React.ReactNode) }) => (
               <th key={col.id ?? String(col.header)}>
                 {typeof col.header === "function" ? (col.header as (ctx: { column: { id: string | undefined } }) => React.ReactNode)({ column: { id: col.id } }) : (col.id ?? "")}
               </th>
@@ -80,8 +80,8 @@ vi.mock("~/components/data-table/virtualized-data-table", () => ({
         <tbody>
           {data.map((row: { id: string }, i: number) => (
             <tr key={row.id || i} data-testid="data-table-row">
-              {columns.map((col: { id?: string; accessorFn?: (r: unknown) => unknown; cell?: (ctx: { row: { original: unknown } }) => unknown }) => {
-                const val = col.accessorFn ? String(col.accessorFn(row)) : "";
+              {columns.map((col: { id?: string; accessorFn?: (r: object) => string; cell?: (ctx: { row: { original: object } }) => React.ReactNode }) => {
+                const val = col.accessorFn ? col.accessorFn(row) : "";
                 const cellContent = col.cell ? col.cell({ row: { original: row } }) : val;
                 return <td key={col.id}>{typeof cellContent === "string" ? cellContent : cellContent as React.ReactNode}</td>;
               })}
@@ -132,7 +132,7 @@ describe("MatchSuggestionsPage", () => {
   it("loader calls getMatchSuggestionsServerFn", async () => {
     getMatchSuggestionsServerFnMock.mockResolvedValueOnce([]);
     const { Route } = await import("./match-suggestions");
-    const result = await (Route.options.loader as (args: Record<string, unknown>) => Promise<unknown>)({});
+    const result = await (Route.options.loader as (args: Record<string, string | object>) => Promise<object>)({});
     expect(getMatchSuggestionsServerFnMock).toHaveBeenCalled();
     expect(result).toEqual({ matchSuggestions: [] });
   });

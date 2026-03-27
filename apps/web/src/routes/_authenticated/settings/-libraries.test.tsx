@@ -6,11 +6,11 @@ vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
     ...actual,
-    redirect: (args: Record<string, unknown>) => {
+    redirect: (args: Record<string, string>) => {
       const e = Object.assign(new Error("redirect"), args);
       throw e;
     },
-    createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
+    createFileRoute: (_path: string) => (opts: Record<string, string | boolean | object | ((...a: object[]) => object | undefined | Promise<object>)>) => ({
       ...opts,
       options: opts,
       useLoaderData: () => ({}),
@@ -22,12 +22,12 @@ vi.mock("@tanstack/react-router", async () => {
 describe("settings/libraries route", () => {
   it("beforeLoad throws redirect to /settings", async () => {
     const { Route } = await import("./libraries");
-    const beforeLoad = Route.options.beforeLoad as (args: Record<string, unknown>) => unknown;
+    const beforeLoad = Route.options.beforeLoad as (args: Record<string, string | object>) => object;
     expect(() => beforeLoad({})).toThrow("redirect");
     try {
       beforeLoad({});
     } catch (e) {
-      expect((e as Record<string, unknown>).to).toBe("/settings");
+      expect((e as Record<string, string>).to).toBe("/settings");
     }
   });
 });

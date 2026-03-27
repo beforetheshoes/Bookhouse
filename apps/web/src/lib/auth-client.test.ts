@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@tanstack/react-start", () => ({
   createServerFn: () => ({
-    handler: (fn: (...args: Array<unknown>) => unknown) => fn,
+    handler: (fn: (...args: Array<object>) => object) => fn,
   }),
 }));
 

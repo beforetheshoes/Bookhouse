@@ -12,7 +12,8 @@ import {
   type FileAsset,
   MediaKind,
 } from "@bookhouse/domain";
-import { LIBRARY_JOB_NAMES, type LibraryJobName, type LibraryJobPayloads } from "@bookhouse/shared";
+import type { Prisma } from "@bookhouse/db";
+import { LIBRARY_JOB_NAMES, type LibraryJobName, type LibraryJobPayloads, type QueueProgressData } from "@bookhouse/shared";
 import {
   canonicalizeBookTitle,
   canonicalizeContributorNames,
@@ -1234,9 +1235,9 @@ describe("ingest services", () => {
       expect.objectContaining({ totalFiles: 3, scanStage: "DISCOVERY" }),
     );
     // Last call: final processedFiles, errorCount, and PROCESSING stage
-    const allCalls = reportProgress.mock.calls as unknown as Array<[Record<string, unknown>]>;
+    const allCalls = reportProgress.mock.calls as object as Array<[QueueProgressData]>;
     expect(allCalls.length).toBeGreaterThan(0);
-    const lastProgressCall = allCalls[allCalls.length - 1] as [Record<string, unknown>];
+    const lastProgressCall = allCalls[allCalls.length - 1] as [QueueProgressData];
     expect(lastProgressCall[0]).toMatchObject({ processedFiles: 3, errorCount: 0, scanStage: "PROCESSING" });
     expect(lastProgressCall[0]).not.toHaveProperty("totalProcessingJobs");
   });
@@ -1282,7 +1283,7 @@ describe("ingest services", () => {
         mtime: new Date("2024-01-01T00:00:00.000Z"),
         size: 100,
       } as never),
-    ) as unknown as LstatFn;
+    ) as object as LstatFn;
 
     const reportProgress = vi.fn(() => Promise.resolve(undefined));
     const services = createIngestServices({
@@ -1295,7 +1296,7 @@ describe("ingest services", () => {
     await services.scanLibraryRoot({ libraryRootId: "root-1", reportProgress });
 
     // Should have batch call at processedFiles === SCAN_PROGRESS_INTERVAL
-    const batchCall = (reportProgress.mock.calls as unknown as Array<[Record<string, unknown>]>).find(
+    const batchCall = (reportProgress.mock.calls as object as Array<[QueueProgressData]>).find(
       (call) => call[0].processedFiles === count,
     );
     expect(batchCall).toBeDefined();
@@ -1312,7 +1313,7 @@ describe("ingest services", () => {
     }));
 
     const listDirectory = (() => Promise.resolve(entries as never)) as ReaddirFn;
-    const readStats = vi.fn(() => Promise.reject(new Error("gone"))) as unknown as LstatFn;
+    const readStats = vi.fn(() => Promise.reject(new Error("gone"))) as object as LstatFn;
 
     const reportProgress = vi.fn(() => Promise.resolve(undefined));
     const services = createIngestServices({
@@ -1324,7 +1325,7 @@ describe("ingest services", () => {
 
     await services.scanLibraryRoot({ libraryRootId: "root-1", reportProgress });
 
-    const batchCall = (reportProgress.mock.calls as unknown as Array<[Record<string, unknown>]>).find(
+    const batchCall = (reportProgress.mock.calls as object as Array<[QueueProgressData]>).find(
       (call) => call[0].processedFiles === count,
     );
     expect(batchCall).toBeDefined();
@@ -1349,7 +1350,7 @@ describe("ingest services", () => {
         isFile: () => false,
         isSymbolicLink: () => true,
       } as never),
-    ) as unknown as LstatFn;
+    ) as object as LstatFn;
 
     const reportProgress = vi.fn(() => Promise.resolve(undefined));
     const services = createIngestServices({
@@ -1361,7 +1362,7 @@ describe("ingest services", () => {
 
     await services.scanLibraryRoot({ libraryRootId: "root-1", reportProgress });
 
-    const batchCall = (reportProgress.mock.calls as unknown as Array<[Record<string, unknown>]>).find(
+    const batchCall = (reportProgress.mock.calls as object as Array<[QueueProgressData]>).find(
       (call) => call[0].processedFiles === count,
     );
     expect(batchCall).toBeDefined();
@@ -1391,7 +1392,7 @@ describe("ingest services", () => {
       }
       // bad.epub fails during scan loop stat
       return Promise.reject(new Error("disk error"));
-    }) as unknown as LstatFn;
+    }) as object as LstatFn;
 
     const reportProgress = vi.fn(() => Promise.resolve(undefined));
     const services = createIngestServices({
@@ -1406,9 +1407,9 @@ describe("ingest services", () => {
       reportProgress,
     });
 
-    const calls = reportProgress.mock.calls as unknown as Array<[Record<string, unknown>]>;
+    const calls = reportProgress.mock.calls as object as Array<[QueueProgressData]>;
     expect(calls.length).toBeGreaterThan(0);
-    const lastCall = calls[calls.length - 1] as [Record<string, unknown>];
+    const lastCall = calls[calls.length - 1] as [QueueProgressData];
     expect(lastCall[0]).toMatchObject({ processedFiles: 2, errorCount: 1 });
   });
 
@@ -1453,7 +1454,7 @@ describe("ingest services", () => {
     expect(editionFiles).toHaveLength(2);
 
     // PROCESS_COVER should be enqueued immediately for each stub
-    const allCalls = enqueueMock.mock.calls as unknown as [string, { workId: string; fileAssetId: string }][];
+    const allCalls = enqueueMock.mock.calls as object as [string, { workId: string; fileAssetId: string }][];
     const coverCalls = allCalls.filter(([name]) => name === LIBRARY_JOB_NAMES.PROCESS_COVER);
     expect(coverCalls).toHaveLength(2);
     for (const work of works) {
@@ -1509,7 +1510,7 @@ describe("ingest services", () => {
     expect(editionFiles[0]?.editionId).toBe(editionFiles[1]?.editionId);
 
     // PROCESS_COVER should be enqueued once for the stub (using the first track's fileAssetId)
-    const allAudioCalls = enqueueMock.mock.calls as unknown as [string, { workId: string; fileAssetId: string }][];
+    const allAudioCalls = enqueueMock.mock.calls as object as [string, { workId: string; fileAssetId: string }][];
     const coverCalls = allAudioCalls.filter(([name]) => name === LIBRARY_JOB_NAMES.PROCESS_COVER);
     expect(coverCalls).toHaveLength(1);
     const stubWork = works.at(0);
@@ -1564,7 +1565,7 @@ describe("ingest services", () => {
         mtime: new Date("2024-01-01T00:00:00.000Z"),
         size: 100,
       } as never),
-    ) as unknown as LstatFn;
+    ) as object as LstatFn;
 
     const services = createIngestServices({
       db: createTestDb(state),
@@ -5554,7 +5555,7 @@ describe("ingest services", () => {
           authors: ["Author"],
           identifiers: { unknown: [] },
         },
-      } as unknown as FileAsset["metadata"],
+      } as object as FileAsset["metadata"],
       mtime: new Date("2024-01-01T00:00:00.000Z"),
       partialHash: "sidecar-phash",
       relativePath: "Author/Book/metadata.json",
@@ -5615,7 +5616,7 @@ describe("ingest services", () => {
         source: "audio-id3",
         status: "unparseable",
         warnings: ["unsupported Unicode escape sequence"],
-      } as unknown as FileAsset["metadata"],
+      } as object as FileAsset["metadata"],
       mtime: new Date("2024-01-01T00:00:00.000Z"),
       partialHash: "phash",
       relativePath: "Author/Book/chapter01.mp3",
@@ -5646,7 +5647,7 @@ describe("ingest services", () => {
           authors: ["Author"],
           identifiers: { unknown: [] },
         },
-      } as unknown as FileAsset["metadata"],
+      } as object as FileAsset["metadata"],
       mtime: new Date("2024-01-01T00:00:00.000Z"),
       partialHash: "sidecar-phash",
       relativePath: "Author/Book/metadata.json",
@@ -5671,7 +5672,7 @@ describe("ingest services", () => {
     });
 
     // The unparseable metadata should be cleared so the file no longer shows as a library issue
-    const updatedMetadata = state.fileAssetsById.get("file-1")?.metadata as Record<string, unknown> | null;
+    const updatedMetadata = state.fileAssetsById.get("file-1")?.metadata as Prisma.JsonObject | null;
     expect(updatedMetadata?.status).not.toBe("unparseable");
   });
 
@@ -5719,7 +5720,7 @@ describe("ingest services", () => {
           authors: ["Author Name"],
           identifiers: { unknown: [] },
         },
-      } as unknown as FileAsset["metadata"],
+      } as object as FileAsset["metadata"],
       mtime: new Date("2024-01-01T00:00:00.000Z"),
       partialHash: "sidecar-phash",
       relativePath: "Author/Book/metadata.json",
@@ -5815,7 +5816,7 @@ describe("ingest services", () => {
           authors: ["Author Name"],
           identifiers: { unknown: [] },
         },
-      } as unknown as FileAsset["metadata"],
+      } as object as FileAsset["metadata"],
       mtime: new Date("2024-01-01T00:00:00.000Z"),
       partialHash: "sidecar-phash",
       relativePath: "Author/Book/metadata.json",
@@ -6115,7 +6116,7 @@ describe("ingest services", () => {
       skipped: false,
     });
     // File should be marked as "parsed" with warnings, NOT "unparseable"
-    const storedMetadata = state.fileAssetsById.get("file-1")?.metadata as Record<string, unknown>;
+    const storedMetadata = state.fileAssetsById.get("file-1")?.metadata as Prisma.JsonObject;
     expect(storedMetadata.status).toBe("parsed");
     expect(storedMetadata.warnings).toEqual(["invalid byte sequence at offset 42"]);
     // Should enqueue MATCH_SUGGESTIONS since metadata is insufficient for edition matching
@@ -6521,7 +6522,7 @@ describe("ingest services", () => {
         source: "audiobook-json",
         status: "parsed",
         warnings: [],
-      } as unknown as FileAsset["metadata"],
+      } as object as FileAsset["metadata"],
     });
 
     const audioSibling: TestFileAsset = {
@@ -6631,7 +6632,7 @@ describe("ingest services", () => {
         source: "audiobook-json",
         status: "parsed",
         warnings: [],
-      } as unknown as FileAsset["metadata"],
+      } as object as FileAsset["metadata"],
     });
 
     const services = createIngestServices({
@@ -6742,7 +6743,7 @@ describe("ingest services", () => {
         source: "audiobook-json",
         status: "parsed",
         warnings: [],
-      } as unknown as FileAsset["metadata"],
+      } as object as FileAsset["metadata"],
     });
 
     const services = createIngestServices({
@@ -6837,7 +6838,7 @@ describe("ingest services", () => {
         source: "audiobook-json",
         status: "parsed",
         warnings: [],
-      } as unknown as FileAsset["metadata"],
+      } as object as FileAsset["metadata"],
     });
 
     const services = createIngestServices({
@@ -6931,7 +6932,7 @@ describe("ingest services", () => {
         source: "audiobook-json",
         status: "parsed",
         warnings: [],
-      } as unknown as FileAsset["metadata"],
+      } as object as FileAsset["metadata"],
     });
 
     const services = createIngestServices({
@@ -7009,7 +7010,7 @@ describe("ingest services", () => {
         source: "audiobook-json",
         status: "parsed",
         warnings: [],
-      } as unknown as FileAsset["metadata"],
+      } as object as FileAsset["metadata"],
     });
 
     const services = createIngestServices({
@@ -7074,7 +7075,7 @@ describe("ingest services", () => {
         source: "audiobook-json",
         status: "parsed",
         warnings: [],
-      } as unknown as FileAsset["metadata"],
+      } as object as FileAsset["metadata"],
     });
 
     const services = createIngestServices({
@@ -7147,7 +7148,7 @@ describe("ingest services", () => {
         source: "audiobook-json",
         status: "parsed",
         warnings: [],
-      } as unknown as FileAsset["metadata"],
+      } as object as FileAsset["metadata"],
     });
 
     const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
@@ -7265,7 +7266,7 @@ describe("ingest services", () => {
         source: "audiobook-json",
         status: "parsed",
         warnings: [],
-      } as unknown as FileAsset["metadata"],
+      } as object as FileAsset["metadata"],
     });
 
     const services = createIngestServices({
@@ -7334,7 +7335,7 @@ describe("ingest services", () => {
         source: "epub",
         status: "parsed",
         warnings: [],
-      } as unknown as FileAsset["metadata"],
+      } as object as FileAsset["metadata"],
     });
 
     const services = createIngestServices({
@@ -7380,7 +7381,7 @@ describe("ingest services", () => {
         source: "audiobook-json",
         status: "parsed",
         warnings: [],
-      } as unknown as FileAsset["metadata"],
+      } as object as FileAsset["metadata"],
     });
 
     const services = createIngestServices({
@@ -7425,7 +7426,7 @@ describe("ingest services", () => {
         source: "audiobook-json",
         status: "parsed",
         warnings: [],
-      } as unknown as FileAsset["metadata"],
+      } as object as FileAsset["metadata"],
     });
 
     const services = createIngestServices({
@@ -7495,7 +7496,7 @@ describe("ingest services", () => {
         source: "audiobook-json",
         status: "parsed",
         warnings: [],
-      } as unknown as FileAsset["metadata"],
+      } as object as FileAsset["metadata"],
     });
 
     const services = createIngestServices({
@@ -7533,7 +7534,7 @@ describe("ingest services", () => {
         source: "audio-id3",
         status: "parsed",
         warnings: [],
-      } as unknown as FileAsset["metadata"],
+      } as object as FileAsset["metadata"],
     });
 
     const services = createIngestServices({
@@ -7772,7 +7773,7 @@ describe("ingest services", () => {
     });
 
     expect(result.skipped).toBe(false);
-    const metadata = state.fileAssetsById.get("file-audio")?.metadata as Record<string, unknown>;
+    const metadata = state.fileAssetsById.get("file-audio")?.metadata as Prisma.JsonObject;
     const normalized = metadata.normalized as { authors: string[] };
     expect(normalized.authors).toEqual(["Artist Only"]);
   });
@@ -8025,7 +8026,7 @@ describe("matchFileAssetToEdition enqueues follow-up jobs", () => {
         source: "audiobook-json",
         status: "parsed",
         warnings: [],
-      } as unknown as FileAsset["metadata"],
+      } as object as FileAsset["metadata"],
     });
     const enqueueMock = vi.fn(() => Promise.resolve(undefined));
     const services = createIngestServices({

@@ -15,7 +15,7 @@ let mockLoaderData: {
     libraryRoot: { name: string } | null;
     bullmqJobId: string | null;
     error: string | null;
-    payload: Record<string, unknown> | null;
+    payload: Record<string, string | number | boolean | null> | null;
   } | null
 } = { job: null };
 
@@ -23,9 +23,9 @@ vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
     ...actual,
-    Link: ({ children, to, ...props }: { children?: React.ReactNode; to: string; [key: string]: unknown }) => <a href={to} {...props}>{children}</a>,
+    Link: ({ children, to, ...props }: { children?: React.ReactNode; to: string; [key: string]: string | undefined | React.ReactNode | Record<string, string> | (() => void) }) => <a href={to} {...props}>{children}</a>,
     useRouter: () => ({ invalidate: vi.fn(), navigate: vi.fn() }),
-    createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
+    createFileRoute: (_path: string) => (opts: Record<string, string | boolean | object | ((...a: object[]) => object | undefined | Promise<object>)>) => ({
       ...opts,
       options: opts,
       useLoaderData: () => mockLoaderData,
@@ -50,7 +50,7 @@ const makeJobDetail = (overrides: Partial<{
   libraryRoot: { name: string } | null;
   bullmqJobId: string | null;
   error: string | null;
-  payload: Record<string, unknown> | null;
+  payload: Record<string, string | number | boolean | null> | null;
 }> = {}) => ({
   id: "job-abc-123",
   status: "SUCCEEDED",
@@ -167,7 +167,7 @@ describe("JobDetailPage", () => {
     const mockJob = makeJobDetail({ id: "job-xyz" });
     getImportJobDetailServerFnMock.mockResolvedValueOnce(mockJob);
     const { Route } = await import("./jobs.$jobId");
-    const loader = Route.options.loader as (args: { params: { jobId: string } }) => Promise<unknown>;
+    const loader = Route.options.loader as (args: { params: { jobId: string } }) => Promise<object>;
     const result = await loader({ params: { jobId: "job-xyz" } });
     expect(getImportJobDetailServerFnMock).toHaveBeenCalledWith({ data: { id: "job-xyz" } });
     expect(result).toEqual({ job: mockJob });

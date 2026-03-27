@@ -10,6 +10,7 @@ export {
   type EnqueueJobOpts,
   type ImportJobLiveActivity,
   type LibraryJobSnapshot,
+  type QueueProgressData,
 } from "./queue-client.js";
 export { createQueueEvents } from "./queue-events.js";
 export { WaitingChildrenError } from "bullmq";

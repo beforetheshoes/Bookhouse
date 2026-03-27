@@ -1,5 +1,7 @@
 import { XMLParser } from "fast-xml-parser";
 
+export type XmlValue = string | number | boolean | null | XmlValue[] | { [key: string]: XmlValue };
+
 export interface ParsedEpubIdentifier {
   scheme?: string;
   value: string;
@@ -22,12 +24,12 @@ export function ensureArray<T>(value: T | T[] | undefined): T[] {
   return Array.isArray(value) ? value : [value];
 }
 
-export function getTextContent(node: unknown): string | undefined {
+export function getTextContent(node: XmlValue | undefined): string | undefined {
   if (typeof node === "string") {
     return node;
   }
 
-  if (node === null || typeof node !== "object") {
+  if (node === null || node === undefined || typeof node !== "object" || Array.isArray(node)) {
     return undefined;
   }
 
@@ -42,7 +44,7 @@ export function getTextContent(node: unknown): string | undefined {
   return hashTextNode;
 }
 
-export function getIdentifierScheme(identifier: { id?: string; scheme?: string; "opf:scheme"?: string }, metadata: Record<string, unknown>): string | undefined {
+export function getIdentifierScheme(identifier: { id?: string; scheme?: string; "opf:scheme"?: string }, metadata: Record<string, XmlValue>): string | undefined {
   if (typeof identifier["opf:scheme"] === "string") {
     return identifier["opf:scheme"];
   }

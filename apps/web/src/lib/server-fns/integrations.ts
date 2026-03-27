@@ -1,5 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import type { GBVolume } from "@bookhouse/ingest";
+import type { HCBook } from "@bookhouse/ingest";
 
 export const INTEGRATION_PROVIDERS = ["googlebooks", "hardcover"] as const;
 export type IntegrationProvider = (typeof INTEGRATION_PROVIDERS)[number];
@@ -96,7 +98,7 @@ export const removeApiKeyServerFn = createServerFn({
 
     try {
       await db.appSetting.delete({ where: { key } });
-    } catch (error: unknown) {
+    } catch (error) {
       // Prisma P2025 = record not found, ignore
       if (error instanceof Error && "code" in error && (error as { code: string }).code === "P2025") {
         return { provider: data.provider };
@@ -120,7 +122,7 @@ export const validateApiKeyServerFn = createServerFn({
     const { searchGoogleBooks, searchHardcover } = await import("@bookhouse/ingest");
 
     try {
-      let result: unknown;
+      let result: GBVolume[] | HCBook[] | null;
       if (data.provider === "googlebooks") {
         result = await searchGoogleBooks("test", undefined, data.apiKey, fetch);
       } else {
@@ -130,7 +132,7 @@ export const validateApiKeyServerFn = createServerFn({
         return { valid: false, error: "API returned an error response" };
       }
       return { valid: true };
-    } catch (error: unknown) {
+    } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       return { valid: false, error: message };
     }

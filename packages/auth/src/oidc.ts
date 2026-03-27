@@ -3,6 +3,7 @@ import type {
   AuthConfig,
   AuthorizationRequestResult,
   NormalizedOidcClaims,
+  OidcClaimsRecord,
 } from "./types";
 import { getOidcCallbackUrl, getPostLogoutRedirectUrl } from "./config";
 
@@ -94,15 +95,7 @@ export async function createAuthorizationRequest(
   };
 }
 
-function toRecord(value: unknown): Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return {};
-  }
-
-  return value as Record<string, unknown>;
-}
-
-function pickString(...values: Array<unknown>): string | null {
+function pickString(...values: Array<oidc.JsonValue | undefined>): string | null {
   for (const value of values) {
     if (typeof value === "string" && value.trim().length > 0) {
       return value;
@@ -113,14 +106,12 @@ function pickString(...values: Array<unknown>): string | null {
 }
 
 export function normalizeOidcClaims(
-  idTokenClaims: unknown,
-  userInfoClaims?: unknown,
+  idTokenClaims: OidcClaimsRecord,
+  userInfoClaims?: OidcClaimsRecord,
 ): NormalizedOidcClaims {
-  const idToken = toRecord(idTokenClaims);
-  const userInfo = toRecord(userInfoClaims);
-  const merged = {
-    ...idToken,
-    ...userInfo,
+  const merged: OidcClaimsRecord = {
+    ...idTokenClaims,
+    ...(userInfoClaims ?? {}),
   };
 
   const subject = pickString(merged.sub);
@@ -162,7 +153,7 @@ export async function exchangeAuthorizationCode(input: {
     throw new Error("OIDC token response did not contain ID token claims");
   }
 
-  let userInfoClaims: unknown;
+  let userInfoClaims: oidc.UserInfoResponse | undefined;
 
   if (
     tokens.access_token &&

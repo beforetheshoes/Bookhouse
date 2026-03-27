@@ -3,8 +3,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("@tanstack/react-start", () => ({
   createServerFn: () => {
     type Builder = {
-      inputValidator: (schema: unknown) => Builder;
-      handler: (fn: (a: Record<string, unknown>) => unknown) => (a: Record<string, unknown>) => unknown;
+      inputValidator: (schema: object) => Builder;
+      handler: <T extends Record<string, string | number | boolean | null | string[] | Date | undefined>>(fn: (a: T) => T | Promise<T>) => (a: T) => T | Promise<T>;
     };
     const b: Builder = {
       inputValidator: () => b,
@@ -21,9 +21,9 @@ const mockDelete = vi.fn();
 vi.mock("@bookhouse/db", () => ({
   db: {
     appSetting: {
-      findUnique: (...args: unknown[]): unknown => mockFindUnique(...args),
-      upsert: (...args: unknown[]): unknown => mockUpsert(...args),
-      delete: (...args: unknown[]): unknown => mockDelete(...args),
+      findUnique: mockFindUnique,
+      upsert: mockUpsert,
+      delete: mockDelete,
     },
   },
 }));
@@ -36,8 +36,8 @@ const mockValidateGoogleBooksKey = vi.fn();
 const mockValidateHardcoverKey = vi.fn();
 
 vi.mock("@bookhouse/ingest", () => ({
-  searchGoogleBooks: (...args: unknown[]): unknown => mockValidateGoogleBooksKey(...args),
-  searchHardcover: (...args: unknown[]): unknown => mockValidateHardcoverKey(...args),
+  searchGoogleBooks: mockValidateGoogleBooksKey,
+  searchHardcover: mockValidateHardcoverKey,
 }));
 
 import {
@@ -127,7 +127,7 @@ describe("integrations server functions", () => {
       await setApiKeyServerFn({ data: { provider: "googlebooks", apiKey: "test-key-123" } });
 
       expect(mockUpsert).toHaveBeenCalledTimes(1);
-      const args = mockUpsert.mock.calls[0] as unknown[];
+      const args = mockUpsert.mock.calls[0] as Array<object>;
       const call = args[0] as { where: { key: string }; create: { key: string; value: string }; update: { value: string } };
       expect(call.where.key).toBe("apiKey:googlebooks");
       expect(call.create.value).not.toBe("test-key-123");
@@ -139,7 +139,7 @@ describe("integrations server functions", () => {
 
       await setApiKeyServerFn({ data: { provider: "hardcover", apiKey: "hc-key" } });
 
-      const args = mockUpsert.mock.calls[0] as unknown[];
+      const args = mockUpsert.mock.calls[0] as Array<object>;
       const call = args[0] as { where: { key: string } };
       expect(call.where.key).toBe("apiKey:hardcover");
     });
@@ -180,7 +180,7 @@ describe("integrations server functions", () => {
       const result = await validateApiKeyServerFn({ data: { provider: "googlebooks", apiKey: "good-key" } });
 
       expect(result).toEqual({ valid: true });
-      expect(mockValidateGoogleBooksKey).toHaveBeenCalledWith("test", undefined, "good-key", expect.any(Function) as unknown);
+      expect(mockValidateGoogleBooksKey).toHaveBeenCalledWith("test", undefined, "good-key", expect.any(Function) as () => void);
     });
 
     it("returns invalid for googlebooks when search throws", async () => {
@@ -197,7 +197,7 @@ describe("integrations server functions", () => {
       const result = await validateApiKeyServerFn({ data: { provider: "hardcover", apiKey: "good-hc-key" } });
 
       expect(result).toEqual({ valid: true });
-      expect(mockValidateHardcoverKey).toHaveBeenCalledWith("test", undefined, "good-hc-key", expect.any(Function) as unknown);
+      expect(mockValidateHardcoverKey).toHaveBeenCalledWith("test", undefined, "good-hc-key", expect.any(Function) as () => void);
     });
 
     it("returns invalid for hardcover when search throws", async () => {

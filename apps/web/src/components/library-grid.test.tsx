@@ -6,12 +6,12 @@ import { getColumnCount as _getColumnCount } from "./library-grid";
 let mockVirtualizerArgs: { count: number };
 
 vi.mock("@tanstack/react-virtual", () => ({
-  useVirtualizer: (opts: { count: number; getScrollElement: () => unknown; estimateSize: () => number; measureElement: (el: Element) => number }) => {
+  useVirtualizer: (opts: { count: number; getScrollElement: () => HTMLElement | null; estimateSize: () => number; measureElement: (el: Element) => number }) => {
     mockVirtualizerArgs = opts;
     // Exercise callback branches for coverage
     opts.getScrollElement();
     opts.estimateSize();
-    opts.measureElement({ getBoundingClientRect: () => ({ height: 400 }) } as unknown as Element);
+    opts.measureElement({ getBoundingClientRect: () => ({ height: 400 }) } as Element);
     return {
       getVirtualItems: () =>
         opts.count > 0
@@ -88,8 +88,8 @@ describe("LibraryGrid", () => {
         }
         observe(el: Element) {
           this.callback(
-            [{ contentRect: { width: 1200 }, target: el }] as unknown as ResizeObserverEntry[],
-            this as unknown as ResizeObserver,
+            [{ contentRect: { width: 1200 }, target: el }] as ResizeObserverEntry[],
+            this as ResizeObserver,
           );
         }
         unobserve = vi.fn();
@@ -154,8 +154,8 @@ describe("LibraryGrid", () => {
         }
         observe(el: Element) {
           this.callback(
-            [{ contentRect: { width: 1200 }, target: el }] as unknown as ResizeObserverEntry[],
-            this as unknown as ResizeObserver,
+            [{ contentRect: { width: 1200 }, target: el }] as ResizeObserverEntry[],
+            this as ResizeObserver,
           );
         }
         unobserve = vi.fn();
@@ -188,7 +188,7 @@ describe("LibraryGrid", () => {
           this.callback = cb;
         }
         observe() {
-          this.callback([] as unknown as ResizeObserverEntry[], this as unknown as ResizeObserver);
+          this.callback([] as ResizeObserverEntry[], this as ResizeObserver);
         }
         unobserve = vi.fn();
         disconnect = vi.fn();

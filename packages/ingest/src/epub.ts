@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { xmlParser, ensureArray, getTextContent, getIdentifierScheme, type ParsedEpubIdentifier } from "./xml-helpers";
+import { xmlParser, ensureArray, getTextContent, getIdentifierScheme, type ParsedEpubIdentifier, type XmlValue } from "./xml-helpers";
 
 export type { ParsedEpubIdentifier } from "./xml-helpers";
 
@@ -98,7 +98,7 @@ function getRootfilePath(containerXml: string): string {
 function getPackageMetadata(opfXml: string): ParsedEpubMetadataRaw {
   const parsed = xmlParser.parse(opfXml) as {
     package?: {
-      metadata?: Record<string, unknown>;
+      metadata?: Record<string, XmlValue>;
     };
   };
 
@@ -156,7 +156,7 @@ interface ManifestItem {
 function getManifestCoverHref(opfXml: string): { href: string; mediaType: string } | null {
   const parsed = xmlParser.parse(opfXml) as {
     package?: {
-      metadata?: Record<string, unknown>;
+      metadata?: Record<string, XmlValue>;
       manifest?: { item?: ManifestItem | ManifestItem[] };
     };
   };
@@ -188,10 +188,11 @@ function getManifestCoverHref(opfXml: string): { href: string; mediaType: string
       if (
         meta &&
         typeof meta === "object" &&
-        (meta as Record<string, unknown>).name === "cover" &&
-        typeof (meta as Record<string, unknown>).content === "string"
+        !Array.isArray(meta) &&
+        meta.name === "cover" &&
+        typeof meta.content === "string"
       ) {
-        const coverId = (meta as Record<string, unknown>).content as string;
+        const coverId = meta.content;
         const coverItem = items.find(
           (item) => item.id === coverId,
         );

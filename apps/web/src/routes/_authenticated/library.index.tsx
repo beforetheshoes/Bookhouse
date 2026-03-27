@@ -26,7 +26,7 @@ import { LibraryToolbar } from "~/components/library-toolbar";
 import { LibraryGrid } from "~/components/library-grid";
 import { LibraryFilters, type LibraryFilterValues } from "~/components/library-filters";
 import { LibraryPagination } from "~/components/library-pagination";
-import { librarySearchSchema } from "~/lib/library-search-schema";
+import { librarySearchSchema, type LibrarySearchParams } from "~/lib/library-search-schema";
 import type { ReadingFilter } from "~/lib/sort-filter-works";
 import {
   getFilteredLibraryWorksServerFn,
@@ -272,14 +272,14 @@ function LibraryPage() {
   }, [isScanning, totalCount]);
 
   const updateSearch = useCallback(
-    (updates: Record<string, unknown>) => {
+    (updates: Partial<LibrarySearchParams>) => {
       void navigate({
         to: ".",
-        search: ((prev: Record<string, unknown>) => ({
-          ...prev,
+        search: (prev) => ({
+          ...(prev as LibrarySearchParams),
           ...updates,
           page: updates.page ?? 1,
-        })) as unknown as Record<string, unknown>,
+        }),
         replace: true,
       });
     },
@@ -289,7 +289,7 @@ function LibraryPage() {
   const handleFiltersChange = useCallback(
     (filters: LibraryFilterValues) => {
       updateSearch({
-        format: filters.format,
+        format: filters.format as LibrarySearchParams["format"],
         authorId: filters.authorId,
         seriesId: filters.seriesId,
         publisher: filters.publisher,
@@ -312,7 +312,7 @@ function LibraryPage() {
 
   const handleSortChange = useCallback(
     (sort: string) => {
-      updateSearch({ sort });
+      updateSearch({ sort: sort as LibrarySearchParams["sort"] });
     },
     [updateSearch],
   );

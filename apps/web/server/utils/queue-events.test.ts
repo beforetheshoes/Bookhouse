@@ -6,9 +6,9 @@ function createMockQueueEvents() {
   const emitter = new EventEmitter();
   return {
     on: (event: string, callback: (...args: never[]) => void) => {
-      emitter.on(event, callback as (...args: unknown[]) => void);
+      emitter.on(event, callback as (...args: Array<string | object>) => void);
     },
-    emit: (event: string, ...args: unknown[]) => emitter.emit(event, ...args),
+    emit: (event: string, ...args: Array<string | object>) => emitter.emit(event, ...args),
     close: vi.fn(),
   };
 }

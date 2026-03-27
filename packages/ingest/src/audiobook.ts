@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { parseFile } from "music-metadata";
 
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+
 export interface ParsedAudiobookMetadataJsonRaw {
   title: string;
   subtitle?: string;
@@ -28,14 +30,14 @@ export interface ParsedAudioId3TagsRaw {
   trackTotal?: number;
 }
 
-function ensureStringArray(value: unknown): string[] {
+function ensureStringArray(value: JsonValue | undefined): string[] {
   if (!Array.isArray(value)) {
     return [];
   }
   return value.filter((item): item is string => typeof item === "string");
 }
 
-function ensureSeriesArray(value: unknown): Array<{ name: string; sequence: string }> {
+function ensureSeriesArray(value: JsonValue | undefined): Array<{ name: string; sequence: string }> {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -43,12 +45,13 @@ function ensureSeriesArray(value: unknown): Array<{ name: string; sequence: stri
     (item): item is { name: string; sequence: string } =>
       typeof item === "object" &&
       item !== null &&
-      typeof (item as Record<string, unknown>).name === "string" &&
-      typeof (item as Record<string, unknown>).sequence === "string",
+      !Array.isArray(item) &&
+      typeof item.name === "string" &&
+      typeof item.sequence === "string",
   );
 }
 
-function optionalString(value: unknown): string | undefined {
+function optionalString(value: JsonValue | undefined): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
@@ -56,13 +59,13 @@ export async function parseAudiobookMetadataJson(
   absolutePath: string,
 ): Promise<ParsedAudiobookMetadataJsonRaw> {
   const content = await readFile(absolutePath, "utf8");
-  const parsed: unknown = JSON.parse(content);
+  const parsed = JSON.parse(content) as JsonValue;
 
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     throw new Error("metadata.json content is not an object");
   }
 
-  const obj = parsed as Record<string, unknown>;
+  const obj = parsed as Record<string, JsonValue>;
 
   if (typeof obj.title !== "string") {
     throw new Error("metadata.json missing required field: title");

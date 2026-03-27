@@ -10,9 +10,9 @@ vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
     ...actual,
-    Link: ({ children, to, ...props }: { children?: React.ReactNode; to: string; [key: string]: unknown }) => <a href={to} {...props}>{children}</a>,
+    Link: ({ children, to, ...props }: { children?: React.ReactNode; to: string; [key: string]: string | undefined | React.ReactNode | Record<string, string> | (() => void) }) => <a href={to} {...props}>{children}</a>,
     useRouter: () => ({ invalidate: vi.fn(), navigate: vi.fn() }),
-    createFileRoute: (_path: string) => (opts: Record<string, unknown>) => ({
+    createFileRoute: (_path: string) => (opts: Record<string, string | boolean | object | ((...a: object[]) => object | undefined | Promise<object>)>) => ({
       ...opts,
       options: opts,
       useLoaderData: () => mockLoaderData,
@@ -45,7 +45,7 @@ describe("CollectionsPage", () => {
   it("loader calls getCollectionsServerFn", async () => {
     getCollectionsServerFnMock.mockResolvedValueOnce([]);
     const { Route } = await import("./collections");
-    const result = await (Route.options.loader as (args: Record<string, unknown>) => Promise<unknown>)({});
+    const result = await (Route.options.loader as (args: Record<string, string | object>) => Promise<object>)({});
     expect(getCollectionsServerFnMock).toHaveBeenCalled();
     expect(result).toEqual({ collections: [] });
   });

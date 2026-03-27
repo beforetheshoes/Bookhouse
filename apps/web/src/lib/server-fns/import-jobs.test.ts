@@ -4,7 +4,7 @@ vi.mock("@tanstack/react-start", () => ({
   createServerFn: () => {
     type Builder = {
       inputValidator: () => Builder;
-      handler: (fn: (a: Record<string, unknown>) => unknown) => (a: Record<string, unknown>) => unknown;
+      handler: <T extends Record<string, string | number | boolean | null | string[] | Date | undefined>>(fn: (a: T) => T | Promise<T>) => (a: T) => T | Promise<T>;
     };
     const b: Builder = {
       inputValidator: () => b,
@@ -36,7 +36,7 @@ vi.mock("@bookhouse/db", () => ({
 class MockNotFoundError extends Error {
   constructor(
     message: string,
-    public context?: Record<string, unknown>,
+    public context?: Record<string, string>,
   ) {
     super(message);
     this.name = "NotFoundError";
@@ -49,9 +49,9 @@ const getLibraryJobSnapshotMock = vi.fn();
 
 vi.mock("@bookhouse/shared", () => ({
   NotFoundError: MockNotFoundError,
-  getImportJobLiveActivity: (...args: unknown[]): unknown => getImportJobLiveActivityMock(...args),
-  obliterateLibraryQueue: (...args: unknown[]): unknown => obliterateLibraryQueueMock(...args),
-  getLibraryJobSnapshot: (...args: unknown[]): unknown => getLibraryJobSnapshotMock(...args),
+  getImportJobLiveActivity: getImportJobLiveActivityMock,
+  obliterateLibraryQueue: obliterateLibraryQueueMock,
+  getLibraryJobSnapshot: getLibraryJobSnapshotMock,
 }));
 
 import {
@@ -117,8 +117,8 @@ describe("getImportJobsServerFn", () => {
       status: "RUNNING",
       error: null,
       attemptsMade: 0,
-      createdAt: expect.any(Date) as unknown,
-      startedAt: expect.any(Date) as unknown,
+      createdAt: expect.any(Date) as Date,
+      startedAt: expect.any(Date) as Date,
       finishedAt: null,
       libraryRoot: { id: "root-1", name: "eBooks" },
     }]);
@@ -154,8 +154,8 @@ describe("getImportJobsServerFn", () => {
       status: "RUNNING",
       error: null,
       attemptsMade: 0,
-      createdAt: expect.any(Date) as unknown,
-      startedAt: expect.any(Date) as unknown,
+      createdAt: expect.any(Date) as Date,
+      startedAt: expect.any(Date) as Date,
       finishedAt: null,
       libraryRoot: { id: "root-1", name: "Audiobooks" },
     }]);
@@ -185,7 +185,7 @@ describe("getImportJobsServerFn", () => {
       bullmqJobId: null,
       kind: "SCAN_ROOT",
       status: "SUCCEEDED",
-      finishedAt: expect.any(Date) as unknown,
+      finishedAt: expect.any(Date) as Date,
     });
   });
 
@@ -220,8 +220,8 @@ describe("getImportJobsServerFn", () => {
       status: "RUNNING",
       error: null,
       attemptsMade: 0,
-      createdAt: expect.any(Date) as unknown,
-      startedAt: expect.any(Date) as unknown,
+      createdAt: expect.any(Date) as Date,
+      startedAt: expect.any(Date) as Date,
       finishedAt: null,
       libraryRoot: { id: "root-1", name: "eBooks" },
     }]);
@@ -252,7 +252,7 @@ describe("getImportJobsServerFn", () => {
       bullmqJobId: "bull-1",
       kind: "SCAN_ROOT",
       status: "SUCCEEDED",
-      finishedAt: expect.any(Date) as unknown,
+      finishedAt: expect.any(Date) as Date,
     });
   });
 
@@ -285,7 +285,7 @@ describe("getImportJobsServerFn", () => {
       data: {
         status: "FAILED",
         error: "Scan job is blocked by a failed child job",
-        finishedAt: expect.any(Date) as unknown,
+        finishedAt: expect.any(Date) as Date,
         scanStage: null,
         bullmqJobId: null,
       },
@@ -297,9 +297,9 @@ describe("getImportJobsServerFn", () => {
       status: "FAILED",
       error: "Scan job is blocked by a failed child job",
       attemptsMade: 0,
-      createdAt: expect.any(Date) as unknown,
-      startedAt: expect.any(Date) as unknown,
-      finishedAt: expect.any(Date) as unknown,
+      createdAt: expect.any(Date) as Date,
+      startedAt: expect.any(Date) as Date,
+      finishedAt: expect.any(Date) as Date,
       libraryRoot: { id: "root-1", name: "eBooks" },
     }]);
   });
@@ -313,7 +313,7 @@ describe("getImportJobsServerFn", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           status: { in: ["QUEUED", "RUNNING"] },
-        }) as unknown,
+        }) as object,
       }),
     );
   });
@@ -321,9 +321,9 @@ describe("getImportJobsServerFn", () => {
   it("calls findMany WITHOUT status filter when status is not provided", async () => {
     await getImportJobsServerFn({ data: { page: 1, pageSize: 20 } });
 
-    const callArgs: unknown = findManyMock.mock.calls[0]?.[0];
+    const callArgs = findManyMock.mock.calls[0]?.[0] as Record<string, object>;
     expect(callArgs).toHaveProperty("where");
-    expect((callArgs as Record<string, unknown>).where).not.toHaveProperty("status");
+    expect(callArgs.where).not.toHaveProperty("status");
   });
 
   it("calls findMany WITHOUT status filter when status is an empty array", async () => {
@@ -331,9 +331,9 @@ describe("getImportJobsServerFn", () => {
       data: { page: 1, pageSize: 20, status: [] },
     });
 
-    const callArgs: unknown = findManyMock.mock.calls[0]?.[0];
+    const callArgs = findManyMock.mock.calls[0]?.[0] as Record<string, object>;
     expect(callArgs).toHaveProperty("where");
-    expect((callArgs as Record<string, unknown>).where).not.toHaveProperty("status");
+    expect(callArgs.where).not.toHaveProperty("status");
   });
 
   it("calls findMany with kind filter when kind is provided", async () => {
@@ -345,7 +345,7 @@ describe("getImportJobsServerFn", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           kind: { in: ["SCAN_ROOT", "HASH_FILE"] },
-        }) as unknown,
+        }) as object,
       }),
     );
   });
@@ -355,9 +355,9 @@ describe("getImportJobsServerFn", () => {
       data: { page: 1, pageSize: 20, kind: [] },
     });
 
-    const callArgs: unknown = findManyMock.mock.calls[0]?.[0];
+    const callArgs = findManyMock.mock.calls[0]?.[0] as Record<string, object>;
     expect(callArgs).toHaveProperty("where");
-    expect((callArgs as Record<string, unknown>).where).not.toHaveProperty("kind");
+    expect(callArgs.where).not.toHaveProperty("kind");
   });
 
   it("calls findMany with libraryRootId filter when provided", async () => {
@@ -367,7 +367,7 @@ describe("getImportJobsServerFn", () => {
 
     expect(findManyMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ libraryRootId: "root-abc" }) as unknown,
+        where: expect.objectContaining({ libraryRootId: "root-abc" }) as object,
       }),
     );
   });
@@ -375,16 +375,16 @@ describe("getImportJobsServerFn", () => {
   it("calls findMany WITHOUT libraryRootId filter when not provided", async () => {
     await getImportJobsServerFn({ data: { page: 1, pageSize: 20 } });
 
-    const callArgs: unknown = findManyMock.mock.calls[0]?.[0];
+    const callArgs = findManyMock.mock.calls[0]?.[0] as Record<string, object>;
     expect(callArgs).toHaveProperty("where");
-    expect((callArgs as Record<string, unknown>).where).not.toHaveProperty("libraryRootId");
+    expect(callArgs.where).not.toHaveProperty("libraryRootId");
   });
 
   it("uses correct skip/take for pagination (page 2, pageSize 10 → skip: 10, take: 10)", async () => {
     await getImportJobsServerFn({ data: { page: 2, pageSize: 10 } });
 
     expect(findManyMock).toHaveBeenCalledWith(
-      expect.objectContaining({ skip: 10, take: 10 }) as unknown,
+      expect.objectContaining({ skip: 10, take: 10 }) as object,
     );
   });
 });
@@ -467,7 +467,7 @@ describe("getActiveJobCountServerFn", () => {
       data: {
         status: "FAILED",
         error: "Scan job is blocked by a failed child job",
-        finishedAt: expect.any(Date) as unknown,
+        finishedAt: expect.any(Date) as Date,
         scanStage: null,
         bullmqJobId: null,
       },
@@ -489,7 +489,7 @@ describe("getActiveJobCountServerFn", () => {
       data: {
         status: "FAILED",
         error: "Scan job is no longer active in BullMQ",
-        finishedAt: expect.any(Date) as unknown,
+        finishedAt: expect.any(Date) as Date,
         scanStage: null,
         bullmqJobId: null,
       },
@@ -553,7 +553,7 @@ describe("stopAllJobsServerFn", () => {
     expect(obliterateLibraryQueueMock).toHaveBeenCalledTimes(1);
     expect(updateManyMock).toHaveBeenCalledWith({
       where: { status: { in: ["QUEUED", "RUNNING"] } },
-      data: { status: "FAILED", error: "Stopped by user", finishedAt: expect.any(Date) as unknown, bullmqJobId: null, scanStage: null },
+      data: { status: "FAILED", error: "Stopped by user", finishedAt: expect.any(Date) as Date, bullmqJobId: null, scanStage: null },
     });
     expect(result).toEqual({ stoppedCount: 5 });
   });

@@ -2,10 +2,12 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const updateEditionServerFnMock = vi.fn();
+const { updateEditionServerFnMock } = vi.hoisted(() => ({
+  updateEditionServerFnMock: vi.fn(),
+}));
 
 vi.mock("~/lib/server-fns/editing", () => ({
-  updateEditionServerFn: (...args: unknown[]): unknown => updateEditionServerFnMock(...args),
+  updateEditionServerFn: updateEditionServerFnMock,
 }));
 
 import { EditionTabPanel } from "./edition-tab-panel";
@@ -62,7 +64,7 @@ const baseEdition = {
       },
     },
   ],
-} as unknown as EditionType;
+} as EditionType;
 
 describe("EditionTabPanel", () => {
   it("renders edition metadata fields", () => {
@@ -289,7 +291,7 @@ describe("EditionTabPanel", () => {
       isbn10: null,
       asin: null,
       language: null,
-    } as unknown as EditionType;
+    } as EditionType;
 
     render(
       <EditionTabPanel
@@ -322,7 +324,7 @@ describe("EditionTabPanel", () => {
           },
         },
       ],
-    } as unknown as EditionType;
+    } as EditionType;
     render(
       <EditionTabPanel
         edition={edition}
@@ -347,7 +349,7 @@ describe("EditionTabPanel", () => {
           },
         },
       ],
-    } as unknown as EditionType;
+    } as EditionType;
     render(
       <EditionTabPanel
         edition={edition}
@@ -372,7 +374,7 @@ describe("EditionTabPanel", () => {
           },
         },
       ],
-    } as unknown as EditionType;
+    } as EditionType;
     render(
       <EditionTabPanel
         edition={edition}
@@ -533,7 +535,7 @@ describe("EditionTabPanel", () => {
           },
         },
       ],
-    } as unknown as EditionType;
+    } as EditionType;
     render(
       <EditionTabPanel
         edition={edition}

@@ -3,14 +3,21 @@ import { render, screen, act, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const searchEnrichmentMock = vi.fn();
-const applyEnrichmentMock = vi.fn();
-const applyCoverFromUrlMock = vi.fn();
+/** Force-cast for testing type-mismatch scenarios (e.g., passing boolean where string expected) */
+function forceCast<T>(value: T | string | number | boolean | object): T {
+  return value as T & typeof value;
+}
+
+const { searchEnrichmentMock, applyEnrichmentMock, applyCoverFromUrlMock } = vi.hoisted(() => ({
+  searchEnrichmentMock: vi.fn(),
+  applyEnrichmentMock: vi.fn(),
+  applyCoverFromUrlMock: vi.fn(),
+}));
 
 vi.mock("~/lib/server-fns/enrichment", () => ({
-  searchEnrichmentServerFn: (...args: unknown[]): unknown => searchEnrichmentMock(...args),
-  applyEnrichmentServerFn: (...args: unknown[]): unknown => applyEnrichmentMock(...args),
-  applyCoverFromUrlServerFn: (...args: unknown[]): unknown => applyCoverFromUrlMock(...args),
+  searchEnrichmentServerFn: searchEnrichmentMock,
+  applyEnrichmentServerFn: applyEnrichmentMock,
+  applyCoverFromUrlServerFn: applyCoverFromUrlMock,
 }));
 
 const { mockToast } = vi.hoisted(() => ({
@@ -182,7 +189,7 @@ describe("EnrichmentDialog", () => {
       expect(applyEnrichmentMock).toHaveBeenCalledTimes(1);
     });
 
-    const callArgs = (applyEnrichmentMock.mock.calls[0] as unknown[])[0] as { data: { source: { provider: string } } };
+    const callArgs = applyEnrichmentMock.mock.calls[0]?.[0] as { data: { source: { provider: string } } };
     expect(callArgs.data.source.provider).toBe("openlibrary");
     expect(baseProps.onApplied).toHaveBeenCalled();
   });
@@ -574,13 +581,13 @@ describe("EnrichmentDialog", () => {
     // Create a result where all edition fields are booleans to exercise formatValue fallback
     const resultWithBoolFields = {
       ...olResult,
-      work: { ...olResult.work, description: { nested: true } as unknown as string, subjects: ["Fantasy"] },
+      work: { ...olResult.work, description: forceCast<string>({ nested: true }), subjects: ["Fantasy"] },
       edition: {
-        publisher: true as unknown as string,
-        publishedDate: true as unknown as string,
-        pageCount: true as unknown as number,
-        isbn13: true as unknown as string,
-        isbn10: true as unknown as string,
+        publisher: forceCast<string>(true),
+        publishedDate: forceCast<string>(true),
+        pageCount: forceCast<number>(true),
+        isbn13: forceCast<string>(true),
+        isbn10: forceCast<string>(true),
       },
     };
     searchEnrichmentMock.mockResolvedValue({
@@ -623,7 +630,7 @@ describe("EnrichmentDialog", () => {
       expect(applyEnrichmentMock).toHaveBeenCalledTimes(1);
     });
 
-    const callArgs = (applyEnrichmentMock.mock.calls[0] as unknown[])[0] as { data: { workFields: unknown; editionFields: unknown; editionId: string } };
+    const callArgs = applyEnrichmentMock.mock.calls[0]?.[0] as { data: { workFields: object; editionFields: object; editionId: string } };
     // workFields should be undefined since no work fields were selected
     expect(callArgs.data.workFields).toBeUndefined();
     // editionFields should be defined
@@ -657,7 +664,7 @@ describe("EnrichmentDialog", () => {
       expect(applyEnrichmentMock).toHaveBeenCalledTimes(1);
     });
 
-    const callArgs = (applyEnrichmentMock.mock.calls[0] as unknown[])[0] as { data: { workFields: unknown; editionFields: unknown; editionId: string | undefined } };
+    const callArgs = applyEnrichmentMock.mock.calls[0]?.[0] as { data: { workFields: object; editionFields: object; editionId: string | undefined } };
     // workFields should be defined
     expect(callArgs.data.workFields).toBeDefined();
     // editionFields should be undefined since no edition fields selected
@@ -667,7 +674,7 @@ describe("EnrichmentDialog", () => {
   });
 
   it("cancels in-flight search when dialog unmounts", async () => {
-    let resolveSearch: ((value: unknown) => void) | undefined;
+    let resolveSearch: ((value: object) => void) | undefined;
     searchEnrichmentMock.mockImplementation(() => new Promise((resolve) => {
       resolveSearch = resolve;
     }));
@@ -687,7 +694,7 @@ describe("EnrichmentDialog", () => {
   });
 
   it("cancels in-flight search error when dialog unmounts", async () => {
-    let rejectSearch: ((reason: unknown) => void) | undefined;
+    let rejectSearch: ((reason: Error) => void) | undefined;
     searchEnrichmentMock.mockImplementation(() => new Promise((_resolve, reject) => {
       rejectSearch = reject;
     }));
@@ -913,7 +920,7 @@ describe("EnrichmentDialog", () => {
       expect(applyCoverFromUrlMock).toHaveBeenCalledTimes(1);
     });
 
-    const callArgs = (applyCoverFromUrlMock.mock.calls[0] as unknown[])[0] as { data: { workId: string; imageUrl: string; source: { provider: string } } };
+    const callArgs = applyCoverFromUrlMock.mock.calls[0]?.[0] as { data: { workId: string; imageUrl: string; source: { provider: string } } };
     expect(callArgs.data.workId).toBe("w1");
     expect(callArgs.data.imageUrl).toBe("https://covers.openlibrary.org/b/id/42-L.jpg");
     expect(callArgs.data.source.provider).toBe("openlibrary");
@@ -960,7 +967,7 @@ describe("EnrichmentDialog", () => {
       expect(applyEnrichmentMock).toHaveBeenCalledTimes(1);
     });
 
-    const callArgs = (applyEnrichmentMock.mock.calls[0] as unknown[])[0] as { data: { workFields?: Record<string, unknown> } };
+    const callArgs = applyEnrichmentMock.mock.calls[0]?.[0] as { data: { workFields?: Record<string, string | number | boolean | null | object> } };
     // coverUrl should NOT be in the workFields sent to applyEnrichmentServerFn
     expect(callArgs.data.workFields?.coverUrl).toBeUndefined();
   });

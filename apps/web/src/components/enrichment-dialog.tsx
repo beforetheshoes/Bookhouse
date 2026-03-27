@@ -48,9 +48,11 @@ interface EnrichmentDialogProps {
 
 type DialogStatus = "loading" | "error" | "no-results" | "rate-limited" | "success";
 
+export type EnrichmentFieldValue = string | string[] | number | null;
+
 interface FieldSelection {
-  workFields: Record<string, unknown>;
-  editionFields: Record<string, unknown>;
+  workFields: Record<string, EnrichmentFieldValue>;
+  editionFields: Record<string, EnrichmentFieldValue>;
 }
 
 // ---------------------------------------------------------------------------
@@ -89,16 +91,16 @@ const EDITION_FIELDS: FieldDef[] = [
 // Helpers
 // ---------------------------------------------------------------------------
 
-function getSourceValue(result: SourceResult, field: FieldDef): unknown {
+function getSourceValue(result: SourceResult, field: FieldDef): EnrichmentFieldValue {
   if (field.level === "work") {
-    return (result.work as unknown as Record<string, unknown>)[field.key] ?? null;
+    return (result.work as object as Record<string, EnrichmentFieldValue>)[field.key] ?? null;
   }
-  return (result.edition as unknown as Record<string, unknown>)[field.key] ?? null;
+  return (result.edition as object as Record<string, EnrichmentFieldValue>)[field.key] ?? null;
 }
 
-function formatValue(value: unknown): string {
+function formatValue(value: EnrichmentFieldValue | undefined): string {
   if (value === null || value === undefined) return "";
-  if (Array.isArray(value)) return (value as string[]).join(", ");
+  if (Array.isArray(value)) return value.join(", ");
   if (typeof value === "string") return value;
   if (typeof value === "number") return value.toString();
   return "";
@@ -338,7 +340,7 @@ export function EnrichmentDialog({
         } else {
           setStatus("no-results");
         }
-      } catch (err: unknown) {
+      } catch (err) {
         if (ctrl.cancelled) return;
         setStatus("error");
         setErrorMsg(err instanceof Error ? err.message : "Search failed");
@@ -348,7 +350,7 @@ export function EnrichmentDialog({
     return () => { ctrl.cancelled = true; };
   }, [open, workId]);
 
-  const handleToggle = (provider: string, field: FieldDef, value: unknown) => {
+  const handleToggle = (provider: string, field: FieldDef, value: EnrichmentFieldValue) => {
     setSelections((prev) => {
       const sel = getSelection(prev, provider);
       const target = field.level === "work" ? "workFields" : "editionFields";
@@ -508,7 +510,9 @@ export function EnrichmentDialog({
                               {EDITION_FIELDS.map((field) => {
                                 const raw = getSourceValue(r, field);
                                 const sourceVal = formatValue(raw);
-                                const currentVal = formatValue((currentEdition as Record<string, unknown>)[field.key]);
+                                const currentVal = formatValue(
+                                  (currentEdition as Record<string, EnrichmentFieldValue>)[field.key],
+                                );
                                 return (
                                   <FieldComparisonRow
                                     key={field.key}
@@ -601,7 +605,7 @@ function buildInitialSelections(
         const sourceVal = formatValue(raw);
         if (!sourceVal) continue;
         if (currentEdition.editedFields.includes(field.key)) continue;
-        const currentVal = formatValue((currentEdition as Record<string, unknown>)[field.key]);
+        const currentVal = formatValue((currentEdition as Record<string, EnrichmentFieldValue>)[field.key]);
         if (sourceVal === currentVal) continue;
         sel.editionFields[field.key] = raw;
       }

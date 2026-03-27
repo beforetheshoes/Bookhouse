@@ -3,7 +3,7 @@ const queueEventsConstructorMock = vi.fn();
 const queueConnectionConfigMock = vi.fn(() => ({ host: "localhost", port: 6379 }));
 
 vi.mock("bullmq", () => ({
-  QueueEvents: function FakeQueueEvents(...args: unknown[]) {
+  QueueEvents: function FakeQueueEvents(...args: object[]) {
     queueEventsConstructorMock(...args);
   },
 }));
@@ -11,7 +11,7 @@ vi.mock("bullmq", () => ({
 vi.mock("./queues.js", async () => {
   const actual = await vi.importActual("./queues.js");
   return {
-    ...(actual as Record<string, unknown>),
+    ...(actual as Record<string, object>),
     getQueueConnectionConfig: queueConnectionConfigMock,
   };
 });

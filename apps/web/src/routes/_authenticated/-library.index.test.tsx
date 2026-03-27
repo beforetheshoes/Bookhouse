@@ -4,6 +4,16 @@ import type * as TanstackRouter from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+/** Cast route option function types that have no overlap with simple function types */
+function asLoader<TArgs, TResult>(fn: ((args: TArgs) => Promise<TResult>) | object): (args: TArgs) => Promise<TResult> {
+  return fn as ((args: TArgs) => Promise<TResult>) & typeof fn;
+}
+
+/** Force-cast for testing type-mismatch scenarios */
+function forceCast<T>(value: T | string | number | boolean | object | null): T {
+  return value as T & typeof value;
+}
+
 const defaultFacetCounts = {
   format: [
     { formatFamily: "EBOOK", _count: { _all: 1 } },
@@ -62,7 +72,7 @@ vi.mock("~/lib/server-fns/deletion", () => ({
 const mockToast = { success: vi.fn(), error: vi.fn() };
 vi.mock("sonner", () => ({ toast: mockToast }));
 
-const mockNavigate = vi.fn().mockImplementation((opts: { search?: (prev: Record<string, unknown>) => unknown }) => {
+const mockNavigate = vi.fn().mockImplementation((opts: { search?: (prev: Record<string, string | number | boolean | object>) => object }) => {
   if (typeof opts.search === "function") {
     opts.search({});
   }
@@ -72,7 +82,7 @@ vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
     ...actual,
-    Link: ({ children, to, params, ...props }: { children?: React.ReactNode; to: string; params?: Record<string, string>; [key: string]: unknown }) => {
+    Link: ({ children, to, params, ...props }: { children?: React.ReactNode; to: string; params?: Record<string, string>; [key: string]: string | undefined | React.ReactNode | Record<string, string> | (() => void) }) => {
       let href = to;
       if (params) {
         for (const [key, value] of Object.entries(params)) {
@@ -83,13 +93,13 @@ vi.mock("@tanstack/react-router", async () => {
     },
     useRouter: () => ({ invalidate: mockRouterInvalidate, navigate: vi.fn() }),
     useNavigate: () => mockNavigate,
-    createFileRoute: (_path: string) => (opts: Record<string, unknown>) => {
+    createFileRoute: (_path: string) => (opts: Record<string, string | boolean | object | ((...a: object[]) => object | undefined | Promise<object>)>) => {
       // Call validateSearch and loaderDeps to exercise those branches
       if (typeof opts.validateSearch === "function") {
-        (opts.validateSearch as (s: unknown) => unknown)({});
+        (opts.validateSearch as (s: object) => object)({});
       }
       if (typeof opts.loaderDeps === "function") {
-        (opts.loaderDeps as (s: { search: unknown }) => unknown)({ search: {} });
+        (opts.loaderDeps as (s: { search: object }) => object)({ search: {} });
       }
       return {
         ...opts,
@@ -134,14 +144,14 @@ vi.mock("~/hooks/use-library-table-preferences", () => ({
 }));
 
 vi.mock("~/components/library-grid", () => ({
-  LibraryGrid: ({ works, progressMap }: { works: unknown[]; progressMap?: Record<string, number> }) => (
+  LibraryGrid: ({ works, progressMap }: { works: object[]; progressMap?: Record<string, number> }) => (
     <div data-testid="library-grid" data-progress-map={progressMap ? JSON.stringify(progressMap) : undefined}>Grid: {String(works.length)} works</div>
   ),
 }));
 
-let capturedToolbarProps: Record<string, unknown> = {};
+let capturedToolbarProps: Record<string, string | number | boolean | object | (() => void)> = {};
 vi.mock("~/components/library-toolbar", () => ({
-  LibraryToolbar: (props: Record<string, unknown>) => {
+  LibraryToolbar: (props: Record<string, string | number | boolean | object | (() => void)>) => {
     capturedToolbarProps = props;
     return (
       <div data-testid="library-toolbar" data-view={props.view as string} data-filter={props.filterValue as string} />
@@ -149,9 +159,9 @@ vi.mock("~/components/library-toolbar", () => ({
   },
 }));
 
-let capturedFiltersProps: Record<string, unknown> = {};
+let capturedFiltersProps: Record<string, string | number | boolean | object | (() => void)> = {};
 vi.mock("~/components/library-filters", () => ({
-  LibraryFilters: (props: Record<string, unknown>) => {
+  LibraryFilters: (props: Record<string, string | number | boolean | object | (() => void)>) => {
     capturedFiltersProps = props;
     return (
       <div data-testid="library-filters" data-filters={JSON.stringify(props.filters)} />
@@ -159,19 +169,19 @@ vi.mock("~/components/library-filters", () => ({
   },
 }));
 
-let capturedPaginationProps: Record<string, unknown> = {};
+let capturedPaginationProps: Record<string, string | number | boolean | object | (() => void)> = {};
 vi.mock("~/components/library-pagination", () => ({
-  LibraryPagination: (props: Record<string, unknown>) => {
+  LibraryPagination: (props: Record<string, string | number | boolean | object | (() => void)>) => {
     capturedPaginationProps = props;
     return (
-      <div data-testid="library-pagination" data-page={String(props.page)} data-total={String(props.totalCount)} />
+      <div data-testid="library-pagination" data-page={typeof props.page === "string" || typeof props.page === "number" ? String(props.page) : ""} data-total={typeof props.totalCount === "string" || typeof props.totalCount === "number" ? String(props.totalCount) : ""} />
     );
   },
 }));
 
-let capturedColumnPickerProps: Record<string, unknown> = {};
+let capturedColumnPickerProps: Record<string, string | number | boolean | object | (() => void)> = {};
 vi.mock("~/components/data-table/data-table-column-picker", () => ({
-  DataTableColumnPicker: (props: Record<string, unknown>) => {
+  DataTableColumnPicker: (props: Record<string, string | number | boolean | object | (() => void)>) => {
     capturedColumnPickerProps = props;
     return <div data-testid="column-picker" />;
   },
@@ -186,7 +196,7 @@ vi.mock("~/components/data-table", async () => {
 // Use real EditableTableCell so column cell renderers execute fully
 vi.mock("~/components/editable-table-cell", async () => {
   const actual = await vi.importActual("~/components/editable-table-cell");
-  return actual as Record<string, unknown>;
+  return actual as Record<string, object>;
 });
 
 vi.mock("~/lib/server-fns/editing", () => ({
@@ -197,9 +207,9 @@ vi.mock("~/lib/server-fns/editing", () => ({
 
 import { updateWorkServerFn, updateEditionServerFn, updateWorkAuthorsServerFn } from "~/lib/server-fns/editing";
 
-const updateWorkServerFnMock = updateWorkServerFn as unknown as ReturnType<typeof vi.fn>;
-const updateEditionServerFnMock = updateEditionServerFn as unknown as ReturnType<typeof vi.fn>;
-const updateWorkAuthorsServerFnMock = updateWorkAuthorsServerFn as unknown as ReturnType<typeof vi.fn>;
+const updateWorkServerFnMock = vi.mocked(updateWorkServerFn);
+const updateEditionServerFnMock = vi.mocked(updateEditionServerFn);
+const updateWorkAuthorsServerFnMock = vi.mocked(updateWorkAuthorsServerFn);
 
 vi.mock("~/components/skeletons/grid-page-skeleton", () => ({
   GridPageSkeleton: () => <div>Loading grid...</div>,
@@ -220,7 +230,7 @@ vi.mock("@tanstack/react-virtual", () => ({
 }));
 
 vi.mock("~/lib/library-search-schema", () => ({
-  librarySearchSchema: { parse: (v: unknown) => v },
+  librarySearchSchema: { parse: (v: object) => v },
 }));
 
 const makeWork = (title: string, authors: string[] = [], formats: string[] = [], enrichmentStatus = "ENRICHED") => ({
@@ -275,7 +285,7 @@ describe("LibraryPage", () => {
     getBulkReadingProgressServerFnMock.mockResolvedValueOnce({});
     const { Route } = await import("./library.index");
     const deps = { page: 1, pageSize: 50, sort: "title-asc" };
-    const result = await (Route.options.loader as unknown as (args: Record<string, unknown>) => Promise<unknown>)({ deps });
+    const result = await asLoader<Record<string, string | object>, object>(Route.options.loader as object)({ deps });
     expect(getFilteredLibraryWorksServerFnMock).toHaveBeenCalledWith({ data: deps });
     expect(getActiveJobCountServerFnMock).toHaveBeenCalled();
     expect(getBulkReadingProgressServerFnMock).toHaveBeenCalled();
@@ -669,7 +679,7 @@ describe("LibraryPage", () => {
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
-    const onFiltersChange = capturedFiltersProps.onFiltersChange as (v: Record<string, unknown>) => void;
+    const onFiltersChange = capturedFiltersProps.onFiltersChange as (v: Record<string, string | number | boolean | object>) => void;
     onFiltersChange({ format: ["EBOOK"] });
     expect(mockNavigate).toHaveBeenCalled();
   });
@@ -772,7 +782,7 @@ describe("LibraryPage", () => {
   });
 
   it("does not show empty state when format filter is active", async () => {
-    mockSearch = { ...mockSearch, format: ["EBOOK"] } as unknown as typeof mockSearch;
+    mockSearch = { ...mockSearch, format: ["EBOOK"] } as typeof mockSearch;
     mockLoaderData = {
       libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts },
       activeJobCount: 0,
@@ -785,7 +795,7 @@ describe("LibraryPage", () => {
   });
 
   it("does not show empty state when authorId filter is active", async () => {
-    mockSearch = { ...mockSearch, authorId: ["a1"] } as unknown as typeof mockSearch;
+    mockSearch = { ...mockSearch, authorId: ["a1"] } as typeof mockSearch;
     mockLoaderData = {
       libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts },
       activeJobCount: 0,
@@ -798,7 +808,7 @@ describe("LibraryPage", () => {
   });
 
   it("does not show empty state when seriesId filter is active", async () => {
-    mockSearch = { ...mockSearch, seriesId: ["s1"] } as unknown as typeof mockSearch;
+    mockSearch = { ...mockSearch, seriesId: ["s1"] } as typeof mockSearch;
     mockLoaderData = {
       libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts },
       activeJobCount: 0,
@@ -811,7 +821,7 @@ describe("LibraryPage", () => {
   });
 
   it("does not show empty state when publisher filter is active", async () => {
-    mockSearch = { ...mockSearch, publisher: ["Penguin"] } as unknown as typeof mockSearch;
+    mockSearch = { ...mockSearch, publisher: ["Penguin"] } as typeof mockSearch;
     mockLoaderData = {
       libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts },
       activeJobCount: 0,
@@ -824,7 +834,7 @@ describe("LibraryPage", () => {
   });
 
   it("does not show empty state when hasCover filter is active", async () => {
-    mockSearch = { ...mockSearch, hasCover: true } as unknown as typeof mockSearch;
+    mockSearch = { ...mockSearch, hasCover: true } as typeof mockSearch;
     mockLoaderData = {
       libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts },
       activeJobCount: 0,
@@ -837,7 +847,7 @@ describe("LibraryPage", () => {
   });
 
   it("passes search params as toolbar search value", async () => {
-    mockSearch = { ...mockSearch, q: "test query" } as unknown as typeof mockSearch;
+    mockSearch = { ...mockSearch, q: "test query" } as typeof mockSearch;
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
       activeJobCount: 0,
@@ -850,7 +860,7 @@ describe("LibraryPage", () => {
   });
 
   it("passes current filters from search to LibraryFilters", async () => {
-    mockSearch = { ...mockSearch, format: ["EBOOK"], hasCover: true } as unknown as typeof mockSearch;
+    mockSearch = { ...mockSearch, format: ["EBOOK"], hasCover: true } as typeof mockSearch;
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
       activeJobCount: 0,
@@ -859,7 +869,7 @@ describe("LibraryPage", () => {
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
-    const filters = capturedFiltersProps.filters as Record<string, unknown>;
+    const filters = capturedFiltersProps.filters as Record<string, string | boolean | string[]>;
     expect(filters.format).toEqual(["EBOOK"]);
     expect(filters.hasCover).toBe(true);
   });
@@ -1323,7 +1333,7 @@ describe("LibraryPage", () => {
   it("shows empty input for works with no publisher in edit mode", async () => {
     mockView = "table";
     const work = makeWork("Test Book", ["Author"]);
-    if (work.editions[0]) work.editions[0].publisher = null as unknown as string;
+    if (work.editions[0]) work.editions[0].publisher = forceCast<string>(null);
     mockLoaderData.libraryResult.works = [work];
     mockLoaderData.libraryResult.totalCount = 1;
 

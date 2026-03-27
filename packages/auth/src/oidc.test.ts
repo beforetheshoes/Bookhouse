@@ -208,7 +208,7 @@ describe("oidc helpers", () => {
   it("rejects claims without a subject", async () => {
     const { normalizeOidcClaims } = await import("./oidc");
 
-    expect(() => normalizeOidcClaims([], undefined)).toThrow(
+    expect(() => normalizeOidcClaims({}, undefined)).toThrow(
       "OIDC response is missing a subject claim",
     );
   });

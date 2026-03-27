@@ -29,6 +29,13 @@ export default tseslint.config(
         "error",
         { allow: [{ from: "lib", name: "Response" }] },
       ],
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "TSUnknownKeyword",
+          message: "Do not use the `unknown` type. Use a specific type instead.",
+        },
+      ],
     },
   },
   {

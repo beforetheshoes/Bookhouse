@@ -42,10 +42,17 @@ export async function getLibraryJobState(jobId: string): Promise<string | null> 
   return snapshot?.state ?? null;
 }
 
+export interface QueueProgressData {
+  processedFiles?: number;
+  errorCount?: number;
+  scanStage?: "DISCOVERY" | "PROCESSING";
+  totalFiles?: number;
+}
+
 export interface LibraryJobSnapshot {
   blockedByFailedChild: boolean;
   lastActivityAt: number | null;
-  progress: unknown;
+  progress: QueueProgressData | null;
   state: string;
 }
 
@@ -158,7 +165,7 @@ export async function getLibraryJobSnapshot(
   return {
     blockedByFailedChild: descendantStatus.blockedByFailedChild,
     lastActivityAt: descendantStatus.lastActivityAt,
-    progress: job.progress,
+    progress: job.progress as QueueProgressData | null,
     state,
   };
 }
@@ -231,8 +238,8 @@ export async function enqueueLibraryJob<TName extends LibraryJobName>(
     return jobId;
   } catch (error) {
     throw new QueueError(`Failed to enqueue job: ${jobName}`, {
-      cause: error,
-      context: { jobName, payload: payload as unknown as Record<string, unknown> },
+      cause: error as Error,
+      context: { jobName },
     });
   }
 }

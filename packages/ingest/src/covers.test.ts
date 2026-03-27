@@ -420,7 +420,7 @@ describe("processCoverForWorkDefault", () => {
     expect(result).toEqual({ source: "adjacent", updated: true });
     expect(db.work.update).toHaveBeenCalledWith({
       where: { id: "w-1" },
-      data: { coverPath: "w-1", coverColors: expect.arrayContaining([expect.stringMatching(/^#[0-9a-f]{6}$/)]) as unknown },
+      data: { coverPath: "w-1", coverColors: expect.arrayContaining([expect.stringMatching(/^#[0-9a-f]{6}$/)]) as string[] },
     });
   });
 

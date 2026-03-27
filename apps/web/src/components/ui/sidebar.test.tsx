@@ -257,7 +257,7 @@ describe("Sidebar", () => {
   });
 
   it("exposes useSidebar context values", () => {
-    let capturedContext: ReturnType<typeof useSidebar> | null = null;
+    let capturedContext!: ReturnType<typeof useSidebar>;
 
     function Consumer() {
       capturedContext = useSidebar();
@@ -271,7 +271,7 @@ describe("Sidebar", () => {
     );
 
     expect(capturedContext).not.toBeNull();
-    const ctx0 = capturedContext as unknown as ReturnType<typeof useSidebar>;
+    const ctx0 = capturedContext;
     expect(ctx0.state).toBe("expanded");
     expect(ctx0.open).toBe(true);
     expect(typeof ctx0.toggleSidebar).toBe("function");
@@ -390,7 +390,7 @@ describe("Sidebar", () => {
     // Set mobile width before render so useIsMobile hook picks it up
     Object.defineProperty(window, "innerWidth", { writable: true, configurable: true, value: 375 });
 
-    let capturedContext: ReturnType<typeof useSidebar> | null = null;
+    let capturedContext!: ReturnType<typeof useSidebar>;
 
     function MobileConsumer() {
       capturedContext = useSidebar();
@@ -419,7 +419,7 @@ describe("Sidebar", () => {
     expect(capturedContext).not.toBeNull();
     // When isMobile=true, Sidebar renders as Sheet (closed by default)
     // The test just verifies this path is executed without crashing
-    const capturedCtxMobile = capturedContext as unknown as ReturnType<typeof useSidebar>;
+    const capturedCtxMobile = capturedContext;
     expect(capturedCtxMobile.isMobile).toBe(true);
 
     // Restore window width
@@ -498,7 +498,7 @@ describe("Sidebar", () => {
   it("setOpen with direct boolean value (non-function path, no setOpenProp)", async () => {
     // Use React.act to properly handle state updates
     const { act } = await import("react");
-    let capturedCtx: ReturnType<typeof useSidebar> | null = null;
+    let capturedCtx!: ReturnType<typeof useSidebar>;
 
     function ContextCapture() {
       capturedCtx = useSidebar();
@@ -512,15 +512,15 @@ describe("Sidebar", () => {
     );
 
     expect(capturedCtx).not.toBeNull();
-    expect((capturedCtx as unknown as ReturnType<typeof useSidebar>).open).toBe(true);
+    expect(capturedCtx.open).toBe(true);
 
     // Call setOpen with a direct boolean value (not a function) to cover the else branch
     act(() => {
-      (capturedCtx as unknown as ReturnType<typeof useSidebar>).setOpen(false);
+      capturedCtx.setOpen(false);
     });
 
     // After state update, capturedCtx is updated by ContextCapture re-render
-    expect((capturedCtx as unknown as ReturnType<typeof useSidebar>).open).toBe(false);
+    expect(capturedCtx.open).toBe(false);
   });
 
   it("renders SidebarMenuButton with tooltip when sidebar is collapsed (state=collapsed, not mobile)", () => {
@@ -549,7 +549,7 @@ describe("Sidebar", () => {
     const originalWidth = window.innerWidth;
     Object.defineProperty(window, "innerWidth", { writable: true, configurable: true, value: 375 });
 
-    let capturedCtx: ReturnType<typeof useSidebar> | null = null;
+    let capturedCtx!: ReturnType<typeof useSidebar>;
 
     function ContextCapture() {
       capturedCtx = useSidebar();
@@ -568,15 +568,15 @@ describe("Sidebar", () => {
     });
 
     expect(capturedCtx).not.toBeNull();
-    expect((capturedCtx as unknown as ReturnType<typeof useSidebar>).isMobile).toBe(true);
+    expect(capturedCtx.isMobile).toBe(true);
 
     // toggleSidebar when isMobile should call setOpenMobile (not setOpen)
     act(() => {
-      (capturedCtx as unknown as ReturnType<typeof useSidebar>).toggleSidebar();
+      capturedCtx.toggleSidebar();
     });
 
     // After act(), capturedCtx is updated by ContextCapture re-render
-    expect((capturedCtx as unknown as ReturnType<typeof useSidebar>).openMobile).toBe(true);
+    expect(capturedCtx.openMobile).toBe(true);
 
     unmount();
     Object.defineProperty(window, "innerWidth", { writable: true, configurable: true, value: originalWidth });

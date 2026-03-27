@@ -21,12 +21,20 @@ export interface EnrichmentEditionData {
   isbn10: string | null;
 }
 
+export interface OLRawData {
+  search: OLSearchResult;
+  work: OLWork | null;
+  edition: OLEdition | null;
+}
+
+export type SourceRaw = OLRawData | GBVolume | HCBook;
+
 export interface SourceResult {
   provider: EnrichmentProvider;
   externalId: string;
   work: EnrichmentWorkData;
   edition: EnrichmentEditionData;
-  raw: Record<string, unknown>;
+  raw: SourceRaw;
 }
 
 export type SearchSourcesResult =
@@ -62,7 +70,7 @@ function normalizeOL(search: OLSearchResult, work: OLWork | null, edition: OLEdi
       isbn13: search.isbns.find((i) => i.length === 13) ?? null,
       isbn10: search.isbns.find((i) => i.length === 10) ?? null,
     },
-    raw: { search, work, edition } as unknown as Record<string, unknown>,
+    raw: { search, work, edition },
   };
 }
 
@@ -84,7 +92,7 @@ function normalizeGB(vol: GBVolume): SourceResult {
       isbn13: vol.isbn13,
       isbn10: vol.isbn10,
     },
-    raw: vol as unknown as Record<string, unknown>,
+    raw: vol,
   };
 }
 
@@ -106,7 +114,7 @@ function normalizeHC(book: HCBook): SourceResult {
       isbn13: book.isbn13,
       isbn10: null,
     },
-    raw: book as unknown as Record<string, unknown>,
+    raw: book,
   };
 }
 

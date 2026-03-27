@@ -3,8 +3,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("@tanstack/react-start", () => ({
   createServerFn: () => {
     type Builder = {
-      inputValidator: (schema: unknown) => Builder;
-      handler: (fn: (a: Record<string, unknown>) => unknown) => (a: Record<string, unknown>) => unknown;
+      inputValidator: (schema: object) => Builder;
+      handler: <T extends Record<string, string | number | boolean | null | string[] | Date | undefined>>(fn: (a: T) => T | Promise<T>) => (a: T) => T | Promise<T>;
     };
     const b: Builder = {
       inputValidator: () => b,
@@ -52,8 +52,8 @@ const canonicalizeBookTitleMock = vi.fn();
 const canonicalizeContributorNameMock = vi.fn();
 
 vi.mock("@bookhouse/ingest", () => ({
-  canonicalizeBookTitle: (...args: unknown[]): unknown => canonicalizeBookTitleMock(...args),
-  canonicalizeContributorName: (...args: unknown[]): unknown => canonicalizeContributorNameMock(...args),
+  canonicalizeBookTitle: canonicalizeBookTitleMock,
+  canonicalizeContributorName: canonicalizeContributorNameMock,
 }));
 
 import {
@@ -232,6 +232,21 @@ describe("updateEditionServerFn", () => {
     expect(call[0].data.publishedAt).toBeInstanceOf(Date);
   });
 
+  it("sets publishedAt to null when null is passed", async () => {
+    editionFindUniqueMock.mockResolvedValue({ id: "e1", editedFields: [] });
+    editionUpdateMock.mockResolvedValue({ id: "e1" });
+
+    await updateEditionServerFn({
+      data: {
+        editionId: "e1",
+        fields: { publishedAt: null },
+      },
+    });
+
+    const call = editionUpdateMock.mock.calls[0] as [{ data: { publishedAt: null } }];
+    expect(call[0].data.publishedAt).toBeNull();
+  });
+
   it("handles edition not found for editedFields gracefully", async () => {
     editionFindUniqueMock.mockResolvedValue(null);
     editionUpdateMock.mockResolvedValue({ id: "e1" });
@@ -300,7 +315,7 @@ describe("updateWorkAuthorsServerFn", () => {
     editionFindManyMock.mockResolvedValue([{ id: "e1" }, { id: "e2" }]);
     canonicalizeContributorNameMock.mockReturnValue("patrick rothfuss");
     contributorFindFirstMock.mockResolvedValue({ id: "c1" });
-    transactionMock.mockImplementation(async (fn: () => Promise<unknown>) => fn());
+    transactionMock.mockImplementation(async (fn: () => Promise<object>) => fn());
     editionContributorDeleteManyMock.mockResolvedValue({ count: 2 });
     editionContributorCreateManyMock.mockResolvedValue({ count: 2 });
     workUpdateMock.mockResolvedValue({ id: "w1" });
@@ -346,7 +361,7 @@ describe("updateWorkAuthorsServerFn", () => {
     canonicalizeContributorNameMock.mockReturnValue("new author");
     contributorFindFirstMock.mockResolvedValue(null);
     contributorCreateMock.mockResolvedValue({ id: "c-new" });
-    transactionMock.mockImplementation(async (fn: () => Promise<unknown>) => fn());
+    transactionMock.mockImplementation(async (fn: () => Promise<object>) => fn());
     editionContributorDeleteManyMock.mockResolvedValue({ count: 0 });
     editionContributorCreateManyMock.mockResolvedValue({ count: 1 });
     workUpdateMock.mockResolvedValue({ id: "w1" });
@@ -375,7 +390,7 @@ describe("updateWorkAuthorsServerFn", () => {
     editionFindManyMock.mockResolvedValue([{ id: "e1" }]);
     canonicalizeContributorNameMock.mockReturnValue("author");
     contributorFindFirstMock.mockResolvedValue({ id: "c1" });
-    transactionMock.mockImplementation(async (fn: () => Promise<unknown>) => fn());
+    transactionMock.mockImplementation(async (fn: () => Promise<object>) => fn());
     editionContributorDeleteManyMock.mockResolvedValue({ count: 0 });
     editionContributorCreateManyMock.mockResolvedValue({ count: 1 });
     workUpdateMock.mockResolvedValue({ id: "w1" });
@@ -399,7 +414,7 @@ describe("updateWorkAuthorsServerFn", () => {
     canonicalizeContributorNameMock.mockReturnValue(undefined);
     contributorFindFirstMock.mockResolvedValue(null);
     contributorCreateMock.mockResolvedValue({ id: "c-new" });
-    transactionMock.mockImplementation(async (fn: () => Promise<unknown>) => fn());
+    transactionMock.mockImplementation(async (fn: () => Promise<object>) => fn());
     editionContributorDeleteManyMock.mockResolvedValue({ count: 0 });
     editionContributorCreateManyMock.mockResolvedValue({ count: 1 });
     workUpdateMock.mockResolvedValue({ id: "w1" });

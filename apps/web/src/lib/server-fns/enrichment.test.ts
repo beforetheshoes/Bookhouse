@@ -4,7 +4,7 @@ vi.mock("@tanstack/react-start", () => ({
   createServerFn: () => {
     type Builder = {
       inputValidator: () => Builder;
-      handler: (fn: (a: Record<string, unknown>) => unknown) => (a: Record<string, unknown>) => unknown;
+      handler: <T extends Record<string, string | number | boolean | null | string[] | Date | undefined>>(fn: (a: T) => T | Promise<T>) => (a: T) => T | Promise<T>;
     };
     const b: Builder = {
       inputValidator: () => b,
@@ -35,40 +35,40 @@ const getDecryptedApiKeyMock = vi.fn();
 
 vi.mock("@bookhouse/db", () => ({
   db: {
-    importJob: { create: (...args: unknown[]): unknown => importJobCreateMock(...args) },
+    importJob: { create: importJobCreateMock },
     work: {
-      update: (...args: unknown[]): unknown => workUpdateMock(...args),
-      findUnique: (...args: unknown[]): unknown => workFindUniqueMock(...args),
+      update: workUpdateMock,
+      findUnique: workFindUniqueMock,
     },
     edition: {
-      update: (...args: unknown[]): unknown => editionUpdateMock(...args),
-      findUnique: (...args: unknown[]): unknown => editionFindUniqueMock(...args),
-      findMany: (...args: unknown[]): unknown => editionFindManyMock(...args),
+      update: editionUpdateMock,
+      findUnique: editionFindUniqueMock,
+      findMany: editionFindManyMock,
     },
     externalLink: {
-      upsert: (...args: unknown[]): unknown => externalLinkUpsertMock(...args),
-      findMany: (...args: unknown[]): unknown => externalLinkFindManyMock(...args),
+      upsert: externalLinkUpsertMock,
+      findMany: externalLinkFindManyMock,
     },
     tag: {
-      findFirst: (...args: unknown[]): unknown => tagFindFirstMock(...args),
-      create: (...args: unknown[]): unknown => tagCreateMock(...args),
+      findFirst: tagFindFirstMock,
+      create: tagCreateMock,
     },
     workTag: {
-      upsert: (...args: unknown[]): unknown => workTagUpsertMock(...args),
+      upsert: workTagUpsertMock,
     },
     contributor: {
-      findFirst: (...args: unknown[]): unknown => contributorFindFirstMock(...args),
-      create: (...args: unknown[]): unknown => contributorCreateMock(...args),
+      findFirst: contributorFindFirstMock,
+      create: contributorCreateMock,
     },
     editionContributor: {
-      deleteMany: (...args: unknown[]): unknown => editionContributorDeleteManyMock(...args),
-      createMany: (...args: unknown[]): unknown => editionContributorCreateManyMock(...args),
+      deleteMany: editionContributorDeleteManyMock,
+      createMany: editionContributorCreateManyMock,
     },
   },
 }));
 
 vi.mock("@bookhouse/shared", () => ({
-  enqueueLibraryJob: (...args: unknown[]): unknown => enqueueLibraryJobMock(...args),
+  enqueueLibraryJob: enqueueLibraryJobMock,
 }));
 
 const applyCoverFromUrlMock = vi.fn();
@@ -80,22 +80,22 @@ vi.mock("@bookhouse/ingest", () => {
     }
   }
   return {
-    searchAllSources: (...args: unknown[]): unknown => searchAllSourcesMock(...args),
+    searchAllSources: searchAllSourcesMock,
     searchOpenLibrary: vi.fn(),
     getOpenLibraryWork: vi.fn(),
     getOpenLibraryEdition: vi.fn(),
     searchGoogleBooks: vi.fn(),
     searchHardcover: vi.fn(),
     RateLimiter: MockRateLimiter,
-    applyCoverFromUrl: (...args: unknown[]): unknown => applyCoverFromUrlMock(...args),
+    applyCoverFromUrl: applyCoverFromUrlMock,
     resizeCoverImage: vi.fn(),
     extractDominantColors: vi.fn(),
-    canonicalizeContributorName: (name: string) => name === "UNKNOWN" ? null : name.toLowerCase(),
+    canonicalizeContributorName: (name: string): string | null => name === "UNKNOWN" ? null : name.toLowerCase(),
   };
 });
 
 vi.mock("./integrations", () => ({
-  getDecryptedApiKey: (...args: unknown[]): unknown => getDecryptedApiKeyMock(...args),
+  getDecryptedApiKey: getDecryptedApiKeyMock,
 }));
 
 import {
@@ -112,7 +112,7 @@ beforeEach(() => {
 });
 
 describe("buildSearchDeps", () => {
-  const fakeFetcher = vi.fn() as unknown as typeof fetch;
+  const fakeFetcher = vi.fn() as typeof fetch;
   const fns = {
     searchOpenLibrary: vi.fn().mockResolvedValue([]),
     getOpenLibraryWork: vi.fn().mockResolvedValue(null),
@@ -412,7 +412,7 @@ describe("applyEnrichmentServerFn", () => {
       },
     });
 
-    const callArgs = (editionUpdateMock.mock.calls[0] as unknown[])[0] as { data: Record<string, unknown> };
+    const callArgs = editionUpdateMock.mock.calls[0]?.[0] as { data: Record<string, string | number | boolean | null | object> };
     expect(callArgs.data.publishedAt).toBeInstanceOf(Date);
     expect(callArgs.data.publishedDate).toBeUndefined();
   });
@@ -432,7 +432,7 @@ describe("applyEnrichmentServerFn", () => {
       },
     });
 
-    const callArgs = (editionUpdateMock.mock.calls[0] as unknown[])[0] as { data: Record<string, unknown> };
+    const callArgs = editionUpdateMock.mock.calls[0]?.[0] as { data: Record<string, string | number | boolean | null | object> };
     expect(callArgs.data.publishedAt).toBeNull();
   });
 
@@ -732,7 +732,7 @@ describe("applyEnrichmentServerFn", () => {
 
     // Both calls should use upsert (not create), preventing duplicates
     expect(externalLinkUpsertMock).toHaveBeenCalledTimes(2);
-    for (const call of externalLinkUpsertMock.mock.calls as unknown[][]) {
+    for (const call of externalLinkUpsertMock.mock.calls as Array<Array<object>>) {
       const arg = call[0] as { where: { workId_provider_externalId: Record<string, string> } };
       expect(arg.where.workId_provider_externalId).toEqual({
         workId: "w1",
@@ -768,7 +768,7 @@ describe("applyEnrichmentServerFn", () => {
 
     // Both calls should use upsert, not create — no duplicate workTags
     expect(workTagUpsertMock).toHaveBeenCalledTimes(2);
-    for (const call of workTagUpsertMock.mock.calls as unknown[][]) {
+    for (const call of workTagUpsertMock.mock.calls as Array<Array<object>>) {
       const arg = call[0] as { where: { workId_tagId: { workId: string; tagId: string } } };
       expect(arg.where.workId_tagId.workId).toBe("w1");
       expect(arg.where.workId_tagId.tagId).toBe("tag-1");
@@ -790,9 +790,9 @@ describe("applyCoverFromUrlServerFn", () => {
     });
 
     expect(applyCoverFromUrlMock).toHaveBeenCalledWith(
-      expect.objectContaining({ workId: "w1", imageUrl: "https://example.com/cover.jpg" }) as Record<string, unknown>,
-      expect.any(Object) as Record<string, unknown>,
-      expect.any(Object) as Record<string, unknown>,
+      expect.objectContaining({ workId: "w1", imageUrl: "https://example.com/cover.jpg" }) as object,
+      expect.any(Object) as object,
+      expect.any(Object) as object,
     );
     expect(result).toEqual({ success: true });
   });
@@ -818,7 +818,7 @@ describe("applyCoverFromUrlServerFn", () => {
             externalId: "OL123W",
           },
         },
-      }) as Record<string, unknown>,
+      }) as object,
     );
     expect(result).toEqual({ success: true });
   });

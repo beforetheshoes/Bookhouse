@@ -1,9 +1,15 @@
 import { EventEmitter } from "node:events";
 import { createQueueEvents } from "@bookhouse/shared";
+import type { QueueProgressData } from "@bookhouse/shared";
+
+export type SSEJobEventData =
+  | { jobId: string }
+  | { jobId: string; error: string }
+  | { jobId: string; progress: QueueProgressData };
 
 export interface SSEEvent {
   type: string;
-  data: Record<string, unknown>;
+  data: SSEJobEventData;
 }
 
 interface QueueEventsLike {
@@ -30,7 +36,7 @@ export class QueueEventsManager {
     this.queueEvents.on("active", ({ jobId }: { jobId: string }) => {
       this.broadcast({ type: "job:active", data: { jobId } });
     });
-    this.queueEvents.on("progress", ({ jobId, data }: { jobId: string; data: unknown }) => {
+    this.queueEvents.on("progress", ({ jobId, data }: { jobId: string; data: QueueProgressData }) => {
       this.broadcast({ type: "job:progress", data: { jobId, progress: data } });
     });
   }

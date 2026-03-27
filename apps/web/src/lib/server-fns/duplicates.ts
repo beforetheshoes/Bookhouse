@@ -140,7 +140,7 @@ export const mergeDuplicateServerFn = createServerFn({
               role: ec.role,
             },
           });
-        } catch (err: unknown) {
+        } catch (err) {
           if (err && typeof err === "object" && "code" in err && err.code === "P2002") {
             // Already exists on surviving edition — skip
             continue;

@@ -4,7 +4,7 @@ vi.mock("@tanstack/react-start", () => ({
   createServerFn: () => {
     type Builder = {
       inputValidator: () => Builder;
-      handler: (fn: (a: Record<string, unknown>) => unknown) => (a: Record<string, unknown>) => unknown;
+      handler: <T extends Record<string, string | number | boolean | null | string[] | Date | undefined>>(fn: (a: T) => T | Promise<T>) => (a: T) => T | Promise<T>;
     };
     const b: Builder = {
       inputValidator: () => b,
@@ -164,7 +164,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           editions: { some: { formatFamily: { in: ["EBOOK"] } } },
-        }) as unknown,
+        }) as object,
       }),
     );
   });
@@ -190,7 +190,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
               },
             },
           },
-        }) as unknown,
+        }) as object,
       }),
     );
   });
@@ -207,7 +207,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           seriesId: { in: ["series-1"] },
-        }) as unknown,
+        }) as object,
       }),
     );
   });
@@ -224,7 +224,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           editions: { some: { publisher: { in: ["Penguin"] } } },
-        }) as unknown,
+        }) as object,
       }),
     );
   });
@@ -241,7 +241,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           coverPath: { not: null },
-        }) as unknown,
+        }) as object,
       }),
     );
   });
@@ -258,7 +258,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           coverPath: null,
-        }) as unknown,
+        }) as object,
       }),
     );
   });
@@ -278,7 +278,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
             { titleDisplay: { contains: "hobbit", mode: "insensitive" } },
             { titleCanonical: { contains: "hobbit", mode: "insensitive" } },
           ],
-        }) as unknown,
+        }) as object,
       }),
     );
   });
@@ -291,7 +291,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
       data: { format: ["EBOOK"], authorId: ["author-1"] },
     });
 
-    const call = (findManyMock.mock.calls[0] as unknown[])[0] as { where: Record<string, unknown> };
+    const call = findManyMock.mock.calls[0]?.[0] as { where: Record<string, object | string | boolean | null> };
     expect(call.where).toEqual(
       expect.objectContaining({
         editions: {
@@ -318,7 +318,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
       data: { format: ["AUDIOBOOK"], publisher: ["Penguin"] },
     });
 
-    const call = (findManyMock.mock.calls[0] as unknown[])[0] as { where: Record<string, unknown> };
+    const call = findManyMock.mock.calls[0]?.[0] as { where: Record<string, object | string | boolean | null> };
     expect(call.where).toEqual(
       expect.objectContaining({
         editions: {
@@ -341,7 +341,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
       data: { authorId: ["author-1"], publisher: ["Penguin"] },
     });
 
-    const call = (findManyMock.mock.calls[0] as unknown[])[0] as { where: Record<string, unknown> };
+    const call = findManyMock.mock.calls[0]?.[0] as { where: Record<string, object | string | boolean | null> };
     expect(call.where).toEqual(
       expect.objectContaining({
         editions: {
@@ -368,7 +368,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
       data: { format: ["EBOOK"], authorId: ["author-1"], publisher: ["Penguin"] },
     });
 
-    const call = (findManyMock.mock.calls[0] as unknown[])[0] as { where: Record<string, unknown> };
+    const call = findManyMock.mock.calls[0]?.[0] as { where: Record<string, object | string | boolean | null> };
     expect(call.where).toEqual(
       expect.objectContaining({
         editions: {
@@ -401,7 +401,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
       },
     });
 
-    const call = (findManyMock.mock.calls[0] as unknown[])[0] as { where: Record<string, unknown> };
+    const call = findManyMock.mock.calls[0]?.[0] as { where: Record<string, object | string | boolean | null> };
     expect(call.where).toEqual(
       expect.objectContaining({
         editions: {
@@ -433,7 +433,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
       data: { format: ["AUDIOBOOK"] },
     });
 
-    const findManyWhere = ((findManyMock.mock.calls[0] as unknown[])[0] as { where: unknown }).where;
+    const findManyWhere = (findManyMock.mock.calls[0]?.[0] as { where: object }).where;
     expect(countMock).toHaveBeenCalledWith({ where: findManyWhere });
   });
 
@@ -642,7 +642,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
     editionGroupByMock.mockResolvedValue([]);
     await getFilteredLibraryWorksServerFn({ data: {} });
 
-    const call = (findManyMock.mock.calls[0] as unknown[])[0] as { where: Record<string, unknown> };
+    const call = findManyMock.mock.calls[0]?.[0] as { where: Record<string, object | string | boolean | null> };
     expect(call.where).toEqual(
       expect.objectContaining({
         AND: [
@@ -697,7 +697,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           enrichmentStatus: "ENRICHED",
-        }) as unknown,
+        }) as object,
       }),
     );
   });
@@ -715,7 +715,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           enrichmentStatus: "STUB",
-        }) as unknown,
+        }) as object,
       }),
     );
   });
@@ -733,7 +733,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           description: { not: null },
-        }) as unknown,
+        }) as object,
       }),
     );
   });
@@ -751,7 +751,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           description: null,
-        }) as unknown,
+        }) as object,
       }),
     );
   });
@@ -769,7 +769,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           seriesId: { not: null },
-        }) as unknown,
+        }) as object,
       }),
     );
   });
@@ -787,7 +787,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           seriesId: null,
-        }) as unknown,
+        }) as object,
       }),
     );
   });
@@ -801,7 +801,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
       data: { hasIsbn: true, format: ["EBOOK"], authorId: ["author-1"] },
     });
 
-    const call = (findManyMock.mock.calls[0] as unknown[])[0] as { where: Record<string, unknown> };
+    const call = findManyMock.mock.calls[0]?.[0] as { where: Record<string, object | string | boolean | null> };
     expect(call.where).toEqual(
       expect.objectContaining({
         editions: {
@@ -830,7 +830,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
       data: { hasIsbn: false, format: ["EBOOK"], authorId: ["author-1"] },
     });
 
-    const call = (findManyMock.mock.calls[0] as unknown[])[0] as { where: Record<string, unknown> };
+    const call = findManyMock.mock.calls[0]?.[0] as { where: Record<string, object | string | boolean | null> };
     expect(call.where).toEqual(
       expect.objectContaining({
         editions: {

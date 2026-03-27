@@ -23,10 +23,10 @@ describe("db package", () => {
   it("does not cache the prisma client globally in production", async () => {
     vi.resetModules();
     process.env.NODE_ENV = "production";
-    delete (globalThis as { prisma?: unknown }).prisma;
+    delete (globalThis as { prisma?: object }).prisma;
 
     await import("./index");
 
-    expect((globalThis as { prisma?: unknown }).prisma).toBeUndefined();
+    expect((globalThis as { prisma?: object }).prisma).toBeUndefined();
   });
 });
