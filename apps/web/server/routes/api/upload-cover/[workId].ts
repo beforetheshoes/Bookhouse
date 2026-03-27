@@ -9,9 +9,10 @@ export interface UploadHandlerDeps {
   coverCacheDir: string;
   readFormData: (event: H3Event) => Promise<{ name?: string; data: Uint8Array; type?: string }[] | undefined>;
   resizeAndSave: (imageBuffer: Buffer, outputDir: string) => Promise<void>;
+  extractColors: (imageBuffer: Buffer) => Promise<string[]>;
   db: {
     findWork: (id: string) => Promise<{ editedFields: string[] } | null>;
-    updateWork: (id: string, data: { coverPath: string; editedFields: string[] }) => Promise<void>;
+    updateWork: (id: string, data: { coverPath: string; editedFields: string[]; coverColors?: string[] }) => Promise<void>;
   };
 }
 
@@ -67,13 +68,20 @@ export function createUploadHandler(deps: UploadHandlerDeps) {
 
     await deps.resizeAndSave(imageBuffer, outputDir);
 
+    let coverColors: string[] | undefined;
+    try {
+      coverColors = await deps.extractColors(imageBuffer);
+    } catch {
+      // Color extraction is non-critical — proceed without
+    }
+
     const work = await deps.db.findWork(workId);
     if (!work) {
       throw createError({ statusCode: 404, statusMessage: "Work not found" });
     }
 
     const mergedEdited = [...new Set([...work.editedFields, "coverPath"])];
-    await deps.db.updateWork(workId, { coverPath: workId, editedFields: mergedEdited });
+    await deps.db.updateWork(workId, { coverPath: workId, editedFields: mergedEdited, coverColors });
 
     return { success: true };
   };
@@ -82,7 +90,7 @@ export function createUploadHandler(deps: UploadHandlerDeps) {
 /* c8 ignore start — runtime wiring, tested via unit tests on createUploadHandler */
 export default defineEventHandler(async (event) => {
   const { db } = await import("@bookhouse/db");
-  const { resizeCoverImage } = await import("@bookhouse/ingest");
+  const { resizeCoverImage, extractDominantColors } = await import("@bookhouse/ingest");
   const sharpModule = await import("sharp");
 
   const handler = createUploadHandler({
@@ -95,6 +103,7 @@ export default defineEventHandler(async (event) => {
         { sharp: sharpModule.default as never, mkdir, writeFile },
       );
     },
+    extractColors: (buf) => extractDominantColors(buf, sharpModule.default as never),
     db: {
       findWork: (id) => db.work.findUnique({ where: { id }, select: { editedFields: true } }),
       updateWork: (id, data) => db.work.update({ where: { id }, data }) as unknown as Promise<void>,

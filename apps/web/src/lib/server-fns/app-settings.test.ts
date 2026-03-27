@@ -17,6 +17,7 @@ vi.mock("@tanstack/react-start", () => ({
 const appSettingFindUniqueMock = vi.fn();
 const appSettingFindManyMock = vi.fn();
 const appSettingUpsertMock = vi.fn();
+const appSettingDeleteMock = vi.fn();
 
 vi.mock("@bookhouse/db", () => ({
   db: {
@@ -24,6 +25,7 @@ vi.mock("@bookhouse/db", () => ({
       findUnique: (...args: unknown[]): unknown => appSettingFindUniqueMock(...args),
       findMany: (...args: unknown[]): unknown => appSettingFindManyMock(...args),
       upsert: (...args: unknown[]): unknown => appSettingUpsertMock(...args),
+      delete: (...args: unknown[]): unknown => appSettingDeleteMock(...args),
     },
   },
 }));
@@ -35,6 +37,10 @@ import {
   setMissingFileBehaviorServerFn,
   getThemeServerFn,
   setThemeServerFn,
+  getColorModeServerFn,
+  setColorModeServerFn,
+  getAccentColorServerFn,
+  setAccentColorServerFn,
   SCAN_CONCURRENCY_DEFAULTS,
 } from "./app-settings";
 
@@ -42,6 +48,7 @@ beforeEach(() => {
   appSettingFindUniqueMock.mockReset();
   appSettingFindManyMock.mockReset();
   appSettingUpsertMock.mockReset();
+  appSettingDeleteMock.mockReset();
 });
 
 describe("getAllScanConcurrenciesServerFn", () => {
@@ -185,5 +192,99 @@ describe("setThemeServerFn", () => {
       update: { value: "dark" },
     });
     expect(result).toEqual({ theme: "dark" });
+  });
+});
+
+describe("getColorModeServerFn", () => {
+  it("returns stored color mode value", async () => {
+    appSettingFindUniqueMock.mockResolvedValue({ key: "colorMode", value: "accent" });
+
+    const result = await getColorModeServerFn({} as never);
+
+    expect(appSettingFindUniqueMock).toHaveBeenCalledWith({ where: { key: "colorMode" } });
+    expect(result).toBe("accent");
+  });
+
+  it("returns 'book' when no setting exists", async () => {
+    appSettingFindUniqueMock.mockResolvedValue(null);
+
+    const result = await getColorModeServerFn({} as never);
+
+    expect(result).toBe("book");
+  });
+});
+
+describe("setColorModeServerFn", () => {
+  it("upserts color mode setting and returns the value", async () => {
+    appSettingUpsertMock.mockResolvedValue({ key: "colorMode", value: "off" });
+
+    const result = await setColorModeServerFn({ data: { mode: "off" } });
+
+    expect(appSettingUpsertMock).toHaveBeenCalledWith({
+      where: { key: "colorMode" },
+      create: { key: "colorMode", value: "off" },
+      update: { value: "off" },
+    });
+    expect(result).toEqual({ mode: "off" });
+  });
+});
+
+describe("getAccentColorServerFn", () => {
+  it("returns stored accent color value", async () => {
+    appSettingFindUniqueMock.mockResolvedValue({ key: "accentColor", value: "#ff0000" });
+
+    const result = await getAccentColorServerFn({} as never);
+
+    expect(appSettingFindUniqueMock).toHaveBeenCalledWith({ where: { key: "accentColor" } });
+    expect(result).toBe("#ff0000");
+  });
+
+  it("returns null when no setting exists", async () => {
+    appSettingFindUniqueMock.mockResolvedValue(null);
+
+    const result = await getAccentColorServerFn({} as never);
+
+    expect(result).toBeNull();
+  });
+});
+
+describe("setAccentColorServerFn", () => {
+  it("upserts accent color setting and returns the value", async () => {
+    appSettingUpsertMock.mockResolvedValue({ key: "accentColor", value: "#3366cc" });
+
+    const result = await setAccentColorServerFn({ data: { color: "#3366cc" } });
+
+    expect(appSettingUpsertMock).toHaveBeenCalledWith({
+      where: { key: "accentColor" },
+      create: { key: "accentColor", value: "#3366cc" },
+      update: { value: "#3366cc" },
+    });
+    expect(result).toEqual({ color: "#3366cc" });
+  });
+
+  it("deletes accent color setting when color is null", async () => {
+    appSettingDeleteMock.mockResolvedValue({ key: "accentColor", value: "#3366cc" });
+
+    const result = await setAccentColorServerFn({ data: { color: null } });
+
+    expect(appSettingDeleteMock).toHaveBeenCalledWith({ where: { key: "accentColor" } });
+    expect(result).toEqual({ color: null });
+  });
+
+  it("returns null gracefully when deleting non-existent accent color (P2025)", async () => {
+    const prismaError = new Error("Record not found");
+    Object.assign(prismaError, { code: "P2025" });
+    appSettingDeleteMock.mockRejectedValue(prismaError);
+
+    const result = await setAccentColorServerFn({ data: { color: null } });
+
+    expect(result).toEqual({ color: null });
+  });
+
+  it("re-throws non-P2025 errors when deleting accent color", async () => {
+    const genericError = new Error("Database connection lost");
+    appSettingDeleteMock.mockRejectedValue(genericError);
+
+    await expect(setAccentColorServerFn({ data: { color: null } })).rejects.toThrow("Database connection lost");
   });
 });

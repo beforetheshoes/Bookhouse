@@ -61,6 +61,20 @@ export { SCAN_PROGRESS_INTERVAL } from "./services";
 
 export { searchOpenLibrary, getOpenLibraryEdition, getOpenLibraryWork } from "./enrichment/open-library";
 export type { OLSearchResult, OLEdition, OLWork } from "./enrichment/open-library";
+export { searchGoogleBooks, getGoogleBooksVolume } from "./enrichment/google-books";
+export type { GBVolume } from "./enrichment/google-books";
+export { searchHardcover, getHardcoverBook } from "./enrichment/hardcover";
+export type { HCBook } from "./enrichment/hardcover";
+export { searchAllSources } from "./enrichment/search-sources";
+export type {
+  EnrichmentProvider,
+  EnrichmentWorkData,
+  EnrichmentEditionData,
+  SourceResult,
+  SearchSourcesResult,
+  SearchSourcesDeps,
+} from "./enrichment/search-sources";
+export { extractDominantColors } from "./cover-colors";
 export { RateLimiter } from "./enrichment/rate-limiter";
 export type { RateLimitResult } from "./enrichment/rate-limiter";
 export { enrichWork } from "./enrichment/enrich-work";
@@ -71,6 +85,11 @@ export type { CascadeCleanupInput, CascadeCleanupResult } from "./cascade-cleanu
 
 export const INGEST_PUBLIC_API = [
   "enrichWork",
+  "getGoogleBooksVolume",
+  "getHardcoverBook",
+  "searchAllSources",
+  "searchGoogleBooks",
+  "searchHardcover",
   "classifyMediaKind",
   "createIdentifierMap",
   "createIngestServices",

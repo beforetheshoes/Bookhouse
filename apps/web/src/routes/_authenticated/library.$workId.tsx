@@ -1,7 +1,7 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { BookOpen, ChevronRight, ImagePlus, Loader2, Trash2 } from "lucide-react";
+import { BookOpen, ChevronRight, ImagePlus, Loader2, Sparkles, Trash2 } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -12,15 +12,12 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog";
 import { Badge } from "~/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "~/components/ui/tabs";
 import { ProgressBar } from "~/components/progress-bar";
-import { EnrichmentReview } from "~/components/enrichment-review";
+import { EnrichmentDialog } from "~/components/enrichment-dialog";
+import { EditionTabPanel } from "~/components/edition-tab-panel";
+import { MetadataItem } from "~/components/metadata-item";
 import {
   getWorkDetailServerFn,
   type WorkDetail,
@@ -28,8 +25,9 @@ import {
 import { getReadingProgressServerFn } from "~/lib/server-fns/reading-progress";
 import { deleteWorkServerFn, deleteEditionServerFn } from "~/lib/server-fns/deletion";
 import { EditableField } from "~/components/editable-field";
-import { updateWorkServerFn, updateEditionServerFn, updateWorkAuthorsServerFn } from "~/lib/server-fns/editing";
+import { updateWorkServerFn, updateWorkAuthorsServerFn } from "~/lib/server-fns/editing";
 import { updateWorkTagsServerFn } from "~/lib/server-fns/tags";
+import { useAppColor } from "~/hooks/use-app-color";
 
 export const Route = createFileRoute("/_authenticated/library/$workId")({
   loader: async ({ params }) => {
@@ -73,12 +71,6 @@ function getAuthors(work: WorkDetail): { id: string; name: string }[] {
   return authors;
 }
 
-function formatBytes(bytes: bigint | number): string {
-  const n = Number(bytes);
-  if (n < 1024) return `${String(n)} B`;
-  if (n < 1048576) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / 1048576).toFixed(1)} MB`;
-}
 
 function WorkDetailPage() {
   const { work, progress, trackingMode } = Route.useLoaderData();
@@ -89,9 +81,29 @@ function WorkDetailPage() {
   const [deleteEditionOpen, setDeleteEditionOpen] = useState<string | null>(null);
   const [deletingEdition, setDeletingEdition] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
+  const [enrichOpen, setEnrichOpen] = useState(false);
+  const [activeEditionIdx, setActiveEditionIdx] = useState(0);
   const coverInputRef = useRef<HTMLInputElement>(null);
   const showPlaceholder = !work.coverPath || imgFailed;
   const authors = getAuthors(work);
+  const coverColors = work.coverColors as string[] | null;
+  const { setBookColors } = useAppColor();
+
+  // Push this work's cover colors to the global color provider
+  useEffect(() => {
+    setBookColors(coverColors);
+  }, [coverColors, setBookColors]);
+
+  const firstPublishYear = (() => {
+    let earliest: Date | null = null;
+    for (const edition of work.editions) {
+      if (edition.publishedAt) {
+        const d = new Date(edition.publishedAt);
+        if (!earliest || d < earliest) earliest = d;
+      }
+    }
+    return earliest ? earliest.getFullYear() : null;
+  })();
 
   async function handleDeleteWork() {
     setDeletingWork(true);
@@ -215,6 +227,10 @@ function WorkDetailPage() {
                   className="text-2xl font-bold"
                 />
               </h1>
+              <Button variant="outline" size="sm" onClick={() => { setEnrichOpen(true); }}>
+                <Sparkles className="size-4" />
+                Enrich
+              </Button>
               <Button data-testid="delete-work-btn" variant="outline" size="sm" onClick={() => { setDeleteWorkOpen(true); }}>
                 <Trash2 className="size-4" />
               </Button>
@@ -244,6 +260,10 @@ function WorkDetailPage() {
             </div>
           )}
 
+          {firstPublishYear && (
+            <p className="text-sm text-muted-foreground">First published {firstPublishYear}</p>
+          )}
+
           <div className="space-y-0.5">
             <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Description</div>
             <div className="text-sm leading-relaxed">
@@ -259,10 +279,6 @@ function WorkDetailPage() {
             </div>
           </div>
 
-          {work.editions[0] && (
-            <EditableMetadataGrid edition={work.editions[0]} router={router} />
-          )}
-
           <MetadataItem label="Tags">
             <EditableField
               value={work.tags.map((wt) => wt.tag.name).join(", ")}
@@ -277,57 +293,60 @@ function WorkDetailPage() {
         </div>
       </div>
 
-      <EnrichmentReview workId={work.id} currentDescription={work.description ?? null} />
+      <EnrichmentDialog
+        open={enrichOpen}
+        onOpenChange={setEnrichOpen}
+        workId={work.id}
+        editionId={work.editions[activeEditionIdx]?.id ?? null}
+        currentWork={{
+          title: work.titleDisplay,
+          description: work.description ?? null,
+          coverPath: work.coverPath ?? null,
+          tags: work.tags.map((wt) => wt.tag.name),
+          editedFields: work.editedFields,
+        }}
+        currentEdition={work.editions[activeEditionIdx] ? {
+          publisher: work.editions[activeEditionIdx].publisher ?? null,
+          publishedDate: work.editions[activeEditionIdx].publishedAt ? String(work.editions[activeEditionIdx].publishedAt) : null,
+          isbn13: work.editions[activeEditionIdx].isbn13 ?? null,
+          isbn10: work.editions[activeEditionIdx].isbn10 ?? null,
+          language: work.editions[activeEditionIdx].language ?? null,
+          pageCount: work.editions[activeEditionIdx].pageCount ?? null,
+          editedFields: work.editions[activeEditionIdx].editedFields,
+        } : null}
+        onApplied={() => { void router.invalidate(); }}
+      />
 
-      <div className="space-y-4">
-        <h2 className="text-lg font-semibold">Editions</h2>
-        {work.editions.map((edition) => (
-          <Card key={edition.id}>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Badge variant="secondary">{edition.formatFamily}</Badge>
-                  {edition.publisher && (
-                    <span className="text-sm text-muted-foreground">{edition.publisher}</span>
-                  )}
-                </CardTitle>
-                <Button data-testid={`delete-edition-${edition.id}`} variant="outline" size="sm" onClick={() => { setDeleteEditionOpen(edition.id); }}>
-                  <Trash2 className="size-3.5" />
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {edition.contributors.length > 0 && (
-                <div className="text-sm">
-                  {edition.contributors.map((c) => (
-                    <span key={`${c.role}-${c.contributor.nameDisplay}`} className="mr-3">
-                      <span className="text-muted-foreground">{c.role}: </span>
-                      {c.contributor.nameDisplay}
-                    </span>
-                  ))}
-                </div>
-              )}
-              {edition.editionFiles.length > 0 && (
-                <div className="space-y-1 text-sm">
-                  {edition.editionFiles.map((ef) => (
-                    <div key={ef.id} className="flex items-center gap-2">
-                      <span className="font-mono text-xs">{ef.fileAsset.basename}</span>
-                      <span className="text-muted-foreground">
-                        {ef.fileAsset.sizeBytes != null ? formatBytes(ef.fileAsset.sizeBytes) : "—"}
-                      </span>
-                      <Badge variant={ef.fileAsset.availabilityStatus === "PRESENT" ? "outline" : "destructive"} className="text-[10px]">
-                        {ef.fileAsset.availabilityStatus}
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      <LinkedFormats editions={work.editions} />
+      {work.editions.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold">Editions</h2>
+          <Tabs
+            value={work.editions[activeEditionIdx]?.id ?? ""}
+            onValueChange={(id) => {
+              const idx = work.editions.findIndex((e) => e.id === id);
+              if (idx >= 0) setActiveEditionIdx(idx);
+            }}
+          >
+            <TabsList>
+              {work.editions.map((edition) => (
+                <TabsTrigger key={edition.id} value={edition.id}>
+                  {edition.formatFamily}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            {work.editions.map((edition) => (
+              <TabsContent key={edition.id} value={edition.id}>
+                <EditionTabPanel
+                  edition={edition}
+                  isLastEdition={work.editions.length === 1}
+                  onEditionFieldSaved={() => { void router.invalidate(); }}
+                  onDeleteEdition={() => { setDeleteEditionOpen(edition.id); }}
+                />
+              </TabsContent>
+            ))}
+          </Tabs>
+        </div>
+      )}
 
       <div className="space-y-4">
         <h2 className="text-lg font-semibold">Reading Progress</h2>
@@ -385,20 +404,6 @@ function WorkDetailPage() {
   );
 }
 
-function LinkedFormats({ editions }: { editions: WorkDetail["editions"] }) {
-  const formats = new Set(editions.map((e) => e.formatFamily));
-  if (formats.size <= 1) return null;
-  return (
-    <div className="space-y-4">
-      <h2 className="text-lg font-semibold">Linked Formats</h2>
-      <div className="flex gap-2">
-        {[...formats].map((format) => (
-          <Badge key={format} variant="secondary">{format}</Badge>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function WorkProgress({ progress }: { progress: { percent: number | null }[] }) {
   const maxPercent = Math.max(...progress.map((p) => p.percent ?? 0));
@@ -445,41 +450,3 @@ function EditionProgress({
   );
 }
 
-function EditableMetadataGrid({ edition, router }: { edition: WorkDetail["editions"][number]; router: { invalidate: () => void } }) {
-  async function saveEditionField(field: string, val: string) {
-    await updateEditionServerFn({ data: { editionId: edition.id, fields: { [field]: val || null } } });
-    router.invalidate();
-  }
-
-  return (
-    <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
-      <MetadataItem label="Language">
-        <EditableField value={edition.language ?? ""} onSave={(val) => saveEditionField("language", val)} placeholder="—" />
-      </MetadataItem>
-      <MetadataItem label="Publisher">
-        <EditableField value={edition.publisher ?? ""} onSave={(val) => saveEditionField("publisher", val)} placeholder="—" />
-      </MetadataItem>
-      <MetadataItem label="Published">
-        <EditableField value={edition.publishedAt ? new Date(edition.publishedAt).toLocaleDateString() : ""} onSave={(val) => saveEditionField("publishedAt", val)} placeholder="—" />
-      </MetadataItem>
-      <MetadataItem label="ISBN-13">
-        <EditableField value={edition.isbn13 ?? ""} onSave={(val) => saveEditionField("isbn13", val)} placeholder="—" />
-      </MetadataItem>
-      <MetadataItem label="ISBN-10">
-        <EditableField value={edition.isbn10 ?? ""} onSave={(val) => saveEditionField("isbn10", val)} placeholder="—" />
-      </MetadataItem>
-      <MetadataItem label="ASIN">
-        <EditableField value={edition.asin ?? ""} onSave={(val) => saveEditionField("asin", val)} placeholder="—" />
-      </MetadataItem>
-    </div>
-  );
-}
-
-function MetadataItem({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-0.5">
-      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div>{children}</div>
-    </div>
-  );
-}

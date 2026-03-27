@@ -12,6 +12,7 @@ function createMockDeps(overrides: Partial<UploadHandlerDeps> = {}): UploadHandl
       { name: "file", data: VALID_JPEG, type: "image/jpeg" },
     ]),
     resizeAndSave: vi.fn().mockResolvedValue(undefined),
+    extractColors: vi.fn().mockResolvedValue(["#1a2b3c", "#4d5e6f", "#a0b1c2"]),
     db: {
       findWork: vi.fn().mockResolvedValue({ editedFields: [] }),
       updateWork: vi.fn().mockResolvedValue(undefined),
@@ -44,6 +45,7 @@ describe("cover upload handler", () => {
     expect(deps.db.updateWork).toHaveBeenCalledWith("work-1", {
       coverPath: "work-1",
       editedFields: ["coverPath"],
+      coverColors: ["#1a2b3c", "#4d5e6f", "#a0b1c2"],
     });
     expect(result).toEqual({ success: true });
   });
@@ -61,6 +63,7 @@ describe("cover upload handler", () => {
     expect(deps.db.updateWork).toHaveBeenCalledWith("work-1", {
       coverPath: "work-1",
       editedFields: ["description", "coverPath"],
+      coverColors: ["#1a2b3c", "#4d5e6f", "#a0b1c2"],
     });
   });
 
@@ -167,6 +170,21 @@ describe("cover upload handler", () => {
       statusCode: 400,
       statusMessage: "File is not a valid image",
     });
+  });
+
+  it("proceeds without colors when extractColors fails", async () => {
+    deps = createMockDeps({
+      extractColors: vi.fn().mockRejectedValue(new Error("sharp crash")),
+    });
+    const handler = createUploadHandler(deps);
+    const result = await handler(createMockEvent("work-1") as never);
+
+    expect(deps.db.updateWork).toHaveBeenCalledWith("work-1", {
+      coverPath: "work-1",
+      editedFields: ["coverPath"],
+      coverColors: undefined,
+    });
+    expect(result).toEqual({ success: true });
   });
 
   it("throws 404 when work is not found", async () => {
