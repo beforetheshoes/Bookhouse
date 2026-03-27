@@ -1,6 +1,17 @@
 import { db } from "@bookhouse/db";
 
+function assertTestDatabase(): void {
+  const url = process.env.DATABASE_URL ?? "";
+  if (!url.includes("_test")) {
+    throw new Error(
+      `SAFETY: Refusing to clean database. DATABASE_URL must point to a "_test" database ` +
+      `to prevent accidental data loss. Current URL: "${url}"`,
+    );
+  }
+}
+
 export async function cleanDatabase() {
+  assertTestDatabase();
   await db.$executeRawUnsafe(`
     TRUNCATE TABLE "ImportJob",
                    "DuplicateCandidate",
@@ -32,6 +43,7 @@ export async function cleanDatabase() {
  * across tests in the same run.
  */
 export async function cleanTestData() {
+  assertTestDatabase();
   await db.$executeRawUnsafe(`
     TRUNCATE TABLE "ImportJob",
                    "DuplicateCandidate",

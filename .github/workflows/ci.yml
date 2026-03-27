@@ -141,7 +141,7 @@ jobs:
         env:
           POSTGRES_USER: bookhouse
           POSTGRES_PASSWORD: bookhouse
-          POSTGRES_DB: bookhouse
+          POSTGRES_DB: bookhouse_test
         ports:
           - 5432:5432
         options: >-
@@ -159,7 +159,7 @@ jobs:
           --health-timeout=5s
           --health-retries=5
     env:
-      DATABASE_URL: postgresql://bookhouse:bookhouse@localhost:5432/bookhouse
+      DATABASE_URL: postgresql://bookhouse:bookhouse@localhost:5432/bookhouse_test
       QUEUE_URL: redis://localhost:6379
       AUTH_SECRET: e2e-test-secret-at-least-32-chars!!
       AUTH_OIDC_ISSUER: http://localhost:9090
