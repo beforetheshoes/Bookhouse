@@ -18,7 +18,7 @@ test.describe("Delete edition from work detail page", () => {
     await page.locator("[data-testid^='delete-edition-']").first().click();
 
     // Confirmation dialog
-    await expect(page.getByText("Delete Edition")).toBeVisible();
+    await expect(page.locator("[role='dialog']").getByText("Delete Edition")).toBeVisible();
 
     // Confirm
     await page.locator("[role='dialog'] button", { hasText: "Delete" }).click();
@@ -65,7 +65,7 @@ test.describe("Delete edition from work detail page", () => {
 
     // Delete the first edition
     await page.locator("[data-testid^='delete-edition-']").first().click();
-    await expect(page.getByText("Delete Edition")).toBeVisible();
+    await expect(page.locator("[role='dialog']").getByText("Delete Edition")).toBeVisible();
     await page.locator("[role='dialog'] button", { hasText: "Delete" }).click();
 
     // Work should still exist
