@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { BookOpen, ChevronRight, ImagePlus, Loader2, Sparkles, Trash2 } from "lucide-react";
+import { BookOpen, ChevronRight, ImagePlus, Loader2, Search, Sparkles, Trash2, Upload } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -11,11 +11,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
 import { Badge } from "~/components/ui/badge";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "~/components/ui/tabs";
 import { ProgressBar } from "~/components/progress-bar";
 import { EnrichmentDialog } from "~/components/enrichment-dialog";
+import { CoverSearchDialog } from "~/components/cover-search-dialog";
 import { EditionTabPanel } from "~/components/edition-tab-panel";
 import { MetadataItem } from "~/components/metadata-item";
 import {
@@ -81,7 +88,9 @@ function WorkDetailPage() {
   const [deleteEditionOpen, setDeleteEditionOpen] = useState<string | null>(null);
   const [deletingEdition, setDeletingEdition] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
+  const [coverVersion, setCoverVersion] = useState(0);
   const [enrichOpen, setEnrichOpen] = useState(false);
+  const [coverSearchOpen, setCoverSearchOpen] = useState(false);
   const [activeEditionIdx, setActiveEditionIdx] = useState(0);
   const coverInputRef = useRef<HTMLInputElement>(null);
   const showPlaceholder = !work.coverPath || imgFailed;
@@ -155,6 +164,7 @@ function WorkDetailPage() {
       }
       toast.success("Cover updated");
       setImgFailed(false);
+      setCoverVersion((v) => v + 1);
       void router.invalidate();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to upload cover");
@@ -176,33 +186,45 @@ function WorkDetailPage() {
 
       <div className="flex gap-8">
         <div className="w-48 shrink-0">
-          <div
-            className="group relative aspect-[2/3] cursor-pointer overflow-hidden rounded-lg bg-muted"
-            onClick={() => { coverInputRef.current?.click(); }}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => { if (e.key === "Enter") coverInputRef.current?.click(); }}
-          >
-            {showPlaceholder ? (
-              <div data-testid="cover-placeholder" className="flex size-full items-center justify-center text-muted-foreground">
-                <BookOpen className="size-12" />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <div
+                className="group relative aspect-[2/3] cursor-pointer overflow-hidden rounded-lg bg-muted"
+                role="button"
+                tabIndex={0}
+              >
+                {showPlaceholder ? (
+                  <div data-testid="cover-placeholder" className="flex size-full items-center justify-center text-muted-foreground">
+                    <BookOpen className="size-12" />
+                  </div>
+                ) : (
+                  <img
+                    src={`/api/covers/${work.id}/medium?v=${String(coverVersion)}`}
+                    alt={work.titleDisplay}
+                    onError={() => { setImgFailed(true); }}
+                    className="size-full object-cover"
+                  />
+                )}
+                <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+                  {uploadingCover ? (
+                    <Loader2 className="size-8 animate-spin text-white" />
+                  ) : (
+                    <ImagePlus className="size-8 text-white" />
+                  )}
+                </div>
               </div>
-            ) : (
-              <img
-                src={`/api/covers/${work.id}/medium`}
-                alt={work.titleDisplay}
-                onError={() => { setImgFailed(true); }}
-                className="size-full object-cover"
-              />
-            )}
-            <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
-              {uploadingCover ? (
-                <Loader2 className="size-8 animate-spin text-white" />
-              ) : (
-                <ImagePlus className="size-8 text-white" />
-              )}
-            </div>
-          </div>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem data-testid="cover-upload-option" onClick={() => { coverInputRef.current?.click(); }}>
+                <Upload className="size-4 mr-2" />
+                Upload from file
+              </DropdownMenuItem>
+              <DropdownMenuItem data-testid="cover-search-option" onClick={() => { setCoverSearchOpen(true); }}>
+                <Search className="size-4 mr-2" />
+                Search for cover
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <input
             ref={coverInputRef}
             type="file"
@@ -300,6 +322,7 @@ function WorkDetailPage() {
         editionId={work.editions[activeEditionIdx]?.id ?? null}
         currentWork={{
           title: work.titleDisplay,
+          authors: authors.map((a) => a.name),
           description: work.description ?? null,
           coverPath: work.coverPath ?? null,
           tags: work.tags.map((wt) => wt.tag.name),
@@ -314,7 +337,15 @@ function WorkDetailPage() {
           pageCount: work.editions[activeEditionIdx].pageCount ?? null,
           editedFields: work.editions[activeEditionIdx].editedFields,
         } : null}
-        onApplied={() => { void router.invalidate(); }}
+        onApplied={() => { setCoverVersion((v) => v + 1); void router.invalidate(); }}
+      />
+
+      <CoverSearchDialog
+        open={coverSearchOpen}
+        onOpenChange={setCoverSearchOpen}
+        workId={work.id}
+        workTitle={work.titleDisplay}
+        onApplied={() => { setCoverVersion((v) => v + 1); void router.invalidate(); }}
       />
 
       {work.editions.length > 0 && (

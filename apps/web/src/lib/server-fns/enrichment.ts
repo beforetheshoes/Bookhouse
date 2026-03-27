@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import type { SearchSourcesDeps, RateLimitResult } from "@bookhouse/ingest";
+import type { SearchSourcesDeps, RateLimitResult, CoverFromUrlDeps, CoverFromUrlDbDeps } from "@bookhouse/ingest";
 
 interface SearchFns {
   searchOpenLibrary: (title: string, author: string | undefined, fetcher: typeof fetch) => Promise<unknown>;
@@ -185,6 +185,14 @@ export const applyEnrichmentServerFn = createServerFn({
         Object.entries(data.workFields).filter(([key]) => !editedFields.includes(key)),
       );
 
+      // Map enrichment field names to Prisma column names
+      if ("title" in filteredFields) {
+        filteredFields.titleDisplay = filteredFields.title;
+        delete filteredFields.title;
+      }
+      // Handle authors separately — stored via Contributor + EditionContributor
+      const authors = filteredFields.authors as string[] | undefined;
+      delete filteredFields.authors;
       // Handle subjects/tags separately — not a direct column on Work
       const subjects = filteredFields.subjects as string[] | undefined;
       delete filteredFields.subjects;
@@ -226,6 +234,49 @@ export const applyEnrichmentServerFn = createServerFn({
         appliedAnyFields = true;
         allAppliedFields.push("subjects");
       }
+
+      // Apply authors via Contributor + EditionContributor
+      if (authors && authors.length > 0) {
+        const { canonicalizeContributorName } = await import("@bookhouse/ingest");
+
+        const editions = await db.edition.findMany({
+          where: { workId: data.workId },
+          select: { id: true },
+        });
+        const editionIds = editions.map((e: { id: string }) => e.id);
+
+        const contributorIds: string[] = [];
+        for (const authorName of authors) {
+          const trimmed = authorName.trim();
+          if (trimmed === "") continue;
+          const canonical = canonicalizeContributorName(trimmed) ?? trimmed.toLowerCase();
+          const existing = await db.contributor.findFirst({ where: { nameCanonical: canonical } });
+          if (existing) {
+            contributorIds.push(existing.id);
+          } else {
+            const created = await db.contributor.create({
+              data: { nameDisplay: trimmed, nameCanonical: canonical },
+            });
+            contributorIds.push(created.id);
+          }
+        }
+
+        // Replace AUTHOR contributors on all editions
+        await db.editionContributor.deleteMany({
+          where: { editionId: { in: editionIds }, role: "AUTHOR" },
+        });
+        const createData = editionIds.flatMap((editionId: string) =>
+          contributorIds.map((contributorId) => ({
+            editionId,
+            contributorId,
+            role: "AUTHOR" as const,
+          })),
+        );
+        await db.editionContributor.createMany({ data: createData, skipDuplicates: true });
+
+        appliedAnyFields = true;
+        allAppliedFields.push("authors");
+      }
     }
 
     // Apply edition-level fields
@@ -256,8 +307,13 @@ export const applyEnrichmentServerFn = createServerFn({
       }
     }
 
-    // Create provenance record
+    // Mark work as enriched and create provenance record
     if (appliedAnyFields) {
+      await db.work.update({
+        where: { id: data.workId },
+        data: { enrichmentStatus: "ENRICHED" },
+      });
+
       // Work-level provenance
       await db.externalLink.upsert({
         where: {
@@ -286,4 +342,79 @@ export const applyEnrichmentServerFn = createServerFn({
     }
 
     return { success: true };
+  });
+
+const coverUrlSchema = z.object({
+  workId: z.string(),
+  imageUrl: z.string().url(),
+  source: z.object({
+    provider: z.string(),
+    externalId: z.string(),
+  }).optional(),
+});
+
+export const applyCoverFromUrlServerFn = createServerFn({
+  method: "POST",
+})
+  .inputValidator(coverUrlSchema)
+  .handler(async ({ data }) => {
+    const { db } = await import("@bookhouse/db");
+    const { applyCoverFromUrl } = await import("@bookhouse/ingest");
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    const sharpModule = await import("sharp");
+    const { resizeCoverImage, extractDominantColors } = await import("@bookhouse/ingest");
+
+    const coverCacheDir = process.env.COVER_CACHE_DIR ?? "/data/covers";
+
+    /* c8 ignore start — runtime wiring, tested via unit tests on applyCoverFromUrl */
+    const deps: CoverFromUrlDeps = {
+      fetchUrl: async (url: string) => {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Failed to fetch image: ${String(res.status)}`);
+        const buffer = Buffer.from(await res.arrayBuffer());
+        const contentType = res.headers.get("content-type");
+        return { buffer, contentType };
+      },
+      resizeAndSave: async (imageBuffer, outputDir) => {
+        await resizeCoverImage(
+          { imageBuffer, outputDir },
+          { sharp: sharpModule.default as never, mkdir, writeFile },
+        );
+      },
+      extractColors: (buf) => extractDominantColors(buf, sharpModule.default as never),
+    };
+
+    const dbDeps: CoverFromUrlDbDeps = {
+      findWork: (id) => db.work.findUnique({ where: { id }, select: { editedFields: true } }),
+      updateWork: (id, updateData) => db.work.update({ where: { id }, data: updateData }) as unknown as Promise<void>,
+    };
+    /* c8 ignore stop */
+
+    const result = await applyCoverFromUrl({ workId: data.workId, imageUrl: data.imageUrl, coverCacheDir }, deps, dbDeps);
+
+    // Create provenance record if source is provided
+    if (data.source) {
+      await db.externalLink.upsert({
+        where: {
+          workId_provider_externalId: {
+            workId: data.workId,
+            provider: data.source.provider,
+            externalId: data.source.externalId,
+          },
+        },
+        create: {
+          workId: data.workId,
+          provider: data.source.provider,
+          externalId: data.source.externalId,
+          appliedAt: new Date(),
+          appliedFields: ["coverPath"],
+        },
+        update: {
+          appliedAt: new Date(),
+          appliedFields: ["coverPath"],
+        },
+      });
+    }
+
+    return result;
   });

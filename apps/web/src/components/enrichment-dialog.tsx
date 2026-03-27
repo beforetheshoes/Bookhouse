@@ -14,7 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
-import { searchEnrichmentServerFn, applyEnrichmentServerFn } from "~/lib/server-fns/enrichment";
+import { searchEnrichmentServerFn, applyEnrichmentServerFn, applyCoverFromUrlServerFn } from "~/lib/server-fns/enrichment";
 import type { SourceResult, EnrichmentProvider } from "@bookhouse/ingest";
 
 // ---------------------------------------------------------------------------
@@ -28,6 +28,7 @@ interface EnrichmentDialogProps {
   editionId: string | null;
   currentWork: {
     title: string;
+    authors: string[];
     description: string | null;
     coverPath: string | null;
     tags: string[];
@@ -69,6 +70,9 @@ interface FieldDef {
 }
 
 const WORK_FIELDS: FieldDef[] = [
+  { key: "coverUrl", label: "Cover Image", level: "work" },
+  { key: "title", label: "Title", level: "work" },
+  { key: "authors", label: "Authors", level: "work" },
   { key: "description", label: "Description", level: "work" },
   { key: "subjects", label: "Tags", level: "work" },
 ];
@@ -101,9 +105,18 @@ function formatValue(value: unknown): string {
 }
 
 function getCurrentWorkValue(field: FieldDef, currentWork: EnrichmentDialogProps["currentWork"]): string {
+  if (field.key === "coverUrl") return currentWork.coverPath ? "Current cover" : "";
+  if (field.key === "title") return currentWork.title;
+  if (field.key === "authors") return currentWork.authors.join(", ");
   if (field.key === "description") return currentWork.description ?? "";
   // "subjects"
   return currentWork.tags.join(", ");
+}
+
+// Map enrichment field keys to DB column names for editedFields checks
+function getEditedFieldKey(fieldKey: string): string {
+  if (fieldKey === "title") return "titleDisplay";
+  return fieldKey;
 }
 
 function getSelection(map: Record<string, FieldSelection>, provider: string): FieldSelection {
@@ -172,6 +185,54 @@ function FieldComparisonRow({
           <div>
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground/60 mb-0.5">Source</div>
             <p className="text-sm break-words">{sourceValue}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CoverFieldRow({
+  coverUrl,
+  currentCoverPath,
+  selected,
+  onToggle,
+}: {
+  coverUrl: string;
+  currentCoverPath: string | null;
+  selected: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="group flex gap-3 rounded-md px-2 py-2 transition-colors hover:bg-accent/30">
+      <FieldToggle selected={selected} onClick={onToggle} />
+      <div className="flex-1 min-w-0 space-y-1">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium">Cover Image</span>
+          {currentCoverPath && <span className="text-xs text-muted-foreground italic">Has existing cover</span>}
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground/60 mb-0.5">Current</div>
+            {currentCoverPath ? (
+              <img
+                src={`/api/covers/${currentCoverPath}/thumb`}
+                alt="Current cover"
+                className="w-16 aspect-[2/3] rounded bg-muted object-cover"
+              />
+            ) : (
+              <div className="w-16 aspect-[2/3] rounded bg-muted flex items-center justify-center">
+                <BookOpen className="size-5 text-muted-foreground" />
+              </div>
+            )}
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground/60 mb-0.5">Source</div>
+            <img
+              src={coverUrl}
+              alt="Source cover option"
+              className="w-16 aspect-[2/3] rounded bg-muted object-cover"
+            />
           </div>
         </div>
       </div>
@@ -308,14 +369,29 @@ export function EnrichmentDialog({
     setApplying(true);
 
     try {
-      const hasWork = Object.keys(sel.workFields).length > 0;
+      // Handle cover URL separately — it needs download + processing
+      const coverUrl = sel.workFields.coverUrl as string | undefined;
+      const { coverUrl: _stripped, ...metadataWorkFields } = sel.workFields;
+      void _stripped;
+
+      if (coverUrl) {
+        await applyCoverFromUrlServerFn({
+          data: {
+            workId,
+            imageUrl: coverUrl,
+            source: { provider: activeResult.provider, externalId: activeResult.externalId },
+          },
+        });
+      }
+
+      const hasWork = Object.keys(metadataWorkFields).length > 0;
       const hasEdition = Object.keys(sel.editionFields).length > 0;
 
       await applyEnrichmentServerFn({
         data: {
           workId,
           editionId: hasEdition && editionId ? editionId : undefined,
-          workFields: hasWork ? sel.workFields : undefined,
+          workFields: hasWork ? metadataWorkFields : undefined,
           editionFields: hasEdition ? sel.editionFields : undefined,
           source: { provider: activeResult.provider, externalId: activeResult.externalId },
         },
@@ -391,6 +467,20 @@ export function EnrichmentDialog({
                           {WORK_FIELDS.map((field) => {
                             const raw = getSourceValue(r, field);
                             const sourceVal = formatValue(raw);
+
+                            if (field.key === "coverUrl") {
+                              if (!sourceVal) return null;
+                              return (
+                                <CoverFieldRow
+                                  key={field.key}
+                                  coverUrl={sourceVal}
+                                  currentCoverPath={currentWork.coverPath}
+                                  selected={field.key in sel.workFields}
+                                  onToggle={() => { handleToggle(r.provider, field, raw); }}
+                                />
+                              );
+                            }
+
                             const currentVal = getCurrentWorkValue(field, currentWork);
                             return (
                               <FieldComparisonRow
@@ -398,7 +488,7 @@ export function EnrichmentDialog({
                                 field={field}
                                 sourceValue={sourceVal}
                                 currentValue={currentVal}
-                                isEdited={currentWork.editedFields.includes(field.key)}
+                                isEdited={currentWork.editedFields.includes(getEditedFieldKey(field.key))}
                                 selected={field.key in sel.workFields}
                                 onToggle={() => { handleToggle(r.provider, field, raw); }}
                               />
@@ -490,7 +580,16 @@ function buildInitialSelections(
       const raw = getSourceValue(r, field);
       const sourceVal = formatValue(raw);
       if (!sourceVal) continue;
-      if (currentWork.editedFields.includes(field.key)) continue;
+
+      // coverUrl: pre-select only when work has no cover
+      if (field.key === "coverUrl") {
+        if (!currentWork.coverPath) {
+          sel.workFields[field.key] = raw;
+        }
+        continue;
+      }
+
+      if (currentWork.editedFields.includes(getEditedFieldKey(field.key))) continue;
       // Don't pre-select if values already match
       const currentVal = getCurrentWorkValue(field, currentWork);
       if (sourceVal === currentVal) continue;

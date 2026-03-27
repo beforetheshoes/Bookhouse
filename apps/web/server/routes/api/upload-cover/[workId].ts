@@ -2,6 +2,7 @@ import path from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 import { defineEventHandler, readMultipartFormData, createError } from "h3";
 import type { H3Event } from "h3";
+import { VALID_WORK_ID, MAX_FILE_SIZE, isValidImageData, isAllowedMimeType } from "@bookhouse/ingest";
 
 const COVER_CACHE_DIR = process.env.COVER_CACHE_DIR ?? "/data/covers";
 
@@ -14,25 +15,6 @@ export interface UploadHandlerDeps {
     findWork: (id: string) => Promise<{ editedFields: string[] } | null>;
     updateWork: (id: string, data: { coverPath: string; editedFields: string[]; coverColors?: string[] }) => Promise<void>;
   };
-}
-
-const VALID_WORK_ID = /^[a-zA-Z0-9_-]+$/;
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
-const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
-
-// Magic byte signatures for supported image formats
-const IMAGE_SIGNATURES: [number[], string][] = [
-  [[0xFF, 0xD8, 0xFF], "JPEG"],
-  [[0x89, 0x50, 0x4E, 0x47], "PNG"],
-  [[0x52, 0x49, 0x46, 0x46], "WebP"], // RIFF header (WebP starts with RIFF....WEBP)
-  [[0x47, 0x49, 0x46, 0x38], "GIF"],
-];
-
-function isValidImageData(data: Uint8Array): boolean {
-  if (data.length < 4) return false;
-  return IMAGE_SIGNATURES.some(([sig]) =>
-    sig.every((byte, i) => data[i] === byte),
-  );
 }
 
 export function createUploadHandler(deps: UploadHandlerDeps) {
@@ -55,7 +37,7 @@ export function createUploadHandler(deps: UploadHandlerDeps) {
       throw createError({ statusCode: 400, statusMessage: "File too large (max 10 MB)" });
     }
 
-    if (fileField.type && !ALLOWED_MIME_TYPES.has(fileField.type)) {
+    if (!isAllowedMimeType(fileField.type)) {
       throw createError({ statusCode: 400, statusMessage: "Invalid image type" });
     }
 

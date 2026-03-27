@@ -19,11 +19,16 @@ const workUpdateMock = vi.fn();
 const editionUpdateMock = vi.fn();
 const workFindUniqueMock = vi.fn();
 const editionFindUniqueMock = vi.fn();
+const editionFindManyMock = vi.fn();
 const externalLinkUpsertMock = vi.fn();
 const externalLinkFindManyMock = vi.fn();
 const tagFindFirstMock = vi.fn();
 const tagCreateMock = vi.fn();
 const workTagUpsertMock = vi.fn();
+const contributorFindFirstMock = vi.fn();
+const contributorCreateMock = vi.fn();
+const editionContributorDeleteManyMock = vi.fn();
+const editionContributorCreateManyMock = vi.fn();
 const enqueueLibraryJobMock = vi.fn();
 const searchAllSourcesMock = vi.fn();
 const getDecryptedApiKeyMock = vi.fn();
@@ -38,6 +43,7 @@ vi.mock("@bookhouse/db", () => ({
     edition: {
       update: (...args: unknown[]): unknown => editionUpdateMock(...args),
       findUnique: (...args: unknown[]): unknown => editionFindUniqueMock(...args),
+      findMany: (...args: unknown[]): unknown => editionFindManyMock(...args),
     },
     externalLink: {
       upsert: (...args: unknown[]): unknown => externalLinkUpsertMock(...args),
@@ -50,12 +56,22 @@ vi.mock("@bookhouse/db", () => ({
     workTag: {
       upsert: (...args: unknown[]): unknown => workTagUpsertMock(...args),
     },
+    contributor: {
+      findFirst: (...args: unknown[]): unknown => contributorFindFirstMock(...args),
+      create: (...args: unknown[]): unknown => contributorCreateMock(...args),
+    },
+    editionContributor: {
+      deleteMany: (...args: unknown[]): unknown => editionContributorDeleteManyMock(...args),
+      createMany: (...args: unknown[]): unknown => editionContributorCreateManyMock(...args),
+    },
   },
 }));
 
 vi.mock("@bookhouse/shared", () => ({
   enqueueLibraryJob: (...args: unknown[]): unknown => enqueueLibraryJobMock(...args),
 }));
+
+const applyCoverFromUrlMock = vi.fn();
 
 vi.mock("@bookhouse/ingest", () => {
   class MockRateLimiter {
@@ -71,6 +87,10 @@ vi.mock("@bookhouse/ingest", () => {
     searchGoogleBooks: vi.fn(),
     searchHardcover: vi.fn(),
     RateLimiter: MockRateLimiter,
+    applyCoverFromUrl: (...args: unknown[]): unknown => applyCoverFromUrlMock(...args),
+    resizeCoverImage: vi.fn(),
+    extractDominantColors: vi.fn(),
+    canonicalizeContributorName: (name: string) => name.toLowerCase(),
   };
 });
 
@@ -82,6 +102,7 @@ import {
   triggerEnrichmentServerFn,
   getEnrichmentDataServerFn,
   applyEnrichmentServerFn,
+  applyCoverFromUrlServerFn,
   searchEnrichmentServerFn,
   buildSearchDeps,
 } from "./enrichment";
@@ -318,6 +339,42 @@ describe("applyEnrichmentServerFn", () => {
     expect(result).toEqual({ success: true });
   });
 
+  it("sets enrichmentStatus to ENRICHED when fields are applied", async () => {
+    workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: [] });
+    workUpdateMock.mockResolvedValue({ id: "w1" });
+    externalLinkUpsertMock.mockResolvedValue({});
+
+    await applyEnrichmentServerFn({
+      data: {
+        workId: "w1",
+        workFields: { description: "A hobbit adventure" },
+        source: { provider: "openlibrary", externalId: "OL123W" },
+      },
+    });
+
+    // Should have a second work.update call setting enrichmentStatus
+    expect(workUpdateMock).toHaveBeenCalledWith({
+      where: { id: "w1" },
+      data: { enrichmentStatus: "ENRICHED" },
+    });
+  });
+
+  it("does not set enrichmentStatus when all fields are skipped", async () => {
+    workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: ["description"] });
+    externalLinkUpsertMock.mockResolvedValue({});
+
+    await applyEnrichmentServerFn({
+      data: {
+        workId: "w1",
+        workFields: { description: "New desc" },
+        source: { provider: "openlibrary", externalId: "OL123W" },
+      },
+    });
+
+    // workUpdateMock should not have been called at all (field was filtered by editedFields)
+    expect(workUpdateMock).not.toHaveBeenCalled();
+  });
+
   it("applies edition-level fields", async () => {
     workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: [] });
     editionFindUniqueMock.mockResolvedValue({ id: "e1", editedFields: [] });
@@ -499,6 +556,60 @@ describe("applyEnrichmentServerFn", () => {
     expect(result).toEqual({ success: true });
   });
 
+  it("applies authors via contributor resolution and edition contributor creation", async () => {
+    workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: [] });
+    editionFindManyMock.mockResolvedValue([{ id: "e1" }, { id: "e2" }]);
+    contributorFindFirstMock.mockResolvedValueOnce({ id: "c1", nameDisplay: "Frank Herbert" });
+    contributorFindFirstMock.mockResolvedValueOnce(null);
+    contributorCreateMock.mockResolvedValueOnce({ id: "c2", nameDisplay: "Brian Herbert" });
+    editionContributorDeleteManyMock.mockResolvedValue({});
+    editionContributorCreateManyMock.mockResolvedValue({});
+    externalLinkUpsertMock.mockResolvedValue({});
+
+    const result = await applyEnrichmentServerFn({
+      data: {
+        workId: "w1",
+        workFields: { authors: ["Frank Herbert", "Brian Herbert"] },
+        source: { provider: "openlibrary", externalId: "OL123W" },
+      },
+    });
+
+    expect(contributorFindFirstMock).toHaveBeenCalledTimes(2);
+    expect(contributorCreateMock).toHaveBeenCalledTimes(1);
+    expect(editionContributorDeleteManyMock).toHaveBeenCalledWith({
+      where: { editionId: { in: ["e1", "e2"] }, role: "AUTHOR" },
+    });
+    expect(editionContributorCreateManyMock).toHaveBeenCalledWith({
+      data: [
+        { editionId: "e1", contributorId: "c1", role: "AUTHOR" },
+        { editionId: "e1", contributorId: "c2", role: "AUTHOR" },
+        { editionId: "e2", contributorId: "c1", role: "AUTHOR" },
+        { editionId: "e2", contributorId: "c2", role: "AUTHOR" },
+      ],
+      skipDuplicates: true,
+    });
+    expect(result).toEqual({ success: true });
+  });
+
+  it("maps title to titleDisplay in work update", async () => {
+    workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: [] });
+    workUpdateMock.mockResolvedValue({ id: "w1" });
+    externalLinkUpsertMock.mockResolvedValue({});
+
+    await applyEnrichmentServerFn({
+      data: {
+        workId: "w1",
+        workFields: { title: "The Name of the Wind: Anniversary Edition" },
+        source: { provider: "openlibrary", externalId: "OL123W" },
+      },
+    });
+
+    expect(workUpdateMock).toHaveBeenCalledWith({
+      where: { id: "w1" },
+      data: { titleDisplay: "The Name of the Wind: Anniversary Edition" },
+    });
+  });
+
   it("strips coverUrl from workFields before applying", async () => {
     workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: [] });
     workUpdateMock.mockResolvedValue({ id: "w1" });
@@ -620,5 +731,77 @@ describe("applyEnrichmentServerFn", () => {
     }
     // tag.create should not have been called — existing tag found both times
     expect(tagCreateMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("applyCoverFromUrlServerFn", () => {
+  it("calls applyCoverFromUrl and returns success", async () => {
+    applyCoverFromUrlMock.mockResolvedValue({ success: true });
+
+    const result = await applyCoverFromUrlServerFn({
+      data: {
+        workId: "w1",
+        imageUrl: "https://example.com/cover.jpg",
+      },
+    });
+
+    expect(applyCoverFromUrlMock).toHaveBeenCalledWith(
+      expect.objectContaining({ workId: "w1", imageUrl: "https://example.com/cover.jpg" }) as Record<string, unknown>,
+      expect.any(Object) as Record<string, unknown>,
+      expect.any(Object) as Record<string, unknown>,
+    );
+    expect(result).toEqual({ success: true });
+  });
+
+  it("creates externalLink provenance when source is provided", async () => {
+    applyCoverFromUrlMock.mockResolvedValue({ success: true });
+    externalLinkUpsertMock.mockResolvedValue({});
+
+    const result = await applyCoverFromUrlServerFn({
+      data: {
+        workId: "w1",
+        imageUrl: "https://example.com/cover.jpg",
+        source: { provider: "openlibrary", externalId: "OL123W" },
+      },
+    });
+
+    expect(externalLinkUpsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          workId_provider_externalId: {
+            workId: "w1",
+            provider: "openlibrary",
+            externalId: "OL123W",
+          },
+        },
+      }) as Record<string, unknown>,
+    );
+    expect(result).toEqual({ success: true });
+  });
+
+  it("does not create externalLink when source is omitted", async () => {
+    applyCoverFromUrlMock.mockResolvedValue({ success: true });
+
+    await applyCoverFromUrlServerFn({
+      data: {
+        workId: "w1",
+        imageUrl: "https://example.com/cover.jpg",
+      },
+    });
+
+    expect(externalLinkUpsertMock).not.toHaveBeenCalled();
+  });
+
+  it("propagates errors from applyCoverFromUrl", async () => {
+    applyCoverFromUrlMock.mockRejectedValue(new Error("Image too large (max 10 MB)"));
+
+    await expect(
+      applyCoverFromUrlServerFn({
+        data: {
+          workId: "w1",
+          imageUrl: "https://example.com/huge.jpg",
+        },
+      }),
+    ).rejects.toThrow("Image too large (max 10 MB)");
   });
 });

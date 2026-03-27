@@ -75,6 +75,9 @@ export type {
   SearchSourcesDeps,
 } from "./enrichment/search-sources";
 export { extractDominantColors } from "./cover-colors";
+export { VALID_WORK_ID, MAX_FILE_SIZE, ALLOWED_MIME_TYPES, IMAGE_SIGNATURES, isValidImageData, isAllowedMimeType } from "./cover-validation";
+export { applyCoverFromUrl } from "./cover-from-url";
+export type { CoverFromUrlDeps, CoverFromUrlDbDeps, CoverFromUrlInput, CoverFromUrlResult } from "./cover-from-url";
 export { RateLimiter } from "./enrichment/rate-limiter";
 export type { RateLimitResult } from "./enrichment/rate-limiter";
 export { enrichWork } from "./enrichment/enrich-work";
@@ -130,4 +133,11 @@ export const INGEST_PUBLIC_API = [
   "searchOpenLibrary",
   "scanLibraryRoot",
   "walkRegularFiles",
+  "VALID_WORK_ID",
+  "MAX_FILE_SIZE",
+  "ALLOWED_MIME_TYPES",
+  "IMAGE_SIGNATURES",
+  "isValidImageData",
+  "isAllowedMimeType",
+  "applyCoverFromUrl",
 ] as const;

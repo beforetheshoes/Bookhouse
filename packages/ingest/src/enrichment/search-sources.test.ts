@@ -118,6 +118,7 @@ describe("searchAllSources", () => {
     expect(ol.provider).toBe("openlibrary");
     expect(ol.externalId).toBe("OL123W");
     expect(ol.work.title).toBe("Dune");
+    expect(ol.work.authors).toEqual(["Frank Herbert"]);
     expect(ol.work.description).toBe("A desert planet epic");
     expect(ol.work.subjects).toEqual(["Science Fiction"]);
     expect(ol.work.coverUrl).toBe("https://covers.openlibrary.org/b/id/42-L.jpg");
@@ -169,6 +170,7 @@ describe("searchAllSources", () => {
     const gb = (result as { status: "success"; results: SourceResult[] }).results[0] as SourceResult;
     expect(gb.provider).toBe("googlebooks");
     expect(gb.externalId).toBe("gb_abc");
+    expect(gb.work.authors).toEqual(["Frank Herbert"]);
     expect(gb.work.description).toBe("The desert saga");
     expect(gb.work.subjects).toEqual(["Fiction"]);
     expect(gb.work.coverUrl).toBe("https://books.google.com/thumb.jpg");
@@ -186,6 +188,7 @@ describe("searchAllSources", () => {
     const hc = (result as { status: "success"; results: SourceResult[] }).results[0] as SourceResult;
     expect(hc.provider).toBe("hardcover");
     expect(hc.externalId).toBe("hc_42");
+    expect(hc.work.authors).toEqual(["Frank Herbert"]);
     expect(hc.work.description).toBe("Frank Herbert's masterpiece");
     expect(hc.edition.isbn10).toBeNull();
   });
