@@ -103,6 +103,7 @@ export function EditionTabPanel({
         <Button
           variant="outline"
           size="sm"
+          data-testid={`delete-edition-${edition.id}`}
           aria-label="Delete edition"
           onClick={onDeleteEdition}
           className="text-destructive hover:bg-destructive/10"

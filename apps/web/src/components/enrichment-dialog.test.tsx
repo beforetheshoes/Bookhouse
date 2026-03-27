@@ -802,7 +802,8 @@ describe("EnrichmentDialog", () => {
     expect(screen.queryByText("ISBN-10")).toBeNull();
     // 0 fields selected and Apply disabled
     expect(screen.getByText("0 fields selected")).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Apply Selected" }) as HTMLButtonElement).disabled).toBe(true);
+    const applyBtn = screen.getByRole("button", { name: "Apply Selected" });
+    expect((applyBtn as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("handles toggle for edition fields (deselect path)", async () => {
