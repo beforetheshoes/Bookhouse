@@ -21,6 +21,7 @@ const editionUpdateMock = vi.fn();
 const editionFindManyMock = vi.fn();
 const contributorFindFirstMock = vi.fn();
 const contributorCreateMock = vi.fn();
+const contributorFindManyMock = vi.fn();
 const editionContributorDeleteManyMock = vi.fn();
 const editionContributorCreateManyMock = vi.fn();
 const transactionMock = vi.fn();
@@ -38,6 +39,7 @@ vi.mock("@bookhouse/db", () => ({
     },
     contributor: {
       findFirst: contributorFindFirstMock,
+      findMany: contributorFindManyMock,
       create: contributorCreateMock,
     },
     editionContributor: {
@@ -60,6 +62,7 @@ import {
   updateWorkServerFn,
   updateEditionServerFn,
   updateWorkAuthorsServerFn,
+  getContributorNamesServerFn,
 } from "./editing";
 
 beforeEach(() => {
@@ -437,5 +440,23 @@ describe("updateWorkAuthorsServerFn", () => {
         },
       }),
     ).rejects.toThrow("At least one author is required");
+  });
+});
+
+describe("getContributorNamesServerFn", () => {
+  it("returns sorted contributor names", async () => {
+    contributorFindManyMock.mockResolvedValue([
+      { nameDisplay: "Brandon Sanderson" },
+      { nameDisplay: "Patrick Rothfuss" },
+    ]);
+
+    const result = await getContributorNamesServerFn();
+
+    expect(contributorFindManyMock).toHaveBeenCalledWith({
+      where: { editions: { some: {} } },
+      select: { nameDisplay: true },
+      orderBy: { nameDisplay: "asc" },
+    });
+    expect(result).toEqual(["Brandon Sanderson", "Patrick Rothfuss"]);
   });
 });

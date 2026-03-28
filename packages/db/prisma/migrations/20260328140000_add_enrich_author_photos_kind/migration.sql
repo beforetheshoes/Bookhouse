@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "ImportJobKind" ADD VALUE 'ENRICH_AUTHOR_PHOTOS';

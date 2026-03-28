@@ -108,4 +108,34 @@ describe("cover handler", () => {
       statusCode: 400,
     });
   });
+
+  it("uses custom idParamName when provided", async () => {
+    deps = createMockDeps({ idParamName: "contributorId" });
+    const handler = createCoverHandler(deps);
+    const event = {
+      context: {
+        params: { contributorId: "c1", size: "thumb" },
+      },
+    };
+
+    await handler(event as never);
+
+    expect(deps.existsSync).toHaveBeenCalledWith("/data/covers/c1/thumb.webp");
+    expect(deps.sendStream).toHaveBeenCalled();
+  });
+
+  it("throws 400 with custom idParamName for invalid id", async () => {
+    deps = createMockDeps({ idParamName: "contributorId" });
+    const handler = createCoverHandler(deps);
+    const event = {
+      context: {
+        params: { contributorId: "../etc/passwd", size: "thumb" },
+      },
+    };
+
+    await expect(handler(event as never)).rejects.toMatchObject({
+      statusCode: 400,
+      statusMessage: "Invalid contributorId",
+    });
+  });
 });

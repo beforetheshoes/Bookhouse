@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { createQueueEvents } from "@bookhouse/shared";
+import { createQueueEvents, QUEUES } from "@bookhouse/shared";
 import type { QueueProgressData } from "@bookhouse/shared";
 
 export type SSEJobEventData =
@@ -18,25 +18,27 @@ interface QueueEventsLike {
 }
 
 export class QueueEventsManager {
-  private queueEvents: QueueEventsLike;
+  private queueEventsList: QueueEventsLike[];
   private emitter = new EventEmitter();
 
-  constructor(queueEvents: QueueEventsLike) {
-    this.queueEvents = queueEvents;
-    this.setupListeners();
+  constructor(queueEvents: QueueEventsLike | QueueEventsLike[]) {
+    this.queueEventsList = Array.isArray(queueEvents) ? queueEvents : [queueEvents];
+    for (const qe of this.queueEventsList) {
+      this.setupListeners(qe);
+    }
   }
 
-  private setupListeners() {
-    this.queueEvents.on("completed", ({ jobId }: { jobId: string }) => {
+  private setupListeners(queueEvents: QueueEventsLike) {
+    queueEvents.on("completed", ({ jobId }: { jobId: string }) => {
       this.broadcast({ type: "job:completed", data: { jobId } });
     });
-    this.queueEvents.on("failed", ({ jobId, failedReason }: { jobId: string; failedReason: string }) => {
+    queueEvents.on("failed", ({ jobId, failedReason }: { jobId: string; failedReason: string }) => {
       this.broadcast({ type: "job:failed", data: { jobId, error: failedReason } });
     });
-    this.queueEvents.on("active", ({ jobId }: { jobId: string }) => {
+    queueEvents.on("active", ({ jobId }: { jobId: string }) => {
       this.broadcast({ type: "job:active", data: { jobId } });
     });
-    this.queueEvents.on("progress", ({ jobId, data }: { jobId: string; data: QueueProgressData }) => {
+    queueEvents.on("progress", ({ jobId, data }: { jobId: string; data: QueueProgressData }) => {
       this.broadcast({ type: "job:progress", data: { jobId, progress: data } });
     });
   }
@@ -53,7 +55,7 @@ export class QueueEventsManager {
   }
 
   async close() {
-    await this.queueEvents.close();
+    await Promise.all(this.queueEventsList.map((qe) => qe.close()));
   }
 }
 
@@ -61,7 +63,10 @@ let instance: QueueEventsManager | null = null;
 
 export function getQueueEventsManager(): QueueEventsManager {
   if (!instance) {
-    instance = new QueueEventsManager(createQueueEvents());
+    instance = new QueueEventsManager([
+      createQueueEvents(QUEUES.LIBRARY),
+      createQueueEvents(QUEUES.ENRICHMENT),
+    ]);
   }
   return instance;
 }

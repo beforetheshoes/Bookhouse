@@ -13,6 +13,18 @@ export interface HCBook {
   isbn13: string | null;
 }
 
+export interface HCAuthor {
+  hardcoverId: string;
+  name: string;
+  imageUrl: string | null;
+}
+
+interface HCAuthorSearchHit {
+  id?: number;
+  name?: string;
+  image?: { url?: string } | null;
+}
+
 // The search endpoint returns a raw JSON blob in `results`.
 // Each result has these fields based on the Hardcover search index.
 interface HCSearchHit {
@@ -74,6 +86,14 @@ interface HCGraphQLResponse<T> {
 const SEARCH_QUERY = `
   query SearchBooks($query: String!) {
     search(query: $query, query_type: "Book", per_page: 5, page: 1) {
+      results
+    }
+  }
+`;
+
+const SEARCH_AUTHORS_QUERY = `
+  query SearchAuthors($query: String!) {
+    search(query: $query, query_type: "Author", per_page: 5, page: 1) {
       results
     }
   }
@@ -231,4 +251,34 @@ export async function getHardcoverBook(
   if (!books?.[0]) return null;
 
   return parseDetailBook(books[0]);
+}
+
+export async function searchHardcoverAuthors(
+  name: string,
+  apiKey: string,
+  fetcher: typeof fetch,
+): Promise<HCAuthor[]> {
+  const data = await graphqlRequest<HCSearchData>(SEARCH_AUTHORS_QUERY, { query: name }, apiKey, fetcher);
+  if (data === null) {
+    throw new Error("Hardcover returned no data (check API key and query)");
+  }
+
+  const search = data.search;
+  if (!search?.results) return [];
+
+  let hits: HCAuthorSearchHit[];
+  if (typeof search.results === "string") {
+    const parsed = JSON.parse(search.results) as HCAuthorSearchHit[];
+    hits = Array.isArray(parsed) ? parsed : [];
+  } else if (Array.isArray(search.results)) {
+    hits = search.results as HCAuthorSearchHit[];
+  } else {
+    hits = [];
+  }
+
+  return hits.map((hit) => ({
+    hardcoverId: String(hit.id ?? 0),
+    name: hit.name ?? "",
+    imageUrl: hit.image?.url ?? null,
+  }));
 }

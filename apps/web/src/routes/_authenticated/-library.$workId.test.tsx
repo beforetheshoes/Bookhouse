@@ -47,7 +47,7 @@ interface MockProgress {
   percent: number | null;
 }
 
-let mockLoaderData: { work: MockWork; progress: MockProgress[]; trackingMode: string } = {
+let mockLoaderData: { work: MockWork; progress: MockProgress[]; trackingMode: string; contributorNames: string[] } = {
   work: {
     id: "work-1",
     titleDisplay: "The Name of the Wind",
@@ -91,6 +91,7 @@ let mockLoaderData: { work: MockWork; progress: MockProgress[]; trackingMode: st
   },
   progress: [],
   trackingMode: "BY_EDITION",
+  contributorNames: ["Patrick Rothfuss", "Brandon Sanderson"],
 };
 
 const mockNavigate = vi.fn();
@@ -176,6 +177,7 @@ vi.mock("~/lib/server-fns/editing", () => ({
   updateWorkServerFn: vi.fn(),
   updateEditionServerFn: vi.fn(),
   updateWorkAuthorsServerFn: vi.fn(),
+  getContributorNamesServerFn: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("~/lib/server-fns/tags", () => ({
@@ -301,6 +303,7 @@ describe("WorkDetailPage", () => {
       },
       progress: [],
       trackingMode: "BY_EDITION",
+      contributorNames: ["Patrick Rothfuss", "Brandon Sanderson"],
     };
     capturedDialogProps.length = 0;
     forceRenderClosed = false;
@@ -328,6 +331,7 @@ describe("WorkDetailPage", () => {
       work: mockLoaderData.work,
       progress: [],
       trackingMode: "BY_EDITION",
+      contributorNames: [],
     });
   });
 
@@ -1053,24 +1057,31 @@ describe("WorkDetailPage", () => {
     }
 
     await waitFor(() => {
-      // Work fields: title, authors, description, tags = 4 editable fields
-      expect(updateWorkServerFnMock.mock.calls.length + updateWorkAuthorsServerFnMock.mock.calls.length).toBeGreaterThanOrEqual(3);
+      // Work fields: title, description, tags = 3 editable fields (authors is now a tag field)
+      expect(updateWorkServerFnMock.mock.calls.length).toBeGreaterThanOrEqual(2);
     });
   });
 
-  it("calls updateWorkAuthorsServerFn when clicking authors field", async () => {
+  it("calls updateWorkAuthorsServerFn when editing authors tag field", async () => {
     updateWorkAuthorsServerFnMock.mockResolvedValue({ success: true });
     const { Route } = await import("./library.$workId");
     const Page = Route.options.component as React.ComponentType;
     const { fireEvent, waitFor } = await import("@testing-library/react");
     render(<Page />);
 
-    // Click the authors editable field - gets first "Patrick Rothfuss" (the work-level one)
+    // Click the authors field to enter edit mode
     const authorFields = screen.getAllByText("Patrick Rothfuss");
     if (authorFields[0]) fireEvent.click(authorFields[0]);
 
+    // Add a new author and blur to save
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "New Author" } });
+    fireEvent.blur(input);
+
     await waitFor(() => {
-      expect(updateWorkAuthorsServerFnMock).toHaveBeenCalled();
+      expect(updateWorkAuthorsServerFnMock).toHaveBeenCalledWith({
+        data: { workId: "work-1", authors: ["Patrick Rothfuss", "New Author"] },
+      });
     });
   });
 

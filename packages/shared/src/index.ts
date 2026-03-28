@@ -3,6 +3,9 @@ export * from "./errors.js";
 export { createLogger } from "./logger.js";
 export {
   enqueueLibraryJob,
+  enqueueEnrichmentJob,
+  getActiveJobCountByName,
+  getActiveEnrichmentJobCount,
   getImportJobLiveActivity,
   getLibraryJobSnapshot,
   getLibraryJobState,

@@ -1,5 +1,4 @@
 import type { OLSearchResult, OLWork } from "./open-library";
-import type { RateLimitResult } from "./rate-limiter";
 
 interface WorkEdition {
   id: string;
@@ -34,7 +33,7 @@ export interface EnrichWorkDeps {
     externalId: string;
     metadata: ExternalLinkMetadata;
   }) => Promise<void>;
-  checkRateLimit: () => RateLimitResult;
+  acquireOLToken: () => Promise<void>;
 }
 
 export type EnrichWorkResult =
@@ -42,17 +41,13 @@ export type EnrichWorkResult =
   | { status: "not-found" }
   | { status: "no-results" }
   | { status: "no-editions" }
-  | { status: "already-enriched" }
-  | { status: "rate-limited"; retryAfterMs: number | undefined };
+  | { status: "already-enriched" };
 
 export async function enrichWork(
   workId: string,
   deps: EnrichWorkDeps,
 ): Promise<EnrichWorkResult> {
-  const rateCheck = deps.checkRateLimit();
-  if (!rateCheck.allowed) {
-    return { status: "rate-limited", retryAfterMs: rateCheck.retryAfterMs };
-  }
+  await deps.acquireOLToken();
 
   const work = await deps.findWork(workId);
   if (!work) return { status: "not-found" };

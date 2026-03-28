@@ -7,6 +7,7 @@ import { MediaKind } from "@bookhouse/domain";
 import {
   detectAdjacentCover,
   resizeCoverImage,
+  resizeAndSaveCover,
   processCoverForWork,
   processCoverForWorkDefault,
   type CoverDependencies,
@@ -120,6 +121,18 @@ describe("resizeCoverImage", () => {
       thumbPath: path.join("/data/covers/work-123", "thumb.webp"),
       mediumPath: path.join("/data/covers/work-123", "medium.webp"),
     });
+  });
+});
+
+describe("resizeAndSaveCover", () => {
+  it("calls resizeCoverImage with real deps", async () => {
+    const tmpDir = await mkdtemp(path.join(os.tmpdir(), "resize-test-"));
+    const sharp = await import("sharp");
+    const pngBuffer = await sharp.default({ create: { width: 10, height: 10, channels: 3, background: { r: 255, g: 0, b: 0 } } }).png().toBuffer();
+    await resizeAndSaveCover(pngBuffer, tmpDir);
+    const { existsSync } = await import("node:fs");
+    expect(existsSync(path.join(tmpDir, "thumb.webp"))).toBe(true);
+    expect(existsSync(path.join(tmpDir, "medium.webp"))).toBe(true);
   });
 });
 

@@ -1,8 +1,8 @@
 import IORedis from "ioredis";
 import { Queue } from "bullmq";
 import { QUEUES, getQueueConnectionConfig } from "./queues.js";
-import type { LibraryJobName, LibraryJobPayload } from "./queues.js";
-import { JOB_PRIORITY, RETRY_CONFIG } from "./queues.js";
+import type { LibraryJobName, LibraryJobPayload, EnrichmentJobName, EnrichmentJobPayload } from "./queues.js";
+import { JOB_PRIORITY, RETRY_CONFIG, ENRICHMENT_JOB_PRIORITY, ENRICHMENT_RETRY_CONFIG } from "./queues.js";
 import { QueueError } from "./errors.js";
 import { createLogger } from "./logger.js";
 
@@ -24,6 +24,22 @@ function getQueue(): Queue {
   return queueSingleton.queue;
 }
 
+
+let enrichmentQueueSingleton:
+  | {
+      connection: IORedis;
+      queue: Queue;
+    }
+  | undefined;
+
+function getEnrichmentQueue(): Queue {
+  if (enrichmentQueueSingleton === undefined) {
+    const connection = new IORedis(getQueueConnectionConfig());
+    const queue = new Queue(QUEUES.ENRICHMENT, { connection });
+    enrichmentQueueSingleton = { connection, queue };
+  }
+  return enrichmentQueueSingleton.queue;
+}
 
 export interface EnqueueJobOpts {
   parent?: { id: string; queue: string };
@@ -216,6 +232,32 @@ function getQueueConnection(): IORedis {
   return (queueSingleton as NonNullable<typeof queueSingleton>).connection;
 }
 
+const LIVE_JOB_STATES = ["active", "prioritized", "waiting", "waiting-children", "delayed"] as const;
+const JOB_BATCH_SIZE = 500;
+
+export async function getActiveJobCountByName(jobName: string): Promise<number> {
+  const queue = getQueue();
+  let count = 0;
+
+  for (const state of LIVE_JOB_STATES) {
+    let start = 0;
+
+    for (;;) {
+      const jobs = await queue.getJobs([state], start, start + JOB_BATCH_SIZE - 1, true);
+      if (jobs.length === 0) break;
+
+      for (const job of jobs) {
+        if (job.name === jobName) count++;
+      }
+
+      if (jobs.length < JOB_BATCH_SIZE) break;
+      start += JOB_BATCH_SIZE;
+    }
+  }
+
+  return count;
+}
+
 export async function enqueueLibraryJob<TName extends LibraryJobName>(
   jobName: TName,
   payload: LibraryJobPayload<TName>,
@@ -242,4 +284,50 @@ export async function enqueueLibraryJob<TName extends LibraryJobName>(
       context: { jobName },
     });
   }
+}
+
+export async function enqueueEnrichmentJob<TName extends EnrichmentJobName>(
+  jobName: TName,
+  payload: EnrichmentJobPayload<TName>,
+): Promise<string> {
+  try {
+    const queue = getEnrichmentQueue();
+    const retryConfig = ENRICHMENT_RETRY_CONFIG[jobName];
+    const job = await queue.add(jobName, payload, {
+      attempts: retryConfig.attempts,
+      backoff: retryConfig.backoff,
+      priority: ENRICHMENT_JOB_PRIORITY[jobName],
+    });
+    const jobId = job.id ?? "unknown";
+    logger.info({ jobName, jobId }, "Enrichment job enqueued");
+    return jobId;
+  } catch (error) {
+    throw new QueueError(`Failed to enqueue enrichment job: ${jobName}`, {
+      cause: error as Error,
+      context: { jobName },
+    });
+  }
+}
+
+export async function getActiveEnrichmentJobCount(jobName: string): Promise<number> {
+  const queue = getEnrichmentQueue();
+  let count = 0;
+
+  for (const state of LIVE_JOB_STATES) {
+    let start = 0;
+
+    for (;;) {
+      const jobs = await queue.getJobs([state], start, start + JOB_BATCH_SIZE - 1, true);
+      if (jobs.length === 0) break;
+
+      for (const job of jobs) {
+        if (job.name === jobName) count++;
+      }
+
+      if (jobs.length < JOB_BATCH_SIZE) break;
+      start += JOB_BATCH_SIZE;
+    }
+  }
+
+  return count;
 }

@@ -15,6 +15,7 @@ function createMockQueueEvents() {
 
 vi.mock("@bookhouse/shared", () => ({
   createQueueEvents: vi.fn(() => createMockQueueEvents()),
+  QUEUES: { LIBRARY: "library", ENRICHMENT: "enrichment" },
 }));
 
 describe("QueueEventsManager", () => {
@@ -95,6 +96,32 @@ describe("QueueEventsManager", () => {
     await manager.close();
 
     expect(qe.close).toHaveBeenCalled();
+  });
+
+  it("listens to multiple queue events when passed an array", () => {
+    const qe1 = createMockQueueEvents();
+    const qe2 = createMockQueueEvents();
+    const manager = new QueueEventsManager([qe1, qe2]);
+    const callback = vi.fn();
+    manager.subscribe(callback);
+
+    qe1.emit("completed", { jobId: "lib-1" });
+    qe2.emit("completed", { jobId: "enrich-1" });
+
+    expect(callback).toHaveBeenCalledTimes(2);
+    expect(callback).toHaveBeenCalledWith({ type: "job:completed", data: { jobId: "lib-1" } });
+    expect(callback).toHaveBeenCalledWith({ type: "job:completed", data: { jobId: "enrich-1" } });
+  });
+
+  it("close delegates to all queue events in array", async () => {
+    const qe1 = createMockQueueEvents();
+    const qe2 = createMockQueueEvents();
+    const manager = new QueueEventsManager([qe1, qe2]);
+
+    await manager.close();
+
+    expect(qe1.close).toHaveBeenCalled();
+    expect(qe2.close).toHaveBeenCalled();
   });
 });
 
