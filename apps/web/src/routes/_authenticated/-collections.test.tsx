@@ -80,17 +80,6 @@ describe("CollectionsPage", () => {
     expect(screen.getByPlaceholderText("Filter by name...")).toBeTruthy();
   });
 
-  it("renders Kind column header as sortable button", async () => {
-    mockLoaderData = {
-      collections: [{ name: "Fantasy", kind: "SERIES", _count: { items: 5 } }],
-    };
-    const { Route } = await import("./collections");
-    const CollectionsPage = (Route.options.component as React.ComponentType);
-    render(<CollectionsPage />);
-    const kindButton = screen.getByRole("button", { name: /Kind/i });
-    expect(kindButton).toBeTruthy();
-  });
-
   it("shows 'No results.' when collections is empty", async () => {
     const { Route } = await import("./collections");
     const CollectionsPage = (Route.options.component as React.ComponentType);

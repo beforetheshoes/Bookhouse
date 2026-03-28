@@ -107,6 +107,24 @@ describe("sortAndFilterWorks", () => {
     expect(titles).toEqual(["NoAuthor", "Alpha"]);
   });
 
+  it("sorts by publisher-asc (falls through to createdAt descending)", () => {
+    const result = sortAndFilterWorks([alpha, bravo, charlie] as never[], "", "publisher-asc");
+    const titles = result.map((w) => (w as MockWork).titleDisplay);
+    expect(titles).toEqual(["Charlie", "Bravo", "Alpha"]);
+  });
+
+  it("sorts by format-asc (falls through to createdAt descending)", () => {
+    const result = sortAndFilterWorks([alpha, bravo, charlie] as never[], "", "format-asc");
+    const titles = result.map((w) => (w as MockWork).titleDisplay);
+    expect(titles).toEqual(["Charlie", "Bravo", "Alpha"]);
+  });
+
+  it("sorts by isbn-asc (falls through to createdAt descending)", () => {
+    const result = sortAndFilterWorks([alpha, bravo, charlie] as never[], "", "isbn-asc");
+    const titles = result.map((w) => (w as MockWork).titleDisplay);
+    expect(titles).toEqual(["Charlie", "Bravo", "Alpha"]);
+  });
+
   it("falls back to titleCanonical when sortTitle is null (title-asc)", () => {
     const nullA = { ...makeWork("Null A"), sortTitle: null } as never;
     const nullB = { ...makeWork("Null B"), sortTitle: null } as never;

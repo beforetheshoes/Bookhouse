@@ -153,93 +153,152 @@ describe("getFilteredLibraryWorksServerFn", () => {
   });
 
   it("sorts by publisher-asc using two-step approach", async () => {
-    findManyMock.mockResolvedValue([]);
-    countMock.mockResolvedValue(0);
+    const lightweightWorks = [
+      { id: "w-z", editions: [{ publisher: "Zebra Press", formatFamily: "EBOOK", isbn13: null, isbn10: null, contributors: [] }] },
+      { id: "w-a", editions: [{ publisher: "Alpha Books", formatFamily: "EBOOK", isbn13: null, isbn10: null, contributors: [] }] },
+      { id: "w-null", editions: [{ publisher: null, formatFamily: "EBOOK", isbn13: null, isbn10: null, contributors: [] }] },
+      { id: "w-none", editions: [] },
+    ];
+    findManyMock
+      .mockResolvedValueOnce(lightweightWorks)
+      .mockResolvedValueOnce([{ id: "w-null" }, { id: "w-a" }, { id: "w-z" }, { id: "w-none" }]);
+    countMock.mockResolvedValue(4);
     editionGroupByMock.mockResolvedValue([]);
     const result = await getFilteredLibraryWorksServerFn({
       data: { sort: "publisher-asc" },
     });
-    expect(findManyMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        select: expect.objectContaining({ id: true }) as object,
-      }),
-    );
-    expect(result.works).toEqual([]);
+    const secondCall = (findManyMock.mock.calls[1] as [{ where: { id: { in: string[] } } }])[0];
+    // "" (null publisher) < "Alpha Books" < "Zebra Press" < "\uffff" (no editions)
+    expect(secondCall.where.id.in).toEqual(["w-null", "w-a", "w-z", "w-none"]);
+    expect(result.works.map((w: { id: string }) => w.id)).toEqual(["w-null", "w-a", "w-z", "w-none"]);
   });
 
   it("sorts by publisher-desc using two-step approach", async () => {
-    findManyMock.mockResolvedValue([]);
-    countMock.mockResolvedValue(0);
+    const lightweightWorks = [
+      { id: "w-a", editions: [{ publisher: "Alpha Books", formatFamily: "EBOOK", isbn13: null, isbn10: null, contributors: [] }] },
+      { id: "w-z", editions: [{ publisher: "Zebra Press", formatFamily: "EBOOK", isbn13: null, isbn10: null, contributors: [] }] },
+    ];
+    findManyMock
+      .mockResolvedValueOnce(lightweightWorks)
+      .mockResolvedValueOnce([{ id: "w-z" }, { id: "w-a" }]);
+    countMock.mockResolvedValue(2);
     editionGroupByMock.mockResolvedValue([]);
     const result = await getFilteredLibraryWorksServerFn({
       data: { sort: "publisher-desc" },
     });
-    expect(findManyMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        select: expect.objectContaining({ id: true }) as object,
-      }),
-    );
-    expect(result.works).toEqual([]);
+    const secondCall = (findManyMock.mock.calls[1] as [{ where: { id: { in: string[] } } }])[0];
+    expect(secondCall.where.id.in).toEqual(["w-z", "w-a"]);
+    expect(result.works.map((w: { id: string }) => w.id)).toEqual(["w-z", "w-a"]);
   });
 
   it("sorts by format-asc using two-step approach", async () => {
-    findManyMock.mockResolvedValue([]);
-    countMock.mockResolvedValue(0);
+    const lightweightWorks = [
+      { id: "w-e", editions: [{ publisher: null, formatFamily: "EBOOK", isbn13: null, isbn10: null, contributors: [] }] },
+      { id: "w-a", editions: [{ publisher: null, formatFamily: "AUDIOBOOK", isbn13: null, isbn10: null, contributors: [] }] },
+      { id: "w-none", editions: [] },
+    ];
+    findManyMock
+      .mockResolvedValueOnce(lightweightWorks)
+      .mockResolvedValueOnce([{ id: "w-a" }, { id: "w-e" }, { id: "w-none" }]);
+    countMock.mockResolvedValue(3);
     editionGroupByMock.mockResolvedValue([]);
     const result = await getFilteredLibraryWorksServerFn({
       data: { sort: "format-asc" },
     });
-    expect(findManyMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        select: expect.objectContaining({ id: true }) as object,
-      }),
-    );
-    expect(result.works).toEqual([]);
+    const secondCall = (findManyMock.mock.calls[1] as [{ where: { id: { in: string[] } } }])[0];
+    expect(secondCall.where.id.in).toEqual(["w-a", "w-e", "w-none"]);
+    expect(result.works.map((w: { id: string }) => w.id)).toEqual(["w-a", "w-e", "w-none"]);
   });
 
   it("sorts by format-desc using two-step approach", async () => {
-    findManyMock.mockResolvedValue([]);
-    countMock.mockResolvedValue(0);
+    const lightweightWorks = [
+      { id: "w-a", editions: [{ publisher: null, formatFamily: "AUDIOBOOK", isbn13: null, isbn10: null, contributors: [] }] },
+      { id: "w-e", editions: [{ publisher: null, formatFamily: "EBOOK", isbn13: null, isbn10: null, contributors: [] }] },
+    ];
+    findManyMock
+      .mockResolvedValueOnce(lightweightWorks)
+      .mockResolvedValueOnce([{ id: "w-e" }, { id: "w-a" }]);
+    countMock.mockResolvedValue(2);
     editionGroupByMock.mockResolvedValue([]);
     const result = await getFilteredLibraryWorksServerFn({
       data: { sort: "format-desc" },
     });
-    expect(findManyMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        select: expect.objectContaining({ id: true }) as object,
-      }),
-    );
-    expect(result.works).toEqual([]);
+    const secondCall = (findManyMock.mock.calls[1] as [{ where: { id: { in: string[] } } }])[0];
+    expect(secondCall.where.id.in).toEqual(["w-e", "w-a"]);
+    expect(result.works.map((w: { id: string }) => w.id)).toEqual(["w-e", "w-a"]);
   });
 
   it("sorts by isbn-asc using two-step approach", async () => {
-    findManyMock.mockResolvedValue([]);
-    countMock.mockResolvedValue(0);
+    const lightweightWorks = [
+      { id: "w-9", editions: [{ publisher: null, formatFamily: "EBOOK", isbn13: "9999999999999", isbn10: null, contributors: [] }] },
+      { id: "w-1", editions: [{ publisher: null, formatFamily: "EBOOK", isbn13: "1111111111111", isbn10: null, contributors: [] }] },
+      { id: "w-10", editions: [{ publisher: null, formatFamily: "EBOOK", isbn13: null, isbn10: "5555555555", contributors: [] }] },
+      { id: "w-noisbn", editions: [{ publisher: null, formatFamily: "EBOOK", isbn13: null, isbn10: null, contributors: [] }] },
+      { id: "w-none", editions: [] },
+    ];
+    findManyMock
+      .mockResolvedValueOnce(lightweightWorks)
+      .mockResolvedValueOnce([{ id: "w-noisbn" }, { id: "w-1" }, { id: "w-10" }, { id: "w-9" }, { id: "w-none" }]);
+    countMock.mockResolvedValue(5);
     editionGroupByMock.mockResolvedValue([]);
     const result = await getFilteredLibraryWorksServerFn({
       data: { sort: "isbn-asc" },
     });
-    expect(findManyMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        select: expect.objectContaining({ id: true }) as object,
-      }),
-    );
-    expect(result.works).toEqual([]);
+    const secondCall = (findManyMock.mock.calls[1] as [{ where: { id: { in: string[] } } }])[0];
+    // "" (no isbn) < isbn13 "1111..." < isbn10 "5555..." < isbn13 "9999..." < no-editions "\uffff"
+    expect(secondCall.where.id.in).toEqual(["w-noisbn", "w-1", "w-10", "w-9", "w-none"]);
+    expect(result.works.map((w: { id: string }) => w.id)).toEqual(["w-noisbn", "w-1", "w-10", "w-9", "w-none"]);
   });
 
   it("sorts by isbn-desc using two-step approach", async () => {
-    findManyMock.mockResolvedValue([]);
-    countMock.mockResolvedValue(0);
+    const lightweightWorks = [
+      { id: "w-1", editions: [{ publisher: null, formatFamily: "EBOOK", isbn13: "1111111111111", isbn10: null, contributors: [] }] },
+      { id: "w-9", editions: [{ publisher: null, formatFamily: "EBOOK", isbn13: "9999999999999", isbn10: null, contributors: [] }] },
+    ];
+    findManyMock
+      .mockResolvedValueOnce(lightweightWorks)
+      .mockResolvedValueOnce([{ id: "w-9" }, { id: "w-1" }]);
+    countMock.mockResolvedValue(2);
     editionGroupByMock.mockResolvedValue([]);
     const result = await getFilteredLibraryWorksServerFn({
       data: { sort: "isbn-desc" },
     });
-    expect(findManyMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        select: expect.objectContaining({ id: true }) as object,
-      }),
-    );
-    expect(result.works).toEqual([]);
+    const secondCall = (findManyMock.mock.calls[1] as [{ where: { id: { in: string[] } } }])[0];
+    expect(secondCall.where.id.in).toEqual(["w-9", "w-1"]);
+    expect(result.works.map((w: { id: string }) => w.id)).toEqual(["w-9", "w-1"]);
+  });
+
+  it("publisher sort handles works with no editions", async () => {
+    const lightweightWorks = [
+      { id: "w-none", editions: [] },
+      { id: "w-pub", editions: [{ publisher: "Alpha Books", formatFamily: "EBOOK", isbn13: null, isbn10: null, contributors: [] }] },
+    ];
+    findManyMock
+      .mockResolvedValueOnce(lightweightWorks)
+      .mockResolvedValueOnce([{ id: "w-pub" }, { id: "w-none" }]);
+    countMock.mockResolvedValue(2);
+    editionGroupByMock.mockResolvedValue([]);
+    const result = await getFilteredLibraryWorksServerFn({
+      data: { sort: "publisher-asc" },
+    });
+    // Alpha Books sorts before \uffff (no editions fallback)
+    expect(result.works.map((w: { id: string }) => w.id)).toEqual(["w-pub", "w-none"]);
+  });
+
+  it("isbn sort falls back to isbn10 when isbn13 is null", async () => {
+    const lightweightWorks = [
+      { id: "w-9", editions: [{ publisher: null, formatFamily: "EBOOK", isbn13: null, isbn10: "9999999999", contributors: [] }] },
+      { id: "w-1", editions: [{ publisher: null, formatFamily: "EBOOK", isbn13: null, isbn10: "1111111111", contributors: [] }] },
+    ];
+    findManyMock
+      .mockResolvedValueOnce(lightweightWorks)
+      .mockResolvedValueOnce([{ id: "w-1" }, { id: "w-9" }]);
+    countMock.mockResolvedValue(2);
+    editionGroupByMock.mockResolvedValue([]);
+    const result = await getFilteredLibraryWorksServerFn({
+      data: { sort: "isbn-asc" },
+    });
+    expect(result.works.map((w: { id: string }) => w.id)).toEqual(["w-1", "w-9"]);
   });
 
   it("sorts by author-asc using two-step approach with select", async () => {

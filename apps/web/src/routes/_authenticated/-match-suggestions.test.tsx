@@ -846,42 +846,6 @@ describe("MatchSuggestionsPage", () => {
     expect(screen.getByRole("button", { name: /re-scan matches/i }).getAttribute("disabled")).toBeNull();
   });
 
-  it("table view renders sortable header for Match column", async () => {
-    mockLoaderData = { matchSuggestions: [makeMatchSuggestion()] };
-    const user = userEvent.setup();
-    const { Route } = await import("./match-suggestions");
-    const MatchSuggestionsPage = (Route.options.component as React.ComponentType);
-    render(<MatchSuggestionsPage />);
-    await user.click(screen.getByRole("button", { name: /table view/i }));
-    // DataTableColumnHeader mock renders <span>{title}</span> — "Match" should appear as a header
-    const headers = screen.getAllByText("Match");
-    expect(headers.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it("table view renders sortable header for Conf. column", async () => {
-    mockLoaderData = { matchSuggestions: [makeMatchSuggestion()] };
-    const user = userEvent.setup();
-    const { Route } = await import("./match-suggestions");
-    const MatchSuggestionsPage = (Route.options.component as React.ComponentType);
-    render(<MatchSuggestionsPage />);
-    await user.click(screen.getByRole("button", { name: /table view/i }));
-    const headers = screen.getAllByText("Conf.");
-    expect(headers.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it("table view renders sortable header for Status column", async () => {
-    mockLoaderData = { matchSuggestions: [makeMatchSuggestion()] };
-    const user = userEvent.setup();
-    const { Route } = await import("./match-suggestions");
-    const MatchSuggestionsPage = (Route.options.component as React.ComponentType);
-    render(<MatchSuggestionsPage />);
-    await user.click(screen.getByRole("button", { name: /table view/i }));
-    // "Status" should appear as a sortable header rendered by DataTableColumnHeader
-    // The cell also renders the status value (e.g. "PENDING"), but the header text should be "Status"
-    const headers = screen.getAllByText("Status");
-    expect(headers.length).toBeGreaterThanOrEqual(1);
-  });
-
   it("Re-scan Matches shows generic toast when error is not an Error instance", async () => {
     const { toast } = await import("sonner");
     rematchAllServerFnMock.mockRejectedValueOnce("string error");

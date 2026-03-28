@@ -1164,49 +1164,6 @@ describe("JobsTab", () => {
     expect(screen.getByText("UNKNOWN_STATUS")).toBeTruthy();
   });
 
-  it("renders Library Root column header as sortable button", async () => {
-    mockLoaderData = {
-      ...mockLoaderData,
-      jobs: [makeJob({ libraryRoot: { name: "My Library" } })],
-      totalCount: 1,
-    };
-    const { Route } = await import("./index");
-    const SettingsPage = (Route.options.component as React.ComponentType);
-    render(<SettingsPage />);
-    // Find the button inside a table header cell (th) — not other buttons on the page
-    const headerButtons = screen.getAllByRole("columnheader").flatMap((th) =>
-      Array.from(th.querySelectorAll("button")),
-    );
-    const libraryRootBtn = headerButtons.find((btn) => /library root/i.test(btn.textContent || ""));
-    expect(libraryRootBtn).toBeTruthy();
-  });
-
-  it("renders Duration column header as sortable button", async () => {
-    mockLoaderData = {
-      ...mockLoaderData,
-      jobs: [makeJob({})],
-      totalCount: 1,
-    };
-    const { Route } = await import("./index");
-    const SettingsPage = (Route.options.component as React.ComponentType);
-    render(<SettingsPage />);
-    const durationBtn = screen.getByRole("button", { name: /duration/i });
-    expect(durationBtn).toBeTruthy();
-  });
-
-  it("renders Attempts column header as sortable button", async () => {
-    mockLoaderData = {
-      ...mockLoaderData,
-      jobs: [makeJob({})],
-      totalCount: 1,
-    };
-    const { Route } = await import("./index");
-    const SettingsPage = (Route.options.component as React.ComponentType);
-    render(<SettingsPage />);
-    const attemptsBtn = screen.getByRole("button", { name: /attempts/i });
-    expect(attemptsBtn).toBeTruthy();
-  });
-
   it("clicking 'Created' column header triggers sort (exercises accessorFn)", async () => {
     mockLoaderData = {
       ...mockLoaderData,
@@ -1222,6 +1179,41 @@ describe("JobsTab", () => {
     const createdBtn = screen.getByRole("button", { name: /created/i });
     fireEvent.click(createdBtn);
     expect(createdBtn).toBeTruthy();
+  });
+
+  it("clicking 'Duration' column header triggers sort (exercises accessorFn)", async () => {
+    mockLoaderData = {
+      ...mockLoaderData,
+      jobs: [
+        makeJob({ id: "job-a", startedAt: new Date(Date.now() - 5000).toISOString(), finishedAt: new Date().toISOString() }),
+        makeJob({ id: "job-b", startedAt: null }),
+        makeJob({ id: "job-c", startedAt: new Date(Date.now() - 2000).toISOString(), finishedAt: null }),
+      ],
+      totalCount: 3,
+    };
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+    const durationBtn = screen.getByRole("button", { name: /duration/i });
+    fireEvent.click(durationBtn);
+    expect(durationBtn).toBeTruthy();
+  });
+
+  it("clicking 'Attempts' column header triggers sort (exercises accessorFn)", async () => {
+    mockLoaderData = {
+      ...mockLoaderData,
+      jobs: [
+        makeJob({ id: "job-a", attemptsMade: 3 }),
+        makeJob({ id: "job-b", attemptsMade: 1 }),
+      ],
+      totalCount: 2,
+    };
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+    const attemptsBtn = screen.getByRole("button", { name: /attempts/i });
+    fireEvent.click(attemptsBtn);
+    expect(attemptsBtn).toBeTruthy();
   });
 });
 

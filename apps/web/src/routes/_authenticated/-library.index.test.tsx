@@ -61,7 +61,7 @@ let mockLoaderData: {
   progressMap: {},
 };
 
-let mockSearch = { page: 1, pageSize: 50, sort: "title-asc" as const };
+let mockSearch: { page: number; pageSize: number; sort: string } = { page: 1, pageSize: 50, sort: "title-asc" };
 const mockRouterInvalidate = vi.fn();
 const bulkDeleteWorksServerFnMock = vi.fn();
 
@@ -256,6 +256,32 @@ const makeWork = (title: string, authors: string[] = [], formats: string[] = [],
       })),
     },
   ],
+});
+
+describe("columnSortToParam", () => {
+  it("returns title-asc for empty state", async () => {
+    const { columnSortToParam } = await import("./library.index");
+    const map = { titleDisplay: { asc: "title-asc" as const, desc: "title-desc" as const } };
+    expect(columnSortToParam([], map)).toBe("title-asc");
+  });
+
+  it("returns title-asc for unknown column id", async () => {
+    const { columnSortToParam } = await import("./library.index");
+    const map = { titleDisplay: { asc: "title-asc" as const, desc: "title-desc" as const } };
+    expect(columnSortToParam([{ id: "unknown", desc: false }], map)).toBe("title-asc");
+  });
+
+  it("returns asc sort param for ascending column", async () => {
+    const { columnSortToParam } = await import("./library.index");
+    const map = { titleDisplay: { asc: "title-asc" as const, desc: "title-desc" as const } };
+    expect(columnSortToParam([{ id: "titleDisplay", desc: false }], map)).toBe("title-asc");
+  });
+
+  it("returns desc sort param for descending column", async () => {
+    const { columnSortToParam } = await import("./library.index");
+    const map = { titleDisplay: { asc: "title-asc" as const, desc: "title-desc" as const } };
+    expect(columnSortToParam([{ id: "titleDisplay", desc: true }], map)).toBe("title-desc");
+  });
 });
 
 describe("LibraryPage", () => {
@@ -530,6 +556,173 @@ describe("LibraryPage", () => {
     const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
     expect(capturedToolbarProps.showSort).toBe(true);
+  });
+
+  it("exercises author accessor when sort=author-asc in table view", async () => {
+    mockView = "table";
+    mockSearch = { page: 1, pageSize: 50, sort: "author-asc" as const };
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Test Book", ["Author A"], ["EBOOK"]), makeWork("Other Book", ["Author B"], ["EBOOK"])],
+        totalCount: 2,
+        facetCounts: defaultFacetCounts,
+      },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.getByText("Test Book")).toBeTruthy();
+  });
+
+  it("exercises format accessor when sort=format-asc in table view", async () => {
+    mockView = "table";
+    mockSearch = { page: 1, pageSize: 50, sort: "format-asc" as const };
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Ebook", [], ["EBOOK"]), makeWork("Audio", [], ["AUDIOBOOK"])],
+        totalCount: 2,
+        facetCounts: defaultFacetCounts,
+      },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.getByText("Ebook")).toBeTruthy();
+  });
+
+  it("exercises publisher accessor when sort=publisher-asc in table view", async () => {
+    mockView = "table";
+    mockSearch = { page: 1, pageSize: 50, sort: "publisher-asc" as const };
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Book A"), makeWork("Book B")],
+        totalCount: 2,
+        facetCounts: defaultFacetCounts,
+      },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.getByText("Book A")).toBeTruthy();
+  });
+
+  it("exercises publisher accessor both branches (defined + null) in same render", async () => {
+    mockView = "table";
+    mockSearch = { page: 1, pageSize: 50, sort: "publisher-asc" as const };
+    mockLoaderData = {
+      libraryResult: {
+        works: [
+          makeWork("Has Publisher"),
+          {
+            ...makeWork("No Publisher"),
+            editions: [{
+              id: "ed-no-pub",
+              formatFamily: "EBOOK",
+              publisher: null,
+              isbn13: null,
+              isbn10: null,
+              contributors: [],
+            }],
+          },
+        ],
+        totalCount: 2,
+        facetCounts: defaultFacetCounts,
+      },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.getByText("Has Publisher")).toBeTruthy();
+    expect(screen.getByText("No Publisher")).toBeTruthy();
+  });
+
+  it("exercises isbn accessor all branches (isbn13, isbn10 fallback, no editions) in same render", async () => {
+    mockView = "table";
+    mockSearch = { page: 1, pageSize: 50, sort: "isbn-asc" as const };
+    mockLoaderData = {
+      libraryResult: {
+        works: [
+          makeWork("Has ISBN13"),
+          {
+            ...makeWork("ISBN10 Only"),
+            editions: [{
+              id: "ed-isbn10",
+              formatFamily: "EBOOK",
+              publisher: null,
+              isbn13: null,
+              isbn10: "1234567890",
+              contributors: [],
+            }],
+          },
+          {
+            id: "work-no-ed",
+            titleDisplay: "No Editions",
+            titleCanonical: "no editions",
+            sortTitle: "no editions",
+            coverPath: null,
+            createdAt: new Date("2025-01-01"),
+            enrichmentStatus: "ENRICHED",
+            series: null,
+            seriesPosition: null,
+            editions: [],
+          },
+        ],
+        totalCount: 3,
+        facetCounts: defaultFacetCounts,
+      },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.getByText("Has ISBN13")).toBeTruthy();
+    expect(screen.getByText("ISBN10 Only")).toBeTruthy();
+    expect(screen.getByText("No Editions")).toBeTruthy();
+  });
+
+  it("exercises isbn accessor when sort=isbn-asc in table view", async () => {
+    mockView = "table";
+    mockSearch = { page: 1, pageSize: 50, sort: "isbn-asc" as const };
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Book A"), makeWork("Book B")],
+        totalCount: 2,
+        facetCounts: defaultFacetCounts,
+      },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.getByText("Book A")).toBeTruthy();
+  });
+
+  it("renders table with sort=recent (no column sort indicator)", async () => {
+    mockView = "table";
+    mockSearch = { page: 1, pageSize: 50, sort: "recent" as const };
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Test Book")],
+        totalCount: 1,
+        facetCounts: defaultFacetCounts,
+      },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.getByText("Test Book")).toBeTruthy();
   });
 
   it("clicking Title column header in table view triggers navigation with sort param", async () => {

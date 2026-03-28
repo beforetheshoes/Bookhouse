@@ -67,8 +67,8 @@ export function VirtualizedDataTable<TData, TValue>({
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const sorting = manualSorting && externalSorting !== undefined ? externalSorting : internalSorting;
-  const onSortingChange = manualSorting && externalOnSortingChange ? externalOnSortingChange : setInternalSorting;
+  const sorting = externalSorting !== undefined ? externalSorting : internalSorting;
+  const onSortingChange = externalOnSortingChange ?? setInternalSorting;
 
   const table = useReactTable({
     data,

@@ -193,7 +193,9 @@ type LightweightEditionWork = {
   }[];
 };
 
-function extractSortKey(work: LightweightEditionWork, sort: string): string {
+type EditionSortOption = "author-asc" | "author-desc" | "publisher-asc" | "publisher-desc" | "format-asc" | "format-desc" | "isbn-asc" | "isbn-desc";
+
+function extractSortKey(work: LightweightEditionWork, sort: EditionSortOption): string {
   switch (sort) {
     case "author-asc":
     case "author-desc":
@@ -216,8 +218,6 @@ function extractSortKey(work: LightweightEditionWork, sort: string): string {
       return work.editions
         .map((e) => e.isbn13 ?? e.isbn10 ?? "")
         .sort()[0] ?? "\uffff";
-    default:
-      return "\uffff";
   }
 }
 
@@ -230,7 +230,7 @@ async function fetchWorksWithEditionSort(
   where: Prisma.WorkWhereInput,
   page: number,
   pageSize: number,
-  sort: string,
+  sort: EditionSortOption,
 ) {
   const direction = sort.endsWith("-desc") ? "desc" : "asc";
 
@@ -257,10 +257,9 @@ async function fetchWorksWithEditionSort(
     include: WORK_INCLUDE,
   });
 
-  const idOrder = new Map(pageIds.map((id, i) => [id, i]));
-  return fullWorks.sort(
-    (a, b) => (idOrder.get(a.id) ?? 0) - (idOrder.get(b.id) ?? 0),
-  );
+  // Reorder fullWorks to match pageIds order
+  const byId = Object.fromEntries(fullWorks.map((w) => [w.id, w]));
+  return pageIds.map((id) => byId[id]).filter(Boolean) as typeof fullWorks;
 }
 
 export const getFilteredLibraryWorksServerFn = createServerFn({
@@ -279,7 +278,7 @@ export const getFilteredLibraryWorksServerFn = createServerFn({
           where,
           parsed.page,
           parsed.pageSize,
-          parsed.sort,
+          parsed.sort as EditionSortOption,
         )
       : db.work.findMany({
           where,

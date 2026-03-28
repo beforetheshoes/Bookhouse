@@ -237,6 +237,17 @@ function filterByReadingStatus(
   });
 }
 
+export function columnSortToParam(
+  state: SortingState,
+  map: Record<string, { asc: LibrarySearchParams["sort"]; desc: LibrarySearchParams["sort"] }>,
+): LibrarySearchParams["sort"] {
+  const entry = state[0];
+  if (!entry) return "title-asc";
+  const col = map[entry.id];
+  if (!col) return "title-asc";
+  return entry.desc ? col.desc : col.asc;
+}
+
 function LibraryPage() {
   const { libraryResult, activeJobCount, progressMap } = Route.useLoaderData();
   const { works, totalCount, facetCounts } = libraryResult;
@@ -353,17 +364,9 @@ function LibraryPage() {
 
   const handleColumnSort = useCallback(
     (updater: Updater<SortingState>) => {
-      const newState = typeof updater === "function" ? updater(tableSorting) : updater;
-      if (newState.length === 0) {
-        updateSearch({ sort: "title-asc" });
-        return;
-      }
-      const first = newState[0];
-      if (!first) return;
-      const mapping = COLUMN_SORT_MAP[first.id];
-      if (mapping) {
-        updateSearch({ sort: first.desc ? mapping.desc : mapping.asc });
-      }
+      // TanStack Table always passes a function updater; cast is safe
+      const newState = (updater as (prev: SortingState) => SortingState)(tableSorting);
+      updateSearch({ sort: columnSortToParam(newState, COLUMN_SORT_MAP) });
     },
     [tableSorting, updateSearch, COLUMN_SORT_MAP],
   );
@@ -525,7 +528,6 @@ function LibraryPage() {
               onRowSelectionChange={setRowSelection}
               sorting={tableSorting}
               onSortingChange={handleColumnSort}
-              manualSorting
             />
           )}
           <LibraryPagination
