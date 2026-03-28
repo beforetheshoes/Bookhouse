@@ -5,6 +5,8 @@ export interface CoverHandlerDeps {
   existsSync: (path: string) => boolean;
   createReadStream: (path: string) => NodeJS.ReadableStream;
   coverCacheDir: string;
+  setResponseHeader: (event: H3Event, name: string, value: string) => void;
+  sendStream: (event: H3Event, stream: NodeJS.ReadableStream) => unknown;
 }
 
 const VALID_SIZES = new Set(["thumb", "medium"]);
@@ -30,14 +32,14 @@ export function createCoverHandler(deps: CoverHandlerDeps) {
     const filePath = path.join(deps.coverCacheDir, workId, `${size}.webp`);
 
     if (!deps.existsSync(filePath)) {
-      event.node?.res?.setHeader?.("Content-Type", "image/svg+xml");
-      event.node?.res?.setHeader?.("Cache-Control", "public, max-age=3600");
+      deps.setResponseHeader(event, "Content-Type", "image/svg+xml");
+      deps.setResponseHeader(event, "Cache-Control", "no-cache");
       return PLACEHOLDER_SVG;
     }
 
-    event.node?.res?.setHeader?.("Content-Type", "image/webp");
-    event.node?.res?.setHeader?.("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
+    deps.setResponseHeader(event, "Content-Type", "image/webp");
+    deps.setResponseHeader(event, "Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
 
-    return deps.createReadStream(filePath);
+    return deps.sendStream(event, deps.createReadStream(filePath));
   };
 }
