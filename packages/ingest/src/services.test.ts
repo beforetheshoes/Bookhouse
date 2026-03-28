@@ -8556,6 +8556,81 @@ describe("detectDuplicates", () => {
     expect(state.duplicateCandidates.size).toBe(1);
   });
 
+  it("SIMILAR_TITLE_AUTHOR: creates candidate when matched edition has same media kind", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "hash-a", "/tmp/root/book1.epub");
+    addDetectFileAsset(state, "file-2", null, "/tmp/root/book2.epub");
+    addDetectWork(state, "work-1", "looking for alaska", "Looking for Alaska");
+    addDetectWork(state, "work-2", "looking for alaska", "Looking for Alaska");
+    addDetectEdition(state, "edition-1", "work-1");
+    addDetectEdition(state, "edition-2", "work-2");
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    addDetectEditionFile(state, "ef-2", "edition-2", "file-2");
+    addDetectContributor(state, "c-1", "John Green");
+    addDetectContributor(state, "c-2", "John Green");
+    addDetectEditionContributor(state, "ec-1", "edition-1", "c-1");
+    addDetectEditionContributor(state, "ec-2", "edition-2", "c-2");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    expect(result.candidatesCreated).toBe(1);
+    const candidates = [...state.duplicateCandidates.values()];
+    expect(candidates[0]).toMatchObject({
+      leftEditionId: "edition-1",
+      rightEditionId: "edition-2",
+      reason: "SIMILAR_TITLE_AUTHOR",
+    });
+  });
+
+  it("SIMILAR_TITLE_AUTHOR: creates candidate when matched edition has no files", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "hash-a", "/tmp/root/book.epub");
+    addDetectWork(state, "work-1", "looking for alaska", "Looking for Alaska");
+    addDetectWork(state, "work-2", "looking for alaska", "Looking for Alaska");
+    addDetectEdition(state, "edition-1", "work-1");
+    addDetectEdition(state, "edition-2", "work-2");
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    // edition-2 has no linked files
+    addDetectContributor(state, "c-1", "John Green");
+    addDetectContributor(state, "c-2", "John Green");
+    addDetectEditionContributor(state, "ec-1", "edition-1", "c-1");
+    addDetectEditionContributor(state, "ec-2", "edition-2", "c-2");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    expect(result.candidatesCreated).toBe(1);
+    const candidates = [...state.duplicateCandidates.values()];
+    expect(candidates[0]).toMatchObject({
+      leftEditionId: "edition-1",
+      rightEditionId: "edition-2",
+      reason: "SIMILAR_TITLE_AUTHOR",
+    });
+  });
+
+  it("SIMILAR_TITLE_AUTHOR: does not create candidate when matched edition has different media kind", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "hash-a", "/tmp/root/book.epub");
+    addDetectFileAsset(state, "file-2", null, "/tmp/root/book.pdf", { mediaKind: MediaKind.PDF });
+    addDetectWork(state, "work-1", "looking for alaska", "Looking for Alaska");
+    addDetectWork(state, "work-2", "looking for alaska", "Looking for Alaska");
+    addDetectEdition(state, "edition-1", "work-1");
+    addDetectEdition(state, "edition-2", "work-2");
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    addDetectEditionFile(state, "ef-2", "edition-2", "file-2");
+    addDetectContributor(state, "c-1", "John Green");
+    addDetectContributor(state, "c-2", "John Green");
+    addDetectEditionContributor(state, "ec-1", "edition-1", "c-1");
+    addDetectEditionContributor(state, "ec-2", "edition-2", "c-2");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    expect(result.candidatesCreated).toBe(0);
+    expect(state.duplicateCandidates.size).toBe(0);
+  });
+
   it("SIMILAR_TITLE_AUTHOR: skips other work with no titleCanonical", async () => {
     const state = createEmptyState();
     addDetectFileAsset(state, "file-1", "hash-a", "/tmp/root/book.epub");

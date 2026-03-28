@@ -38,8 +38,7 @@ if [[ -f ".env" ]]; then
 fi
 
 # Kill stale workers from previous runs
-pkill -f 'Bookhouse/workers/library-worker.*tsx.*src/index.ts' 2>/dev/null || true
-pkill -f 'Bookhouse/workers/library-worker.*npm exec tsx src/index.ts' 2>/dev/null || true
+pkill -f '@bookhouse/library-worker.*exec tsx' 2>/dev/null || true
 
 # Start dev in background, then trap EXIT to kill the entire process group
 trap 'kill 0 2>/dev/null' EXIT

@@ -1125,6 +1125,20 @@ async function detectDuplicatesImpl(
       const otherEdition = otherWork.editions[0];
       if (!otherEdition) continue;
 
+      // Skip different file types (e.g. EPUB vs PDF of same book)
+      const otherEditionFiles = await ingestDb.editionFile.findMany({ where: { editionId: otherEdition.id } });
+      if (otherEditionFiles.length > 0) {
+        const otherFileAssets = await Promise.all(
+          otherEditionFiles.map((ef) => ingestDb.fileAsset.findUnique({ where: { id: ef.fileAssetId } })),
+        );
+        const otherMediaKinds = new Set(
+          otherFileAssets.filter((fa): fa is FileAssetRecord => fa !== null).map((fa) => fa.mediaKind),
+        );
+        if (otherMediaKinds.size > 0 && !otherMediaKinds.has(fileAsset.mediaKind)) {
+          continue;
+        }
+      }
+
       const titleSim = normalizedSimilarity(work.titleCanonical, otherWork.titleCanonical);
       if (titleSim < SIMILARITY_THRESHOLD) continue;
 
