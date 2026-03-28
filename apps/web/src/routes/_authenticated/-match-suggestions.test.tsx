@@ -845,4 +845,15 @@ describe("MatchSuggestionsPage", () => {
     await user.click(screen.getByRole("button", { name: /re-scan matches/i }));
     expect(screen.getByRole("button", { name: /re-scan matches/i }).getAttribute("disabled")).toBeNull();
   });
+
+  it("Re-scan Matches shows generic toast when error is not an Error instance", async () => {
+    const { toast } = await import("sonner");
+    rematchAllServerFnMock.mockRejectedValueOnce("string error");
+    const user = userEvent.setup();
+    const { Route } = await import("./match-suggestions");
+    const MatchSuggestionsPage = (Route.options.component as React.ComponentType);
+    render(<MatchSuggestionsPage />);
+    await user.click(screen.getByRole("button", { name: /re-scan matches/i }));
+    expect(toast.error).toHaveBeenCalledWith("Something went wrong", undefined);
+  });
 });
