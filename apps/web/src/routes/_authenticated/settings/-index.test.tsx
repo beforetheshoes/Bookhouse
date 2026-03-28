@@ -947,6 +947,65 @@ describe("ColorCard", () => {
     const input = screen.getByPlaceholderText("#3366cc");
     expect((input as HTMLInputElement).value).toBe("#aabbcc");
   });
+
+  it("renders a color picker when colorMode is accent", async () => {
+    mockColorMode = "accent";
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+    const colorInput = document.querySelector("input[type='color']");
+    expect(colorInput).toBeTruthy();
+  });
+
+  it("does not render a color picker when colorMode is not accent", async () => {
+    mockColorMode = "book";
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+    const colorInput = document.querySelector("input[type='color']");
+    expect(colorInput).toBeNull();
+  });
+
+  it("color picker has the current accent color as value", async () => {
+    mockColorMode = "accent";
+    mockAccentColor = "#ff5500";
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+    const colorInput = document.querySelector("input[type='color']") as HTMLInputElement;
+    expect(colorInput.value).toBe("#ff5500");
+  });
+
+  it("color picker uses default color when accentColor is null", async () => {
+    mockColorMode = "accent";
+    mockAccentColor = null;
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+    const colorInput = document.querySelector("input[type='color']") as HTMLInputElement;
+    expect(colorInput.value).toBe("#3366cc");
+  });
+
+  it("calls setAccentColor when color picker value changes", async () => {
+    mockColorMode = "accent";
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+    const colorInput = document.querySelector("input[type='color']") as HTMLInputElement;
+    fireEvent.input(colorInput, { target: { value: "#00ff00" } });
+    expect(mockSetAccentColor).toHaveBeenCalledWith("#00ff00");
+  });
+
+  it("hex input syncs when color picker changes", async () => {
+    mockColorMode = "accent";
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+    const colorInput = document.querySelector("input[type='color']") as HTMLInputElement;
+    fireEvent.input(colorInput, { target: { value: "#abcdef" } });
+    const hexInput = screen.getByPlaceholderText("#3366cc");
+    expect((hexInput as HTMLInputElement).value).toBe("#abcdef");
+  });
 });
 
 describe("JobsTab", () => {

@@ -291,9 +291,15 @@ function ColorCard() {
         </div>
         {colorMode === "accent" && (
           <div className="flex items-center gap-3 pl-6">
-            <div
-              className="size-8 rounded-md border"
-              style={{ backgroundColor: hexInput }}
+            <input
+              type="color"
+              value={hexInput}
+              onInput={(e) => {
+                const value = (e.target as HTMLInputElement).value;
+                setHexInput(value);
+                setAccentColor(value);
+              }}
+              className="size-8 cursor-pointer rounded-md border-0 p-0"
             />
             <Input
               type="text"
