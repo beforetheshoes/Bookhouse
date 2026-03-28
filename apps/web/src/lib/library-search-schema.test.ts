@@ -86,6 +86,38 @@ describe("librarySearchSchema", () => {
     expect(() => librarySearchSchema.parse({ page: 0 })).toThrow();
   });
 
+  it("parses author-asc sort option", () => {
+    expect(librarySearchSchema.parse({ sort: "author-asc" }).sort).toBe("author-asc");
+  });
+
+  it("parses author-desc sort option", () => {
+    expect(librarySearchSchema.parse({ sort: "author-desc" }).sort).toBe("author-desc");
+  });
+
+  it("parses publisher-asc sort option", () => {
+    expect(librarySearchSchema.parse({ sort: "publisher-asc" }).sort).toBe("publisher-asc");
+  });
+
+  it("parses publisher-desc sort option", () => {
+    expect(librarySearchSchema.parse({ sort: "publisher-desc" }).sort).toBe("publisher-desc");
+  });
+
+  it("parses format-asc sort option", () => {
+    expect(librarySearchSchema.parse({ sort: "format-asc" }).sort).toBe("format-asc");
+  });
+
+  it("parses format-desc sort option", () => {
+    expect(librarySearchSchema.parse({ sort: "format-desc" }).sort).toBe("format-desc");
+  });
+
+  it("parses isbn-asc sort option", () => {
+    expect(librarySearchSchema.parse({ sort: "isbn-asc" }).sort).toBe("isbn-asc");
+  });
+
+  it("parses isbn-desc sort option", () => {
+    expect(librarySearchSchema.parse({ sort: "isbn-desc" }).sort).toBe("isbn-desc");
+  });
+
   it("rejects invalid sort values", () => {
     expect(() => librarySearchSchema.parse({ sort: "invalid" })).toThrow();
   });

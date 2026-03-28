@@ -26,7 +26,9 @@ const columns: ColumnDef<CollectionRow>[] = [
   },
   {
     accessorKey: "kind",
-    header: "Kind",
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} title="Kind" />
+    ),
     cell: ({ row }) => (
       <Badge variant="secondary">{row.original.kind}</Badge>
     ),

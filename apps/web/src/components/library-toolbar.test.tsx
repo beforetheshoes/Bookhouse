@@ -113,6 +113,25 @@ describe("LibraryToolbar", () => {
     expect(comboboxes).toHaveLength(2);
   });
 
+  it("hides sort dropdown when showSort is false", () => {
+    render(<LibraryToolbar {...defaultProps} showSort={false} />);
+    // Only the filter combobox should be present
+    const comboboxes = screen.getAllByRole("combobox");
+    expect(comboboxes).toHaveLength(1);
+  });
+
+  it("shows sort dropdown when showSort is true", () => {
+    render(<LibraryToolbar {...defaultProps} showSort={true} />);
+    const comboboxes = screen.getAllByRole("combobox");
+    expect(comboboxes).toHaveLength(2);
+  });
+
+  it("shows sort dropdown by default when showSort is omitted", () => {
+    render(<LibraryToolbar {...defaultProps} />);
+    const comboboxes = screen.getAllByRole("combobox");
+    expect(comboboxes).toHaveLength(2);
+  });
+
   it("calls onFilterChange when a filter option is selected", async () => {
     const onFilterChange = vi.fn();
     const user = userEvent.setup();

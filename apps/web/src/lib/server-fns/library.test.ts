@@ -152,6 +152,185 @@ describe("getFilteredLibraryWorksServerFn", () => {
     );
   });
 
+  it("sorts by publisher-asc using two-step approach", async () => {
+    findManyMock.mockResolvedValue([]);
+    countMock.mockResolvedValue(0);
+    editionGroupByMock.mockResolvedValue([]);
+    const result = await getFilteredLibraryWorksServerFn({
+      data: { sort: "publisher-asc" },
+    });
+    expect(findManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({ id: true }) as object,
+      }),
+    );
+    expect(result.works).toEqual([]);
+  });
+
+  it("sorts by publisher-desc using two-step approach", async () => {
+    findManyMock.mockResolvedValue([]);
+    countMock.mockResolvedValue(0);
+    editionGroupByMock.mockResolvedValue([]);
+    const result = await getFilteredLibraryWorksServerFn({
+      data: { sort: "publisher-desc" },
+    });
+    expect(findManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({ id: true }) as object,
+      }),
+    );
+    expect(result.works).toEqual([]);
+  });
+
+  it("sorts by format-asc using two-step approach", async () => {
+    findManyMock.mockResolvedValue([]);
+    countMock.mockResolvedValue(0);
+    editionGroupByMock.mockResolvedValue([]);
+    const result = await getFilteredLibraryWorksServerFn({
+      data: { sort: "format-asc" },
+    });
+    expect(findManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({ id: true }) as object,
+      }),
+    );
+    expect(result.works).toEqual([]);
+  });
+
+  it("sorts by format-desc using two-step approach", async () => {
+    findManyMock.mockResolvedValue([]);
+    countMock.mockResolvedValue(0);
+    editionGroupByMock.mockResolvedValue([]);
+    const result = await getFilteredLibraryWorksServerFn({
+      data: { sort: "format-desc" },
+    });
+    expect(findManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({ id: true }) as object,
+      }),
+    );
+    expect(result.works).toEqual([]);
+  });
+
+  it("sorts by isbn-asc using two-step approach", async () => {
+    findManyMock.mockResolvedValue([]);
+    countMock.mockResolvedValue(0);
+    editionGroupByMock.mockResolvedValue([]);
+    const result = await getFilteredLibraryWorksServerFn({
+      data: { sort: "isbn-asc" },
+    });
+    expect(findManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({ id: true }) as object,
+      }),
+    );
+    expect(result.works).toEqual([]);
+  });
+
+  it("sorts by isbn-desc using two-step approach", async () => {
+    findManyMock.mockResolvedValue([]);
+    countMock.mockResolvedValue(0);
+    editionGroupByMock.mockResolvedValue([]);
+    const result = await getFilteredLibraryWorksServerFn({
+      data: { sort: "isbn-desc" },
+    });
+    expect(findManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({ id: true }) as object,
+      }),
+    );
+    expect(result.works).toEqual([]);
+  });
+
+  it("sorts by author-asc using two-step approach with select", async () => {
+    findManyMock.mockResolvedValue([]);
+    countMock.mockResolvedValue(0);
+    editionGroupByMock.mockResolvedValue([]);
+    const result = await getFilteredLibraryWorksServerFn({
+      data: { sort: "author-asc" },
+    });
+    // First call uses select (lightweight) to get IDs + author names
+    expect(findManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({ id: true }) as object,
+      }),
+    );
+    expect(result.works).toEqual([]);
+  });
+
+  it("sorts by author-desc using two-step approach with select", async () => {
+    findManyMock.mockResolvedValue([]);
+    countMock.mockResolvedValue(0);
+    editionGroupByMock.mockResolvedValue([]);
+    const result = await getFilteredLibraryWorksServerFn({
+      data: { sort: "author-desc" },
+    });
+    expect(findManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({ id: true }) as object,
+      }),
+    );
+    expect(result.works).toEqual([]);
+  });
+
+  it("author sort fetches full works by ID after sorting", async () => {
+    const lightweightWorks = [
+      { id: "w-b", editions: [{ contributors: [{ contributor: { nameCanonical: "bravo" } }] }] },
+      { id: "w-a", editions: [{ contributors: [{ contributor: { nameCanonical: "alpha" } }] }] },
+    ];
+    findManyMock
+      .mockResolvedValueOnce(lightweightWorks) // first call: lightweight
+      .mockResolvedValueOnce([{ id: "w-a" }, { id: "w-b" }]); // second call: full works by ID
+    countMock.mockResolvedValue(2);
+    editionGroupByMock.mockResolvedValue([]);
+    const result = await getFilteredLibraryWorksServerFn({
+      data: { sort: "author-asc" },
+    });
+    // Second findMany call should fetch by IDs in sorted order
+    expect(findManyMock).toHaveBeenCalledTimes(2);
+    const secondCall = (findManyMock.mock.calls[1] as [{ where: { id: { in: string[] } } }])[0];
+    expect(secondCall.where.id.in).toEqual(["w-a", "w-b"]);
+    // Results should be in author-asc order
+    expect(result.works.map((w: { id: string }) => w.id)).toEqual(["w-a", "w-b"]);
+  });
+
+  it("author-desc reverses sort order", async () => {
+    const lightweightWorks = [
+      { id: "w-a", editions: [{ contributors: [{ contributor: { nameCanonical: "alpha" } }] }] },
+      { id: "w-b", editions: [{ contributors: [{ contributor: { nameCanonical: "bravo" } }] }] },
+    ];
+    findManyMock
+      .mockResolvedValueOnce(lightweightWorks)
+      .mockResolvedValueOnce([{ id: "w-b" }, { id: "w-a" }]);
+    countMock.mockResolvedValue(2);
+    editionGroupByMock.mockResolvedValue([]);
+    const result = await getFilteredLibraryWorksServerFn({
+      data: { sort: "author-desc" },
+    });
+    const secondCall = (findManyMock.mock.calls[1] as [{ where: { id: { in: string[] } } }])[0];
+    expect(secondCall.where.id.in).toEqual(["w-b", "w-a"]);
+    expect(result.works.map((w: { id: string }) => w.id)).toEqual(["w-b", "w-a"]);
+  });
+
+  it("author sort puts works without authors last when ascending", async () => {
+    const lightweightWorks = [
+      { id: "w-none", editions: [{ contributors: [] }] },
+      { id: "w-a", editions: [{ contributors: [{ contributor: { nameCanonical: "alpha" } }] }] },
+    ];
+    findManyMock
+      .mockResolvedValueOnce(lightweightWorks)
+      .mockResolvedValueOnce([{ id: "w-a" }, { id: "w-none" }]);
+    countMock.mockResolvedValue(2);
+    editionGroupByMock.mockResolvedValue([]);
+    const result = await getFilteredLibraryWorksServerFn({
+      data: { sort: "author-asc" },
+    });
+    const secondCall = (findManyMock.mock.calls[1] as [{ where: { id: { in: string[] } } }])[0];
+    // alpha comes first, no-author goes to end
+    expect(secondCall.where.id.in).toEqual(["w-a", "w-none"]);
+    expect(result.works.map((w: { id: string }) => w.id)).toEqual(["w-a", "w-none"]);
+  });
+
   it("filters by format family", async () => {
     findManyMock.mockResolvedValue([]);
     countMock.mockResolvedValue(0);

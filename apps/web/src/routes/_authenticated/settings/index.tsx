@@ -363,7 +363,9 @@ const jobColumns: ColumnDef<ImportJobRow>[] = [
   },
   {
     id: "libraryRoot",
-    header: "Library Root",
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} title="Library Root" />
+    ),
     accessorFn: (row) => row.libraryRoot?.name ?? "—",
   },
   {
@@ -380,13 +382,24 @@ const jobColumns: ColumnDef<ImportJobRow>[] = [
   },
   {
     id: "duration",
-    header: "Duration",
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} title="Duration" />
+    ),
+    accessorFn: (row) => {
+      if (!row.startedAt) return -1;
+      const start = new Date(row.startedAt).getTime();
+      const end = row.finishedAt ? new Date(row.finishedAt).getTime() : Date.now();
+      return end - start;
+    },
     cell: ({ row }) => formatDuration(row.original),
     size: 80,
   },
   {
     id: "attempts",
-    header: "Attempts",
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} title="Attempts" />
+    ),
+    accessorFn: (row) => row.attemptsMade,
     cell: ({ row }) => row.original.attemptsMade,
     size: 80,
   },

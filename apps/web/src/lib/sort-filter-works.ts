@@ -1,6 +1,6 @@
 import type { LibraryWork } from "~/lib/server-fns/library";
 
-export type SortOption = "title-asc" | "title-desc" | "author-asc" | "author-desc" | "recent";
+export type SortOption = "title-asc" | "title-desc" | "author-asc" | "author-desc" | "publisher-asc" | "publisher-desc" | "format-asc" | "format-desc" | "isbn-asc" | "isbn-desc" | "recent";
 export type ReadingFilter = "all" | "reading" | "finished" | "unread";
 
 function getAuthors(work: LibraryWork): string {
@@ -54,6 +54,12 @@ export function sortAndFilterWorks(
         return getAuthors(a).localeCompare(getAuthors(b));
       case "author-desc":
         return getAuthors(b).localeCompare(getAuthors(a));
+      case "publisher-asc":
+      case "publisher-desc":
+      case "format-asc":
+      case "format-desc":
+      case "isbn-asc":
+      case "isbn-desc":
       case "recent":
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     }

@@ -160,7 +160,10 @@ function createColumns(
     },
     {
       id: "matchType",
-      header: "Match",
+      accessorFn: (row) => row.matchType,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Match" />
+      ),
       cell: ({ row }) => (
         <Badge variant="secondary">{row.original.matchType}</Badge>
       ),
@@ -168,7 +171,10 @@ function createColumns(
     },
     {
       id: "confidence",
-      header: "Conf.",
+      accessorFn: (row) => row.confidence ?? -1,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Conf." />
+      ),
       cell: ({ row }) => (
         <span className="text-muted-foreground">
           {formatConfidence(row.original.confidence)}
@@ -178,7 +184,10 @@ function createColumns(
     },
     {
       id: "status",
-      header: "Status",
+      accessorFn: (row) => row.reviewStatus,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Status" />
+      ),
       cell: ({ row }) => (
         <Badge variant={statusVariant[row.original.reviewStatus] ?? "outline"}>
           {row.original.reviewStatus}

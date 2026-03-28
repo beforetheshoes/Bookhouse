@@ -426,6 +426,134 @@ describe("LibraryPage", () => {
     expect(screen.getByText("AUDIOBOOK")).toBeTruthy();
   });
 
+  it("renders Format column header as sortable button in table view", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Test Book", ["Author"], ["EBOOK"])],
+        totalCount: 1,
+        facetCounts: defaultFacetCounts,
+      },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    const formatButton = screen.getByRole("button", { name: /Format/i });
+    expect(formatButton).toBeTruthy();
+  });
+
+  it("renders ISBN column header as sortable button in table view", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Test Book", ["Author"], ["EBOOK"])],
+        totalCount: 1,
+        facetCounts: defaultFacetCounts,
+      },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    const isbnButton = screen.getByRole("button", { name: /ISBN/i });
+    expect(isbnButton).toBeTruthy();
+  });
+
+  it("renders Author(s) column header as sortable button in table view", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Test Book", ["Author"], ["EBOOK"])],
+        totalCount: 1,
+        facetCounts: defaultFacetCounts,
+      },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    const authorsButton = screen.getByRole("button", { name: /Author/i });
+    expect(authorsButton).toBeTruthy();
+  });
+
+  it("renders Publisher column header as sortable button in table view", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Test Book", ["Author"], ["EBOOK"])],
+        totalCount: 1,
+        facetCounts: defaultFacetCounts,
+      },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    const publisherButton = screen.getByRole("button", { name: /Publisher/i });
+    expect(publisherButton).toBeTruthy();
+  });
+
+  it("passes showSort=false to LibraryToolbar in table view", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Test Book", ["Author"], ["EBOOK"])],
+        totalCount: 1,
+        facetCounts: defaultFacetCounts,
+      },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(capturedToolbarProps.showSort).toBe(false);
+  });
+
+  it("passes showSort=true to LibraryToolbar in grid view", async () => {
+    mockView = "grid";
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Test Book", ["Author"], ["EBOOK"])],
+        totalCount: 1,
+        facetCounts: defaultFacetCounts,
+      },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(capturedToolbarProps.showSort).toBe(true);
+  });
+
+  it("clicking Title column header in table view triggers navigation with sort param", async () => {
+    const { fireEvent } = await import("@testing-library/react");
+    mockView = "table";
+    mockSearch = { page: 1, pageSize: 50, sort: "title-asc" as const };
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Test Book", ["Author"], ["EBOOK"])],
+        totalCount: 1,
+        facetCounts: defaultFacetCounts,
+      },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    // Click the Title column header — should toggle sort to title-desc
+    const titleButton = screen.getByRole("button", { name: /Title/i });
+    fireEvent.click(titleButton);
+    expect(mockNavigate).toHaveBeenCalled();
+  });
+
   it("renders LibraryToolbar", async () => {
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },

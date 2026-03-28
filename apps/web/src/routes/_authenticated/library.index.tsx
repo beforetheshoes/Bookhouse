@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { useSSE } from "~/hooks/use-sse";
 import { useLibraryViewPreference } from "~/hooks/use-library-view-preference";
 import { useLibraryTablePreferences } from "~/hooks/use-library-table-preferences";
-import type { ColumnDef, RowSelectionState } from "@tanstack/react-table";
+import type { ColumnDef, RowSelectionState, SortingState, Updater } from "@tanstack/react-table";
 import { AlignJustify, BookOpen, Loader2, Pencil, Trash2, WrapText, X } from "lucide-react";
 import { VirtualizedDataTable, DataTableColumnHeader } from "~/components/data-table";
 import { DataTableColumnPicker } from "~/components/data-table/data-table-column-picker";
@@ -127,6 +127,7 @@ function getColumns(scanActive: boolean, editMode: boolean, router: { invalidate
   },
   {
     id: "authors",
+    accessorFn: (row) => getAuthors(row),
     header: ({ column }) => (
       <DataTableColumnHeader column={column} title="Author(s)" />
     ),
@@ -152,7 +153,10 @@ function getColumns(scanActive: boolean, editMode: boolean, router: { invalidate
   },
   {
     id: "formats",
-    header: "Format",
+    accessorFn: (row) => getFormats(row).join(", "),
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} title="Format" />
+    ),
     cell: ({ row }) =>
       getFormats(row.original).map((f) => (
         <Badge key={f} variant="secondary" className="mr-1">
@@ -163,6 +167,7 @@ function getColumns(scanActive: boolean, editMode: boolean, router: { invalidate
   },
   {
     id: "publisher",
+    accessorFn: (row) => row.editions[0]?.publisher ?? "",
     header: ({ column }) => (
       <DataTableColumnHeader column={column} title="Publisher" />
     ),
@@ -187,7 +192,10 @@ function getColumns(scanActive: boolean, editMode: boolean, router: { invalidate
   },
   {
     id: "isbn",
-    header: "ISBN",
+    accessorFn: (row) => row.editions[0]?.isbn13 ?? row.editions[0]?.isbn10 ?? "",
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} title="ISBN" />
+    ),
     cell: ({ row }) => {
       const isbn = row.original.editions[0]?.isbn13 ?? row.original.editions[0]?.isbn10 ?? "";
       const editionId = row.original.editions[0]?.id;
@@ -317,6 +325,49 @@ function LibraryPage() {
     [updateSearch],
   );
 
+  const COLUMN_SORT_MAP: Record<string, { asc: LibrarySearchParams["sort"]; desc: LibrarySearchParams["sort"] }> = useMemo(() => ({
+    titleDisplay: { asc: "title-asc", desc: "title-desc" },
+    authors: { asc: "author-asc", desc: "author-desc" },
+    publisher: { asc: "publisher-asc", desc: "publisher-desc" },
+    formats: { asc: "format-asc", desc: "format-desc" },
+    isbn: { asc: "isbn-asc", desc: "isbn-desc" },
+  }), []);
+
+  const SORT_TO_COLUMN: Record<string, { id: string; desc: boolean }> = useMemo(() => ({
+    "title-asc": { id: "titleDisplay", desc: false },
+    "title-desc": { id: "titleDisplay", desc: true },
+    "author-asc": { id: "authors", desc: false },
+    "author-desc": { id: "authors", desc: true },
+    "publisher-asc": { id: "publisher", desc: false },
+    "publisher-desc": { id: "publisher", desc: true },
+    "format-asc": { id: "formats", desc: false },
+    "format-desc": { id: "formats", desc: true },
+    "isbn-asc": { id: "isbn", desc: false },
+    "isbn-desc": { id: "isbn", desc: true },
+  }), []);
+
+  const tableSorting: SortingState = useMemo(() => {
+    const mapped = SORT_TO_COLUMN[search.sort];
+    return mapped ? [mapped] : [];
+  }, [search.sort, SORT_TO_COLUMN]);
+
+  const handleColumnSort = useCallback(
+    (updater: Updater<SortingState>) => {
+      const newState = typeof updater === "function" ? updater(tableSorting) : updater;
+      if (newState.length === 0) {
+        updateSearch({ sort: "title-asc" });
+        return;
+      }
+      const first = newState[0];
+      if (!first) return;
+      const mapping = COLUMN_SORT_MAP[first.id];
+      if (mapping) {
+        updateSearch({ sort: first.desc ? mapping.desc : mapping.asc });
+      }
+    },
+    [tableSorting, updateSearch, COLUMN_SORT_MAP],
+  );
+
   const handlePageChange = useCallback(
     (page: number) => {
       updateSearch({ page });
@@ -427,6 +478,7 @@ function LibraryPage() {
             onViewChange={setView}
             filterValue={readingFilter}
             onFilterChange={setReadingFilter}
+            showSort={view !== "table"}
           />
           {view === "table" && (
             <div className="flex items-center gap-2 justify-end">
@@ -471,6 +523,9 @@ function LibraryPage() {
               textOverflow={tablePrefs.textOverflow}
               rowSelection={rowSelection}
               onRowSelectionChange={setRowSelection}
+              sorting={tableSorting}
+              onSortingChange={handleColumnSort}
+              manualSorting
             />
           )}
           <LibraryPagination

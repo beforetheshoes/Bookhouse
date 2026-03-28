@@ -40,6 +40,9 @@ interface VirtualizedDataTableProps<TData, TValue> {
   columnVisibility?: VisibilityState;
   onColumnVisibilityChange?: OnChangeFn<VisibilityState>;
   textOverflow?: "wrap" | "truncate";
+  sorting?: SortingState;
+  onSortingChange?: OnChangeFn<SortingState>;
+  manualSorting?: boolean;
 }
 
 export function VirtualizedDataTable<TData, TValue>({
@@ -56,14 +59,21 @@ export function VirtualizedDataTable<TData, TValue>({
   columnVisibility,
   onColumnVisibilityChange,
   textOverflow = "truncate",
+  sorting: externalSorting,
+  onSortingChange: externalOnSortingChange,
+  manualSorting = false,
 }: VirtualizedDataTableProps<TData, TValue>) {
-  const [sorting, setSorting] = useState<SortingState>([]);
+  const [internalSorting, setInternalSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const sorting = manualSorting && externalSorting !== undefined ? externalSorting : internalSorting;
+  const onSortingChange = manualSorting && externalOnSortingChange ? externalOnSortingChange : setInternalSorting;
 
   const table = useReactTable({
     data,
     columns,
+    manualSorting,
     state: {
       sorting,
       columnFilters,
@@ -72,11 +82,11 @@ export function VirtualizedDataTable<TData, TValue>({
     },
     enableRowSelection: rowSelection !== undefined,
     onRowSelectionChange,
-    onSortingChange: setSorting,
+    onSortingChange,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange,
     getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
+    ...(!manualSorting ? { getSortedRowModel: getSortedRowModel() } : {}),
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     initialState: {
