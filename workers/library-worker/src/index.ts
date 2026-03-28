@@ -325,7 +325,7 @@ export function createLibraryWorkerProcessor(
         });
       }
       if (importJobId && !isScanJob && finalAttempt) {
-        await db.importJob.update({
+        await db.importJob.updateMany({
           where: { id: importJobId, status: { in: ["QUEUED", "RUNNING"] } },
           data: {
             status: "FAILED",
@@ -400,16 +400,25 @@ async function pollConcurrency(worker: Pick<Worker, "concurrency">): Promise<voi
   }
 }
 
+export const SHUTDOWN_TIMEOUT_MS = 10_000;
+
 export async function shutdownLibraryWorker(
   worker: Pick<Worker, "close">,
   connection: Pick<IORedis, "quit">,
   pollInterval?: ReturnType<typeof setInterval>,
 ): Promise<void> {
+  const forceExit = setTimeout(() => {
+    logger.error("Shutdown timed out, forcing exit");
+    process.exit(1);
+  }, SHUTDOWN_TIMEOUT_MS);
+  forceExit.unref();
+
   if (pollInterval !== undefined) {
     clearInterval(pollInterval);
   }
   await worker.close();
   await connection.quit();
+  clearTimeout(forceExit);
 }
 
 export function bootstrapLibraryWorker(): void {

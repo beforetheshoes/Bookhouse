@@ -1096,7 +1096,7 @@ describe("library worker", () => {
       }) as never),
     ).rejects.toThrow("hash failed");
 
-    expect(importJobUpdateMock).toHaveBeenCalledWith({
+    expect(importJobUpdateManyMock).toHaveBeenCalledWith({
       where: { id: "ij-child-fail", status: { in: ["QUEUED", "RUNNING"] } },
       data: {
         status: "FAILED",
@@ -1131,7 +1131,7 @@ describe("library worker", () => {
       }) as never),
     ).rejects.toBe("plain child failure");
 
-    expect(importJobUpdateMock).toHaveBeenCalledWith({
+    expect(importJobUpdateManyMock).toHaveBeenCalledWith({
       where: { id: "ij-child-string-fail", status: { in: ["QUEUED", "RUNNING"] } },
       data: {
         status: "FAILED",
@@ -1166,7 +1166,7 @@ describe("library worker", () => {
       }) as never),
     ).rejects.toThrow("hash failed");
 
-    expect(importJobUpdateMock).toHaveBeenCalledWith({
+    expect(importJobUpdateManyMock).toHaveBeenCalledWith({
       where: { id: "ij-child-no-parent", status: { in: ["QUEUED", "RUNNING"] } },
       data: {
         status: "FAILED",
@@ -1307,6 +1307,27 @@ describe("library worker", () => {
 
     expect(workerCloseMock).toHaveBeenCalled();
     expect(quitMock).toHaveBeenCalled();
+  });
+
+  it("force-exits when shutdown exceeds timeout", async () => {
+    vi.useFakeTimers();
+    const processExitSpy = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+    const hangingClose = vi.fn(() => new Promise<void>(() => { /* never resolves */ }));
+    const { shutdownLibraryWorker, SHUTDOWN_TIMEOUT_MS } = await import("./index");
+
+    const shutdownPromise = shutdownLibraryWorker(
+      { close: hangingClose },
+      { quit: quitMock } as never,
+    );
+
+    await vi.advanceTimersByTimeAsync(SHUTDOWN_TIMEOUT_MS);
+
+    expect(processExitSpy).toHaveBeenCalledWith(1);
+
+    processExitSpy.mockRestore();
+    vi.useRealTimers();
+    // Prevent unhandled promise — shutdownPromise will never resolve since close hangs
+    void shutdownPromise.catch(() => {});
   });
 
   it("keeps current concurrency when DB is unavailable", async () => {
