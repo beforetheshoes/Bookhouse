@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
-import { LayoutGrid, Table2 } from "lucide-react";
+import { LayoutGrid, Loader2, Table2 } from "lucide-react";
 import { toast } from "sonner";
 import { VirtualizedDataTable } from "~/components/data-table/virtualized-data-table";
 import { DataTableColumnHeader } from "~/components/data-table/data-table-column-header";
@@ -299,6 +299,7 @@ function MatchSuggestionsPage() {
   const [activeTab, setActiveTab] = useState<StatusTab>("ALL");
   const [sort, setSort] = useState<SortOption>("title-asc");
   const [view, setView] = useState<ViewMode>("card");
+  const [isStarting, setIsStarting] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -319,16 +320,27 @@ function MatchSuggestionsPage() {
   );
 
   async function handleRematch() {
-    const result = await runMutation(() => rematchAllServerFn(), {
-      success: "Match scanning started",
-    });
-    if (result) {
-      const { enqueuedCount } = result as { enqueuedCount: number };
-      if (enqueuedCount === 0) {
-        toast.success("No files to match");
-        return;
-      }
+    setIsStarting(true);
+    let enqueuedCount: number;
+    try {
+      const result = await rematchAllServerFn();
+      enqueuedCount = result.enqueuedCount;
+    } catch (e) {
+      toast.error(
+        "Something went wrong",
+        e instanceof Error ? { description: e.message } : undefined,
+      );
+      return;
+    } finally {
+      setIsStarting(false);
     }
+
+    if (enqueuedCount === 0) {
+      toast.success("No files to match");
+      return;
+    }
+
+    toast.success(`Queued ${String(enqueuedCount)} ${enqueuedCount === 1 ? "file" : "files"} for matching`);
 
     // Poll for new results while background jobs run
     setIsPolling(true);
@@ -383,10 +395,16 @@ function MatchSuggestionsPage() {
           <Button
             variant="outline"
             size="sm"
-            disabled={isPolling}
+            disabled={isStarting || isPolling}
             onClick={() => { void handleRematch(); }}
           >
-            {isPolling ? "Scanning…" : "Re-scan Matches"}
+            {isStarting ? (
+              <><Loader2 className="size-4 animate-spin" />Starting…</>
+            ) : isPolling ? (
+              <><Loader2 className="size-4 animate-spin" />Scanning…</>
+            ) : (
+              "Re-scan Matches"
+            )}
           </Button>
           {view === "card" && (
             <Select value={sort} onValueChange={(v) => { setSort(v as SortOption); }}>

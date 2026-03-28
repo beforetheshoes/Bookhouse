@@ -798,4 +798,51 @@ describe("MatchSuggestionsPage", () => {
     render(<MatchSuggestionsPage />);
     expect(screen.getByText(/2 total/)).toBeTruthy();
   });
+
+  it("Re-scan Matches button shows 'Starting...' while server function runs", async () => {
+    let resolveRematch!: (value: { importJobId: string; enqueuedCount: number }) => void;
+    rematchAllServerFnMock.mockReturnValueOnce(new Promise((resolve) => { resolveRematch = resolve; }));
+    const user = userEvent.setup();
+    const { Route } = await import("./match-suggestions");
+    const MatchSuggestionsPage = (Route.options.component as React.ComponentType);
+    render(<MatchSuggestionsPage />);
+    void user.click(screen.getByRole("button", { name: /re-scan matches/i }));
+    await screen.findByRole("button", { name: /starting/i });
+    expect(screen.getByRole("button", { name: /starting/i }).getAttribute("disabled")).not.toBeNull();
+    resolveRematch({ importJobId: "job-1", enqueuedCount: 5 });
+  });
+
+  it("Re-scan Matches shows toast with enqueued file count", async () => {
+    const { toast } = await import("sonner");
+    rematchAllServerFnMock.mockResolvedValueOnce({ importJobId: "job-1", enqueuedCount: 42 });
+    invalidateMock.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    const { Route } = await import("./match-suggestions");
+    const MatchSuggestionsPage = (Route.options.component as React.ComponentType);
+    render(<MatchSuggestionsPage />);
+    await user.click(screen.getByRole("button", { name: /re-scan matches/i }));
+    expect(toast.success).toHaveBeenCalledWith("Queued 42 files for matching");
+  });
+
+  it("Re-scan Matches shows singular 'file' for count of 1", async () => {
+    const { toast } = await import("sonner");
+    rematchAllServerFnMock.mockResolvedValueOnce({ importJobId: "job-1", enqueuedCount: 1 });
+    invalidateMock.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    const { Route } = await import("./match-suggestions");
+    const MatchSuggestionsPage = (Route.options.component as React.ComponentType);
+    render(<MatchSuggestionsPage />);
+    await user.click(screen.getByRole("button", { name: /re-scan matches/i }));
+    expect(toast.success).toHaveBeenCalledWith("Queued 1 file for matching");
+  });
+
+  it("Re-scan Matches button returns to idle after server error", async () => {
+    rematchAllServerFnMock.mockRejectedValueOnce(new Error("network error"));
+    const user = userEvent.setup();
+    const { Route } = await import("./match-suggestions");
+    const MatchSuggestionsPage = (Route.options.component as React.ComponentType);
+    render(<MatchSuggestionsPage />);
+    await user.click(screen.getByRole("button", { name: /re-scan matches/i }));
+    expect(screen.getByRole("button", { name: /re-scan matches/i }).getAttribute("disabled")).toBeNull();
+  });
 });
