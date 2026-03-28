@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { enrichWork, type EnrichWorkDeps } from "./enrich-work";
 import type { OLSearchResult, OLWork } from "./open-library";
-import type { RateLimitResult } from "./rate-limiter";
 
 function makeDeps(overrides: Partial<EnrichWorkDeps> = {}): EnrichWorkDeps {
   return {
@@ -36,7 +35,7 @@ function makeDeps(overrides: Partial<EnrichWorkDeps> = {}): EnrichWorkDeps {
       subjects: ["Fantasy"],
     } satisfies OLWork),
     upsertExternalLink: vi.fn().mockResolvedValue({ id: "el1" }),
-    checkRateLimit: vi.fn().mockReturnValue({ allowed: true } satisfies RateLimitResult),
+    acquireOLToken: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -85,13 +84,10 @@ describe("enrichWork", () => {
     expect(result).toEqual({ status: "no-results" });
   });
 
-  it("returns rate-limited when rate limiter blocks", async () => {
-    const deps = makeDeps({
-      checkRateLimit: vi.fn().mockReturnValue({ allowed: false, retryAfterMs: 5000 }),
-    });
-    const result = await enrichWork("w1", deps);
-    expect(result).toEqual({ status: "rate-limited", retryAfterMs: 5000 });
-    expect(deps.searchOL).not.toHaveBeenCalled();
+  it("calls acquireOLToken before making API calls", async () => {
+    const deps = makeDeps();
+    await enrichWork("w1", deps);
+    expect(deps.acquireOLToken).toHaveBeenCalled();
   });
 
   it("uses first author from first edition for search", async () => {

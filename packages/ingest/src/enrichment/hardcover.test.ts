@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { searchHardcover, getHardcoverBook, type HCBook } from "./hardcover";
+import { searchHardcover, getHardcoverBook, searchHardcoverAuthors, type HCBook } from "./hardcover";
 
 function fakeFetch(body: object | string | null, status = 200): typeof fetch {
   return vi.fn().mockResolvedValue({
@@ -333,5 +333,139 @@ describe("getHardcoverBook", () => {
     expect(book.authors).toEqual([]);
     expect(book.publisher).toBeNull();
     expect(book.isbn13).toBeNull();
+  });
+});
+
+describe("searchHardcoverAuthors", () => {
+  it("returns parsed author results with image URL", async () => {
+    const body = {
+      data: {
+        search: {
+          results: JSON.stringify([
+            { id: 100, name: "Frank Herbert", image: { url: "https://hardcover.app/authors/herbert.jpg" } },
+            { id: 101, name: "Brian Herbert", image: null },
+          ]),
+        },
+      },
+    };
+
+    const results = await searchHardcoverAuthors("Herbert", "test-key", fakeFetch(body));
+    expect(results).toEqual([
+      { hardcoverId: "100", name: "Frank Herbert", imageUrl: "https://hardcover.app/authors/herbert.jpg" },
+      { hardcoverId: "101", name: "Brian Herbert", imageUrl: null },
+    ]);
+  });
+
+  it("returns empty array when no results", async () => {
+    const body = {
+      data: {
+        search: { results: "[]" },
+      },
+    };
+
+    const results = await searchHardcoverAuthors("Nobody", "test-key", fakeFetch(body));
+    expect(results).toEqual([]);
+  });
+
+  it("handles missing image field", async () => {
+    const body = {
+      data: {
+        search: {
+          results: JSON.stringify([
+            { id: 200, name: "Unknown Author" },
+          ]),
+        },
+      },
+    };
+
+    const results = await searchHardcoverAuthors("Unknown", "test-key", fakeFetch(body));
+    expect(results).toEqual([
+      { hardcoverId: "200", name: "Unknown Author", imageUrl: null },
+    ]);
+  });
+
+  it("handles results as direct array", async () => {
+    const body = {
+      data: {
+        search: {
+          results: [
+            { id: 300, name: "Direct Author", image: { url: "https://hardcover.app/direct.jpg" } },
+          ],
+        },
+      },
+    };
+
+    const results = await searchHardcoverAuthors("Direct", "test-key", fakeFetch(body));
+    expect(results).toEqual([
+      { hardcoverId: "300", name: "Direct Author", imageUrl: "https://hardcover.app/direct.jpg" },
+    ]);
+  });
+
+  it("handles results as non-array, non-string type", async () => {
+    const body = {
+      data: {
+        search: {
+          results: { someKey: "value" },
+        },
+      },
+    };
+
+    const results = await searchHardcoverAuthors("Other", "test-key", fakeFetch(body));
+    expect(results).toEqual([]);
+  });
+
+  it("returns empty array when search field is missing", async () => {
+    const body = { data: {} };
+    const results = await searchHardcoverAuthors("test", "key", fakeFetch(body));
+    expect(results).toEqual([]);
+  });
+
+  it("returns empty array when results is null", async () => {
+    const body = { data: { search: { results: null } } };
+    const results = await searchHardcoverAuthors("test", "key", fakeFetch(body));
+    expect(results).toEqual([]);
+  });
+
+  it("handles non-array parsed JSON string", async () => {
+    const body = {
+      data: {
+        search: {
+          results: JSON.stringify({ someObj: true }),
+        },
+      },
+    };
+
+    const results = await searchHardcoverAuthors("Other", "test-key", fakeFetch(body));
+    expect(results).toEqual([]);
+  });
+
+  it("handles missing id and name in hit", async () => {
+    const body = {
+      data: {
+        search: {
+          results: JSON.stringify([
+            { image: { url: "https://hardcover.app/photo.jpg" } },
+          ]),
+        },
+      },
+    };
+
+    const results = await searchHardcoverAuthors("Unknown", "test-key", fakeFetch(body));
+    expect(results).toEqual([
+      { hardcoverId: "0", name: "", imageUrl: "https://hardcover.app/photo.jpg" },
+    ]);
+  });
+
+  it("throws when data is null", async () => {
+    const body = { data: null };
+    await expect(
+      searchHardcoverAuthors("test", "key", fakeFetch(body)),
+    ).rejects.toThrow("Hardcover returned no data");
+  });
+
+  it("throws on API error", async () => {
+    await expect(
+      searchHardcoverAuthors("test", "bad-key", fakeFetch("Unauthorized", 401)),
+    ).rejects.toThrow("Hardcover API error 401");
   });
 });

@@ -104,8 +104,10 @@ export const searchEnrichmentServerFn = createServerFn({
       getDecryptedApiKey("hardcover"),
     ]);
 
+    const { createOLFetcher } = await import("@bookhouse/ingest");
+    const olFetch = createOLFetcher("bookhouse@teamsnail.org");
     const rateLimiter = new RateLimiter();
-    const deps = buildSearchDeps(gbKey, hcKey, rateLimiter, fetch, {
+    const deps = buildSearchDeps(gbKey, hcKey, rateLimiter, olFetch, {
       searchOpenLibrary,
       getOpenLibraryWork,
       getOpenLibraryEdition,

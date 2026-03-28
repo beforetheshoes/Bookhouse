@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import type * as TanstackRouter from "@tanstack/react-router";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 let mockLoaderData: {
@@ -8,6 +8,7 @@ let mockLoaderData: {
     id: string;
     nameDisplay: string;
     nameCanonical: string;
+    imagePath: string | null;
     works: {
       id: string;
       titleDisplay: string;
@@ -22,13 +23,18 @@ let mockLoaderData: {
     }[];
   };
 } = {
-  author: { id: "a1", nameDisplay: "Patrick Rothfuss", nameCanonical: "patrick rothfuss", works: [] },
+  author: { id: "a1", nameDisplay: "Patrick Rothfuss", nameCanonical: "patrick rothfuss", imagePath: null, works: [] },
 };
+
+vi.mock("sonner", () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+}));
 
 vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
     ...actual,
+    useRouter: () => ({ invalidate: vi.fn() }),
     Link: ({ children, to, params, ...props }: { children?: React.ReactNode; to: string; params?: Record<string, string>; [key: string]: string | undefined | React.ReactNode | Record<string, string> | (() => void) }) => {
       let href = to;
       if (params) {
@@ -56,8 +62,14 @@ vi.mock("~/components/work-card", () => ({
 }));
 
 const getAuthorDetailServerFnMock = vi.fn();
+const fetchAuthorPhotoFromUrlServerFnMock = vi.fn().mockResolvedValue({ success: true });
 vi.mock("~/lib/server-fns/authors", () => ({
   getAuthorDetailServerFn: getAuthorDetailServerFnMock,
+  fetchAuthorPhotoFromUrlServerFn: fetchAuthorPhotoFromUrlServerFnMock,
+}));
+
+vi.mock("~/lib/mutation", () => ({
+  runMutation: async (fn: () => Promise<object>) => fn(),
 }));
 
 const makeWork = (title: string, formats: string[] = ["EBOOK"]) => ({
@@ -76,7 +88,7 @@ const makeWork = (title: string, formats: string[] = ["EBOOK"]) => ({
 describe("AuthorDetailPage", () => {
   beforeEach(() => {
     mockLoaderData = {
-      author: { id: "a1", nameDisplay: "Patrick Rothfuss", nameCanonical: "patrick rothfuss", works: [] },
+      author: { id: "a1", nameDisplay: "Patrick Rothfuss", nameCanonical: "patrick rothfuss", imagePath: null, works: [] },
     };
     vi.clearAllMocks();
   });
@@ -144,6 +156,196 @@ describe("AuthorDetailPage", () => {
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
     expect(screen.getByText("No works by this author")).toBeTruthy();
+  });
+
+  it("renders author photo when imagePath is set", async () => {
+    mockLoaderData.author.imagePath = "a1";
+    const { Route } = await import("./authors.$authorId");
+    const Page = Route.options.component as React.ComponentType;
+    const { container } = render(<Page />);
+    const img = container.querySelector("img");
+    expect(img).toBeTruthy();
+    expect(img?.getAttribute("src")).toBe("/api/authors/a1/medium");
+  });
+
+  it("renders fallback icon when imagePath is null", async () => {
+    mockLoaderData.author.imagePath = null;
+    const { Route } = await import("./authors.$authorId");
+    const Page = Route.options.component as React.ComponentType;
+    const { container } = render(<Page />);
+    expect(container.querySelector("img")).toBeNull();
+  });
+
+  it("uploads photo when file is selected", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+    globalThis.fetch = mockFetch;
+
+    const { toast } = await import("sonner");
+    const { Route } = await import("./authors.$authorId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+
+    const input = screen.getByTestId("photo-file-input");
+    const file = new File(["fake-image"], "photo.jpg", { type: "image/jpeg" });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await vi.waitFor(() => {
+      expect(toast.success).toHaveBeenCalledWith("Author photo updated");
+    });
+  });
+
+  it("shows error toast on upload failure", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: false, text: () => Promise.resolve("Bad image") });
+    globalThis.fetch = mockFetch;
+
+    const { toast } = await import("sonner");
+    const { Route } = await import("./authors.$authorId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+
+    const input = screen.getByTestId("photo-file-input");
+    const file = new File(["bad"], "bad.jpg", { type: "image/jpeg" });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await vi.waitFor(() => {
+      expect(toast.error).toHaveBeenCalled();
+    });
+  });
+
+  it("shows generic error message on non-Error throw", async () => {
+    const mockFetch = vi.fn().mockRejectedValue("network failure");
+    globalThis.fetch = mockFetch;
+
+    const { toast } = await import("sonner");
+    const { Route } = await import("./authors.$authorId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+
+    const input = screen.getByTestId("photo-file-input");
+    fireEvent.change(input, { target: { files: [new File(["x"], "x.jpg", { type: "image/jpeg" })] } });
+
+    await vi.waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith("Failed to upload photo");
+    });
+  });
+
+  it("shows default error message when response text is empty", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: false, text: () => Promise.resolve("") });
+    globalThis.fetch = mockFetch;
+
+    const { toast } = await import("sonner");
+    const { Route } = await import("./authors.$authorId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+
+    const input = screen.getByTestId("photo-file-input");
+    fireEvent.change(input, { target: { files: [new File(["x"], "x.jpg", { type: "image/jpeg" })] } });
+
+    await vi.waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith("Upload failed");
+    });
+  });
+
+  it("does nothing when no file is selected", async () => {
+    const mockFetch = vi.fn();
+    globalThis.fetch = mockFetch;
+
+    const { Route } = await import("./authors.$authorId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+
+    const input = screen.getByTestId("photo-file-input");
+    fireEvent.change(input, { target: { files: [] } });
+
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("opens file picker on avatar click", async () => {
+    const { Route } = await import("./authors.$authorId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+
+    const avatarButton = screen.getByTestId("avatar-upload-button");
+    fireEvent.click(avatarButton);
+    // Verifies click handler runs without error
+  });
+
+  it("opens file picker on avatar Enter key", async () => {
+    const { Route } = await import("./authors.$authorId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+
+    const avatarButton = screen.getByTestId("avatar-upload-button");
+    fireEvent.keyDown(avatarButton, { key: "Enter" });
+  });
+
+  it("opens file picker on avatar Space key", async () => {
+    const { Route } = await import("./authors.$authorId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+
+    const avatarButton = screen.getByTestId("avatar-upload-button");
+    fireEvent.keyDown(avatarButton, { key: " " });
+  });
+
+  it("ignores other keys on avatar", async () => {
+    const { Route } = await import("./authors.$authorId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+
+    const avatarButton = screen.getByTestId("avatar-upload-button");
+    fireEvent.keyDown(avatarButton, { key: "Tab" });
+  });
+
+  it("shows URL input when 'Link to photo' is clicked", async () => {
+    const { Route } = await import("./authors.$authorId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    fireEvent.click(screen.getByTestId("link-photo-button"));
+    expect(screen.getByTestId("photo-url-input")).toBeTruthy();
+  });
+
+  it("fetches photo from URL when Fetch is clicked", async () => {
+    const { Route } = await import("./authors.$authorId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    fireEvent.click(screen.getByTestId("link-photo-button"));
+    const input = screen.getByTestId("photo-url-input");
+    fireEvent.change(input, { target: { value: "https://example.com/photo.jpg" } });
+    fireEvent.click(screen.getByText("Fetch"));
+    await vi.waitFor(() => {
+      expect(fetchAuthorPhotoFromUrlServerFnMock).toHaveBeenCalledWith({
+        data: { contributorId: "a1", imageUrl: "https://example.com/photo.jpg" },
+      });
+    });
+    // After success, URL input should be hidden
+    await vi.waitFor(() => {
+      expect(screen.queryByTestId("url-input-row")).toBeNull();
+    });
+  });
+
+  it("does not fetch when URL is empty", async () => {
+    const { Route } = await import("./authors.$authorId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    fireEvent.click(screen.getByTestId("link-photo-button"));
+    const fetchButton = screen.getByText("Fetch").closest("button");
+    expect(fetchButton?.disabled).toBe(true);
+  });
+
+  it("renders photo upload file input", async () => {
+    const { Route } = await import("./authors.$authorId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    expect(screen.getByTestId("photo-file-input")).toBeTruthy();
+  });
+
+  it("renders camera overlay on avatar hover area", async () => {
+    const { Route } = await import("./authors.$authorId");
+    const Page = Route.options.component as React.ComponentType;
+    const { container } = render(<Page />);
+    const overlay = container.querySelector(".group-hover\\:opacity-100");
+    expect(overlay).toBeTruthy();
   });
 
   it("renders pending skeleton", async () => {

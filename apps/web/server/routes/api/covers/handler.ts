@@ -7,6 +7,7 @@ export interface CoverHandlerDeps {
   coverCacheDir: string;
   setResponseHeader: (event: H3Event, name: string, value: string) => void;
   sendStream: (event: H3Event, stream: NodeJS.ReadableStream) => unknown;
+  idParamName?: string;
 }
 
 const VALID_SIZES = new Set(["thumb", "medium"]);
@@ -17,19 +18,22 @@ const PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="200" hei
 </svg>`;
 
 export function createCoverHandler(deps: CoverHandlerDeps) {
-  return async (event: H3Event) => {
-    const params = event.context.params as { workId: string; size: string };
-    const { workId, size } = params;
+  const idParam = deps.idParamName ?? "workId";
 
-    if (!VALID_WORK_ID.test(workId)) {
-      throw Object.assign(new Error("Invalid workId"), { statusCode: 400, statusMessage: "Invalid workId" });
+  return async (event: H3Event) => {
+    const params = event.context.params as Record<string, string>;
+    const id = params[idParam] as string;
+    const size = params.size as string;
+
+    if (!VALID_WORK_ID.test(id)) {
+      throw Object.assign(new Error(`Invalid ${idParam}`), { statusCode: 400, statusMessage: `Invalid ${idParam}` });
     }
 
     if (!VALID_SIZES.has(size)) {
       throw Object.assign(new Error("Invalid size"), { statusCode: 400, statusMessage: "Invalid size" });
     }
 
-    const filePath = path.join(deps.coverCacheDir, workId, `${size}.webp`);
+    const filePath = path.join(deps.coverCacheDir, id, `${size}.webp`);
 
     if (!deps.existsSync(filePath)) {
       deps.setResponseHeader(event, "Content-Type", "image/svg+xml");

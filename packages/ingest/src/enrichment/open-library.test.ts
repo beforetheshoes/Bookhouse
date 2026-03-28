@@ -3,6 +3,8 @@ import {
   searchOpenLibrary,
   getOpenLibraryEdition,
   getOpenLibraryWork,
+  searchOpenLibraryAuthors,
+  createOLFetcher,
 } from "./open-library";
 
 function fakeFetch(body: object | string | null, status = 200): typeof fetch {
@@ -222,5 +224,122 @@ describe("getOpenLibraryWork", () => {
   it("throws on network error", async () => {
     const errorFetch = (() => Promise.reject(new Error("dns fail"))) as object as typeof fetch;
     await expect(getOpenLibraryWork("OL000W", errorFetch)).rejects.toThrow("dns fail");
+  });
+});
+
+describe("searchOpenLibraryAuthors", () => {
+  it("returns structured results from OL authors search API", async () => {
+    const body = {
+      docs: [
+        {
+          key: "OL34184A",
+          name: "J.R.R. Tolkien",
+          work_count: 200,
+          top_subjects: ["Fantasy fiction", "Adventure"],
+        },
+      ],
+    };
+    const results = await searchOpenLibraryAuthors("Tolkien", fakeFetch(body));
+    expect(results).toEqual([
+      {
+        olid: "OL34184A",
+        name: "J.R.R. Tolkien",
+        workCount: 200,
+      },
+    ]);
+  });
+
+  it("handles missing optional fields", async () => {
+    const body = {
+      docs: [
+        {
+          key: "OL555A",
+          name: "Unknown Author",
+        },
+      ],
+    };
+    const results = await searchOpenLibraryAuthors("Unknown", fakeFetch(body));
+    expect(results).toEqual([
+      {
+        olid: "OL555A",
+        name: "Unknown Author",
+        workCount: 0,
+      },
+    ]);
+  });
+
+  it("returns empty array when no docs found", async () => {
+    const results = await searchOpenLibraryAuthors("zzz", fakeFetch({ docs: [] }));
+    expect(results).toEqual([]);
+  });
+
+  it("returns null on 404", async () => {
+    const results = await searchOpenLibraryAuthors("zzz", fakeFetch({}, 404));
+    expect(results).toBeNull();
+  });
+
+  it("throws on non-404 error status", async () => {
+    await expect(searchOpenLibraryAuthors("test", fakeFetch({}, 500))).rejects.toThrow("Open Library API error: 500");
+  });
+
+  it("throws on network error", async () => {
+    const errorFetch = (() => Promise.reject(new Error("network down"))) as object as typeof fetch;
+    await expect(searchOpenLibraryAuthors("test", errorFetch)).rejects.toThrow("network down");
+  });
+
+  it("encodes query parameters", async () => {
+    let calledUrl = "";
+    const captureFetch = ((url: string) => {
+      calledUrl = url;
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ docs: [] }),
+      });
+    }) as object as typeof fetch;
+
+    await searchOpenLibraryAuthors("O'Brien", captureFetch);
+    expect(calledUrl).toContain("search/authors.json");
+    expect(calledUrl).toContain("q=O");
+  });
+});
+
+describe("createOLFetcher", () => {
+  it("adds User-Agent header with app name and contact email", async () => {
+    let capturedInit: RequestInit | undefined;
+    const baseFetch = ((_url: string, init?: RequestInit) => {
+      capturedInit = init;
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ docs: [] }),
+      });
+    }) as object as typeof fetch;
+
+    const olFetch = createOLFetcher("test@example.com", baseFetch);
+    await olFetch("https://openlibrary.org/search.json?title=test");
+
+    expect(capturedInit).toBeDefined();
+    const headers = capturedInit?.headers as Record<string, string>;
+    expect(headers["User-Agent"]).toBe("Bookhouse (test@example.com)");
+  });
+
+  it("preserves existing init options", async () => {
+    let capturedInit: RequestInit | undefined;
+    const baseFetch = ((_url: string, init?: RequestInit) => {
+      capturedInit = init;
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({}),
+      });
+    }) as object as typeof fetch;
+
+    const olFetch = createOLFetcher("test@example.com", baseFetch);
+    await olFetch("https://openlibrary.org/test", { method: "POST" });
+
+    expect(capturedInit?.method).toBe("POST");
+    const headers = capturedInit?.headers as Record<string, string>;
+    expect(headers["User-Agent"]).toBe("Bookhouse (test@example.com)");
   });
 });

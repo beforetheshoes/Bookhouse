@@ -32,17 +32,19 @@ import {
 import { getReadingProgressServerFn } from "~/lib/server-fns/reading-progress";
 import { deleteWorkServerFn, deleteEditionServerFn } from "~/lib/server-fns/deletion";
 import { EditableField } from "~/components/editable-field";
-import { updateWorkServerFn, updateWorkAuthorsServerFn } from "~/lib/server-fns/editing";
+import { EditableTagField } from "~/components/editable-tag-field";
+import { updateWorkServerFn, updateWorkAuthorsServerFn, getContributorNamesServerFn } from "~/lib/server-fns/editing";
 import { updateWorkTagsServerFn } from "~/lib/server-fns/tags";
 import { useAppColor } from "~/hooks/use-app-color";
 
 export const Route = createFileRoute("/_authenticated/library/$workId")({
   loader: async ({ params }) => {
-    const [work, { progress, trackingMode }] = await Promise.all([
+    const [work, { progress, trackingMode }, contributorNames] = await Promise.all([
       getWorkDetailServerFn({ data: { workId: params.workId } }),
       getReadingProgressServerFn({ data: { workId: params.workId } }),
+      getContributorNamesServerFn(),
     ]);
-    return { work, progress, trackingMode };
+    return { work, progress, trackingMode, contributorNames };
   },
   pendingComponent: WorkDetailSkeleton,
   component: WorkDetailPage,
@@ -80,7 +82,7 @@ function getAuthors(work: WorkDetail): { id: string; name: string }[] {
 
 
 function WorkDetailPage() {
-  const { work, progress, trackingMode } = Route.useLoaderData();
+  const { work, progress, trackingMode, contributorNames } = Route.useLoaderData();
   const router = useRouter();
   const [imgFailed, setImgFailed] = useState(false);
   const [deleteWorkOpen, setDeleteWorkOpen] = useState(false);
@@ -258,11 +260,11 @@ function WorkDetailPage() {
               </Button>
             </div>
             <div className="mt-1 text-lg text-muted-foreground">
-              <EditableField
-                value={authors.map((a) => a.name).join(", ")}
+              <EditableTagField
+                values={authors.map((a) => a.name)}
+                suggestions={contributorNames}
                 required
-                onSave={async (val) => {
-                  const authorList = val.split(",").map((a) => a.trim()).filter((a) => a.length > 0);
+                onSave={async (authorList) => {
                   await updateWorkAuthorsServerFn({ data: { workId: work.id, authors: authorList } });
                   void router.invalidate();
                 }}

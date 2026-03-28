@@ -124,6 +124,13 @@ export async function resizeCoverImage(
   return { thumbPath, mediumPath };
 }
 
+export async function resizeAndSaveCover(
+  imageBuffer: Buffer,
+  outputDir: string,
+): Promise<void> {
+  await resizeCoverImage({ imageBuffer, outputDir }, { mkdir, sharp: sharp as ResizeCoverDeps["sharp"], writeFile });
+}
+
 export async function processCoverForWork(
   input: ProcessCoverInput,
   deps: CoverDependencies,

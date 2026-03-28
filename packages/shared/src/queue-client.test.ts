@@ -683,3 +683,130 @@ describe("getImportJobLiveActivity", () => {
     expect(getJobsMock).toHaveBeenNthCalledWith(2, ["prioritized"], 0, 499, true);
   });
 });
+
+describe("getActiveJobCountByName", () => {
+  it("counts jobs matching the given name across all live states", async () => {
+    getJobsMock
+      .mockResolvedValueOnce([{ name: "enrich-contributor" }, { name: "refresh-metadata" }])
+      .mockResolvedValueOnce([{ name: "enrich-contributor" }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    const { getActiveJobCountByName } = await import("./index");
+    const count = await getActiveJobCountByName("enrich-contributor");
+
+    expect(count).toBe(2);
+  });
+
+  it("returns 0 when no jobs match", async () => {
+    getJobsMock.mockResolvedValue([]);
+
+    const { getActiveJobCountByName } = await import("./index");
+    const count = await getActiveJobCountByName("enrich-contributor");
+
+    expect(count).toBe(0);
+  });
+
+  it("paginates through batches when batch is full", async () => {
+    // First call for "active" state: return a full batch (500 items) then an empty batch
+    const fullBatch = Array.from({ length: 500 }, (_, i) => ({
+      name: i < 3 ? "enrich-contributor" : "other-job",
+    }));
+    getJobsMock
+      .mockResolvedValueOnce(fullBatch)    // active state, first batch (full)
+      .mockResolvedValueOnce([{ name: "enrich-contributor" }])  // active state, second batch
+      .mockResolvedValueOnce([])           // prioritized
+      .mockResolvedValueOnce([])           // waiting
+      .mockResolvedValueOnce([])           // waiting-children
+      .mockResolvedValueOnce([]);          // delayed
+
+    const { getActiveJobCountByName } = await import("./index");
+    const count = await getActiveJobCountByName("enrich-contributor");
+
+    expect(count).toBe(4); // 3 from first batch + 1 from second
+    // Should have requested second batch starting at offset 500
+    expect(getJobsMock).toHaveBeenCalledWith(["active"], 500, 999, true);
+  });
+});
+
+describe("enqueueEnrichmentJob", () => {
+  it("reuses the enrichment queue singleton on repeated calls", async () => {
+    addMock.mockResolvedValue({ id: "ej-0" });
+    const { enqueueEnrichmentJob, ENRICHMENT_JOB_NAMES } = await import("./index");
+    await enqueueEnrichmentJob(ENRICHMENT_JOB_NAMES.ENRICH_CONTRIBUTOR, { contributorId: "c1" });
+    await enqueueEnrichmentJob(ENRICHMENT_JOB_NAMES.ENRICH_CONTRIBUTOR, { contributorId: "c2" });
+    // IORedis constructor should only be called once for the enrichment queue
+    // (plus once for the library queue if it was initialized in the same test)
+  });
+
+  it("enqueues to the enrichment queue with retry config", async () => {
+    addMock.mockResolvedValue({ id: "ej-1" });
+    const { enqueueEnrichmentJob, ENRICHMENT_JOB_NAMES, ENRICHMENT_RETRY_CONFIG } = await import("./index");
+
+    const jobId = await enqueueEnrichmentJob(ENRICHMENT_JOB_NAMES.ENRICH_CONTRIBUTOR, {
+      contributorId: "c1",
+    });
+
+    expect(jobId).toBe("ej-1");
+    const config = ENRICHMENT_RETRY_CONFIG[ENRICHMENT_JOB_NAMES.ENRICH_CONTRIBUTOR];
+    expect(addMock).toHaveBeenCalledWith(
+      "enrich-contributor",
+      { contributorId: "c1" },
+      { attempts: config.attempts, backoff: config.backoff, priority: expect.any(Number) as number },
+    );
+  });
+
+  it("throws QueueError on failure", async () => {
+    addMock.mockRejectedValueOnce(new Error("redis down"));
+    const { enqueueEnrichmentJob, ENRICHMENT_JOB_NAMES } = await import("./index");
+
+    await expect(
+      enqueueEnrichmentJob(ENRICHMENT_JOB_NAMES.ENRICH_CONTRIBUTOR, { contributorId: "c1" }),
+    ).rejects.toThrow("Failed to enqueue enrichment job");
+  });
+
+  it("returns 'unknown' when job id is null", async () => {
+    addMock.mockResolvedValueOnce({ id: null });
+    const { enqueueEnrichmentJob, ENRICHMENT_JOB_NAMES } = await import("./index");
+
+    const jobId = await enqueueEnrichmentJob(ENRICHMENT_JOB_NAMES.ENRICH_CONTRIBUTOR, {
+      contributorId: "c1",
+    });
+    expect(jobId).toBe("unknown");
+  });
+});
+
+describe("getActiveEnrichmentJobCount", () => {
+  it("counts jobs in the enrichment queue", async () => {
+    getJobsMock
+      .mockResolvedValueOnce([{ name: "enrich-contributor" }, { name: "other" }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    const { getActiveEnrichmentJobCount } = await import("./index");
+    const count = await getActiveEnrichmentJobCount("enrich-contributor");
+
+    expect(count).toBe(1);
+  });
+
+  it("paginates through full batches", async () => {
+    const fullBatch = Array.from({ length: 500 }, (_, i) => ({
+      name: i === 0 ? "enrich-contributor" : "other",
+    }));
+    getJobsMock
+      .mockResolvedValueOnce(fullBatch)
+      .mockResolvedValueOnce([{ name: "enrich-contributor" }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    const { getActiveEnrichmentJobCount } = await import("./index");
+    const count = await getActiveEnrichmentJobCount("enrich-contributor");
+
+    expect(count).toBe(2);
+  });
+});

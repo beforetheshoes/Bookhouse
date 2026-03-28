@@ -183,3 +183,15 @@ export const updateWorkAuthorsServerFn = createServerFn({
 
     return { success: true };
   });
+
+export const getContributorNamesServerFn = createServerFn({
+  method: "GET",
+}).handler(async () => {
+  const { db } = await import("@bookhouse/db");
+  const contributors = await db.contributor.findMany({
+    where: { editions: { some: {} } },
+    select: { nameDisplay: true },
+    orderBy: { nameDisplay: "asc" },
+  });
+  return contributors.map((c) => c.nameDisplay);
+});

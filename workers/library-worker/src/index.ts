@@ -2,7 +2,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import IORedis from "ioredis";
 import { type Job, WaitingChildrenError, Worker } from "bullmq";
 import { db } from "@bookhouse/db";
-import { cascadeCleanupOrphans, createIngestServices, matchSuggestions, matchFileAssetToEdition, parseFileAssetMetadata, processCoverForWorkDefault, scanLibraryRoot, type ScanProgressData, type ScanLibraryRootResult, enrichWork, searchOpenLibrary, getOpenLibraryWork, RateLimiter, type EnrichWorkDeps, detectDuplicates, hashFileAsset, type ProcessCoverResult, type HashFileAssetResult, type ParseFileAssetMetadataResult, type MatchFileAssetToEditionResult, type DetectDuplicatesResult, type MatchSuggestionsResult, type EnrichWorkResult } from "@bookhouse/ingest";
+import { cascadeCleanupOrphans, createIngestServices, matchSuggestions, matchFileAssetToEdition, parseFileAssetMetadata, processCoverForWorkDefault, scanLibraryRoot, enrichWork, searchOpenLibrary, getOpenLibraryWork, TokenBucketLimiter, createOLFetcher, detectDuplicates, hashFileAsset, type ScanProgressData, type ScanLibraryRootResult, type EnrichWorkDeps, type ProcessCoverResult, type HashFileAssetResult, type ParseFileAssetMetadataResult, type MatchFileAssetToEditionResult, type DetectDuplicatesResult, type MatchSuggestionsResult, type EnrichWorkResult } from "@bookhouse/ingest";
 import {
   LIBRARY_JOB_NAMES,
   type BaseJobPayload,
@@ -25,7 +25,8 @@ import {
 const logger = createLogger("library-worker");
 
 const processCoverForWork = processCoverForWorkDefault(db);
-const rateLimiter = new RateLimiter();
+const olLimiter = new TokenBucketLimiter(3);
+const olFetch = createOLFetcher("bookhouse@teamsnail.org");
 
 export type LibraryJobResult =
   | ScanLibraryRootResult
@@ -196,8 +197,8 @@ async function dispatch(
               },
             },
           }),
-        searchOL: (title, author) => searchOpenLibrary(title, author, fetch),
-        getOLWork: (olid) => getOpenLibraryWork(olid, fetch),
+        searchOL: (title, author) => searchOpenLibrary(title, author, olFetch),
+        getOLWork: (olid) => getOpenLibraryWork(olid, olFetch),
         upsertExternalLink: async (data) => {
           await db.externalLink.upsert({
             where: {
@@ -211,7 +212,7 @@ async function dispatch(
             update: { metadata: data.metadata as object, lastSyncedAt: new Date() },
           });
         },
-        checkRateLimit: () => rateLimiter.check(),
+        acquireOLToken: () => olLimiter.acquire(),
       };
       return handlers.enrichWork(refreshPayload.workId, deps);
     }
@@ -421,6 +422,14 @@ export async function shutdownLibraryWorker(
   clearTimeout(forceExit);
 }
 
+export function logEnrichmentWorkerError(err: Error): void {
+  logger.error({ err }, "Failed to start enrichment worker");
+}
+
+export function handleEnrichmentWorkerModule(m: { startEnrichmentWorker: () => void }): void {
+  m.startEnrichmentWorker();
+}
+
 export function bootstrapLibraryWorker(): void {
   const { connection, pollInterval, worker } = createLibraryWorker();
 
@@ -440,6 +449,8 @@ export function bootstrapLibraryWorker(): void {
   process.on("SIGTERM", () => { void shutdown(); });
 
   logger.info({ queue: QUEUES.LIBRARY }, "library-worker listening");
+
+  void import("./enrichment-worker").then(handleEnrichmentWorkerModule, logEnrichmentWorkerError);
 }
 
 // Coverage: defaultHandlers referenced to ensure the import is exercised
@@ -451,6 +462,7 @@ export { pollConcurrency as _pollConcurrency, getActiveScanType as _getActiveSca
 export function _setActiveScanType(scanType: ScanType | null): void {
   activeScanType = scanType;
 }
+
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   bootstrapLibraryWorker();

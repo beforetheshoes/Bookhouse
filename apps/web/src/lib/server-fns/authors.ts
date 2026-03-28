@@ -21,6 +21,7 @@ export const getAuthorsListServerFn = createServerFn({
     id: c.id,
     nameDisplay: c.nameDisplay,
     workCount: new Set(c.editions.map((ec) => ec.edition.workId)).size,
+    imagePath: c.imagePath,
   }));
 });
 
@@ -45,6 +46,7 @@ export const getAuthorDetailServerFn = createServerFn({
         id: true,
         nameDisplay: true,
         nameCanonical: true,
+        imagePath: true,
         editions: {
           where: { role: "AUTHOR" },
           select: { edition: { select: { workId: true } } },
@@ -70,6 +72,7 @@ export const getAuthorDetailServerFn = createServerFn({
       id: contributor.id,
       nameDisplay: contributor.nameDisplay,
       nameCanonical: contributor.nameCanonical,
+      imagePath: contributor.imagePath,
       works,
     };
   });
@@ -77,3 +80,81 @@ export const getAuthorDetailServerFn = createServerFn({
 export type AuthorDetail = Awaited<
   ReturnType<typeof getAuthorDetailServerFn>
 >;
+
+export const getEnrichAuthorPhotosProgressServerFn = createServerFn({
+  method: "GET",
+}).handler(async () => {
+  const { getActiveEnrichmentJobCount } = await import("@bookhouse/shared");
+  const activeCount = await getActiveEnrichmentJobCount("enrich-contributor");
+  return { activeCount };
+});
+
+export const enrichAuthorPhotosServerFn = createServerFn({
+  method: "POST",
+}).handler(async () => {
+  const { db } = await import("@bookhouse/db");
+  const { enqueueEnrichmentJob } = await import("@bookhouse/shared");
+
+  const contributors = await db.contributor.findMany({
+    where: { imagePath: null },
+    select: { id: true },
+  });
+
+  if (contributors.length === 0) {
+    return { enqueuedCount: 0 };
+  }
+
+  const importJob = await db.importJob.create({
+    data: {
+      kind: "ENRICH_AUTHOR_PHOTOS",
+      status: "QUEUED",
+      totalFiles: contributors.length,
+      processedFiles: 0,
+      errorCount: 0,
+    },
+  });
+
+  for (const contributor of contributors) {
+    await enqueueEnrichmentJob("enrich-contributor", {
+      contributorId: contributor.id,
+      importJobId: importJob.id,
+    });
+  }
+
+  return { enqueuedCount: contributors.length, importJobId: importJob.id };
+});
+
+const fetchAuthorPhotoSchema = z.object({
+  contributorId: z.string().min(1),
+  imageUrl: z.string().url(),
+});
+
+export const fetchAuthorPhotoFromUrlServerFn = createServerFn({
+  method: "POST",
+})
+  .inputValidator(fetchAuthorPhotoSchema)
+  .handler(async ({ data }) => {
+    const { applyAuthorPhotoFromUrl, resizeAndSaveCover } = await import("@bookhouse/ingest");
+    const { db } = await import("@bookhouse/db");
+
+    const coverCacheDir = process.env.COVER_CACHE_DIR ?? "/data/covers";
+
+    await applyAuthorPhotoFromUrl(
+      { contributorId: data.contributorId, imageUrl: data.imageUrl, coverCacheDir },
+      {
+        fetchUrl: async (url) => {
+          const response = await fetch(url);
+          const buffer = Buffer.from(await response.arrayBuffer());
+          const contentType = response.headers.get("content-type");
+          return { buffer, contentType };
+        },
+        resizeAndSave: (buf, dir) => resizeAndSaveCover(buf, dir),
+      },
+      {
+        findContributor: (id) => db.contributor.findUnique({ where: { id }, select: { id: true } }),
+        updateContributor: async (id, upd) => { await db.contributor.update({ where: { id }, data: upd }); },
+      },
+    );
+
+    return { success: true };
+  });

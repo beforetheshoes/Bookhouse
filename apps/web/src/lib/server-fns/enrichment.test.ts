@@ -91,6 +91,7 @@ vi.mock("@bookhouse/ingest", () => {
     resizeCoverImage: vi.fn(),
     extractDominantColors: vi.fn(),
     canonicalizeContributorName: (name: string): string | null => name === "UNKNOWN" ? null : name.toLowerCase(),
+    createOLFetcher: () => fetch,
   };
 });
 

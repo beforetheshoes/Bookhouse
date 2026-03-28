@@ -54,13 +54,13 @@ export type {
 
 export { extractEpubCover } from "./epub";
 export type { EpubCoverResult } from "./epub";
-export { detectAdjacentCover, resizeCoverImage, processCoverForWork, processCoverForWorkDefault } from "./covers";
+export { detectAdjacentCover, resizeCoverImage, resizeAndSaveCover, processCoverForWork, processCoverForWorkDefault } from "./covers";
 export type { CoverDependencies, ProcessCoverInput, ProcessCoverResult } from "./covers";
 export { PARTIAL_HASH_BYTES } from "./hashing";
 export { SCAN_PROGRESS_INTERVAL } from "./services";
 
-export { searchOpenLibrary, getOpenLibraryEdition, getOpenLibraryWork } from "./enrichment/open-library";
-export type { OLSearchResult, OLEdition, OLWork } from "./enrichment/open-library";
+export { searchOpenLibrary, getOpenLibraryEdition, getOpenLibraryWork, searchOpenLibraryAuthors, createOLFetcher } from "./enrichment/open-library";
+export type { OLSearchResult, OLEdition, OLWork, OLAuthorSearchResult } from "./enrichment/open-library";
 export { searchGoogleBooks, getGoogleBooksVolume } from "./enrichment/google-books";
 export type { GBVolume } from "./enrichment/google-books";
 export { searchHardcover, getHardcoverBook } from "./enrichment/hardcover";
@@ -82,6 +82,15 @@ export { RateLimiter } from "./enrichment/rate-limiter";
 export type { RateLimitResult } from "./enrichment/rate-limiter";
 export { enrichWork } from "./enrichment/enrich-work";
 export type { EnrichWorkDeps, EnrichWorkResult } from "./enrichment/enrich-work";
+export { enrichContributor } from "./enrichment/enrich-contributor";
+export type { EnrichContributorDeps, EnrichContributorResult } from "./enrichment/enrich-contributor";
+export { TokenBucketLimiter } from "./enrichment/token-bucket";
+export { searchHardcoverAuthors } from "./enrichment/hardcover";
+export type { HCAuthor } from "./enrichment/hardcover";
+export { searchWikidataAuthors, buildWikimediaThumbUrl } from "./enrichment/wikidata";
+export type { WDAuthor } from "./enrichment/wikidata";
+export { applyAuthorPhotoFromUrl } from "./author-photo";
+export type { AuthorPhotoDeps, AuthorPhotoDbDeps, AuthorPhotoInput, AuthorPhotoResult } from "./author-photo";
 export { levenshteinDistance, normalizedSimilarity, normalizeForTitleMatching, stripSubtitleForMatching } from "./similarity";
 export { cascadeCleanupOrphans } from "./cascade-cleanup";
 export type { CascadeCleanupInput, CascadeCleanupResult } from "./cascade-cleanup";
@@ -130,6 +139,7 @@ export const INGEST_PUBLIC_API = [
   "processCoverForWork",
   "processCoverForWorkDefault",
   "resizeCoverImage",
+  "resizeAndSaveCover",
   "searchOpenLibrary",
   "scanLibraryRoot",
   "walkRegularFiles",
@@ -140,4 +150,7 @@ export const INGEST_PUBLIC_API = [
   "isValidImageData",
   "isAllowedMimeType",
   "applyCoverFromUrl",
+  "searchOpenLibraryAuthors",
+  "enrichContributor",
+  "applyAuthorPhotoFromUrl",
 ] as const;

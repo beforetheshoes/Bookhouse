@@ -1,5 +1,6 @@
 export const QUEUES = {
   LIBRARY: "library",
+  ENRICHMENT: "enrichment",
 } as const;
 
 export const LIBRARY_JOB_NAMES = {
@@ -11,6 +12,10 @@ export const LIBRARY_JOB_NAMES = {
   REFRESH_METADATA: "refresh-metadata",
   DETECT_DUPLICATES: "detect-duplicates",
   MATCH_SUGGESTIONS: "match-suggestions",
+} as const;
+
+export const ENRICHMENT_JOB_NAMES = {
+  ENRICH_CONTRIBUTOR: "enrich-contributor",
 } as const;
 
 export interface BaseJobPayload {
@@ -56,6 +61,10 @@ export interface MatchSuggestionsJobPayload extends BaseJobPayload {
   fileAssetId: string;
 }
 
+export interface EnrichContributorJobPayload extends BaseJobPayload {
+  contributorId: string;
+}
+
 export interface LibraryJobPayloads {
   [LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT]: ScanLibraryRootJobPayload;
   [LIBRARY_JOB_NAMES.HASH_FILE_ASSET]: HashFileAssetJobPayload;
@@ -67,8 +76,15 @@ export interface LibraryJobPayloads {
   [LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS]: MatchSuggestionsJobPayload;
 }
 
+export interface EnrichmentJobPayloads {
+  [ENRICHMENT_JOB_NAMES.ENRICH_CONTRIBUTOR]: EnrichContributorJobPayload;
+}
+
 export type LibraryJobName = keyof LibraryJobPayloads;
 export type LibraryJobPayload<TName extends LibraryJobName> = LibraryJobPayloads[TName];
+
+export type EnrichmentJobName = keyof EnrichmentJobPayloads;
+export type EnrichmentJobPayload<TName extends EnrichmentJobName> = EnrichmentJobPayloads[TName];
 
 export interface JobRetryConfig {
   attempts: number;
@@ -110,6 +126,13 @@ export const RETRY_CONFIG: Record<LibraryJobName, JobRetryConfig> = {
   },
 };
 
+export const ENRICHMENT_RETRY_CONFIG: Record<EnrichmentJobName, JobRetryConfig> = {
+  [ENRICHMENT_JOB_NAMES.ENRICH_CONTRIBUTOR]: {
+    attempts: 5,
+    backoff: { type: "exponential", delay: 10000 },
+  },
+};
+
 // Lower number = higher priority. BullMQ processes prioritized jobs before non-prioritized ones.
 export const JOB_PRIORITY: Record<LibraryJobName, number> = {
   [LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT]: 1,
@@ -120,6 +143,10 @@ export const JOB_PRIORITY: Record<LibraryJobName, number> = {
   [LIBRARY_JOB_NAMES.REFRESH_METADATA]: 5,
   [LIBRARY_JOB_NAMES.PROCESS_COVER]: 6,
   [LIBRARY_JOB_NAMES.HASH_FILE_ASSET]: 7,
+};
+
+export const ENRICHMENT_JOB_PRIORITY: Record<EnrichmentJobName, number> = {
+  [ENRICHMENT_JOB_NAMES.ENRICH_CONTRIBUTOR]: 1,
 };
 
 export function getQueueUrl(): string {

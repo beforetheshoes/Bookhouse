@@ -1,5 +1,21 @@
 const OL_BASE = "https://openlibrary.org";
 
+export interface OLAuthorSearchResult {
+  olid: string;
+  name: string;
+  workCount: number;
+}
+
+interface OLRawAuthorSearchDoc {
+  key: string;
+  name: string;
+  work_count?: number;
+}
+
+interface OLRawAuthorSearchResponse {
+  docs: OLRawAuthorSearchDoc[];
+}
+
 export interface OLSearchResult {
   olid: string;
   title: string;
@@ -56,6 +72,17 @@ interface OLRawWork {
   description?: string | { value: string };
   covers?: number[];
   subjects?: string[];
+}
+
+export function createOLFetcher(contactEmail: string, baseFetch: typeof fetch = fetch): typeof fetch {
+  return ((url: string | URL | Request, init?: RequestInit) =>
+    baseFetch(url, {
+      ...init,
+      headers: {
+        ...(init?.headers as Record<string, string> | undefined),
+        "User-Agent": `Bookhouse (${contactEmail})`,
+      },
+    })) as typeof fetch;
 }
 
 function extractOlid(key: string): string {
@@ -134,4 +161,21 @@ export async function getOpenLibraryWork(
     coverIds: data.covers ?? [],
     subjects: data.subjects ?? [],
   };
+}
+
+export async function searchOpenLibraryAuthors(
+  name: string,
+  fetcher: typeof fetch,
+): Promise<OLAuthorSearchResult[] | null> {
+  const params = new URLSearchParams({ q: name, limit: "5" });
+
+  const response = await fetcher(`${OL_BASE}/search/authors.json?${params.toString()}`);
+  const data = await checkedJson<OLRawAuthorSearchResponse>(response);
+  if (data === null) return null;
+
+  return data.docs.map((doc) => ({
+    olid: doc.key,
+    name: doc.name,
+    workCount: doc.work_count ?? 0,
+  }));
 }

@@ -10,7 +10,7 @@ type EnrichDeps = {
   searchOL: (title: string, author: string) => Promise<object | null>;
   getOLWork: (olid: string) => Promise<object | null>;
   upsertExternalLink: (data: { editionId: string; provider: string; externalId: string; metadata: Record<string, string | number | boolean | null> }) => Promise<object>;
-  checkRateLimit: () => { allowed: boolean };
+  acquireOLToken: () => Promise<void>;
 };
 
 const addMock = vi.fn();
@@ -114,8 +114,15 @@ vi.mock("@bookhouse/ingest", () => ({
   matchSuggestions: matchSuggestionsMock,
   searchOpenLibrary: vi.fn(),
   getOpenLibraryWork: vi.fn(),
-  RateLimiter: class { check = () => ({ allowed: true }); },
+  TokenBucketLimiter: class { acquire = () => Promise.resolve(); },
   cascadeCleanupOrphans: cascadeCleanupOrphansMock,
+  createOLFetcher: () => fetch,
+  enrichContributor: vi.fn(),
+  searchOpenLibraryAuthors: vi.fn(),
+  searchHardcoverAuthors: vi.fn(),
+  searchWikidataAuthors: vi.fn().mockResolvedValue([]),
+  applyAuthorPhotoFromUrl: vi.fn(),
+  resizeAndSaveCover: vi.fn(),
 }));
 
 vi.mock("@bookhouse/shared", async () => {
@@ -660,7 +667,7 @@ describe("library worker", () => {
       searchOL: expect.any(Function) as (() => void),
       getOLWork: expect.any(Function) as (() => void),
       upsertExternalLink: expect.any(Function) as (() => void),
-      checkRateLimit: expect.any(Function) as (() => void),
+      acquireOLToken: expect.any(Function) as (() => void),
     }));
 
     // Exercise the deps callbacks for coverage
@@ -711,8 +718,7 @@ describe("library worker", () => {
       },
     });
 
-    const rateResult = deps.checkRateLimit();
-    expect(rateResult).toEqual({ allowed: true });
+    await deps.acquireOLToken();
   });
 
   it("fails unknown jobs", async () => {
@@ -1252,7 +1258,8 @@ describe("library worker", () => {
     const sigtermHandler = processOnSpy.mock.calls.find(([event]) => event === "SIGTERM")?.[1] as () => void;
     sigtermHandler();
     // Allow the async shutdown() chain to complete (workerClose + quit + process.exit)
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Allow the async shutdown() and dynamic enrichment worker import to complete
+    await new Promise((resolve) => setTimeout(resolve, 200));
 
     expect(processExitSpy).toHaveBeenCalledWith(0);
 
@@ -1269,6 +1276,18 @@ describe("library worker", () => {
 
     processOnSpy.mockRestore();
     processExitSpy.mockRestore();
+  });
+
+  it("logEnrichmentWorkerError logs the error", async () => {
+    const { logEnrichmentWorkerError } = await import("./index");
+    logEnrichmentWorkerError(new Error("test error"));
+  });
+
+  it("handleEnrichmentWorkerModule calls startEnrichmentWorker", async () => {
+    const { handleEnrichmentWorkerModule } = await import("./index");
+    const mock = { startEnrichmentWorker: vi.fn() };
+    handleEnrichmentWorkerModule(mock);
+    expect(mock.startEnrichmentWorker).toHaveBeenCalled();
   });
 
   it("polls DB for concurrency using onDemand key when no scan is active", async () => {
