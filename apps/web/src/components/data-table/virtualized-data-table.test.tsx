@@ -279,4 +279,65 @@ describe("VirtualizedDataTable", () => {
     );
     expect(screen.getByText("Alice")).toBeTruthy();
   });
+
+  it("calls onSortingChange when manualSorting is true and a sortable header is clicked", async () => {
+    const { fireEvent } = await import("@testing-library/react");
+    const onSortingChange = vi.fn();
+    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => HTMLElement | null; estimateSize: () => number }) => {
+      getScrollElement();
+      estimateSize();
+      return makeVirtualizer(count);
+    });
+    const sortableColumns: ColumnDef<TestRow>[] = [
+      {
+        accessorKey: "name",
+        header: ({ column }) => {
+          const sorted = column.getIsSorted();
+          return (
+            <button onClick={() => { column.toggleSorting(sorted === "asc"); }}>
+              Name {sorted === "asc" ? "↑" : sorted === "desc" ? "↓" : ""}
+            </button>
+          );
+        },
+      },
+    ];
+    render(
+      <VirtualizedDataTable
+        columns={sortableColumns}
+        data={data}
+        sorting={[]}
+        onSortingChange={onSortingChange}
+        manualSorting
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Name/ }));
+    expect(onSortingChange).toHaveBeenCalled();
+  });
+
+  it("reflects external sorting state when manualSorting is true", () => {
+    useVirtualizerMock.mockImplementation(({ count, getScrollElement, estimateSize }: { count: number; getScrollElement: () => HTMLElement | null; estimateSize: () => number }) => {
+      getScrollElement();
+      estimateSize();
+      return makeVirtualizer(count);
+    });
+    const sortableColumns: ColumnDef<TestRow>[] = [
+      {
+        accessorKey: "name",
+        header: ({ column }) => {
+          const sorted = column.getIsSorted();
+          return <span data-testid="sort-indicator">{sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : "none"}</span>;
+        },
+      },
+    ];
+    render(
+      <VirtualizedDataTable
+        columns={sortableColumns}
+        data={data}
+        sorting={[{ id: "name", desc: false }]}
+        onSortingChange={vi.fn()}
+        manualSorting
+      />
+    );
+    expect(screen.getByTestId("sort-indicator").textContent).toBe("ascending");
+  });
 });
