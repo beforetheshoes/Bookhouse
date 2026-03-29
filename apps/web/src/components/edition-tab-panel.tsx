@@ -1,4 +1,4 @@
-import { Trash2 } from "lucide-react";
+import { Download, Trash2 } from "lucide-react";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { EditableField } from "~/components/editable-field";
@@ -80,20 +80,54 @@ export function EditionTabPanel({
         <div className="space-y-1">
           <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Files</div>
           <div className="space-y-1 text-sm">
-            {edition.editionFiles.map((ef) => (
-              <div key={ef.id} className="flex items-center gap-2">
-                <span className="font-mono text-xs">{ef.fileAsset.basename}</span>
-                <span className="text-muted-foreground">
-                  {formatBytes(ef.fileAsset.sizeBytes)}
-                </span>
-                <Badge
-                  variant={ef.fileAsset.availabilityStatus === "PRESENT" ? "outline" : "destructive"}
-                  className="text-[10px]"
-                >
-                  {ef.fileAsset.availabilityStatus}
-                </Badge>
-              </div>
-            ))}
+            {(() => {
+              const CONTENT_MEDIA_KINDS = new Set(["EPUB", "PDF", "CBZ", "AUDIO"]);
+              const contentFiles = edition.editionFiles.filter(
+                (ef) => CONTENT_MEDIA_KINDS.has(ef.fileAsset.mediaKind),
+              );
+              const presentFiles = contentFiles.filter(
+                (ef) => ef.fileAsset.availabilityStatus === "PRESENT",
+              );
+              const multiplePresent = presentFiles.length > 1;
+              return contentFiles.map((ef) => (
+                <div key={ef.id} className="flex items-center gap-2">
+                  <span className="font-mono text-xs">{ef.fileAsset.basename}</span>
+                  <span className="text-muted-foreground">
+                    {formatBytes(ef.fileAsset.sizeBytes)}
+                  </span>
+                  <Badge
+                    variant={ef.fileAsset.availabilityStatus === "PRESENT" ? "outline" : "destructive"}
+                    className="text-[10px]"
+                  >
+                    {ef.fileAsset.availabilityStatus}
+                  </Badge>
+                </div>
+              )).concat(
+                multiplePresent ? [
+                  <a
+                    key="download-all"
+                    href={`/api/editions/${edition.id}/download-all`}
+                    download
+                    aria-label={`Download all (${String(presentFiles.length)} files)`}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-0.5 text-xs text-foreground hover:bg-accent transition-colors w-fit"
+                  >
+                    <Download className="size-3.5" />
+                    Download all ({presentFiles.length} files)
+                  </a>,
+                ] : presentFiles.map((ef) => (
+                  <a
+                    key={`dl-${ef.id}`}
+                    href={`/api/edition-files/${ef.id}/download`}
+                    download
+                    aria-label={`Download ${ef.fileAsset.basename}`}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-0.5 text-xs text-foreground hover:bg-accent transition-colors w-fit"
+                  >
+                    <Download className="size-3.5" />
+                    Download
+                  </a>
+                )),
+              );
+            })()}
           </div>
         </div>
       )}
