@@ -1,13 +1,21 @@
 // @vitest-environment happy-dom
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { updateEditionServerFnMock } = vi.hoisted(() => ({
+const mockToast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
+vi.mock("sonner", () => ({ toast: mockToast }));
+
+const { updateEditionServerFnMock, sendToKindleServerFnMock } = vi.hoisted(() => ({
   updateEditionServerFnMock: vi.fn(),
+  sendToKindleServerFnMock: vi.fn(),
 }));
 
 vi.mock("~/lib/server-fns/editing", () => ({
   updateEditionServerFn: updateEditionServerFnMock,
+}));
+
+vi.mock("~/lib/server-fns/kindle", () => ({
+  sendToKindleServerFn: sendToKindleServerFnMock,
 }));
 
 import { EditionTabPanel } from "./edition-tab-panel";
@@ -17,6 +25,7 @@ type EditionType = WorkDetail["editions"][number];
 
 beforeEach(() => {
   updateEditionServerFnMock.mockReset();
+  sendToKindleServerFnMock.mockReset();
 });
 
 const baseEdition = {
@@ -74,6 +83,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -93,6 +104,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -107,6 +120,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -121,6 +136,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -135,6 +152,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={onDelete}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -149,6 +168,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -162,6 +183,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -175,6 +198,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -191,6 +216,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={onFieldSaved}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -221,6 +248,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={onFieldSaved}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -246,6 +275,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -261,6 +292,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -275,6 +308,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -299,6 +334,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -331,6 +368,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -356,6 +395,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -381,6 +422,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -397,6 +440,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={onFieldSaved}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -425,6 +470,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={onFieldSaved}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -452,6 +499,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={onFieldSaved}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -479,6 +528,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={onFieldSaved}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -506,6 +557,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={onFieldSaved}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -530,6 +583,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -557,6 +612,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -582,6 +639,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -613,6 +672,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -648,6 +709,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -680,6 +743,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -724,6 +789,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -769,6 +836,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -803,6 +872,8 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
@@ -831,9 +902,329 @@ describe("EditionTabPanel", () => {
         isLastEdition={false}
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
       />,
     );
 
     expect(screen.getByText("MISSING")).toBeTruthy();
+  });
+
+  describe("Send to Kindle", () => {
+    it("does not show Send to Kindle when kindleConfigured is false", () => {
+      render(
+        <EditionTabPanel
+          edition={baseEdition}
+          isLastEdition={false}
+          onEditionFieldSaved={vi.fn()}
+          onDeleteEdition={vi.fn()}
+          smtpConfigured={true}
+          kindleConfigured={false}
+        />,
+      );
+
+      expect(screen.queryByRole("button", { name: /send to kindle/i })).toBeNull();
+    });
+
+    it("does not show Send to Kindle when smtpConfigured is false", () => {
+      render(
+        <EditionTabPanel
+          edition={baseEdition}
+          isLastEdition={false}
+          onEditionFieldSaved={vi.fn()}
+          onDeleteEdition={vi.fn()}
+          smtpConfigured={false}
+          kindleConfigured={true}
+        />,
+      );
+
+      expect(screen.queryByRole("button", { name: /send to kindle/i })).toBeNull();
+    });
+
+    it("shows Send to Kindle for EPUB file when both configured", () => {
+      render(
+        <EditionTabPanel
+          edition={baseEdition}
+          isLastEdition={false}
+          onEditionFieldSaved={vi.fn()}
+          onDeleteEdition={vi.fn()}
+          smtpConfigured={true}
+          kindleConfigured={true}
+        />,
+      );
+
+      expect(screen.getByRole("button", { name: /send to kindle/i })).toBeTruthy();
+    });
+
+    it("shows Send to Kindle for PDF file when both configured", () => {
+      const pdfEdition = {
+        ...baseEdition,
+        editionFiles: [
+          {
+            ...baseEdition.editionFiles[0],
+            fileAsset: {
+              ...(baseEdition.editionFiles[0] as (typeof baseEdition.editionFiles)[number]).fileAsset,
+              basename: "book.pdf",
+              mediaKind: "PDF",
+            },
+          },
+        ],
+      } as EditionType;
+      render(
+        <EditionTabPanel
+          edition={pdfEdition}
+          isLastEdition={false}
+          onEditionFieldSaved={vi.fn()}
+          onDeleteEdition={vi.fn()}
+          smtpConfigured={true}
+          kindleConfigured={true}
+        />,
+      );
+
+      expect(screen.getByRole("button", { name: /send to kindle/i })).toBeTruthy();
+    });
+
+    it("does not show Send to Kindle for CBZ file", () => {
+      const cbzEdition = {
+        ...baseEdition,
+        editionFiles: [
+          {
+            ...baseEdition.editionFiles[0],
+            fileAsset: {
+              ...(baseEdition.editionFiles[0] as (typeof baseEdition.editionFiles)[number]).fileAsset,
+              basename: "comic.cbz",
+              mediaKind: "CBZ",
+            },
+          },
+        ],
+      } as EditionType;
+      render(
+        <EditionTabPanel
+          edition={cbzEdition}
+          isLastEdition={false}
+          onEditionFieldSaved={vi.fn()}
+          onDeleteEdition={vi.fn()}
+          smtpConfigured={true}
+          kindleConfigured={true}
+        />,
+      );
+
+      expect(screen.queryByRole("button", { name: /send to kindle/i })).toBeNull();
+    });
+
+    it("does not show Send to Kindle for AUDIO file", () => {
+      const audioEdition = {
+        ...baseEdition,
+        editionFiles: [
+          {
+            ...baseEdition.editionFiles[0],
+            fileAsset: {
+              ...(baseEdition.editionFiles[0] as (typeof baseEdition.editionFiles)[number]).fileAsset,
+              basename: "track.mp3",
+              mediaKind: "AUDIO",
+            },
+          },
+        ],
+      } as EditionType;
+      render(
+        <EditionTabPanel
+          edition={audioEdition}
+          isLastEdition={false}
+          onEditionFieldSaved={vi.fn()}
+          onDeleteEdition={vi.fn()}
+          smtpConfigured={true}
+          kindleConfigured={true}
+        />,
+      );
+
+      expect(screen.queryByRole("button", { name: /send to kindle/i })).toBeNull();
+    });
+
+    it("does not show Send to Kindle for MISSING file", () => {
+      const missingEdition = {
+        ...baseEdition,
+        editionFiles: [
+          {
+            ...baseEdition.editionFiles[0],
+            fileAsset: {
+              ...(baseEdition.editionFiles[0] as (typeof baseEdition.editionFiles)[number]).fileAsset,
+              availabilityStatus: "MISSING",
+            },
+          },
+        ],
+      } as EditionType;
+      render(
+        <EditionTabPanel
+          edition={missingEdition}
+          isLastEdition={false}
+          onEditionFieldSaved={vi.fn()}
+          onDeleteEdition={vi.fn()}
+          smtpConfigured={true}
+          kindleConfigured={true}
+        />,
+      );
+
+      expect(screen.queryByRole("button", { name: /send to kindle/i })).toBeNull();
+    });
+
+    it("calls sendToKindleServerFn with correct editionFileId on click", async () => {
+      sendToKindleServerFnMock.mockResolvedValue({ success: true });
+
+      render(
+        <EditionTabPanel
+          edition={baseEdition}
+          isLastEdition={false}
+          onEditionFieldSaved={vi.fn()}
+          onDeleteEdition={vi.fn()}
+          smtpConfigured={true}
+          kindleConfigured={true}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: /send to kindle/i }));
+
+      await waitFor(() => {
+        expect(sendToKindleServerFnMock).toHaveBeenCalledWith({
+          data: { editionFileId: "ef1" },
+        });
+      });
+    });
+
+    it("shows success toast on successful send", async () => {
+      sendToKindleServerFnMock.mockResolvedValue({ success: true });
+
+      render(
+        <EditionTabPanel
+          edition={baseEdition}
+          isLastEdition={false}
+          onEditionFieldSaved={vi.fn()}
+          onDeleteEdition={vi.fn()}
+          smtpConfigured={true}
+          kindleConfigured={true}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: /send to kindle/i }));
+
+      await waitFor(() => {
+        expect(mockToast.success).toHaveBeenCalledWith("Sent to Kindle");
+      });
+    });
+
+    it("shows error toast on failed send", async () => {
+      sendToKindleServerFnMock.mockResolvedValue({ success: false, error: "File too large" });
+
+      render(
+        <EditionTabPanel
+          edition={baseEdition}
+          isLastEdition={false}
+          onEditionFieldSaved={vi.fn()}
+          onDeleteEdition={vi.fn()}
+          smtpConfigured={true}
+          kindleConfigured={true}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: /send to kindle/i }));
+
+      await waitFor(() => {
+        expect(mockToast.error).toHaveBeenCalledWith("File too large");
+      });
+    });
+
+    it("shows error toast when sendToKindleServerFn throws", async () => {
+      sendToKindleServerFnMock.mockRejectedValue(new Error("Network error"));
+
+      render(
+        <EditionTabPanel
+          edition={baseEdition}
+          isLastEdition={false}
+          onEditionFieldSaved={vi.fn()}
+          onDeleteEdition={vi.fn()}
+          smtpConfigured={true}
+          kindleConfigured={true}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: /send to kindle/i }));
+
+      await waitFor(() => {
+        expect(mockToast.error).toHaveBeenCalledWith("Network error");
+      });
+    });
+
+    it("shows Sending state while in progress", async () => {
+      let resolveSend!: () => void;
+      sendToKindleServerFnMock.mockReturnValue(
+        new Promise<{ success: boolean }>((resolve) => {
+          resolveSend = () => { resolve({ success: true }); };
+        }),
+      );
+
+      render(
+        <EditionTabPanel
+          edition={baseEdition}
+          isLastEdition={false}
+          onEditionFieldSaved={vi.fn()}
+          onDeleteEdition={vi.fn()}
+          smtpConfigured={true}
+          kindleConfigured={true}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: /send to kindle/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText("Sending…")).toBeTruthy();
+      });
+
+      resolveSend();
+
+      await waitFor(() => {
+        expect(screen.queryByText("Sending…")).toBeNull();
+      });
+    });
+
+    it("shows fallback error when send fails without error message", async () => {
+      sendToKindleServerFnMock.mockResolvedValue({ success: false });
+
+      render(
+        <EditionTabPanel
+          edition={baseEdition}
+          isLastEdition={false}
+          onEditionFieldSaved={vi.fn()}
+          onDeleteEdition={vi.fn()}
+          smtpConfigured={true}
+          kindleConfigured={true}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: /send to kindle/i }));
+
+      await waitFor(() => {
+        expect(mockToast.error).toHaveBeenCalledWith("Failed to send to Kindle");
+      });
+    });
+
+    it("shows generic error when send throws non-Error", async () => {
+      sendToKindleServerFnMock.mockRejectedValue("string-error");
+
+      render(
+        <EditionTabPanel
+          edition={baseEdition}
+          isLastEdition={false}
+          onEditionFieldSaved={vi.fn()}
+          onDeleteEdition={vi.fn()}
+          smtpConfigured={true}
+          kindleConfigured={true}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: /send to kindle/i }));
+
+      await waitFor(() => {
+        expect(mockToast.error).toHaveBeenCalledWith("Failed to send to Kindle");
+      });
+    });
   });
 });
