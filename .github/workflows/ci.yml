@@ -167,6 +167,8 @@ jobs:
       AUTH_OIDC_CLIENT_SECRET: e2e-secret
       APP_URL: http://localhost:3000
       COVER_CACHE_DIR: /tmp/e2e-covers
+      PG_DUMP_PATH: /usr/lib/postgresql/17/bin/pg_dump
+      PSQL_PATH: /usr/lib/postgresql/17/bin/psql
     steps:
       - uses: actions/checkout@v4
 
@@ -195,6 +197,9 @@ jobs:
         run: |
           mkdir -p apps/web/.output/server/node_modules/@prisma
           ln -sfn "$(pwd)/packages/db/node_modules/@prisma/client" apps/web/.output/server/node_modules/@prisma/client
+
+      - name: Install PostgreSQL 17 client tools
+        run: sudo apt-get update -qq && sudo apt-get install -y postgresql-client-17
 
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium
