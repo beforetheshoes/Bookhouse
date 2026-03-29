@@ -24,8 +24,13 @@ export interface LibraryFilterValues {
 
 interface LibraryFiltersProps {
   facetCounts: FacetCounts;
+  totalFacetCounts: FacetCounts;
   filters: LibraryFilterValues;
   onFiltersChange: (filters: LibraryFilterValues) => void;
+}
+
+function formatCount(filtered: number, total: number): string {
+  return filtered === total ? String(filtered) : `${String(filtered)} / ${String(total)}`;
 }
 
 function hasActiveFilters(filters: LibraryFilterValues): boolean {
@@ -44,6 +49,7 @@ function hasActiveFilters(filters: LibraryFilterValues): boolean {
 
 export function LibraryFilters({
   facetCounts,
+  totalFacetCounts,
   filters,
   onFiltersChange,
 }: LibraryFiltersProps) {
@@ -68,14 +74,18 @@ export function LibraryFilters({
     onFiltersChange({});
   }
 
+  const filtersActive = hasActiveFilters(filters);
+
   return (
     <div className="space-y-4">
-      {hasActiveFilters(filters) && (
-        <Button variant="ghost" size="sm" onClick={clearAll} className="gap-1">
-          <X className="size-3" />
-          Clear All
-        </Button>
-      )}
+      <div data-testid="clear-all-spacer" className="h-8">
+        {filtersActive && (
+          <Button variant="ghost" size="sm" onClick={clearAll} className="gap-1">
+            <X className="size-3" />
+            Clear All
+          </Button>
+        )}
+      </div>
 
       <div className="space-y-2">
         <h3 className="text-sm font-medium">Format</h3>
@@ -86,10 +96,11 @@ export function LibraryFilters({
               variant="outline"
               size="sm"
               data-active={filters.format?.includes(f.formatFamily) ?? false}
+              data-empty={f._count._all === 0}
               onClick={() => { toggleFormat(f.formatFamily); }}
-              className="data-[active=true]:bg-accent"
+              className="data-[active=true]:bg-primary data-[active=true]:text-primary-foreground data-[active=true]:border-primary dark:data-[active=true]:bg-primary dark:data-[active=true]:text-primary-foreground data-[empty=true]:opacity-50"
             >
-              {f.formatFamily} ({String(f._count._all)})
+              {f.formatFamily} ({formatCount(f._count._all, totalFacetCounts.format.find((t) => t.formatFamily === f.formatFamily)?._count._all ?? f._count._all)})
             </Button>
           ))}
         </div>
@@ -102,19 +113,21 @@ export function LibraryFilters({
             variant="outline"
             size="sm"
             data-active={filters.hasCover === true}
+            data-empty={facetCounts.hasCover.withCover === 0}
             onClick={() => { toggleBoolean("hasCover", true); }}
-            className="data-[active=true]:bg-accent"
+            className="data-[active=true]:bg-primary data-[active=true]:text-primary-foreground data-[active=true]:border-primary dark:data-[active=true]:bg-primary dark:data-[active=true]:text-primary-foreground data-[empty=true]:opacity-50"
           >
-            With Cover ({String(facetCounts.hasCover.withCover)})
+            With Cover ({formatCount(facetCounts.hasCover.withCover, totalFacetCounts.hasCover.withCover)})
           </Button>
           <Button
             variant="outline"
             size="sm"
             data-active={filters.hasCover === false}
+            data-empty={facetCounts.hasCover.withoutCover === 0}
             onClick={() => { toggleBoolean("hasCover", false); }}
-            className="data-[active=true]:bg-accent"
+            className="data-[active=true]:bg-primary data-[active=true]:text-primary-foreground data-[active=true]:border-primary dark:data-[active=true]:bg-primary dark:data-[active=true]:text-primary-foreground data-[empty=true]:opacity-50"
           >
-            Without Cover ({String(facetCounts.hasCover.withoutCover)})
+            Without Cover ({formatCount(facetCounts.hasCover.withoutCover, totalFacetCounts.hasCover.withoutCover)})
           </Button>
         </div>
       </div>
@@ -126,19 +139,21 @@ export function LibraryFilters({
             variant="outline"
             size="sm"
             data-active={filters.enriched === true}
+            data-empty={facetCounts.enrichment.enriched === 0}
             onClick={() => { toggleBoolean("enriched", true); }}
-            className="data-[active=true]:bg-accent"
+            className="data-[active=true]:bg-primary data-[active=true]:text-primary-foreground data-[active=true]:border-primary dark:data-[active=true]:bg-primary dark:data-[active=true]:text-primary-foreground data-[empty=true]:opacity-50"
           >
-            Enriched ({String(facetCounts.enrichment.enriched)})
+            Enriched ({formatCount(facetCounts.enrichment.enriched, totalFacetCounts.enrichment.enriched)})
           </Button>
           <Button
             variant="outline"
             size="sm"
             data-active={filters.enriched === false}
+            data-empty={facetCounts.enrichment.unenriched === 0}
             onClick={() => { toggleBoolean("enriched", false); }}
-            className="data-[active=true]:bg-accent"
+            className="data-[active=true]:bg-primary data-[active=true]:text-primary-foreground data-[active=true]:border-primary dark:data-[active=true]:bg-primary dark:data-[active=true]:text-primary-foreground data-[empty=true]:opacity-50"
           >
-            Unenriched ({String(facetCounts.enrichment.unenriched)})
+            Unenriched ({formatCount(facetCounts.enrichment.unenriched, totalFacetCounts.enrichment.unenriched)})
           </Button>
         </div>
       </div>
@@ -150,19 +165,21 @@ export function LibraryFilters({
             variant="outline"
             size="sm"
             data-active={filters.hasDescription === true}
+            data-empty={facetCounts.description.withDescription === 0}
             onClick={() => { toggleBoolean("hasDescription", true); }}
-            className="data-[active=true]:bg-accent"
+            className="data-[active=true]:bg-primary data-[active=true]:text-primary-foreground data-[active=true]:border-primary dark:data-[active=true]:bg-primary dark:data-[active=true]:text-primary-foreground data-[empty=true]:opacity-50"
           >
-            Has Description ({String(facetCounts.description.withDescription)})
+            Has Description ({formatCount(facetCounts.description.withDescription, totalFacetCounts.description.withDescription)})
           </Button>
           <Button
             variant="outline"
             size="sm"
             data-active={filters.hasDescription === false}
+            data-empty={facetCounts.description.withoutDescription === 0}
             onClick={() => { toggleBoolean("hasDescription", false); }}
-            className="data-[active=true]:bg-accent"
+            className="data-[active=true]:bg-primary data-[active=true]:text-primary-foreground data-[active=true]:border-primary dark:data-[active=true]:bg-primary dark:data-[active=true]:text-primary-foreground data-[empty=true]:opacity-50"
           >
-            No Description ({String(facetCounts.description.withoutDescription)})
+            No Description ({formatCount(facetCounts.description.withoutDescription, totalFacetCounts.description.withoutDescription)})
           </Button>
         </div>
       </div>
@@ -174,19 +191,21 @@ export function LibraryFilters({
             variant="outline"
             size="sm"
             data-active={filters.inSeries === true}
+            data-empty={facetCounts.series.inSeries === 0}
             onClick={() => { toggleBoolean("inSeries", true); }}
-            className="data-[active=true]:bg-accent"
+            className="data-[active=true]:bg-primary data-[active=true]:text-primary-foreground data-[active=true]:border-primary dark:data-[active=true]:bg-primary dark:data-[active=true]:text-primary-foreground data-[empty=true]:opacity-50"
           >
-            In Series ({String(facetCounts.series.inSeries)})
+            In Series ({formatCount(facetCounts.series.inSeries, totalFacetCounts.series.inSeries)})
           </Button>
           <Button
             variant="outline"
             size="sm"
             data-active={filters.inSeries === false}
+            data-empty={facetCounts.series.standalone === 0}
             onClick={() => { toggleBoolean("inSeries", false); }}
-            className="data-[active=true]:bg-accent"
+            className="data-[active=true]:bg-primary data-[active=true]:text-primary-foreground data-[active=true]:border-primary dark:data-[active=true]:bg-primary dark:data-[active=true]:text-primary-foreground data-[empty=true]:opacity-50"
           >
-            Standalone ({String(facetCounts.series.standalone)})
+            Standalone ({formatCount(facetCounts.series.standalone, totalFacetCounts.series.standalone)})
           </Button>
         </div>
       </div>
@@ -198,19 +217,21 @@ export function LibraryFilters({
             variant="outline"
             size="sm"
             data-active={filters.hasIsbn === true}
+            data-empty={facetCounts.isbn.withIsbn === 0}
             onClick={() => { toggleBoolean("hasIsbn", true); }}
-            className="data-[active=true]:bg-accent"
+            className="data-[active=true]:bg-primary data-[active=true]:text-primary-foreground data-[active=true]:border-primary dark:data-[active=true]:bg-primary dark:data-[active=true]:text-primary-foreground data-[empty=true]:opacity-50"
           >
-            Has ISBN ({String(facetCounts.isbn.withIsbn)})
+            Has ISBN ({formatCount(facetCounts.isbn.withIsbn, totalFacetCounts.isbn.withIsbn)})
           </Button>
           <Button
             variant="outline"
             size="sm"
             data-active={filters.hasIsbn === false}
+            data-empty={facetCounts.isbn.withoutIsbn === 0}
             onClick={() => { toggleBoolean("hasIsbn", false); }}
-            className="data-[active=true]:bg-accent"
+            className="data-[active=true]:bg-primary data-[active=true]:text-primary-foreground data-[active=true]:border-primary dark:data-[active=true]:bg-primary dark:data-[active=true]:text-primary-foreground data-[empty=true]:opacity-50"
           >
-            No ISBN ({String(facetCounts.isbn.withoutIsbn)})
+            No ISBN ({formatCount(facetCounts.isbn.withoutIsbn, totalFacetCounts.isbn.withoutIsbn)})
           </Button>
         </div>
       </div>

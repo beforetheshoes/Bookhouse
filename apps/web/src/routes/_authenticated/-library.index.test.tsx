@@ -48,6 +48,7 @@ let mockLoaderData: {
     }[];
     totalCount: number;
     facetCounts: typeof defaultFacetCounts;
+    totalFacetCounts: typeof defaultFacetCounts;
   };
   activeJobCount: number;
   progressMap: Record<string, number>;
@@ -56,6 +57,7 @@ let mockLoaderData: {
     works: [],
     totalCount: 0,
     facetCounts: defaultFacetCounts,
+    totalFacetCounts: defaultFacetCounts,
   },
   activeJobCount: 0,
   progressMap: {},
@@ -291,6 +293,7 @@ describe("LibraryPage", () => {
         works: [],
         totalCount: 0,
         facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
       },
       activeJobCount: 0,
       progressMap: {},
@@ -306,7 +309,7 @@ describe("LibraryPage", () => {
   });
 
   it("loader calls getFilteredLibraryWorksServerFn, getActiveJobCountServerFn, and getBulkReadingProgressServerFn", async () => {
-    getFilteredLibraryWorksServerFnMock.mockResolvedValueOnce({ works: [], totalCount: 0, facetCounts: defaultFacetCounts });
+    getFilteredLibraryWorksServerFnMock.mockResolvedValueOnce({ works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts });
     getActiveJobCountServerFnMock.mockResolvedValueOnce(0);
     getBulkReadingProgressServerFnMock.mockResolvedValueOnce({});
     const { Route } = await import("./library.index");
@@ -316,7 +319,7 @@ describe("LibraryPage", () => {
     expect(getActiveJobCountServerFnMock).toHaveBeenCalled();
     expect(getBulkReadingProgressServerFnMock).toHaveBeenCalled();
     expect(result).toEqual({
-      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     });
@@ -324,7 +327,7 @@ describe("LibraryPage", () => {
 
   it("renders 'Library' heading", async () => {
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -341,6 +344,7 @@ describe("LibraryPage", () => {
         works: [makeWork("The Great Gatsby", ["F. Scott Fitzgerald"], ["EBOOK"])],
         totalCount: 1,
         facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
       },
       activeJobCount: 0,
       progressMap: {},
@@ -358,6 +362,7 @@ describe("LibraryPage", () => {
         works: [makeWork("The Great Gatsby", ["F. Scott Fitzgerald"], ["EBOOK"]), makeWork("Moby Dick", [], [])],
         totalCount: 2,
         facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
       },
       activeJobCount: 0,
       progressMap: {},
@@ -377,6 +382,7 @@ describe("LibraryPage", () => {
         works: [makeWork("The Great Gatsby", ["F. Scott Fitzgerald"], ["EBOOK"])],
         totalCount: 1,
         facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
       },
       activeJobCount: 0,
       progressMap: {},
@@ -396,6 +402,7 @@ describe("LibraryPage", () => {
         works: [makeWork("Unknown Author Book", [])],
         totalCount: 1,
         facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
       },
       activeJobCount: 0,
       progressMap: {},
@@ -425,6 +432,7 @@ describe("LibraryPage", () => {
         }],
         totalCount: 1,
         facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
       },
       activeJobCount: 0,
       progressMap: {},
@@ -442,6 +450,7 @@ describe("LibraryPage", () => {
         works: [makeWork("Test Book", ["Author"], ["AUDIOBOOK"])],
         totalCount: 1,
         facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
       },
       activeJobCount: 0,
       progressMap: {},
@@ -459,6 +468,7 @@ describe("LibraryPage", () => {
         works: [makeWork("Test Book", ["Author"], ["EBOOK"])],
         totalCount: 1,
         facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
       },
       activeJobCount: 0,
       progressMap: {},
@@ -477,6 +487,7 @@ describe("LibraryPage", () => {
         works: [makeWork("Test Book", ["Author"], ["EBOOK"])],
         totalCount: 1,
         facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
       },
       activeJobCount: 0,
       progressMap: {},
@@ -495,6 +506,7 @@ describe("LibraryPage", () => {
         works: [makeWork("Test Book", ["Author"], ["EBOOK"])],
         totalCount: 1,
         facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
       },
       activeJobCount: 0,
       progressMap: {},
@@ -513,6 +525,7 @@ describe("LibraryPage", () => {
         works: [makeWork("Test Book", ["Author"], ["EBOOK"])],
         totalCount: 1,
         facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
       },
       activeJobCount: 0,
       progressMap: {},
@@ -531,6 +544,7 @@ describe("LibraryPage", () => {
         works: [makeWork("Test Book", ["Author"], ["EBOOK"])],
         totalCount: 1,
         facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
       },
       activeJobCount: 0,
       progressMap: {},
@@ -548,6 +562,7 @@ describe("LibraryPage", () => {
         works: [makeWork("Test Book", ["Author"], ["EBOOK"])],
         totalCount: 1,
         facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
       },
       activeJobCount: 0,
       progressMap: {},
@@ -566,6 +581,7 @@ describe("LibraryPage", () => {
         works: [makeWork("Test Book", ["Author A"], ["EBOOK"]), makeWork("Other Book", ["Author B"], ["EBOOK"])],
         totalCount: 2,
         facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
       },
       activeJobCount: 0,
       progressMap: {},
@@ -584,6 +600,7 @@ describe("LibraryPage", () => {
         works: [makeWork("Ebook", [], ["EBOOK"]), makeWork("Audio", [], ["AUDIOBOOK"])],
         totalCount: 2,
         facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
       },
       activeJobCount: 0,
       progressMap: {},
@@ -602,6 +619,7 @@ describe("LibraryPage", () => {
         works: [makeWork("Book A"), makeWork("Book B")],
         totalCount: 2,
         facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
       },
       activeJobCount: 0,
       progressMap: {},
@@ -633,6 +651,7 @@ describe("LibraryPage", () => {
         ],
         totalCount: 2,
         facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
       },
       activeJobCount: 0,
       progressMap: {},
@@ -677,6 +696,7 @@ describe("LibraryPage", () => {
         ],
         totalCount: 3,
         facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
       },
       activeJobCount: 0,
       progressMap: {},
@@ -697,6 +717,7 @@ describe("LibraryPage", () => {
         works: [makeWork("Book A"), makeWork("Book B")],
         totalCount: 2,
         facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
       },
       activeJobCount: 0,
       progressMap: {},
@@ -715,6 +736,7 @@ describe("LibraryPage", () => {
         works: [makeWork("Test Book")],
         totalCount: 1,
         facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
       },
       activeJobCount: 0,
       progressMap: {},
@@ -734,6 +756,7 @@ describe("LibraryPage", () => {
         works: [makeWork("Test Book", ["Author"], ["EBOOK"])],
         totalCount: 1,
         facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
       },
       activeJobCount: 0,
       progressMap: {},
@@ -749,7 +772,7 @@ describe("LibraryPage", () => {
 
   it("renders LibraryToolbar", async () => {
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -761,7 +784,7 @@ describe("LibraryPage", () => {
 
   it("renders LibraryFilters", async () => {
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -773,7 +796,7 @@ describe("LibraryPage", () => {
 
   it("renders LibraryPagination", async () => {
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -785,7 +808,7 @@ describe("LibraryPage", () => {
 
   it("shows empty state when no works and not scanning with no filters", async () => {
     mockLoaderData = {
-      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -798,7 +821,7 @@ describe("LibraryPage", () => {
 
   it("empty state links to settings/libraries", async () => {
     mockLoaderData = {
-      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -811,7 +834,7 @@ describe("LibraryPage", () => {
 
   it("does not show empty state when scanning with no works", async () => {
     mockLoaderData = {
-      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 1,
       progressMap: {},
     };
@@ -825,7 +848,7 @@ describe("LibraryPage", () => {
   it("does not show empty state when filters are active and results are empty", async () => {
     mockSearch = { ...mockSearch, q: "something" } as typeof mockSearch;
     mockLoaderData = {
-      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -837,7 +860,7 @@ describe("LibraryPage", () => {
 
   it("shows scanning indicator when activeJobCount > 0", async () => {
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 2,
       progressMap: {},
     };
@@ -849,7 +872,7 @@ describe("LibraryPage", () => {
 
   it("shows scanning indicator with new count when totalCount > prevCount", async () => {
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Old Book")], totalCount: 1, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Old Book")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -860,7 +883,7 @@ describe("LibraryPage", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Old Book"), makeWork("New Book")], totalCount: 2, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Old Book"), makeWork("New Book")], totalCount: 2, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 1,
       progressMap: {},
     };
@@ -876,6 +899,7 @@ describe("LibraryPage", () => {
         works: [makeWork("Stub Book", ["Author"], ["EBOOK"], "STUB")],
         totalCount: 1,
         facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
       },
       activeJobCount: 1,
       progressMap: {},
@@ -893,6 +917,7 @@ describe("LibraryPage", () => {
         works: [makeWork("Stub Book", ["Author"], ["EBOOK"], "STUB")],
         totalCount: 1,
         facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
       },
       activeJobCount: 0,
       progressMap: {},
@@ -910,6 +935,7 @@ describe("LibraryPage", () => {
         works: [makeWork("Enriched Book", ["Author"], ["EBOOK"], "ENRICHED")],
         totalCount: 1,
         facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
       },
       activeJobCount: 0,
       progressMap: {},
@@ -923,7 +949,7 @@ describe("LibraryPage", () => {
   it("passes progressMap to LibraryGrid", async () => {
     mockView = "grid";
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: { "work-test": 42 },
     };
@@ -936,7 +962,7 @@ describe("LibraryPage", () => {
 
   it("does not show scanning indicator when activeJobCount is 0", async () => {
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -948,7 +974,7 @@ describe("LibraryPage", () => {
 
   it("navigates with search text when onSearchChange is called", async () => {
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -965,7 +991,7 @@ describe("LibraryPage", () => {
 
   it("navigates with empty q when search is cleared", async () => {
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -979,7 +1005,7 @@ describe("LibraryPage", () => {
 
   it("navigates with sort when onSortChange is called", async () => {
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -993,7 +1019,7 @@ describe("LibraryPage", () => {
 
   it("navigates with filters when onFiltersChange is called", async () => {
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -1007,7 +1033,7 @@ describe("LibraryPage", () => {
 
   it("navigates with page when onPageChange is called", async () => {
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Test")], totalCount: 100, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Test")], totalCount: 100, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -1021,7 +1047,7 @@ describe("LibraryPage", () => {
 
   it("navigates with pageSize and page 1 when onPageSizeChange is called", async () => {
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Test")], totalCount: 100, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Test")], totalCount: 100, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -1040,6 +1066,7 @@ describe("LibraryPage", () => {
         works: [makeWork("Unread"), makeWork("Reading"), makeWork("Done")],
         totalCount: 3,
         facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
       },
       activeJobCount: 0,
       progressMap: { "work-reading": 50, "work-done": 100 },
@@ -1065,6 +1092,7 @@ describe("LibraryPage", () => {
         works: [makeWork("Unread"), makeWork("Done")],
         totalCount: 2,
         facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
       },
       activeJobCount: 0,
       progressMap: { "work-done": 100 },
@@ -1087,6 +1115,7 @@ describe("LibraryPage", () => {
         works: [makeWork("Unread"), makeWork("Done")],
         totalCount: 2,
         facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
       },
       activeJobCount: 0,
       progressMap: { "work-done": 100 },
@@ -1105,7 +1134,7 @@ describe("LibraryPage", () => {
   it("does not show empty state when format filter is active", async () => {
     mockSearch = { ...mockSearch, format: ["EBOOK"] } as typeof mockSearch;
     mockLoaderData = {
-      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -1118,7 +1147,7 @@ describe("LibraryPage", () => {
   it("does not show empty state when authorId filter is active", async () => {
     mockSearch = { ...mockSearch, authorId: ["a1"] } as typeof mockSearch;
     mockLoaderData = {
-      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -1131,7 +1160,7 @@ describe("LibraryPage", () => {
   it("does not show empty state when seriesId filter is active", async () => {
     mockSearch = { ...mockSearch, seriesId: ["s1"] } as typeof mockSearch;
     mockLoaderData = {
-      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -1144,7 +1173,7 @@ describe("LibraryPage", () => {
   it("does not show empty state when publisher filter is active", async () => {
     mockSearch = { ...mockSearch, publisher: ["Penguin"] } as typeof mockSearch;
     mockLoaderData = {
-      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -1157,7 +1186,7 @@ describe("LibraryPage", () => {
   it("does not show empty state when hasCover filter is active", async () => {
     mockSearch = { ...mockSearch, hasCover: true } as typeof mockSearch;
     mockLoaderData = {
-      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -1170,7 +1199,7 @@ describe("LibraryPage", () => {
   it("passes search params as toolbar search value", async () => {
     mockSearch = { ...mockSearch, q: "test query" } as typeof mockSearch;
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -1183,7 +1212,7 @@ describe("LibraryPage", () => {
   it("passes current filters from search to LibraryFilters", async () => {
     mockSearch = { ...mockSearch, format: ["EBOOK"], hasCover: true } as typeof mockSearch;
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -1198,7 +1227,7 @@ describe("LibraryPage", () => {
   it("renders column picker and text overflow toggle in table view", async () => {
     mockView = "table";
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -1212,7 +1241,7 @@ describe("LibraryPage", () => {
   it("does not render column picker or text overflow toggle in grid view", async () => {
     mockView = "grid";
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -1228,7 +1257,7 @@ describe("LibraryPage", () => {
     mockView = "table";
     mockTablePrefs = { columnVisibility: { isbn: false }, textOverflow: "truncate" };
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -1242,7 +1271,7 @@ describe("LibraryPage", () => {
     mockView = "table";
     mockTablePrefs = { columnVisibility: {}, textOverflow: "truncate" };
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -1261,7 +1290,7 @@ describe("LibraryPage", () => {
     mockView = "table";
     mockTablePrefs = { columnVisibility: {}, textOverflow: "truncate" };
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -1280,7 +1309,7 @@ describe("LibraryPage", () => {
     mockView = "table";
     mockTablePrefs = { columnVisibility: {}, textOverflow: "wrap" };
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -1300,7 +1329,7 @@ describe("LibraryPage", () => {
   it("renders select-all checkbox in table view", async () => {
     mockView = "table";
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -1314,7 +1343,7 @@ describe("LibraryPage", () => {
   it("shows floating action bar with delete button when rows are selected", async () => {
     mockView = "table";
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -1337,7 +1366,7 @@ describe("LibraryPage", () => {
     bulkDeleteWorksServerFnMock.mockResolvedValue({ deletedWorkIds: ["work-book-a"] });
     mockView = "table";
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -1373,7 +1402,7 @@ describe("LibraryPage", () => {
     bulkDeleteWorksServerFnMock.mockResolvedValue({ deletedWorkIds: ["work-book-a", "work-book-b"] });
     mockView = "table";
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Book A"), makeWork("Book B")], totalCount: 2, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Book A"), makeWork("Book B")], totalCount: 2, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -1402,7 +1431,7 @@ describe("LibraryPage", () => {
   it("selects all rows when select-all header checkbox is clicked", async () => {
     mockView = "table";
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Book A"), makeWork("Book B")], totalCount: 2, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Book A"), makeWork("Book B")], totalCount: 2, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -1423,7 +1452,7 @@ describe("LibraryPage", () => {
     bulkDeleteWorksServerFnMock.mockRejectedValue(new Error("Bulk delete failed"));
     mockView = "table";
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -1454,7 +1483,7 @@ describe("LibraryPage", () => {
     bulkDeleteWorksServerFnMock.mockRejectedValue("something went wrong");
     mockView = "table";
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -1484,7 +1513,7 @@ describe("LibraryPage", () => {
   it("closes bulk delete dialog when cancel button is clicked", async () => {
     mockView = "table";
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };
@@ -1510,7 +1539,7 @@ describe("LibraryPage", () => {
   it("clears selection when Clear button is clicked", async () => {
     mockView = "table";
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts },
+      libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
     };

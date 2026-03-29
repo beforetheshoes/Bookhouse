@@ -2,6 +2,20 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import type { Prisma } from "@bookhouse/db";
 
+const FORMAT_FAMILIES = ["EBOOK", "AUDIOBOOK"] as const;
+
+type FormatCount = { formatFamily: string; _count: { _all: number } };
+
+function normalizeFormatCounts(
+  raw: FormatCount[],
+): FormatCount[] {
+  const map = new Map(raw.map((r) => [r.formatFamily, r._count._all]));
+  return FORMAT_FAMILIES.map((ff) => ({
+    formatFamily: ff,
+    _count: { _all: map.get(ff) ?? 0 },
+  }));
+}
+
 const WORK_INCLUDE = {
   series: true,
   editions: {
@@ -84,6 +98,14 @@ function buildWhere(data: z.infer<typeof filterSchema>): Prisma.WorkWhereInput {
     editionConditions.push({ publisher: { in: data.publisher } });
   }
 
+  if (data.hasIsbn === true) {
+    editionConditions.push({
+      OR: [{ isbn13: { not: null } }, { isbn10: { not: null } }],
+    });
+  } else if (data.hasIsbn === false) {
+    editionConditions.push({ isbn13: null, isbn10: null });
+  }
+
   if (editionConditions.length === 1) {
     where.editions = { some: editionConditions[0] };
   } else if (editionConditions.length > 1) {
@@ -116,14 +138,6 @@ function buildWhere(data: z.infer<typeof filterSchema>): Prisma.WorkWhereInput {
     where.seriesId = { not: null };
   } else if (data.inSeries === false) {
     where.seriesId = null;
-  }
-
-  if (data.hasIsbn === true) {
-    editionConditions.push({
-      OR: [{ isbn13: { not: null } }, { isbn10: { not: null } }],
-    });
-  } else if (data.hasIsbn === false) {
-    editionConditions.push({ isbn13: null, isbn10: null });
   }
 
   where.AND = [
@@ -288,13 +302,8 @@ export const getFilteredLibraryWorksServerFn = createServerFn({
           include: WORK_INCLUDE,
         });
 
-    // Facet counts exclude their own filter to show meaningful counts
-    const whereForCoverFacets = buildWhere({ ...parsed, hasCover: undefined });
-    const whereForFormatFacets = buildWhere({ ...parsed, format: undefined });
-    const whereForEnrichmentFacets = buildWhere({ ...parsed, enriched: undefined });
-    const whereForDescriptionFacets = buildWhere({ ...parsed, hasDescription: undefined });
-    const whereForSeriesFacets = buildWhere({ ...parsed, inSeries: undefined, seriesId: undefined });
-    const whereForIsbnFacets = buildWhere({ ...parsed, hasIsbn: undefined });
+    // Facet counts use full filter set so counts always match the filtered view
+    const baseWhere = buildWhere(filterSchema.parse({}));
 
     const [
       works, totalCount, formatCounts,
@@ -303,33 +312,54 @@ export const getFilteredLibraryWorksServerFn = createServerFn({
       withDescriptionCount, withoutDescriptionCount,
       inSeriesCount, standaloneCount,
       withIsbnCount, withoutIsbnCount,
+      totalFormatCounts,
+      totalWithCoverCount, totalWithoutCoverCount,
+      totalEnrichedCount, totalUnenrichedCount,
+      totalWithDescriptionCount, totalWithoutDescriptionCount,
+      totalInSeriesCount, totalStandaloneCount,
+      totalWithIsbnCount, totalWithoutIsbnCount,
     ] = await Promise.all([
       worksPromise,
       db.work.count({ where }),
       db.edition.groupBy({
         by: ["formatFamily"],
         _count: { _all: true },
-        where: { work: whereForFormatFacets },
+        where: { work: where },
       }),
-      db.work.count({ where: { ...whereForCoverFacets, coverPath: { not: null } } }),
-      db.work.count({ where: { ...whereForCoverFacets, coverPath: null } }),
-      db.work.count({ where: { ...whereForEnrichmentFacets, enrichmentStatus: "ENRICHED" } }),
-      db.work.count({ where: { ...whereForEnrichmentFacets, enrichmentStatus: "STUB" } }),
-      db.work.count({ where: { ...whereForDescriptionFacets, description: { not: null } } }),
-      db.work.count({ where: { ...whereForDescriptionFacets, description: null } }),
-      db.work.count({ where: { ...whereForSeriesFacets, seriesId: { not: null } } }),
-      db.work.count({ where: { ...whereForSeriesFacets, seriesId: null } }),
+      // Use AND to combine so facet conditions don't override active filter conditions
+      db.work.count({ where: { AND: [where, { coverPath: { not: null } }] } }),
+      db.work.count({ where: { AND: [where, { coverPath: null }] } }),
+      db.work.count({ where: { AND: [where, { enrichmentStatus: "ENRICHED" }] } }),
+      db.work.count({ where: { AND: [where, { enrichmentStatus: "STUB" }] } }),
+      db.work.count({ where: { AND: [where, { description: { not: null } }] } }),
+      db.work.count({ where: { AND: [where, { description: null }] } }),
+      db.work.count({ where: { AND: [where, { seriesId: { not: null } }] } }),
+      db.work.count({ where: { AND: [where, { seriesId: null }] } }),
       db.work.count({
-        where: {
-          ...whereForIsbnFacets,
-          editions: { some: { OR: [{ isbn13: { not: null } }, { isbn10: { not: null } }] } },
-        },
+        where: { AND: [where, { editions: { some: { OR: [{ isbn13: { not: null } }, { isbn10: { not: null } }] } } }] },
       }),
       db.work.count({
-        where: {
-          ...whereForIsbnFacets,
-          editions: { every: { isbn13: null, isbn10: null } },
-        },
+        where: { AND: [where, { editions: { every: { isbn13: null, isbn10: null } } }] },
+      }),
+      // Unfiltered totals for showing "filtered / total" in the UI
+      db.edition.groupBy({
+        by: ["formatFamily"],
+        _count: { _all: true },
+        where: { work: baseWhere },
+      }),
+      db.work.count({ where: { AND: [baseWhere, { coverPath: { not: null } }] } }),
+      db.work.count({ where: { AND: [baseWhere, { coverPath: null }] } }),
+      db.work.count({ where: { AND: [baseWhere, { enrichmentStatus: "ENRICHED" }] } }),
+      db.work.count({ where: { AND: [baseWhere, { enrichmentStatus: "STUB" }] } }),
+      db.work.count({ where: { AND: [baseWhere, { description: { not: null } }] } }),
+      db.work.count({ where: { AND: [baseWhere, { description: null }] } }),
+      db.work.count({ where: { AND: [baseWhere, { seriesId: { not: null } }] } }),
+      db.work.count({ where: { AND: [baseWhere, { seriesId: null }] } }),
+      db.work.count({
+        where: { AND: [baseWhere, { editions: { some: { OR: [{ isbn13: { not: null } }, { isbn10: { not: null } }] } } }] },
+      }),
+      db.work.count({
+        where: { AND: [baseWhere, { editions: { every: { isbn13: null, isbn10: null } } }] },
       }),
     ]);
 
@@ -337,7 +367,7 @@ export const getFilteredLibraryWorksServerFn = createServerFn({
       works,
       totalCount,
       facetCounts: {
-        format: formatCounts,
+        format: normalizeFormatCounts(formatCounts),
         hasCover: {
           withCover: withCoverCount,
           withoutCover: withoutCoverCount,
@@ -357,6 +387,29 @@ export const getFilteredLibraryWorksServerFn = createServerFn({
         isbn: {
           withIsbn: withIsbnCount,
           withoutIsbn: withoutIsbnCount,
+        },
+      },
+      totalFacetCounts: {
+        format: normalizeFormatCounts(totalFormatCounts),
+        hasCover: {
+          withCover: totalWithCoverCount,
+          withoutCover: totalWithoutCoverCount,
+        },
+        enrichment: {
+          enriched: totalEnrichedCount,
+          unenriched: totalUnenrichedCount,
+        },
+        description: {
+          withDescription: totalWithDescriptionCount,
+          withoutDescription: totalWithoutDescriptionCount,
+        },
+        series: {
+          inSeries: totalInSeriesCount,
+          standalone: totalStandaloneCount,
+        },
+        isbn: {
+          withIsbn: totalWithIsbnCount,
+          withoutIsbn: totalWithoutIsbnCount,
         },
       },
     };
