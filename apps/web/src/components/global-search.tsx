@@ -68,7 +68,7 @@ export function GlobalSearch() {
         size="sm"
         onClick={() => { setOpen(true); }}
         aria-label="Search library"
-        className="gap-2"
+        className="w-full max-w-md justify-start gap-2"
       >
         <Search className="size-4" />
         <span className="hidden text-muted-foreground sm:inline">Search...</span>

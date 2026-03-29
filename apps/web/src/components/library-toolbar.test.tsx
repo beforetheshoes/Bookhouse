@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
 import { LibraryToolbar, type SortValue } from "./library-toolbar";
@@ -23,15 +23,17 @@ const defaultProps = {
 describe("LibraryToolbar", () => {
   it("renders search input with placeholder", () => {
     render(<LibraryToolbar {...defaultProps} />);
-    expect(screen.getByPlaceholderText("Search title or author...")).toBeTruthy();
+    expect(screen.getByPlaceholderText("Filter by title or author...")).toBeTruthy();
   });
 
-  it("calls onSearchChange when typing in search input", async () => {
+  it("calls onSearchChange after debounce when typing in search input", async () => {
     const onSearchChange = vi.fn();
     const user = userEvent.setup();
     render(<LibraryToolbar {...defaultProps} onSearchChange={onSearchChange} />);
-    await user.type(screen.getByPlaceholderText("Search title or author..."), "hello");
-    expect(onSearchChange).toHaveBeenCalled();
+    await user.type(screen.getByPlaceholderText("Filter by title or author..."), "hello");
+    await waitFor(() => {
+      expect(onSearchChange).toHaveBeenCalledWith("hello");
+    });
   });
 
   it("shows clear button when searchValue is non-empty", () => {
@@ -49,7 +51,9 @@ describe("LibraryToolbar", () => {
     const user = userEvent.setup();
     render(<LibraryToolbar {...defaultProps} searchValue="test" onSearchChange={onSearchChange} />);
     await user.click(screen.getByLabelText("Clear search"));
-    expect(onSearchChange).toHaveBeenCalledWith("");
+    await waitFor(() => {
+      expect(onSearchChange).toHaveBeenCalledWith("");
+    });
   });
 
   it("renders sort and filter select triggers", () => {
