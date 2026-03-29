@@ -139,6 +139,12 @@ vi.mock("~/hooks/use-library-view-preference", () => ({
   useLibraryViewPreference: () => [mockView, mockSetView],
 }));
 
+let mockTileSize = "small" as "small" | "large";
+const mockSetTileSize = vi.fn();
+vi.mock("~/hooks/use-grid-tile-size", () => ({
+  useGridTileSize: () => [mockTileSize, mockSetTileSize],
+}));
+
 let mockTablePrefs: { columnVisibility: Record<string, boolean>; textOverflow: "wrap" | "truncate" } = { columnVisibility: {}, textOverflow: "truncate" };
 const mockSetTablePrefs = vi.fn();
 vi.mock("~/hooks/use-library-table-preferences", () => ({
@@ -146,8 +152,8 @@ vi.mock("~/hooks/use-library-table-preferences", () => ({
 }));
 
 vi.mock("~/components/library-grid", () => ({
-  LibraryGrid: ({ works, progressMap }: { works: object[]; progressMap?: Record<string, number> }) => (
-    <div data-testid="library-grid" data-progress-map={progressMap ? JSON.stringify(progressMap) : undefined}>Grid: {String(works.length)} works</div>
+  LibraryGrid: ({ works, progressMap, tileSize }: { works: object[]; progressMap?: Record<string, number>; tileSize?: string }) => (
+    <div data-testid="library-grid" data-progress-map={progressMap ? JSON.stringify(progressMap) : undefined} data-tile-size={tileSize ?? "small"}>Grid: {String(works.length)} works</div>
   ),
 }));
 
@@ -958,6 +964,36 @@ describe("LibraryPage", () => {
     render(<LibraryPage />);
     const grid = screen.getByTestId("library-grid");
     expect(grid.getAttribute("data-progress-map")).toBe(JSON.stringify({ "work-test": 42 }));
+  });
+
+  it("passes tileSize to LibraryGrid", async () => {
+    mockView = "grid";
+    mockTileSize = "large";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    const grid = screen.getByTestId("library-grid");
+    expect(grid.getAttribute("data-tile-size")).toBe("large");
+  });
+
+  it("passes tileSize and onTileSizeChange to LibraryToolbar", async () => {
+    mockView = "grid";
+    mockTileSize = "small";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(capturedToolbarProps.tileSize).toBe("small");
+    expect(typeof capturedToolbarProps.onTileSizeChange).toBe("function");
   });
 
   it("does not show scanning indicator when activeJobCount is 0", async () => {

@@ -1,4 +1,4 @@
-import { LayoutGrid, Table2, X } from "lucide-react";
+import { Grid2x2, Grid3x3, LayoutGrid, Table2, X } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import {
@@ -10,6 +10,7 @@ import {
 } from "~/components/ui/select";
 import type { ReadingFilter } from "~/lib/sort-filter-works";
 import type { LibraryView } from "~/hooks/use-library-view-preference";
+import type { GridTileSize } from "~/hooks/use-grid-tile-size";
 
 export type SortValue = "title-asc" | "title-desc" | "author-asc" | "author-desc" | "publisher-asc" | "publisher-desc" | "format-asc" | "format-desc" | "isbn-asc" | "isbn-desc" | "recent";
 
@@ -23,6 +24,8 @@ interface LibraryToolbarProps {
   filterValue: ReadingFilter;
   onFilterChange: (value: ReadingFilter) => void;
   showSort?: boolean;
+  tileSize?: GridTileSize;
+  onTileSizeChange?: (size: GridTileSize) => void;
 }
 
 const FILTER_OPTIONS: { value: ReadingFilter; label: string }[] = [
@@ -52,6 +55,8 @@ export function LibraryToolbar({
   filterValue,
   onFilterChange,
   showSort = true,
+  tileSize,
+  onTileSizeChange,
 }: LibraryToolbarProps) {
   return (
     <div className="flex items-center justify-between gap-2">
@@ -122,6 +127,30 @@ export function LibraryToolbar({
             <Table2 className="size-4" />
           </Button>
         </div>
+        {view === "grid" && tileSize && onTileSizeChange && (
+          <div className="flex items-center rounded-md border">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { onTileSizeChange("small"); }}
+              aria-label="Small tiles"
+              data-active={tileSize === "small"}
+              className="rounded-r-none data-[active=true]:bg-muted"
+            >
+              <Grid3x3 className="size-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { onTileSizeChange("large"); }}
+              aria-label="Large tiles"
+              data-active={tileSize === "large"}
+              className="rounded-l-none data-[active=true]:bg-muted"
+            >
+              <Grid2x2 className="size-4" />
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

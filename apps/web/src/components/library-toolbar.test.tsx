@@ -5,6 +5,7 @@ import { describe, it, expect, vi } from "vitest";
 import { LibraryToolbar, type SortValue } from "./library-toolbar";
 import type { ReadingFilter } from "~/lib/sort-filter-works";
 import type { LibraryView } from "~/hooks/use-library-view-preference";
+import type { GridTileSize } from "~/hooks/use-grid-tile-size";
 
 const defaultProps = {
   searchValue: "",
@@ -15,6 +16,8 @@ const defaultProps = {
   onViewChange: vi.fn(),
   filterValue: "all" as ReadingFilter,
   onFilterChange: vi.fn(),
+  tileSize: "small" as GridTileSize,
+  onTileSizeChange: vi.fn(),
 };
 
 describe("LibraryToolbar", () => {
@@ -124,5 +127,52 @@ describe("LibraryToolbar", () => {
     await user.click(filterCombobox as HTMLElement);
     await user.click(screen.getByText("Currently Reading"));
     expect(onFilterChange).toHaveBeenCalledWith("reading");
+  });
+
+  it("renders tile size toggle buttons when view is grid", () => {
+    render(<LibraryToolbar {...defaultProps} view="grid" />);
+    expect(screen.getByLabelText("Small tiles")).toBeTruthy();
+    expect(screen.getByLabelText("Large tiles")).toBeTruthy();
+  });
+
+  it("does not render tile size toggle when view is table", () => {
+    render(<LibraryToolbar {...defaultProps} view="table" />);
+    expect(screen.queryByLabelText("Small tiles")).toBeNull();
+    expect(screen.queryByLabelText("Large tiles")).toBeNull();
+  });
+
+  it("calls onTileSizeChange when large tile toggle is clicked", async () => {
+    const onTileSizeChange = vi.fn();
+    const user = userEvent.setup();
+    render(<LibraryToolbar {...defaultProps} tileSize="small" onTileSizeChange={onTileSizeChange} />);
+    await user.click(screen.getByLabelText("Large tiles"));
+    expect(onTileSizeChange).toHaveBeenCalledWith("large");
+  });
+
+  it("calls onTileSizeChange when small tile toggle is clicked", async () => {
+    const onTileSizeChange = vi.fn();
+    const user = userEvent.setup();
+    render(<LibraryToolbar {...defaultProps} tileSize="large" onTileSizeChange={onTileSizeChange} />);
+    await user.click(screen.getByLabelText("Small tiles"));
+    expect(onTileSizeChange).toHaveBeenCalledWith("small");
+  });
+
+  it("applies active state to small tile button when tileSize is small", () => {
+    render(<LibraryToolbar {...defaultProps} tileSize="small" />);
+    expect(screen.getByLabelText("Small tiles").getAttribute("data-active")).toBe("true");
+    expect(screen.getByLabelText("Large tiles").getAttribute("data-active")).toBe("false");
+  });
+
+  it("applies active state to large tile button when tileSize is large", () => {
+    render(<LibraryToolbar {...defaultProps} tileSize="large" />);
+    expect(screen.getByLabelText("Small tiles").getAttribute("data-active")).toBe("false");
+    expect(screen.getByLabelText("Large tiles").getAttribute("data-active")).toBe("true");
+  });
+
+  it("does not render tile size toggle when props are not provided", () => {
+    const { tileSize: _ts, onTileSizeChange: _otsc, ...propsWithoutTileSize } = defaultProps;
+    render(<LibraryToolbar {...propsWithoutTileSize} view="grid" />);
+    expect(screen.queryByLabelText("Small tiles")).toBeNull();
+    expect(screen.queryByLabelText("Large tiles")).toBeNull();
   });
 });

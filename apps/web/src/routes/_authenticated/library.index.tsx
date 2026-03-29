@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { useSSE } from "~/hooks/use-sse";
 import { useLibraryViewPreference } from "~/hooks/use-library-view-preference";
 import { useLibraryTablePreferences } from "~/hooks/use-library-table-preferences";
+import { useGridTileSize } from "~/hooks/use-grid-tile-size";
 import type { ColumnDef, RowSelectionState, SortingState, Updater } from "@tanstack/react-table";
 import { AlignJustify, BookOpen, Loader2, Pencil, Trash2, WrapText, X } from "lucide-react";
 import { VirtualizedDataTable, DataTableColumnHeader } from "~/components/data-table";
@@ -254,6 +255,7 @@ function LibraryPage() {
   const search = Route.useSearch();
   const navigate = useNavigate();
   const [view, setView] = useLibraryViewPreference();
+  const [tileSize, setTileSize] = useGridTileSize();
   const [tablePrefs, setTablePrefs] = useLibraryTablePreferences();
   const [readingFilter, setReadingFilter] = useState<ReadingFilter>("all");
   const [prevCount, setPrevCount] = useState(totalCount);
@@ -483,6 +485,8 @@ function LibraryPage() {
             filterValue={readingFilter}
             onFilterChange={setReadingFilter}
             showSort={view !== "table"}
+            tileSize={tileSize}
+            onTileSizeChange={setTileSize}
           />
           {view === "table" && (
             <div className="flex items-center gap-2 justify-end">
@@ -517,7 +521,7 @@ function LibraryPage() {
             </div>
           )}
           {view === "grid" ? (
-            <LibraryGrid works={filteredByReading} progressMap={progressMap} scanActive={isScanning} />
+            <LibraryGrid works={filteredByReading} progressMap={progressMap} scanActive={isScanning} tileSize={tileSize} />
           ) : (
             <VirtualizedDataTable
               columns={getColumns(isScanning, editMode, router)}
