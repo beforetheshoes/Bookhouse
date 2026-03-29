@@ -69,6 +69,7 @@ import {
   getBackupHistoryServerFn,
   recordBackupServerFn,
 } from "~/lib/server-fns/backup";
+import { getSmtpStatusServerFn } from "~/lib/server-fns/smtp";
 import {
   getImportJobsServerFn,
   stopAllJobsServerFn,
@@ -76,6 +77,7 @@ import {
 } from "~/lib/server-fns/import-jobs";
 import { runMutation } from "~/lib/mutation";
 import { BackupTab } from "~/components/settings/backup-tab";
+import { SmtpConfigCard } from "~/components/settings/smtp-config-card";
 import type { BackupManifest } from "~/lib/backup/manifest";
 
 export interface LibraryRootWithExtras extends LibraryRootRow {
@@ -85,13 +87,14 @@ export interface LibraryRootWithExtras extends LibraryRootRow {
 
 export const Route = createFileRoute("/_authenticated/settings/")({
   loader: async () => {
-    const [roots, missingFileBehavior, jobsResult, concurrencies, integrations, backupHistory] = await Promise.all([
+    const [roots, missingFileBehavior, jobsResult, concurrencies, integrations, backupHistory, smtpStatus] = await Promise.all([
       getLibraryRootsServerFn(),
       getMissingFileBehaviorServerFn(),
       getImportJobsServerFn({ data: { page: 1, pageSize: 100 } }),
       getAllScanConcurrenciesServerFn(),
       getIntegrationStatusServerFn(),
       getBackupHistoryServerFn(),
+      getSmtpStatusServerFn(),
     ]);
     const rootsWithExtras: LibraryRootWithExtras[] = await Promise.all(
       roots.map(async (root) => {
@@ -110,6 +113,7 @@ export const Route = createFileRoute("/_authenticated/settings/")({
       concurrencies,
       integrations,
       backupHistory,
+      smtpStatus,
     };
   },
   pendingComponent: SettingsSkeleton,
@@ -129,7 +133,7 @@ function SettingsSkeleton() {
 }
 
 function SettingsPage() {
-  const { roots, missingFileBehavior, jobs, totalCount, concurrencies, integrations, backupHistory: initialBackupHistory } = Route.useLoaderData();
+  const { roots, missingFileBehavior, jobs, totalCount, concurrencies, integrations, backupHistory: initialBackupHistory, smtpStatus } = Route.useLoaderData();
   const [backupHistory, setBackupHistory] = useState(initialBackupHistory);
 
   const handleBackupComplete = async (manifest: BackupManifest) => {
@@ -174,7 +178,7 @@ function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="integrations" forceMount className="space-y-6 data-[state=inactive]:hidden">
-          <IntegrationsTab integrations={integrations} />
+          <IntegrationsTab integrations={integrations} smtpConfigured={smtpStatus.configured} />
         </TabsContent>
 
         <TabsContent value="backup" forceMount className="space-y-6 data-[state=inactive]:hidden">
@@ -867,8 +871,10 @@ type IntegrationStatus = { configured: boolean; label: string };
 
 function IntegrationsTab({
   integrations,
+  smtpConfigured,
 }: {
   integrations: Record<string, IntegrationStatus>;
+  smtpConfigured: boolean;
 }) {
   return (
     <>
@@ -880,6 +886,7 @@ function IntegrationsTab({
           <IntegrationCard key={provider} provider={provider} status={status} />
         ))}
       </div>
+      <SmtpConfigCard configured={smtpConfigured} />
     </>
   );
 }
