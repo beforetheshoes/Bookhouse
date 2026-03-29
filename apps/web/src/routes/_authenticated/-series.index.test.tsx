@@ -1,16 +1,30 @@
 // @vitest-environment happy-dom
+import type * as DataTableModule from "~/components/data-table";
 import type * as TanstackRouter from "@tanstack/react-router";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-let mockLoaderData: {
-  seriesList: {
-    id: string;
-    name: string;
-    _count: { works: number };
-    works: { coverPath: string | null }[];
+type SeriesWork = {
+  id: string;
+  titleDisplay: string;
+  seriesPosition: number | null;
+  editions: {
+    contributors: {
+      role: string;
+      contributor: { nameDisplay: string };
+    }[];
   }[];
-} = { seriesList: [] };
+};
+
+type SeriesListItem = {
+  id: string;
+  name: string;
+  _count: { works: number };
+  works: SeriesWork[];
+};
+
+let mockLoaderData: { seriesList: SeriesListItem[] } = { seriesList: [] };
 
 vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
@@ -34,8 +48,14 @@ vi.mock("@tanstack/react-router", async () => {
   };
 });
 
-vi.mock("~/components/skeletons/grid-page-skeleton", () => ({
-  GridPageSkeleton: () => <div>Loading grid...</div>,
+// Use real DataTable so column cell renderers execute
+vi.mock("~/components/data-table", async () => {
+  const actual = await vi.importActual<typeof DataTableModule>("~/components/data-table");
+  return actual;
+});
+
+vi.mock("~/components/skeletons/table-page-skeleton", () => ({
+  TablePageSkeleton: () => <div>Loading...</div>,
 }));
 
 const getSeriesListServerFnMock = vi.fn();
@@ -43,11 +63,33 @@ vi.mock("~/lib/server-fns/series", () => ({
   getSeriesListServerFn: getSeriesListServerFnMock,
 }));
 
-const makeSeries = (name: string, workCount: number, coverPath: string | null = null) => ({
+const makeWork = (
+  id: string,
+  title: string,
+  position: number | null,
+  authorNames: string[],
+): SeriesWork => ({
+  id,
+  titleDisplay: title,
+  seriesPosition: position,
+  editions: [
+    {
+      contributors: authorNames.map((name) => ({
+        role: "AUTHOR",
+        contributor: { nameDisplay: name },
+      })),
+    },
+  ],
+});
+
+const makeSeries = (
+  name: string,
+  works: SeriesWork[],
+): SeriesListItem => ({
   id: `series-${name.toLowerCase().replace(/\s/g, "-")}`,
   name,
-  _count: { works: workCount },
-  works: coverPath ? [{ coverPath }] : [],
+  _count: { works: works.length },
+  works,
 });
 
 describe("SeriesListPage", () => {
@@ -71,9 +113,12 @@ describe("SeriesListPage", () => {
     expect(screen.getByText("Series")).toBeTruthy();
   });
 
-  it("renders series names", async () => {
+  it("renders series names in table", async () => {
     mockLoaderData = {
-      seriesList: [makeSeries("Discworld", 41), makeSeries("Foundation", 7)],
+      seriesList: [
+        makeSeries("Discworld", [makeWork("w1", "The Colour of Magic", 1, ["Terry Pratchett"])]),
+        makeSeries("Foundation", [makeWork("w2", "Foundation", 1, ["Isaac Asimov"])]),
+      ],
     };
     const { Route } = await import("./series.index");
     const Page = Route.options.component as React.ComponentType;
@@ -82,29 +127,11 @@ describe("SeriesListPage", () => {
     expect(screen.getByText("Foundation")).toBeTruthy();
   });
 
-  it("renders work count for each series", async () => {
+  it("series names link to /series/$seriesId", async () => {
     mockLoaderData = {
-      seriesList: [makeSeries("Discworld", 41)],
-    };
-    const { Route } = await import("./series.index");
-    const Page = Route.options.component as React.ComponentType;
-    render(<Page />);
-    expect(screen.getByText(/41 books/)).toBeTruthy();
-  });
-
-  it("renders singular 'book' for series with one work", async () => {
-    mockLoaderData = {
-      seriesList: [makeSeries("Standalone", 1)],
-    };
-    const { Route } = await import("./series.index");
-    const Page = Route.options.component as React.ComponentType;
-    render(<Page />);
-    expect(screen.getByText(/1 book$/)).toBeTruthy();
-  });
-
-  it("links each series card to /series/$seriesId", async () => {
-    mockLoaderData = {
-      seriesList: [makeSeries("Discworld", 41)],
+      seriesList: [
+        makeSeries("Discworld", [makeWork("w1", "The Colour of Magic", 1, ["Terry Pratchett"])]),
+      ],
     };
     const { Route } = await import("./series.index");
     const Page = Route.options.component as React.ComponentType;
@@ -113,45 +140,129 @@ describe("SeriesListPage", () => {
     expect(link?.getAttribute("href")).toBe("/series/series-discworld");
   });
 
-  it("renders cover thumbnail when first work has coverPath", async () => {
+  it("renders deduplicated authors for each series", async () => {
     mockLoaderData = {
-      seriesList: [makeSeries("Discworld", 41, "/covers/disc.jpg")],
+      seriesList: [
+        makeSeries("Discworld", [
+          makeWork("w1", "The Colour of Magic", 1, ["Terry Pratchett"]),
+          makeWork("w2", "The Light Fantastic", 2, ["Terry Pratchett"]),
+        ]),
+      ],
     };
     const { Route } = await import("./series.index");
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
-    const img = screen.getByAltText("Discworld");
-    expect(img).toBeTruthy();
+    // "Terry Pratchett" deduped — appears exactly once
+    const matches = screen.getAllByText("Terry Pratchett");
+    expect(matches).toHaveLength(1);
   });
 
-  it("renders placeholder when no cover", async () => {
+  it("renders multiple authors joined by comma", async () => {
     mockLoaderData = {
-      seriesList: [makeSeries("Discworld", 41)],
+      seriesList: [
+        makeSeries("Good Omens", [
+          makeWork("w1", "Good Omens", 1, ["Terry Pratchett", "Neil Gaiman"]),
+        ]),
+      ],
     };
     const { Route } = await import("./series.index");
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
-    expect(screen.getByTestId("series-cover-placeholder-series-discworld")).toBeTruthy();
+    expect(screen.getByText("Terry Pratchett, Neil Gaiman")).toBeTruthy();
   });
 
-  it("shows empty state when no series", async () => {
-    mockLoaderData = { seriesList: [] };
-    const { Route } = await import("./series.index");
-    const Page = Route.options.component as React.ComponentType;
-    render(<Page />);
-    expect(screen.getByText("No series found")).toBeTruthy();
-  });
-
-  it("search filters series by name", async () => {
+  it("renders — when series has no authors", async () => {
     mockLoaderData = {
-      seriesList: [makeSeries("Discworld", 41), makeSeries("Foundation", 7)],
+      seriesList: [
+        makeSeries("Unknown", [
+          makeWork("w1", "Mystery Book", 1, []),
+        ]),
+      ],
     };
     const { Route } = await import("./series.index");
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
-    const input = screen.getByPlaceholderText("Search series...");
-    fireEvent.change(input, { target: { value: "disc" } });
-    expect(screen.getByText("Discworld")).toBeTruthy();
-    expect(screen.queryByText("Foundation")).toBeNull();
+    expect(screen.getByText("—")).toBeTruthy();
+  });
+
+  it("renders book count as a button", async () => {
+    mockLoaderData = {
+      seriesList: [
+        makeSeries("Discworld", [
+          makeWork("w1", "The Colour of Magic", 1, ["Terry Pratchett"]),
+          makeWork("w2", "The Light Fantastic", 2, ["Terry Pratchett"]),
+        ]),
+      ],
+    };
+    const { Route } = await import("./series.index");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    expect(screen.getByRole("button", { name: "2" })).toBeTruthy();
+  });
+
+  it("clicking book count shows book list with links to /library/$workId", async () => {
+    const user = userEvent.setup();
+    mockLoaderData = {
+      seriesList: [
+        makeSeries("Discworld", [
+          makeWork("w1", "The Colour of Magic", 1, ["Terry Pratchett"]),
+          makeWork("w2", "The Light Fantastic", 2, ["Terry Pratchett"]),
+        ]),
+      ],
+    };
+    const { Route } = await import("./series.index");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    await user.click(screen.getByRole("button", { name: "2" }));
+    expect(screen.getByText("1. The Colour of Magic")).toBeTruthy();
+    expect(screen.getByText("2. The Light Fantastic")).toBeTruthy();
+    const link = screen.getByText("1. The Colour of Magic").closest("a");
+    expect(link?.getAttribute("href")).toBe("/library/w1");
+  });
+
+  it("book list shows series position prefix when available", async () => {
+    const user = userEvent.setup();
+    mockLoaderData = {
+      seriesList: [
+        makeSeries("Discworld", [
+          makeWork("w1", "The Colour of Magic", 1, ["Terry Pratchett"]),
+        ]),
+      ],
+    };
+    const { Route } = await import("./series.index");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    await user.click(screen.getByRole("button", { name: "1" }));
+    expect(screen.getByText("1. The Colour of Magic")).toBeTruthy();
+  });
+
+  it("book list omits position prefix when seriesPosition is null", async () => {
+    const user = userEvent.setup();
+    mockLoaderData = {
+      seriesList: [
+        makeSeries("Discworld", [
+          makeWork("w1", "The Colour of Magic", null, ["Terry Pratchett"]),
+        ]),
+      ],
+    };
+    const { Route } = await import("./series.index");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    await user.click(screen.getByRole("button", { name: "1" }));
+    expect(screen.getByText("The Colour of Magic")).toBeTruthy();
+  });
+
+  it("renders filter input", async () => {
+    const { Route } = await import("./series.index");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    expect(screen.getByPlaceholderText("Filter series...")).toBeTruthy();
+  });
+
+  it("shows 'No results.' when empty", async () => {
+    const { Route } = await import("./series.index");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    expect(screen.getByText("No results.")).toBeTruthy();
   });
 });

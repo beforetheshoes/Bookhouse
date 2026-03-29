@@ -1,9 +1,12 @@
-import { useState, useMemo } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { BookOpen } from "lucide-react";
-import { Badge } from "~/components/ui/badge";
-import { Input } from "~/components/ui/input";
-import { GridPageSkeleton } from "~/components/skeletons/grid-page-skeleton";
+import type { ColumnDef } from "@tanstack/react-table";
+import { DataTable, DataTableColumnHeader } from "~/components/data-table";
+import { TablePageSkeleton } from "~/components/skeletons/table-page-skeleton";
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+} from "~/components/ui/popover";
 import {
   getSeriesListServerFn,
   type SeriesListItem,
@@ -14,89 +17,98 @@ export const Route = createFileRoute("/_authenticated/series/")({
     const seriesList = await getSeriesListServerFn();
     return { seriesList };
   },
-  pendingComponent: GridPageSkeleton,
+  pendingComponent: TablePageSkeleton,
   component: SeriesListPage,
 });
 
-function SeriesListPage() {
-  const { seriesList } = Route.useLoaderData();
-  const [search, setSearch] = useState("");
-
-  const filtered = useMemo(() => {
-    if (!search) return seriesList;
-    const q = search.toLowerCase();
-    return seriesList.filter((s: SeriesListItem) =>
-      s.name.toLowerCase().includes(q),
-    );
-  }, [seriesList, search]);
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Series</h1>
-        <p className="mt-2 text-muted-foreground">
-          Browse series in your library.
-        </p>
-      </div>
-
-      <Input
-        placeholder="Search series..."
-        value={search}
-        onChange={(e) => { setSearch(e.target.value); }}
-        className="max-w-sm"
-      />
-
-      {filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
-          <BookOpen className="size-12" />
-          <p className="mt-4">No series found</p>
-        </div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-          {filtered.map((series: SeriesListItem) => (
-            <SeriesCard key={series.id} series={series} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
+function getAuthors(series: SeriesListItem): string {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const work of series.works) {
+    for (const edition of work.editions) {
+      for (const c of edition.contributors) {
+        if (c.role === "AUTHOR" && !seen.has(c.contributor.nameDisplay)) {
+          seen.add(c.contributor.nameDisplay);
+          names.push(c.contributor.nameDisplay);
+        }
+      }
+    }
+  }
+  return names.join(", ") || "—";
 }
 
-function SeriesCard({ series }: { series: SeriesListItem }) {
-  const coverWork = series.works[0];
-  const hasCover = Boolean(coverWork?.coverPath);
+const columns: ColumnDef<SeriesListItem>[] = [
+  {
+    accessorKey: "name",
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} title="Name" />
+    ),
+    cell: ({ row }) => (
+      <Link
+        to="/series/$seriesId"
+        params={{ seriesId: row.original.id }}
+        className="hover:underline"
+      >
+        {row.original.name}
+      </Link>
+    ),
+  },
+  {
+    id: "authors",
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} title="Author(s)" />
+    ),
+    accessorFn: (row) => getAuthors(row),
+  },
+  {
+    id: "books",
+    header: () => <span className="text-sm font-medium">Books</span>,
+    cell: ({ row }) => {
+      const works = row.original.works;
+      const count = row.original._count.works;
+      return (
+        <Popover>
+          <PopoverTrigger asChild>
+            <button className="hover:underline">{count}</button>
+          </PopoverTrigger>
+          <PopoverContent className="w-80" align="start">
+            <ul className="space-y-1.5">
+              {works.map((work) => (
+                <li key={work.id}>
+                  <Link
+                    to="/library/$workId"
+                    params={{ workId: work.id }}
+                    className="text-sm hover:underline"
+                  >
+                    {work.seriesPosition != null
+                      ? `${String(work.seriesPosition)}. ${work.titleDisplay}`
+                      : work.titleDisplay}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </PopoverContent>
+        </Popover>
+      );
+    },
+  },
+];
+
+function SeriesListPage() {
+  const { seriesList } = Route.useLoaderData();
 
   return (
-    <Link
-      to="/series/$seriesId"
-      params={{ seriesId: series.id }}
-      className="flex flex-col overflow-hidden rounded-lg border bg-card"
-    >
-      <div className="aspect-[2/3] bg-muted">
-        {hasCover ? (
-          <img
-            src={`/api/covers/${series.id}/thumb`}
-            alt={series.name}
-            loading="lazy"
-            className="size-full object-cover"
-          />
-        ) : (
-          <div
-            data-testid={`series-cover-placeholder-${series.id}`}
-            className="flex size-full items-center justify-center text-muted-foreground"
-          >
-            <BookOpen className="size-12" />
-          </div>
-        )}
-      </div>
-      <div className="space-y-1 p-3">
-        <h3 className="line-clamp-2 text-sm font-medium leading-tight">
-          {series.name}
-        </h3>
-        <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
-          {series._count.works} {series._count.works === 1 ? "book" : "books"}
-        </Badge>
-      </div>
-    </Link>
+    <div>
+      <h1 className="text-2xl font-bold">Series</h1>
+      <p className="mb-6 mt-2 text-muted-foreground">
+        Browse series in your library.
+      </p>
+      <DataTable
+        columns={columns}
+        data={seriesList}
+        filterColumn="name"
+        filterPlaceholder="Filter series..."
+      />
+    </div>
   );
 }

@@ -8,7 +8,26 @@ export const getSeriesListServerFn = createServerFn({
   return db.series.findMany({
     include: {
       _count: { select: { works: true } },
-      works: { take: 1, select: { coverPath: true } },
+      works: {
+          orderBy: { seriesPosition: "asc" },
+          select: {
+            id: true,
+            titleDisplay: true,
+            seriesPosition: true,
+            editions: {
+              select: {
+                contributors: {
+                  select: {
+                    role: true,
+                    contributor: {
+                      select: { nameDisplay: true },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
     },
     orderBy: { name: "asc" },
   });
