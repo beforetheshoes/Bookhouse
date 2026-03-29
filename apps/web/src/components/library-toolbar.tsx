@@ -1,6 +1,8 @@
+import { useEffect, useState } from "react";
 import { Grid2x2, Grid3x3, LayoutGrid, Table2, X } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import { useDebounce } from "~/hooks/use-debounce";
 import {
   Select,
   SelectContent,
@@ -58,19 +60,30 @@ export function LibraryToolbar({
   tileSize,
   onTileSizeChange,
 }: LibraryToolbarProps) {
+  const [localSearch, setLocalSearch] = useState(searchValue);
+  const debouncedSearch = useDebounce(localSearch, 300);
+
+  useEffect(() => {
+    onSearchChange(debouncedSearch);
+  }, [debouncedSearch, onSearchChange]);
+
+  useEffect(() => {
+    setLocalSearch(searchValue);
+  }, [searchValue]);
+
   return (
     <div className="flex items-center justify-between gap-2">
       <div className="flex flex-1 items-center gap-2">
         <Input
-          placeholder="Search title or author..."
-          value={searchValue}
-          onChange={(e) => { onSearchChange(e.target.value); }}
+          placeholder="Filter by title or author..."
+          value={localSearch}
+          onChange={(e) => { setLocalSearch(e.target.value); }}
           className="h-8 w-[150px] lg:w-[250px]"
         />
-        {searchValue && (
+        {localSearch && (
           <Button
             variant="ghost"
-            onClick={() => { onSearchChange(""); }}
+            onClick={() => { setLocalSearch(""); }}
             className="h-8 px-2"
             aria-label="Clear search"
           >
