@@ -31,7 +31,8 @@ let mockLoaderData: {
   integrations: Record<string, { configured: boolean; label: string }>;
   backupHistory: { version: number; timestamp: string; databaseSize: number; coverCount: number; coverSize: number }[];
   smtpStatus: { configured: boolean };
-} = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false } };
+  kindleStatus: { configured: boolean };
+} = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false } };
 
 const getLibraryRootsServerFnMock = vi.fn();
 const scanLibraryRootServerFnMock = vi.fn();
@@ -90,6 +91,13 @@ vi.mock("~/lib/server-fns/smtp", () => ({
   saveSmtpConfigServerFn: vi.fn().mockResolvedValue({ saved: true }),
   removeSmtpConfigServerFn: vi.fn().mockResolvedValue({ removed: true }),
   testSmtpConnectionServerFn: vi.fn().mockResolvedValue({ success: true }),
+}));
+
+vi.mock("~/lib/server-fns/kindle", () => ({
+  getKindleStatusServerFn: vi.fn().mockResolvedValue({ configured: false }),
+  getKindleConfigServerFn: vi.fn().mockResolvedValue({ configured: false }),
+  saveKindleConfigServerFn: vi.fn().mockResolvedValue({ saved: true }),
+  removeKindleConfigServerFn: vi.fn().mockResolvedValue({ removed: true }),
 }));
 
 vi.mock("~/lib/mutation", () => ({
@@ -213,7 +221,7 @@ const makeJob = (overrides: Partial<{
 describe("SettingsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false } };
+    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false } };
     mockTheme = "system";
     mockColorMode = "book";
     mockAccentColor = null;
@@ -529,6 +537,7 @@ describe("SettingsPage", () => {
       },
       backupHistory: [],
       smtpStatus: { configured: false },
+      kindleStatus: { configured: false },
     });
   });
 
@@ -782,7 +791,7 @@ describe("SettingsPage", () => {
 describe("AppearanceCard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false } };
+    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false } };
     mockTheme = "system";
     mockColorMode = "book";
     mockAccentColor = null;
@@ -851,7 +860,7 @@ describe("AppearanceCard", () => {
 describe("ColorCard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false } };
+    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false } };
     mockTheme = "system";
     mockColorMode = "book";
     mockAccentColor = null;
@@ -1028,7 +1037,7 @@ describe("ColorCard", () => {
 describe("JobsTab", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false } };
+    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false } };
     mockTheme = "system";
     mockColorMode = "book";
     mockAccentColor = null;
@@ -1126,7 +1135,7 @@ describe("JobsTab", () => {
 
     const input = screen.getByDisplayValue("8");
     fireEvent.change(input, { target: { value: "12" } });
-    expect(screen.getByText("Save")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Save concurrency" })).toBeTruthy();
   });
 
   it("calls setScanConcurrencyServerFn for each changed value when Save is clicked", async () => {
@@ -1136,7 +1145,7 @@ describe("JobsTab", () => {
 
     const fullInput = screen.getByDisplayValue("8");
     fireEvent.change(fullInput, { target: { value: "12" } });
-    const saveBtn = screen.getByText("Save");
+    const saveBtn = screen.getByRole("button", { name: "Save concurrency" });
     fireEvent.click(saveBtn);
 
     await waitFor(() => {
@@ -1323,7 +1332,7 @@ describe("Integrations Tab", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Integrations" }));
 
     expect(screen.getByText("Connected")).toBeTruthy();
-    expect(screen.getAllByText("Not configured")).toHaveLength(3);
+    expect(screen.getAllByText("Not configured")).toHaveLength(4);
   });
 
   it("shows no API key required for Open Library", async () => {

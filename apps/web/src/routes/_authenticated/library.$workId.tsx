@@ -34,17 +34,21 @@ import { deleteWorkServerFn, deleteEditionServerFn } from "~/lib/server-fns/dele
 import { EditableField } from "~/components/editable-field";
 import { EditableTagField } from "~/components/editable-tag-field";
 import { updateWorkServerFn, updateWorkAuthorsServerFn, getContributorNamesServerFn } from "~/lib/server-fns/editing";
+import { getSmtpStatusServerFn } from "~/lib/server-fns/smtp";
+import { getKindleStatusServerFn } from "~/lib/server-fns/kindle";
 import { updateWorkTagsServerFn } from "~/lib/server-fns/tags";
 import { useAppColor } from "~/hooks/use-app-color";
 
 export const Route = createFileRoute("/_authenticated/library/$workId")({
   loader: async ({ params }) => {
-    const [work, { progress, trackingMode }, contributorNames] = await Promise.all([
+    const [work, { progress, trackingMode }, contributorNames, smtpStatus, kindleStatus] = await Promise.all([
       getWorkDetailServerFn({ data: { workId: params.workId } }),
       getReadingProgressServerFn({ data: { workId: params.workId } }),
       getContributorNamesServerFn(),
+      getSmtpStatusServerFn(),
+      getKindleStatusServerFn(),
     ]);
-    return { work, progress, trackingMode, contributorNames };
+    return { work, progress, trackingMode, contributorNames, smtpConfigured: smtpStatus.configured, kindleConfigured: kindleStatus.configured };
   },
   pendingComponent: WorkDetailSkeleton,
   component: WorkDetailPage,
@@ -82,7 +86,7 @@ function getAuthors(work: WorkDetail): { id: string; name: string }[] {
 
 
 function WorkDetailPage() {
-  const { work, progress, trackingMode, contributorNames } = Route.useLoaderData();
+  const { work, progress, trackingMode, contributorNames, smtpConfigured, kindleConfigured } = Route.useLoaderData();
   const router = useRouter();
   const [imgFailed, setImgFailed] = useState(false);
   const [deleteWorkOpen, setDeleteWorkOpen] = useState(false);
@@ -374,6 +378,8 @@ function WorkDetailPage() {
                   isLastEdition={work.editions.length === 1}
                   onEditionFieldSaved={() => { void router.invalidate(); }}
                   onDeleteEdition={() => { setDeleteEditionOpen(edition.id); }}
+                  smtpConfigured={smtpConfigured}
+                  kindleConfigured={kindleConfigured}
                 />
               </TabsContent>
             ))}

@@ -47,7 +47,7 @@ interface MockProgress {
   percent: number | null;
 }
 
-let mockLoaderData: { work: MockWork; progress: MockProgress[]; trackingMode: string; contributorNames: string[] } = {
+let mockLoaderData: { work: MockWork; progress: MockProgress[]; trackingMode: string; contributorNames: string[]; smtpConfigured: boolean; kindleConfigured: boolean } = {
   work: {
     id: "work-1",
     titleDisplay: "The Name of the Wind",
@@ -92,6 +92,8 @@ let mockLoaderData: { work: MockWork; progress: MockProgress[]; trackingMode: st
   progress: [],
   trackingMode: "BY_EDITION",
   contributorNames: ["Patrick Rothfuss", "Brandon Sanderson"],
+  smtpConfigured: false,
+  kindleConfigured: false,
 };
 
 const mockNavigate = vi.fn();
@@ -184,6 +186,15 @@ vi.mock("~/lib/server-fns/tags", () => ({
   updateWorkTagsServerFn: vi.fn(),
 }));
 
+vi.mock("~/lib/server-fns/smtp", () => ({
+  getSmtpStatusServerFn: vi.fn().mockResolvedValue({ configured: false }),
+}));
+
+vi.mock("~/lib/server-fns/kindle", () => ({
+  getKindleStatusServerFn: vi.fn().mockResolvedValue({ configured: false }),
+  sendToKindleServerFn: vi.fn(),
+}));
+
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
 
@@ -238,7 +249,7 @@ vi.mock("~/components/ui/tabs", () => ({
 let capturedEditionFieldSavedCallbacks: Record<string, () => void> = {};
 
 vi.mock("~/components/edition-tab-panel", () => ({
-  EditionTabPanel: ({ edition, onDeleteEdition, onEditionFieldSaved }: { edition: { id: string; formatFamily: string }; onDeleteEdition: () => void; onEditionFieldSaved: () => void }) => {
+  EditionTabPanel: ({ edition, onDeleteEdition, onEditionFieldSaved }: { edition: { id: string; formatFamily: string }; onDeleteEdition: () => void; onEditionFieldSaved: () => void; smtpConfigured: boolean; kindleConfigured: boolean }) => {
     capturedEditionFieldSavedCallbacks[edition.id] = onEditionFieldSaved;
     return (
       <div data-testid={`edition-panel-${edition.id}`} data-format={edition.formatFamily}>
@@ -304,6 +315,8 @@ describe("WorkDetailPage", () => {
       progress: [],
       trackingMode: "BY_EDITION",
       contributorNames: ["Patrick Rothfuss", "Brandon Sanderson"],
+      smtpConfigured: false,
+      kindleConfigured: false,
     };
     capturedDialogProps.length = 0;
     forceRenderClosed = false;
@@ -332,6 +345,8 @@ describe("WorkDetailPage", () => {
       progress: [],
       trackingMode: "BY_EDITION",
       contributorNames: [],
+      smtpConfigured: false,
+      kindleConfigured: false,
     });
   });
 
