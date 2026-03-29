@@ -50,11 +50,23 @@ describe("WorkCard", () => {
     expect(screen.queryByTestId("series-badge")).toBeNull();
   });
 
-  it("renders cover image with correct src and lazy loading when coverPath is set", () => {
-    render(<WorkCard {...baseProps} coverPath="work-123" />);
+  it("renders cover image with thumb src for small tiles", () => {
+    render(<WorkCard {...baseProps} coverPath="work-123" tileSize="small" />);
     const img = screen.getByRole("img", { name: "The Great Gatsby" });
     expect(img.getAttribute("src")).toBe("/api/covers/work-123/thumb");
     expect(img.getAttribute("loading")).toBe("lazy");
+  });
+
+  it("renders cover image with medium src for large tiles", () => {
+    render(<WorkCard {...baseProps} coverPath="work-123" tileSize="large" />);
+    const img = screen.getByRole("img", { name: "The Great Gatsby" });
+    expect(img.getAttribute("src")).toBe("/api/covers/work-123/medium");
+  });
+
+  it("defaults to thumb src when tileSize is not provided", () => {
+    render(<WorkCard {...baseProps} coverPath="work-123" />);
+    const img = screen.getByRole("img", { name: "The Great Gatsby" });
+    expect(img.getAttribute("src")).toBe("/api/covers/work-123/thumb");
   });
 
   it("renders placeholder when coverPath is null", () => {
@@ -106,6 +118,38 @@ describe("WorkCard", () => {
   it("does not show processing badge when enrichmentStatus is not provided", () => {
     render(<WorkCard {...baseProps} />);
     expect(screen.queryByText("Processing\u2026")).toBeNull();
+  });
+
+  it("renders series badge with large tile styling", () => {
+    const { container } = render(<WorkCard {...baseProps} series="Classics" tileSize="large" />);
+    const badge = container.querySelector("[class*='text-[10px]']");
+    expect(badge).toBeTruthy();
+  });
+
+  it("renders processing badge with large tile styling", () => {
+    const { container } = render(<WorkCard {...baseProps} enrichmentStatus="STUB" scanActive tileSize="large" />);
+    const badge = container.querySelector("[class*='animate-pulse']");
+    expect(badge?.className).toContain("text-[10px]");
+  });
+
+  it("renders cover container with shrink-0 and overflow-hidden to ensure consistent height", () => {
+    const { container } = render(<WorkCard {...baseProps} />);
+    const coverDiv = container.querySelector("[class*='aspect-']");
+    expect(coverDiv?.className).toContain("shrink-0");
+    expect(coverDiv?.className).toContain("overflow-hidden");
+    expect(coverDiv?.className).toContain("relative");
+  });
+
+  it("uses compact padding for small tiles", () => {
+    const { container } = render(<WorkCard {...baseProps} tileSize="small" />);
+    const contentDiv = container.querySelector("[class*='p-2']");
+    expect(contentDiv).toBeTruthy();
+  });
+
+  it("uses standard padding for large tiles", () => {
+    const { container } = render(<WorkCard {...baseProps} tileSize="large" />);
+    const contentDiv = container.querySelector("[class*='p-3']");
+    expect(contentDiv).toBeTruthy();
   });
 
   it("renders progress bar when progressPercent is provided", () => {

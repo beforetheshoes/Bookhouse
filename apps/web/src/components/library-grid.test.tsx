@@ -28,8 +28,8 @@ vi.mock("@tanstack/react-virtual", () => ({
 }));
 
 vi.mock("~/components/work-card", () => ({
-  WorkCard: ({ title, progressPercent }: { title: string; progressPercent?: number }) => (
-    <div data-testid="work-card" data-progress={progressPercent != null ? String(progressPercent) : undefined}>{title}</div>
+  WorkCard: ({ title, progressPercent, tileSize }: { title: string; progressPercent?: number; tileSize?: string }) => (
+    <div data-testid="work-card" data-progress={progressPercent != null ? String(progressPercent) : undefined} data-tile-size={tileSize ?? "small"}>{title}</div>
   ),
 }));
 
@@ -56,24 +56,48 @@ const makeWork = (title: string, authors: string[] = [], enrichmentStatus = "ENR
 });
 
 describe("getColumnCount", () => {
-  it("returns 2 for width < 480", () => {
-    expect(_getColumnCount(400)).toBe(2);
+  describe("large tiles", () => {
+    it("returns 2 for width < 480", () => {
+      expect(_getColumnCount(400, "large")).toBe(2);
+    });
+
+    it("returns 3 for width 480-639", () => {
+      expect(_getColumnCount(500, "large")).toBe(3);
+    });
+
+    it("returns 4 for width 640-1023", () => {
+      expect(_getColumnCount(800, "large")).toBe(4);
+    });
+
+    it("returns 5 for width 1024-1279", () => {
+      expect(_getColumnCount(1100, "large")).toBe(5);
+    });
+
+    it("returns 6 for width >= 1280", () => {
+      expect(_getColumnCount(1400, "large")).toBe(6);
+    });
   });
 
-  it("returns 3 for width 480-639", () => {
-    expect(_getColumnCount(500)).toBe(3);
-  });
+  describe("small tiles", () => {
+    it("returns 3 for width < 480", () => {
+      expect(_getColumnCount(400, "small")).toBe(3);
+    });
 
-  it("returns 4 for width 640-1023", () => {
-    expect(_getColumnCount(800)).toBe(4);
-  });
+    it("returns 4 for width 480-639", () => {
+      expect(_getColumnCount(500, "small")).toBe(4);
+    });
 
-  it("returns 5 for width 1024-1279", () => {
-    expect(_getColumnCount(1100)).toBe(5);
-  });
+    it("returns 6 for width 640-1023", () => {
+      expect(_getColumnCount(800, "small")).toBe(6);
+    });
 
-  it("returns 6 for width >= 1280", () => {
-    expect(_getColumnCount(1400)).toBe(6);
+    it("returns 7 for width 1024-1279", () => {
+      expect(_getColumnCount(1100, "small")).toBe(7);
+    });
+
+    it("returns 8 for width >= 1280", () => {
+      expect(_getColumnCount(1400, "small")).toBe(8);
+    });
   });
 });
 
@@ -114,8 +138,8 @@ describe("LibraryGrid", () => {
 
   it("passes correct row count to virtualizer for partial last row", async () => {
     const { LibraryGrid } = await import("./library-grid");
-    // With 1200px width => 5 columns, 7 works => ceil(7/5) = 2 rows
-    const works = Array.from({ length: 7 }, (_, i) => makeWork(`Work ${String(i)}`));
+    // With 1200px width + small tiles => 7 columns, 8 works => ceil(8/7) = 2 rows
+    const works = Array.from({ length: 8 }, (_, i) => makeWork(`Work ${String(i)}`));
     render(<LibraryGrid works={works as never[]} />);
     expect(mockVirtualizerArgs.count).toBe(2);
   });
@@ -177,6 +201,22 @@ describe("LibraryGrid", () => {
     const cards = screen.getAllByTestId("work-card");
     expect(cards[0]?.getAttribute("data-progress")).toBe("42");
     expect(cards[1]?.getAttribute("data-progress")).toBeNull();
+  });
+
+  it("passes tileSize to WorkCard", async () => {
+    const { LibraryGrid } = await import("./library-grid");
+    const works = [makeWork("Alpha")];
+    render(<LibraryGrid works={works as never[]} tileSize="large" />);
+    const card = screen.getByTestId("work-card");
+    expect(card.getAttribute("data-tile-size")).toBe("large");
+  });
+
+  it("defaults tileSize to small", async () => {
+    const { LibraryGrid } = await import("./library-grid");
+    const works = [makeWork("Alpha")];
+    render(<LibraryGrid works={works as never[]} />);
+    const card = screen.getByTestId("work-card");
+    expect(card.getAttribute("data-tile-size")).toBe("small");
   });
 
   it("handles ResizeObserver with empty entries", async () => {
