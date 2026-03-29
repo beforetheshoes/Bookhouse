@@ -535,7 +535,7 @@ describe("EditionTabPanel", () => {
 
     const link = screen.getByRole("link", { name: /download wind\.epub/i });
     expect(link).toBeTruthy();
-    expect(link.getAttribute("href")).toBe("/api/edition-files/ef1/download");
+    expect(link.getAttribute("href")).toBe("/api/edition-files/download/ef1");
   });
 
   it("does not render download link for MISSING file", () => {
@@ -618,7 +618,7 @@ describe("EditionTabPanel", () => {
 
     // Only 1 PRESENT file → individual download button, no "Download All"
     const link = screen.getByRole("link", { name: /download wind\.epub/i });
-    expect(link.getAttribute("href")).toBe("/api/edition-files/ef1/download");
+    expect(link.getAttribute("href")).toBe("/api/edition-files/download/ef1");
     expect(screen.queryByRole("link", { name: /download wind\.pdf/i })).toBeNull();
     expect(screen.queryByRole("link", { name: /download all/i })).toBeNull();
   });
@@ -652,7 +652,7 @@ describe("EditionTabPanel", () => {
     );
 
     const link = screen.getByRole("link", { name: /download all \(2 files\)/i });
-    expect(link.getAttribute("href")).toBe("/api/editions/e1/download-all");
+    expect(link.getAttribute("href")).toBe("/api/editions/download-all/e1");
   });
 
   it("does not render individual download links when Download All is shown", () => {
@@ -729,7 +729,7 @@ describe("EditionTabPanel", () => {
 
     // 2 PRESENT + 1 MISSING → Download All with count of 2
     const link = screen.getByRole("link", { name: /download all \(2 files\)/i });
-    expect(link.getAttribute("href")).toBe("/api/editions/e1/download-all");
+    expect(link.getAttribute("href")).toBe("/api/editions/download-all/e1");
   });
 
   it("hides sidecar files from the files list", () => {
@@ -808,7 +808,7 @@ describe("EditionTabPanel", () => {
 
     // Only 1 content file → individual download, not "Download All"
     const link = screen.getByRole("link", { name: /download wind\.epub/i });
-    expect(link.getAttribute("href")).toBe("/api/edition-files/ef1/download");
+    expect(link.getAttribute("href")).toBe("/api/edition-files/download/ef1");
     expect(screen.queryByRole("link", { name: /download all/i })).toBeNull();
   });
 

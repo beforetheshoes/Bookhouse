@@ -106,7 +106,7 @@ export function EditionTabPanel({
                 multiplePresent ? [
                   <a
                     key="download-all"
-                    href={`/api/editions/${edition.id}/download-all`}
+                    href={`/api/editions/download-all/${edition.id}`}
                     download
                     aria-label={`Download all (${String(presentFiles.length)} files)`}
                     className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-0.5 text-xs text-foreground hover:bg-accent transition-colors w-fit"
@@ -117,7 +117,7 @@ export function EditionTabPanel({
                 ] : presentFiles.map((ef) => (
                   <a
                     key={`dl-${ef.id}`}
-                    href={`/api/edition-files/${ef.id}/download`}
+                    href={`/api/edition-files/download/${ef.id}`}
                     download
                     aria-label={`Download ${ef.fileAsset.basename}`}
                     className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-0.5 text-xs text-foreground hover:bg-accent transition-colors w-fit"
