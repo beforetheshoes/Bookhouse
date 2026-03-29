@@ -29,7 +29,8 @@ let mockLoaderData: {
   totalCount: number;
   concurrencies: { full: number; onDemand: number; incremental: number };
   integrations: Record<string, { configured: boolean; label: string }>;
-} = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } } };
+  backupHistory: { version: number; timestamp: string; databaseSize: number; coverCount: number; coverSize: number }[];
+} = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [] };
 
 const getLibraryRootsServerFnMock = vi.fn();
 const scanLibraryRootServerFnMock = vi.fn();
@@ -75,6 +76,11 @@ vi.mock("~/lib/server-fns/integrations", () => ({
 vi.mock("~/lib/server-fns/import-jobs", () => ({
   getImportJobsServerFn: getImportJobsServerFnMock,
   stopAllJobsServerFn: stopAllJobsServerFnMock,
+}));
+
+vi.mock("~/lib/server-fns/backup", () => ({
+  getBackupHistoryServerFn: vi.fn().mockResolvedValue([]),
+  recordBackupServerFn: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("~/lib/mutation", () => ({
@@ -198,7 +204,7 @@ const makeJob = (overrides: Partial<{
 describe("SettingsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } } };
+    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [] };
     mockTheme = "system";
     mockColorMode = "book";
     mockAccentColor = null;
@@ -512,6 +518,7 @@ describe("SettingsPage", () => {
         googlebooks: { configured: false, label: "Google Books" },
         hardcover: { configured: false, label: "Hardcover" },
       },
+      backupHistory: [],
     });
   });
 
@@ -765,7 +772,7 @@ describe("SettingsPage", () => {
 describe("AppearanceCard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } } };
+    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [] };
     mockTheme = "system";
     mockColorMode = "book";
     mockAccentColor = null;
@@ -834,7 +841,7 @@ describe("AppearanceCard", () => {
 describe("ColorCard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } } };
+    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [] };
     mockTheme = "system";
     mockColorMode = "book";
     mockAccentColor = null;
@@ -1011,7 +1018,7 @@ describe("ColorCard", () => {
 describe("JobsTab", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } } };
+    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [] };
     mockTheme = "system";
     mockColorMode = "book";
     mockAccentColor = null;
@@ -1522,6 +1529,48 @@ describe("Integrations Tab", () => {
 
     await waitFor(() => {
       expect(mockToast.error).toHaveBeenCalledWith("Failed to remove API key");
+    });
+  });
+
+  it("renders the Backup tab and calls recordBackupServerFn on backup complete", async () => {
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    const backupTab = screen.getByRole("tab", { name: "Backup" });
+    expect(backupTab).toBeTruthy();
+
+    fireEvent.click(backupTab);
+    expect(screen.getByRole("button", { name: /create backup/i })).toBeTruthy();
+    expect(screen.getByText(/no backups yet/i)).toBeTruthy();
+  });
+
+  it("handleBackupComplete records backup and updates history", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: {
+        get: (name: string) => name === "x-backup-manifest"
+          ? JSON.stringify({ version: 1, timestamp: "2026-03-28T14:00:00.000Z", databaseSize: 100, coverCount: 5, coverSize: 500 })
+          : null,
+      },
+      blob: () => Promise.resolve(new Blob(["data"])),
+    });
+    globalThis.URL.createObjectURL = vi.fn().mockReturnValue("blob:mock");
+    globalThis.URL.revokeObjectURL = vi.fn();
+
+    const { recordBackupServerFn } = await import("~/lib/server-fns/backup");
+    const recordMock = vi.mocked(recordBackupServerFn);
+    recordMock.mockResolvedValue(undefined as never);
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Backup" }));
+    fireEvent.click(screen.getByRole("button", { name: /create backup/i }));
+
+    await waitFor(() => {
+      expect(recordMock).toHaveBeenCalled();
     });
   });
 });

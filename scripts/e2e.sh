@@ -13,6 +13,11 @@ export AUTH_OIDC_ISSUER="http://localhost:9090"
 export AUTH_OIDC_CLIENT_ID="e2e-client"
 export AUTH_OIDC_CLIENT_SECRET="e2e-secret"
 export APP_URL="http://localhost:3000"
+export COVER_CACHE_DIR="/tmp/e2e-covers"
+# Inherit pg_dump/psql paths from the environment (needed on machines where
+# pg_dump is not in PATH — set PG_DUMP_PATH/PSQL_PATH in your shell or CI env)
+export PG_DUMP_PATH="${PG_DUMP_PATH:-pg_dump}"
+export PSQL_PATH="${PSQL_PATH:-psql}"
 
 UI_MODE=0
 SKIP_BUILD=0
@@ -77,6 +82,8 @@ if ! command -v pnpm >/dev/null 2>&1; then
 fi
 
 # ── Infrastructure ────────────────────────────────────────────────────────────
+
+mkdir -p "$COVER_CACHE_DIR"
 
 echo "Starting local infrastructure (postgres + valkey)"
 docker compose up -d db queue

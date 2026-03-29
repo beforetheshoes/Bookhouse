@@ -66,11 +66,17 @@ import {
   type IntegrationProvider,
 } from "~/lib/server-fns/integrations";
 import {
+  getBackupHistoryServerFn,
+  recordBackupServerFn,
+} from "~/lib/server-fns/backup";
+import {
   getImportJobsServerFn,
   stopAllJobsServerFn,
   type ImportJobRow,
 } from "~/lib/server-fns/import-jobs";
 import { runMutation } from "~/lib/mutation";
+import { BackupTab } from "~/components/settings/backup-tab";
+import type { BackupManifest } from "~/lib/backup/manifest";
 
 export interface LibraryRootWithExtras extends LibraryRootRow {
   scanProgress: Awaited<ReturnType<typeof getScanProgressServerFn>> | null;
@@ -79,12 +85,13 @@ export interface LibraryRootWithExtras extends LibraryRootRow {
 
 export const Route = createFileRoute("/_authenticated/settings/")({
   loader: async () => {
-    const [roots, missingFileBehavior, jobsResult, concurrencies, integrations] = await Promise.all([
+    const [roots, missingFileBehavior, jobsResult, concurrencies, integrations, backupHistory] = await Promise.all([
       getLibraryRootsServerFn(),
       getMissingFileBehaviorServerFn(),
       getImportJobsServerFn({ data: { page: 1, pageSize: 100 } }),
       getAllScanConcurrenciesServerFn(),
       getIntegrationStatusServerFn(),
+      getBackupHistoryServerFn(),
     ]);
     const rootsWithExtras: LibraryRootWithExtras[] = await Promise.all(
       roots.map(async (root) => {
@@ -102,6 +109,7 @@ export const Route = createFileRoute("/_authenticated/settings/")({
       totalCount: jobsResult.totalCount,
       concurrencies,
       integrations,
+      backupHistory,
     };
   },
   pendingComponent: SettingsSkeleton,
@@ -121,7 +129,17 @@ function SettingsSkeleton() {
 }
 
 function SettingsPage() {
-  const { roots, missingFileBehavior, jobs, totalCount, concurrencies, integrations } = Route.useLoaderData();
+  const { roots, missingFileBehavior, jobs, totalCount, concurrencies, integrations, backupHistory: initialBackupHistory } = Route.useLoaderData();
+  const [backupHistory, setBackupHistory] = useState(initialBackupHistory);
+
+  const handleBackupComplete = async (manifest: BackupManifest) => {
+    try {
+      await recordBackupServerFn({ data: manifest });
+      setBackupHistory((prev) => [manifest, ...prev].slice(0, 20));
+    } catch {
+      // non-critical
+    }
+  };
 
   const hasActiveScan = roots.some((r) => r.scanProgress !== null);
   const hasActiveJobs = jobs.some(
@@ -139,6 +157,7 @@ function SettingsPage() {
           <TabsTrigger value="appearance" className="px-4 py-1.5">Appearance</TabsTrigger>
           <TabsTrigger value="jobs" className="px-4 py-1.5">Jobs</TabsTrigger>
           <TabsTrigger value="integrations" className="px-4 py-1.5">Integrations</TabsTrigger>
+          <TabsTrigger value="backup" className="px-4 py-1.5">Backup</TabsTrigger>
         </TabsList>
 
         <TabsContent value="library" forceMount className="space-y-6 data-[state=inactive]:hidden">
@@ -156,6 +175,10 @@ function SettingsPage() {
 
         <TabsContent value="integrations" forceMount className="space-y-6 data-[state=inactive]:hidden">
           <IntegrationsTab integrations={integrations} />
+        </TabsContent>
+
+        <TabsContent value="backup" forceMount className="space-y-6 data-[state=inactive]:hidden">
+          <BackupTab history={backupHistory} onBackupComplete={(manifest) => { void handleBackupComplete(manifest); }} />
         </TabsContent>
       </Tabs>
     </div>
