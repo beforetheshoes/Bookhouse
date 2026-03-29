@@ -166,6 +166,7 @@ jobs:
       AUTH_OIDC_CLIENT_ID: e2e-client
       AUTH_OIDC_CLIENT_SECRET: e2e-secret
       APP_URL: http://localhost:3000
+      COVER_CACHE_DIR: /tmp/e2e-covers
     steps:
       - uses: actions/checkout@v4
 
@@ -200,6 +201,7 @@ jobs:
 
       - name: Start app and worker
         run: |
+          mkdir -p "$COVER_CACHE_DIR"
           node apps/web/.output/server/index.mjs &
           pnpm --filter @bookhouse/library-worker exec tsx src/index.ts &
 
