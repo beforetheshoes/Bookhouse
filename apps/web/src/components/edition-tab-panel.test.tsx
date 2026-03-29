@@ -523,6 +523,295 @@ describe("EditionTabPanel", () => {
     });
   });
 
+  it("renders download link for PRESENT file", () => {
+    render(
+      <EditionTabPanel
+        edition={baseEdition}
+        isLastEdition={false}
+        onEditionFieldSaved={vi.fn()}
+        onDeleteEdition={vi.fn()}
+      />,
+    );
+
+    const link = screen.getByRole("link", { name: /download wind\.epub/i });
+    expect(link).toBeTruthy();
+    expect(link.getAttribute("href")).toBe("/api/edition-files/download/ef1");
+  });
+
+  it("does not render download link for MISSING file", () => {
+    const edition = {
+      ...baseEdition,
+      editionFiles: [
+        {
+          ...baseEdition.editionFiles[0],
+          fileAsset: {
+            ...(baseEdition.editionFiles[0] as (typeof baseEdition.editionFiles)[number]).fileAsset,
+            availabilityStatus: "MISSING",
+          },
+        },
+      ],
+    } as EditionType;
+    render(
+      <EditionTabPanel
+        edition={edition}
+        isLastEdition={false}
+        onEditionFieldSaved={vi.fn()}
+        onDeleteEdition={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("link", { name: /download/i })).toBeNull();
+  });
+
+  it("does not render download link for IGNORED file", () => {
+    const edition = {
+      ...baseEdition,
+      editionFiles: [
+        {
+          ...baseEdition.editionFiles[0],
+          fileAsset: {
+            ...(baseEdition.editionFiles[0] as (typeof baseEdition.editionFiles)[number]).fileAsset,
+            availabilityStatus: "IGNORED",
+          },
+        },
+      ],
+    } as EditionType;
+    render(
+      <EditionTabPanel
+        edition={edition}
+        isLastEdition={false}
+        onEditionFieldSaved={vi.fn()}
+        onDeleteEdition={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("link", { name: /download/i })).toBeNull();
+  });
+
+  it("renders download link only for PRESENT files when mixed statuses", () => {
+    const edition = {
+      ...baseEdition,
+      editionFiles: [
+        baseEdition.editionFiles[0],
+        {
+          id: "ef2",
+          editionId: "e1",
+          fileAssetId: "fa2",
+          role: "ALTERNATE_FORMAT",
+          fileAsset: {
+            ...(baseEdition.editionFiles[0] as (typeof baseEdition.editionFiles)[number]).fileAsset,
+            id: "fa2",
+            basename: "wind.pdf",
+            availabilityStatus: "MISSING",
+          },
+        },
+      ],
+    } as EditionType;
+    render(
+      <EditionTabPanel
+        edition={edition}
+        isLastEdition={false}
+        onEditionFieldSaved={vi.fn()}
+        onDeleteEdition={vi.fn()}
+      />,
+    );
+
+    // Only 1 PRESENT file → individual download button, no "Download All"
+    const link = screen.getByRole("link", { name: /download wind\.epub/i });
+    expect(link.getAttribute("href")).toBe("/api/edition-files/download/ef1");
+    expect(screen.queryByRole("link", { name: /download wind\.pdf/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: /download all/i })).toBeNull();
+  });
+
+  it("renders Download All button when multiple PRESENT files exist", () => {
+    const edition = {
+      ...baseEdition,
+      editionFiles: [
+        baseEdition.editionFiles[0],
+        {
+          id: "ef2",
+          editionId: "e1",
+          fileAssetId: "fa2",
+          role: "AUDIO_TRACK",
+          fileAsset: {
+            ...(baseEdition.editionFiles[0] as (typeof baseEdition.editionFiles)[number]).fileAsset,
+            id: "fa2",
+            basename: "track02.mp3",
+            availabilityStatus: "PRESENT",
+          },
+        },
+      ],
+    } as EditionType;
+    render(
+      <EditionTabPanel
+        edition={edition}
+        isLastEdition={false}
+        onEditionFieldSaved={vi.fn()}
+        onDeleteEdition={vi.fn()}
+      />,
+    );
+
+    const link = screen.getByRole("link", { name: /download all \(2 files\)/i });
+    expect(link.getAttribute("href")).toBe("/api/editions/download-all/e1");
+  });
+
+  it("does not render individual download links when Download All is shown", () => {
+    const edition = {
+      ...baseEdition,
+      editionFiles: [
+        baseEdition.editionFiles[0],
+        {
+          id: "ef2",
+          editionId: "e1",
+          fileAssetId: "fa2",
+          role: "AUDIO_TRACK",
+          fileAsset: {
+            ...(baseEdition.editionFiles[0] as (typeof baseEdition.editionFiles)[number]).fileAsset,
+            id: "fa2",
+            basename: "track02.mp3",
+            availabilityStatus: "PRESENT",
+          },
+        },
+      ],
+    } as EditionType;
+    render(
+      <EditionTabPanel
+        edition={edition}
+        isLastEdition={false}
+        onEditionFieldSaved={vi.fn()}
+        onDeleteEdition={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("link", { name: /download wind\.epub/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: /download track02\.mp3/i })).toBeNull();
+  });
+
+  it("counts only PRESENT files toward Download All threshold", () => {
+    const edition = {
+      ...baseEdition,
+      editionFiles: [
+        baseEdition.editionFiles[0],
+        {
+          id: "ef2",
+          editionId: "e1",
+          fileAssetId: "fa2",
+          role: "AUDIO_TRACK",
+          fileAsset: {
+            ...(baseEdition.editionFiles[0] as (typeof baseEdition.editionFiles)[number]).fileAsset,
+            id: "fa2",
+            basename: "track02.mp3",
+            availabilityStatus: "PRESENT",
+          },
+        },
+        {
+          id: "ef3",
+          editionId: "e1",
+          fileAssetId: "fa3",
+          role: "AUDIO_TRACK",
+          fileAsset: {
+            ...(baseEdition.editionFiles[0] as (typeof baseEdition.editionFiles)[number]).fileAsset,
+            id: "fa3",
+            basename: "track03.mp3",
+            availabilityStatus: "MISSING",
+          },
+        },
+      ],
+    } as EditionType;
+    render(
+      <EditionTabPanel
+        edition={edition}
+        isLastEdition={false}
+        onEditionFieldSaved={vi.fn()}
+        onDeleteEdition={vi.fn()}
+      />,
+    );
+
+    // 2 PRESENT + 1 MISSING → Download All with count of 2
+    const link = screen.getByRole("link", { name: /download all \(2 files\)/i });
+    expect(link.getAttribute("href")).toBe("/api/editions/download-all/e1");
+  });
+
+  it("hides sidecar files from the files list", () => {
+    const edition = {
+      ...baseEdition,
+      editionFiles: [
+        baseEdition.editionFiles[0],
+        {
+          id: "ef2",
+          editionId: "e1",
+          fileAssetId: "fa2",
+          role: "SIDECAR",
+          fileAsset: {
+            ...(baseEdition.editionFiles[0] as (typeof baseEdition.editionFiles)[number]).fileAsset,
+            id: "fa2",
+            basename: "metadata.json",
+            mediaKind: "SIDECAR",
+          },
+        },
+        {
+          id: "ef3",
+          editionId: "e1",
+          fileAssetId: "fa3",
+          role: "SIDECAR",
+          fileAsset: {
+            ...(baseEdition.editionFiles[0] as (typeof baseEdition.editionFiles)[number]).fileAsset,
+            id: "fa3",
+            basename: "cover.jpg",
+            mediaKind: "COVER",
+          },
+        },
+      ],
+    } as EditionType;
+    render(
+      <EditionTabPanel
+        edition={edition}
+        isLastEdition={false}
+        onEditionFieldSaved={vi.fn()}
+        onDeleteEdition={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("wind.epub")).toBeTruthy();
+    expect(screen.queryByText("metadata.json")).toBeNull();
+    expect(screen.queryByText("cover.jpg")).toBeNull();
+  });
+
+  it("treats only content files as PRESENT for download threshold", () => {
+    const edition = {
+      ...baseEdition,
+      editionFiles: [
+        baseEdition.editionFiles[0],
+        {
+          id: "ef2",
+          editionId: "e1",
+          fileAssetId: "fa2",
+          role: "SIDECAR",
+          fileAsset: {
+            ...(baseEdition.editionFiles[0] as (typeof baseEdition.editionFiles)[number]).fileAsset,
+            id: "fa2",
+            basename: "metadata.json",
+            mediaKind: "SIDECAR",
+            availabilityStatus: "PRESENT",
+          },
+        },
+      ],
+    } as EditionType;
+    render(
+      <EditionTabPanel
+        edition={edition}
+        isLastEdition={false}
+        onEditionFieldSaved={vi.fn()}
+        onDeleteEdition={vi.fn()}
+      />,
+    );
+
+    // Only 1 content file → individual download, not "Download All"
+    const link = screen.getByRole("link", { name: /download wind\.epub/i });
+    expect(link.getAttribute("href")).toBe("/api/edition-files/download/ef1");
+    expect(screen.queryByRole("link", { name: /download all/i })).toBeNull();
+  });
+
   it("renders destructive badge for non-PRESENT file status", () => {
     const edition = {
       ...baseEdition,
