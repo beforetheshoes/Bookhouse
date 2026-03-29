@@ -1,0 +1,3 @@
+ignore-paths:
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
