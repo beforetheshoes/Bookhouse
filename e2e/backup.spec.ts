@@ -28,8 +28,8 @@ test.describe("Backup and restore", () => {
     tempBackupPath = path.join("/tmp", `e2e-backup-${String(Date.now())}.tar.gz`);
     await download.saveAs(tempBackupPath);
 
-    // Backup appears in history table
-    await expect(page.getByRole("table")).toBeVisible();
+    // Backup success toast confirms completion
+    await expect(page.getByText(/backup created successfully/i)).toBeVisible({ timeout: 10_000 });
 
     // Wipe library data to simulate data loss
     await cleanTestData();

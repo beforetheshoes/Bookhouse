@@ -19,6 +19,7 @@ export function createDownloadHandler(deps: DownloadHandlerDeps) {
 
     deps.setResponseHeader(event, "Content-Type", "application/gzip");
     deps.setResponseHeader(event, "Content-Disposition", `attachment; filename="${filename}"`);
+    deps.setResponseHeader(event, "x-backup-manifest", JSON.stringify(manifest));
 
     return deps.sendStream(event, stream);
   };

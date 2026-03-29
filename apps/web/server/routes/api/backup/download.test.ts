@@ -67,6 +67,19 @@ describe("backup download handler", () => {
     );
   });
 
+  it("sets x-backup-manifest header with serialized manifest", async () => {
+    const deps = createMockDeps();
+    const handler = createDownloadHandler(deps);
+
+    await handler(createMockEvent() as never);
+
+    expect(deps.setResponseHeader).toHaveBeenCalledWith(
+      expect.anything(),
+      "x-backup-manifest",
+      JSON.stringify(MOCK_MANIFEST),
+    );
+  });
+
   it("sends the backup stream", async () => {
     const mockStream = Readable.from(Buffer.from("data"));
     const deps = createMockDeps({
