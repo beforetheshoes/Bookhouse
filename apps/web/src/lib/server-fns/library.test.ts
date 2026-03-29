@@ -92,17 +92,22 @@ describe("getFilteredLibraryWorksServerFn", () => {
       }),
     );
     expect(countMock).toHaveBeenCalled();
+    const expectedFacetCounts = {
+      format: [
+        { formatFamily: "EBOOK", _count: { _all: 0 } },
+        { formatFamily: "AUDIOBOOK", _count: { _all: 0 } },
+      ],
+      hasCover: { withCover: 0, withoutCover: 0 },
+      enrichment: { enriched: 0, unenriched: 0 },
+      description: { withDescription: 0, withoutDescription: 0 },
+      series: { inSeries: 0, standalone: 0 },
+      isbn: { withIsbn: 0, withoutIsbn: 0 },
+    };
     expect(result).toEqual({
       works: [],
       totalCount: 0,
-      facetCounts: {
-        format: [],
-        hasCover: { withCover: 0, withoutCover: 0 },
-        enrichment: { enriched: 0, unenriched: 0 },
-        description: { withDescription: 0, withoutDescription: 0 },
-        series: { inSeries: 0, standalone: 0 },
-        isbn: { withIsbn: 0, withoutIsbn: 0 },
-      },
+      facetCounts: expectedFacetCounts,
+      totalFacetCounts: expectedFacetCounts,
     });
   });
 
@@ -690,6 +695,37 @@ describe("getFilteredLibraryWorksServerFn", () => {
     ]);
   });
 
+  it("fills in missing format families with zero counts", async () => {
+    findManyMock.mockResolvedValue([]);
+    countMock.mockResolvedValue(0);
+    // groupBy only returns AUDIOBOOK — EBOOK is missing
+    editionGroupByMock.mockResolvedValue([
+      { formatFamily: "AUDIOBOOK", _count: { _all: 5 } },
+    ]);
+    const result = await getFilteredLibraryWorksServerFn({ data: {} });
+
+    expect(result.facetCounts.format).toEqual([
+      { formatFamily: "EBOOK", _count: { _all: 0 } },
+      { formatFamily: "AUDIOBOOK", _count: { _all: 5 } },
+    ]);
+  });
+
+  it("returns format families in stable EBOOK, AUDIOBOOK order", async () => {
+    findManyMock.mockResolvedValue([]);
+    countMock.mockResolvedValue(0);
+    // groupBy returns AUDIOBOOK first
+    editionGroupByMock.mockResolvedValue([
+      { formatFamily: "AUDIOBOOK", _count: { _all: 3 } },
+      { formatFamily: "EBOOK", _count: { _all: 10 } },
+    ]);
+    const result = await getFilteredLibraryWorksServerFn({ data: {} });
+
+    expect(result.facetCounts.format).toEqual([
+      { formatFamily: "EBOOK", _count: { _all: 10 } },
+      { formatFamily: "AUDIOBOOK", _count: { _all: 3 } },
+    ]);
+  });
+
   it("returns facet counts for hasCover", async () => {
     findManyMock.mockResolvedValue([]);
     editionGroupByMock.mockResolvedValue([]);
@@ -728,7 +764,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
     expect(result.facetCounts.hasCover.withoutCover).toBeGreaterThanOrEqual(0);
   });
 
-  it("scopes cover facet counts to active search filter (excludes hasCover)", async () => {
+  it("scopes cover facet counts to full active filter set", async () => {
     findManyMock.mockResolvedValue([]);
     editionGroupByMock.mockResolvedValue([]);
 
@@ -736,77 +772,38 @@ describe("getFilteredLibraryWorksServerFn", () => {
 
     await getFilteredLibraryWorksServerFn({ data: { q: "wind" } });
 
-    // Cover count queries should include the search filter but NOT hasCover
-    // countMock calls: [0] = totalCount, [1] = withCover, [2] = withoutCover
-    const availabilityAnd = [
-      {
-        editions: {
-          some: {
-            editionFiles: {
-              some: {
-                fileAsset: { availabilityStatus: "PRESENT" },
-              },
-            },
-          },
-        },
-      },
-    ];
+    // Cover count queries use AND to combine with full filter set
+    const findManyWhere = (findManyMock.mock.calls[0]?.[0] as { where: object }).where;
     expect(countMock).toHaveBeenNthCalledWith(2, {
-      where: {
-        OR: [
-          { titleDisplay: { contains: "wind", mode: "insensitive" } },
-          { titleCanonical: { contains: "wind", mode: "insensitive" } },
-        ],
-        AND: availabilityAnd,
-        coverPath: { not: null },
-      },
+      where: { AND: [findManyWhere, { coverPath: { not: null } }] },
     });
     expect(countMock).toHaveBeenNthCalledWith(3, {
-      where: {
-        OR: [
-          { titleDisplay: { contains: "wind", mode: "insensitive" } },
-          { titleCanonical: { contains: "wind", mode: "insensitive" } },
-        ],
-        AND: availabilityAnd,
-        coverPath: null,
-      },
+      where: { AND: [findManyWhere, { coverPath: null }] },
     });
   });
 
-  it("scopes format facet counts to active search filter (excludes format)", async () => {
+  it("format facet counts include active format filter", async () => {
     findManyMock.mockResolvedValue([]);
     countMock.mockResolvedValue(0);
     editionGroupByMock.mockResolvedValue([]);
-    await getFilteredLibraryWorksServerFn({ data: { q: "wind" } });
+    await getFilteredLibraryWorksServerFn({ data: { format: ["EBOOK"] } });
 
-    expect(editionGroupByMock).toHaveBeenCalledWith({
+    // Format facet groupBy should include the format filter in the work where clause
+    const findManyWhere = (findManyMock.mock.calls[0]?.[0] as { where: object }).where;
+    expect(editionGroupByMock).toHaveBeenNthCalledWith(1, {
       by: ["formatFamily"],
       _count: { _all: true },
-      where: {
-        work: {
-          OR: [
-            { titleDisplay: { contains: "wind", mode: "insensitive" } },
-            { titleCanonical: { contains: "wind", mode: "insensitive" } },
-          ],
-          AND: [
-            {
-              editions: {
-                some: {
-                  editionFiles: {
-                    some: {
-                      fileAsset: { availabilityStatus: "PRESENT" },
-                    },
-                  },
-                },
-              },
-            },
-          ],
-        },
-      },
+      where: { work: findManyWhere },
     });
+    // Verify that the where clause actually contains the format filter
+    expect(findManyWhere).toEqual(
+      expect.objectContaining({
+        editions: { some: { formatFamily: { in: ["EBOOK"] } } },
+      }),
+    );
   });
 
-  it("cover facet counts exclude hasCover filter but include format filter", async () => {
+  it("cover facet counts include both hasCover and format filters", async () => {
     findManyMock.mockResolvedValue([]);
     editionGroupByMock.mockResolvedValue([]);
 
@@ -816,33 +813,13 @@ describe("getFilteredLibraryWorksServerFn", () => {
       data: { format: ["EBOOK"], hasCover: false },
     });
 
-    // Cover count queries should include format but NOT hasCover
-    const availabilityAnd = [
-      {
-        editions: {
-          some: {
-            editionFiles: {
-              some: {
-                fileAsset: { availabilityStatus: "PRESENT" },
-              },
-            },
-          },
-        },
-      },
-    ];
+    // Cover count queries use AND to properly intersect with active filters
+    const findManyWhere = (findManyMock.mock.calls[0]?.[0] as { where: object }).where;
     expect(countMock).toHaveBeenNthCalledWith(2, {
-      where: {
-        editions: { some: { formatFamily: { in: ["EBOOK"] } } },
-        AND: availabilityAnd,
-        coverPath: { not: null },
-      },
+      where: { AND: [findManyWhere, { coverPath: { not: null } }] },
     });
     expect(countMock).toHaveBeenNthCalledWith(3, {
-      where: {
-        editions: { some: { formatFamily: { in: ["EBOOK"] } } },
-        AND: availabilityAnd,
-        coverPath: null,
-      },
+      where: { AND: [findManyWhere, { coverPath: null }] },
     });
   });
 
@@ -1086,5 +1063,96 @@ describe("getFilteredLibraryWorksServerFn", () => {
         },
       }),
     );
+  });
+
+  it("returns totalFacetCounts using base where (no user filters)", async () => {
+    findManyMock.mockResolvedValue([]);
+    editionGroupByMock
+      .mockResolvedValueOnce([]) // filtered format counts
+      .mockResolvedValueOnce([   // unfiltered format counts
+        { formatFamily: "EBOOK", _count: { _all: 10 } },
+        { formatFamily: "AUDIOBOOK", _count: { _all: 5 } },
+      ]);
+
+    // 22 count calls: 11 filtered + 11 unfiltered
+    countMock
+      .mockResolvedValueOnce(3)   // totalCount (filtered)
+      .mockResolvedValueOnce(2)   // withCover (filtered)
+      .mockResolvedValueOnce(1)   // withoutCover (filtered)
+      .mockResolvedValueOnce(1)   // enriched (filtered)
+      .mockResolvedValueOnce(2)   // unenriched (filtered)
+      .mockResolvedValueOnce(1)   // withDescription (filtered)
+      .mockResolvedValueOnce(2)   // withoutDescription (filtered)
+      .mockResolvedValueOnce(1)   // inSeries (filtered)
+      .mockResolvedValueOnce(2)   // standalone (filtered)
+      .mockResolvedValueOnce(2)   // withIsbn (filtered)
+      .mockResolvedValueOnce(1)   // withoutIsbn (filtered)
+      .mockResolvedValueOnce(12)  // withCover (unfiltered)
+      .mockResolvedValueOnce(3)   // withoutCover (unfiltered)
+      .mockResolvedValueOnce(8)   // enriched (unfiltered)
+      .mockResolvedValueOnce(7)   // unenriched (unfiltered)
+      .mockResolvedValueOnce(6)   // withDescription (unfiltered)
+      .mockResolvedValueOnce(9)   // withoutDescription (unfiltered)
+      .mockResolvedValueOnce(4)   // inSeries (unfiltered)
+      .mockResolvedValueOnce(11)  // standalone (unfiltered)
+      .mockResolvedValueOnce(10)  // withIsbn (unfiltered)
+      .mockResolvedValueOnce(5);  // withoutIsbn (unfiltered)
+
+    const result = await getFilteredLibraryWorksServerFn({
+      data: { format: ["EBOOK"] },
+    });
+
+    expect(result.totalFacetCounts).toEqual({
+      format: [
+        { formatFamily: "EBOOK", _count: { _all: 10 } },
+        { formatFamily: "AUDIOBOOK", _count: { _all: 5 } },
+      ],
+      hasCover: { withCover: 12, withoutCover: 3 },
+      enrichment: { enriched: 8, unenriched: 7 },
+      description: { withDescription: 6, withoutDescription: 9 },
+      series: { inSeries: 4, standalone: 11 },
+      isbn: { withIsbn: 10, withoutIsbn: 5 },
+    });
+  });
+
+  it("totalFacetCounts queries use only base availability where", async () => {
+    findManyMock.mockResolvedValue([]);
+    editionGroupByMock.mockResolvedValue([]);
+    countMock.mockResolvedValue(0);
+
+    await getFilteredLibraryWorksServerFn({
+      data: { format: ["EBOOK"], hasCover: true, enriched: false },
+    });
+
+    const baseWhere = {
+      AND: [
+        {
+          editions: {
+            some: {
+              editionFiles: {
+                some: {
+                  fileAsset: { availabilityStatus: "PRESENT" },
+                },
+              },
+            },
+          },
+        },
+      ],
+    };
+
+    // Second editionGroupByMock call is for totalFacetCounts
+    expect(editionGroupByMock).toHaveBeenNthCalledWith(2, {
+      by: ["formatFamily"],
+      _count: { _all: true },
+      where: { work: baseWhere },
+    });
+
+    // Unfiltered cover counts (calls 12 and 13 of countMock)
+    expect(countMock).toHaveBeenNthCalledWith(12, {
+      where: { AND: [baseWhere, { coverPath: { not: null } }] },
+    });
+    expect(countMock).toHaveBeenNthCalledWith(13, {
+      where: { AND: [baseWhere, { coverPath: null }] },
+    });
   });
 });

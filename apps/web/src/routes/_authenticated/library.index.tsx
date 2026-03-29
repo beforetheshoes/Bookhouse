@@ -250,7 +250,7 @@ export function columnSortToParam(
 
 function LibraryPage() {
   const { libraryResult, activeJobCount, progressMap } = Route.useLoaderData();
-  const { works, totalCount, facetCounts } = libraryResult;
+  const { works, totalCount, facetCounts, totalFacetCounts } = libraryResult;
   const search = Route.useSearch();
   const navigate = useNavigate();
   const [view, setView] = useLibraryViewPreference();
@@ -467,6 +467,7 @@ function LibraryPage() {
         <aside className="w-56 shrink-0">
           <LibraryFilters
             facetCounts={facetCounts}
+            totalFacetCounts={totalFacetCounts}
             filters={currentFilters}
             onFiltersChange={handleFiltersChange}
           />

@@ -19,6 +19,7 @@ const defaultFacetCounts: FacetCounts = {
 
 const defaultProps = {
   facetCounts: defaultFacetCounts,
+  totalFacetCounts: defaultFacetCounts,
   filters: {},
   onFiltersChange: vi.fn(),
 };
@@ -273,5 +274,130 @@ describe("LibraryFilters", () => {
   it("does not show clear all for empty arrays", () => {
     render(<LibraryFilters {...defaultProps} filters={{ format: [], authorId: [], seriesId: [], publisher: [] }} />);
     expect(screen.queryByText("Clear All")).toBeNull();
+  });
+
+  it("shows single count when filtered equals total", () => {
+    render(<LibraryFilters {...defaultProps} />);
+    expect(screen.getByText("EBOOK (10)")).toBeTruthy();
+    expect(screen.queryByText(/\//)).toBeNull();
+  });
+
+  it("shows filtered / total when format counts differ", () => {
+    const filteredCounts: FacetCounts = {
+      ...defaultFacetCounts,
+      format: [
+        { formatFamily: "EBOOK", _count: { _all: 4 } },
+        { formatFamily: "AUDIOBOOK", _count: { _all: 2 } },
+      ],
+    };
+    render(
+      <LibraryFilters
+        {...defaultProps}
+        facetCounts={filteredCounts}
+        totalFacetCounts={defaultFacetCounts}
+        filters={{ hasCover: true }}
+      />,
+    );
+    expect(screen.getByText("EBOOK (4 / 10)")).toBeTruthy();
+    expect(screen.getByText("AUDIOBOOK (2 / 5)")).toBeTruthy();
+  });
+
+  it("shows filtered / total for boolean facets when counts differ", () => {
+    const filteredCounts: FacetCounts = {
+      ...defaultFacetCounts,
+      hasCover: { withCover: 4, withoutCover: 1 },
+    };
+    render(
+      <LibraryFilters
+        {...defaultProps}
+        facetCounts={filteredCounts}
+        totalFacetCounts={defaultFacetCounts}
+        filters={{ format: ["EBOOK"] }}
+      />,
+    );
+    expect(screen.getByText("With Cover (4 / 12)")).toBeTruthy();
+    expect(screen.getByText("Without Cover (1 / 3)")).toBeTruthy();
+  });
+
+  it("shows single count for boolean facets when counts match", () => {
+    render(<LibraryFilters {...defaultProps} />);
+    expect(screen.getByText("With Cover (12)")).toBeTruthy();
+    expect(screen.getByText("Without Cover (3)")).toBeTruthy();
+  });
+
+  it("falls back to filtered count when format not found in totalFacetCounts", () => {
+    const filteredCounts: FacetCounts = {
+      ...defaultFacetCounts,
+      format: [
+        { formatFamily: "EBOOK", _count: { _all: 4 } },
+      ],
+    };
+    const totalCounts: FacetCounts = {
+      ...defaultFacetCounts,
+      format: [], // no matching format in totals
+    };
+    render(
+      <LibraryFilters
+        {...defaultProps}
+        facetCounts={filteredCounts}
+        totalFacetCounts={totalCounts}
+        filters={{ hasCover: true }}
+      />,
+    );
+    // Falls back to filtered count since total format not found
+    expect(screen.getByText("EBOOK (4)")).toBeTruthy();
+  });
+
+  it("always reserves space for clear all button", () => {
+    const { container } = render(<LibraryFilters {...defaultProps} filters={{}} />);
+    // Clear All button should exist but be invisible when no filters active
+    const clearAllWrapper = container.querySelector("[data-testid='clear-all-spacer']");
+    expect(clearAllWrapper).toBeTruthy();
+  });
+
+  it("makes clear all button visible when filters active", () => {
+    const { container } = render(<LibraryFilters {...defaultProps} filters={{ format: ["EBOOK"] }} />);
+    const clearAllBtn = container.querySelector("[data-testid='clear-all-spacer']");
+    expect(clearAllBtn).toBeTruthy();
+    expect(screen.getByText("Clear All")).toBeTruthy();
+  });
+
+  it("marks zero-count buttons as disabled-looking via data-empty", () => {
+    const filteredCounts: FacetCounts = {
+      ...defaultFacetCounts,
+      hasCover: { withCover: 0, withoutCover: 5 },
+    };
+    render(
+      <LibraryFilters
+        {...defaultProps}
+        facetCounts={filteredCounts}
+        totalFacetCounts={defaultFacetCounts}
+        filters={{ format: ["EBOOK"] }}
+      />,
+    );
+    const withCoverBtn = screen.getByText("With Cover (0 / 12)").closest("button");
+    expect(withCoverBtn?.getAttribute("data-empty")).toBe("true");
+    const withoutCoverBtn = screen.getByText("Without Cover (5 / 3)").closest("button");
+    expect(withoutCoverBtn?.getAttribute("data-empty")).toBe("false");
+  });
+
+  it("marks zero-count format buttons as disabled-looking via data-empty", () => {
+    const filteredCounts: FacetCounts = {
+      ...defaultFacetCounts,
+      format: [
+        { formatFamily: "EBOOK", _count: { _all: 0 } },
+        { formatFamily: "AUDIOBOOK", _count: { _all: 5 } },
+      ],
+    };
+    render(
+      <LibraryFilters
+        {...defaultProps}
+        facetCounts={filteredCounts}
+        totalFacetCounts={defaultFacetCounts}
+        filters={{ hasCover: true }}
+      />,
+    );
+    const ebookBtn = screen.getByText("EBOOK (0 / 10)").closest("button");
+    expect(ebookBtn?.getAttribute("data-empty")).toBe("true");
   });
 });
