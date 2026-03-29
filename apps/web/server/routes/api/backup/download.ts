@@ -5,10 +5,6 @@ import type { Readable } from "node:stream";
 import { createBackup as createBackupImpl, type CreateBackupDeps } from "~/lib/backup/create-backup";
 import type { BackupManifest } from "~/lib/backup/manifest";
 
-const COVER_CACHE_DIR = process.env.COVER_CACHE_DIR ?? "/data/covers";
-const DATABASE_URL = process.env.DATABASE_URL ?? "";
-const PG_DUMP_BIN = process.env.PG_DUMP_PATH ?? "pg_dump";
-
 export interface DownloadHandlerDeps {
   createBackup: () => Promise<{ stream: Readable; manifest: BackupManifest }>;
   setResponseHeader: (event: H3Event, name: string, value: string) => void;
@@ -30,6 +26,10 @@ export function createDownloadHandler(deps: DownloadHandlerDeps) {
 
 /* c8 ignore start — runtime wiring, tested via unit tests on createDownloadHandler */
 export default defineEventHandler(async (event) => {
+  const coverCacheDir = process.env.COVER_CACHE_DIR ?? "/data/covers";
+  const databaseUrl = process.env.DATABASE_URL ?? "";
+  const pgDumpBin = process.env.PG_DUMP_PATH ?? "pg_dump";
+
   const { execFile: execFileCallback } = await import("node:child_process");
   const { promisify } = await import("node:util");
   const execFile = promisify(execFileCallback);
@@ -41,9 +41,9 @@ export default defineEventHandler(async (event) => {
         readdir: readdir as unknown as CreateBackupDeps["readdir"],
         readFile,
         stat,
-        coverCacheDir: COVER_CACHE_DIR,
-        databaseUrl: DATABASE_URL,
-        pgDumpBin: PG_DUMP_BIN,
+        coverCacheDir,
+        databaseUrl,
+        pgDumpBin,
       }),
     setResponseHeader,
     sendStream: sendStream as unknown as DownloadHandlerDeps["sendStream"],

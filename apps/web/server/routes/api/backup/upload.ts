@@ -4,9 +4,6 @@ import type { H3Event } from "h3";
 import { restoreBackup as restoreBackupImpl, type RestoreBackupDeps } from "~/lib/backup/restore-backup";
 import type { BackupManifest } from "~/lib/backup/manifest";
 
-const COVER_CACHE_DIR = process.env.COVER_CACHE_DIR ?? "/data/covers";
-const DATABASE_URL = process.env.DATABASE_URL ?? "";
-const PSQL_BIN = process.env.PSQL_PATH ?? "psql";
 const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
 
 export interface UploadRestoreHandlerDeps {
@@ -37,6 +34,10 @@ export function createUploadRestoreHandler(deps: UploadRestoreHandlerDeps) {
 
 /* c8 ignore start — runtime wiring, tested via unit tests on createUploadRestoreHandler */
 export default defineEventHandler(async (event) => {
+  const coverCacheDir = process.env.COVER_CACHE_DIR ?? "/data/covers";
+  const databaseUrl = process.env.DATABASE_URL ?? "";
+  const psqlBin = process.env.PSQL_PATH ?? "psql";
+
   const { execFile: execFileCallback } = await import("node:child_process");
   const { promisify } = await import("node:util");
   const execFile = promisify(execFileCallback);
@@ -48,9 +49,9 @@ export default defineEventHandler(async (event) => {
     rm: rm as unknown as RestoreBackupDeps["rm"],
     rename,
     mkdtemp,
-    coverCacheDir: COVER_CACHE_DIR,
-    databaseUrl: DATABASE_URL,
-    psqlBin: PSQL_BIN,
+    coverCacheDir,
+    databaseUrl,
+    psqlBin,
   };
 
   const handler = createUploadRestoreHandler({
