@@ -184,29 +184,6 @@ export const updateWorkAuthorsServerFn = createServerFn({
     return { success: true };
   });
 
-const setSyncEditionSchema = z.object({
-  workId: z.string().min(1),
-  editionId: z.union([z.string().min(1), z.null()]),
-});
-
-export const setSyncEditionServerFn = createServerFn({
-  method: "POST",
-})
-  .inputValidator(setSyncEditionSchema)
-  .handler(async ({ data }) => {
-    const { db } = await import("@bookhouse/db");
-    if (data.editionId) {
-      const edition = await db.edition.findUniqueOrThrow({ where: { id: data.editionId } });
-      if (edition.workId !== data.workId || edition.formatFamily !== "EBOOK") {
-        throw new Error("Edition must belong to this work and be an ebook");
-      }
-    }
-    return db.work.update({
-      where: { id: data.workId },
-      data: { preferredSyncEditionId: data.editionId },
-    });
-  });
-
 export const getContributorNamesServerFn = createServerFn({
   method: "GET",
 }).handler(async () => {

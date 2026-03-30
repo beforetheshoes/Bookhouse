@@ -17,7 +17,6 @@ vi.mock("@tanstack/react-start", () => ({
 const workFindUniqueMock = vi.fn();
 const workUpdateMock = vi.fn();
 const editionFindUniqueMock = vi.fn();
-const editionFindUniqueOrThrowMock = vi.fn();
 const editionUpdateMock = vi.fn();
 const editionFindManyMock = vi.fn();
 const contributorFindFirstMock = vi.fn();
@@ -35,7 +34,6 @@ vi.mock("@bookhouse/db", () => ({
     },
     edition: {
       findUnique: editionFindUniqueMock,
-      findUniqueOrThrow: editionFindUniqueOrThrowMock,
       findMany: editionFindManyMock,
       update: editionUpdateMock,
     },
@@ -65,14 +63,12 @@ import {
   updateEditionServerFn,
   updateWorkAuthorsServerFn,
   getContributorNamesServerFn,
-  setSyncEditionServerFn,
 } from "./editing";
 
 beforeEach(() => {
   workFindUniqueMock.mockReset();
   workUpdateMock.mockReset();
   editionFindUniqueMock.mockReset();
-  editionFindUniqueOrThrowMock.mockReset();
   editionUpdateMock.mockReset();
   editionFindManyMock.mockReset();
   contributorFindFirstMock.mockReset();
@@ -465,69 +461,3 @@ describe("getContributorNamesServerFn", () => {
   });
 });
 
-describe("setSyncEditionServerFn", () => {
-  it("sets a valid ebook edition as preferred sync edition", async () => {
-    editionFindUniqueOrThrowMock.mockResolvedValue({
-      id: "e1",
-      workId: "w1",
-      formatFamily: "EBOOK",
-    });
-    workUpdateMock.mockResolvedValue({ id: "w1", preferredSyncEditionId: "e1" });
-
-    const result = await setSyncEditionServerFn({
-      data: { workId: "w1", editionId: "e1" },
-    });
-
-    expect(editionFindUniqueOrThrowMock).toHaveBeenCalledWith({
-      where: { id: "e1" },
-    });
-    expect(workUpdateMock).toHaveBeenCalledWith({
-      where: { id: "w1" },
-      data: { preferredSyncEditionId: "e1" },
-    });
-    expect(result).toEqual({ id: "w1", preferredSyncEditionId: "e1" });
-  });
-
-  it("clears the preferred sync edition when editionId is null", async () => {
-    workUpdateMock.mockResolvedValue({ id: "w1", preferredSyncEditionId: null });
-
-    const result = await setSyncEditionServerFn({
-      data: { workId: "w1", editionId: null },
-    });
-
-    expect(editionFindUniqueOrThrowMock).not.toHaveBeenCalled();
-    expect(workUpdateMock).toHaveBeenCalledWith({
-      where: { id: "w1" },
-      data: { preferredSyncEditionId: null },
-    });
-    expect(result).toEqual({ id: "w1", preferredSyncEditionId: null });
-  });
-
-  it("rejects when edition does not belong to the work", async () => {
-    editionFindUniqueOrThrowMock.mockResolvedValue({
-      id: "e1",
-      workId: "w-other",
-      formatFamily: "EBOOK",
-    });
-
-    await expect(
-      setSyncEditionServerFn({
-        data: { workId: "w1", editionId: "e1" },
-      }),
-    ).rejects.toThrow("Edition must belong to this work and be an ebook");
-  });
-
-  it("rejects when edition is not an ebook", async () => {
-    editionFindUniqueOrThrowMock.mockResolvedValue({
-      id: "e1",
-      workId: "w1",
-      formatFamily: "AUDIOBOOK",
-    });
-
-    await expect(
-      setSyncEditionServerFn({
-        data: { workId: "w1", editionId: "e1" },
-      }),
-    ).rejects.toThrow("Edition must belong to this work and be an ebook");
-  });
-});

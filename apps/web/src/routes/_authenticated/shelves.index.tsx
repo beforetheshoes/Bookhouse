@@ -3,6 +3,7 @@ import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import { MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
 import { DataTable, DataTableColumnHeader } from "~/components/data-table";
+import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -18,6 +19,13 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { Input } from "~/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
 import { TablePageSkeleton } from "~/components/skeletons/table-page-skeleton";
 import {
   getShelvesServerFn,
@@ -26,6 +34,12 @@ import {
   deleteShelfServerFn,
   type ShelfRow,
 } from "~/lib/server-fns/shelves";
+
+const FORMAT_LABELS: Record<string, string> = {
+  ALL: "All",
+  EBOOK: "Ebooks",
+  AUDIOBOOK: "Audiobooks",
+};
 
 export const Route = createFileRoute("/_authenticated/shelves/")({
   loader: async () => {
@@ -60,9 +74,18 @@ function ShelvesPage() {
       ),
     },
     {
+      accessorKey: "formatFilter",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="Format" />
+      ),
+      cell: ({ row }) => (
+        <Badge variant="secondary">{FORMAT_LABELS[row.original.formatFilter] ?? row.original.formatFilter}</Badge>
+      ),
+    },
+    {
       id: "itemCount",
       header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="Works" />
+        <DataTableColumnHeader column={column} title="Editions" />
       ),
       accessorFn: (row) => row._count.items,
     },
@@ -155,13 +178,15 @@ function CreateShelfDialog({
   onCreated: () => void;
 }) {
   const [name, setName] = useState("");
+  const [formatFilter, setFormatFilter] = useState<"ALL" | "EBOOK" | "AUDIOBOOK">("ALL");
   const [saving, setSaving] = useState(false);
 
   const handleCreate = async () => {
     setSaving(true);
     try {
-      await createShelfServerFn({ data: { name: name.trim() } });
+      await createShelfServerFn({ data: { name: name.trim(), formatFilter } });
       setName("");
+      setFormatFilter("ALL");
       onOpenChange(false);
       onCreated();
     } finally {
@@ -181,6 +206,19 @@ function CreateShelfDialog({
           onChange={(e) => { setName(e.target.value); }}
           data-testid="create-shelf-name"
         />
+        <div className="space-y-1">
+          <label className="text-sm font-medium">Format</label>
+          <Select value={formatFilter} onValueChange={(v) => { setFormatFilter(v as "ALL" | "EBOOK" | "AUDIOBOOK"); }} data-testid="create-shelf-format-select">
+            <SelectTrigger data-testid="create-shelf-format">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All Formats</SelectItem>
+              <SelectItem value="EBOOK">Ebooks Only</SelectItem>
+              <SelectItem value="AUDIOBOOK">Audiobooks Only</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <DialogFooter>
           <Button
             onClick={() => { void handleCreate(); }}
@@ -280,7 +318,7 @@ function DeleteShelfDialog({
           <DialogTitle>Delete Shelf</DialogTitle>
         </DialogHeader>
         <p className="text-sm text-muted-foreground">
-          Are you sure you want to delete &quot;{shelfName}&quot;? This will remove all works from this shelf but won&apos;t delete the works themselves.
+          Are you sure you want to delete &quot;{shelfName}&quot;? This will remove all editions from this shelf but won&apos;t delete the editions themselves.
         </p>
         <DialogFooter>
           <Button variant="outline" onClick={() => { onOpenChange(false); }}>

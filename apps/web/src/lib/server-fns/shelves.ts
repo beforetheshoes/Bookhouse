@@ -30,20 +30,23 @@ export const getShelfDetailServerFn = createServerFn({
       include: {
         items: {
           include: {
-            work: {
+            edition: {
               include: {
-                series: true,
-                editions: {
+                work: {
                   include: {
-                    contributors: {
-                      include: { contributor: true },
-                    },
+                    series: true,
                   },
+                },
+                contributors: {
+                  include: { contributor: true },
+                },
+                editionFiles: {
+                  include: { fileAsset: true },
                 },
               },
             },
           },
-          orderBy: { work: { titleDisplay: "asc" } },
+          orderBy: { edition: { work: { titleDisplay: "asc" } } },
         },
       },
     });
@@ -51,16 +54,34 @@ export const getShelfDetailServerFn = createServerFn({
 
 export type ShelfDetail = Awaited<ReturnType<typeof getShelfDetailServerFn>>;
 
+export const getShelvesForEditionServerFn = createServerFn({
+  method: "GET",
+})
+  .inputValidator(z.object({ editionId: z.string().min(1) }))
+  .handler(async ({ data }) => {
+    const { db } = await import("@bookhouse/db");
+    const memberships = await db.collectionItem.findMany({
+      where: { editionId: data.editionId },
+      select: { collectionId: true },
+    });
+    return memberships.map((m) => m.collectionId);
+  });
+
 export const getShelvesForWorkServerFn = createServerFn({
   method: "GET",
 })
   .inputValidator(z.object({ workId: z.string().min(1) }))
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
+    const editions = await db.edition.findMany({
+      where: { workId: data.workId },
+      select: { id: true },
+    });
+    const editionIds = editions.map((e) => e.id);
     const [shelves, memberships] = await Promise.all([
       db.collection.findMany({ orderBy: { name: "asc" } }),
       db.collectionItem.findMany({
-        where: { workId: data.workId },
+        where: { editionId: { in: editionIds } },
         select: { collectionId: true },
       }),
     ]);
@@ -75,11 +96,14 @@ export const getShelvesForWorkServerFn = createServerFn({
 export const createShelfServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(z.object({ name: z.string().min(1) }))
+  .inputValidator(z.object({
+    name: z.string().min(1),
+    formatFilter: z.enum(["ALL", "EBOOK", "AUDIOBOOK"]).default("ALL"),
+  }))
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
     return db.collection.create({
-      data: { name: data.name, kind: "MANUAL" },
+      data: { name: data.name, kind: "MANUAL", formatFilter: data.formatFilter },
     });
   });
 
@@ -106,15 +130,48 @@ export const deleteShelfServerFn = createServerFn({
     });
   });
 
-export const addWorkToShelfServerFn = createServerFn({
+export const addEditionToShelfServerFn = createServerFn({
+  method: "POST",
+})
+  .inputValidator(z.object({ shelfId: z.string().min(1), editionId: z.string().min(1) }))
+  .handler(async ({ data }) => {
+    const { db } = await import("@bookhouse/db");
+    return db.collectionItem.create({
+      data: { collectionId: data.shelfId, editionId: data.editionId },
+    });
+  });
+
+export const addEditionsForWorkToShelfServerFn = createServerFn({
   method: "POST",
 })
   .inputValidator(z.object({ shelfId: z.string().min(1), workId: z.string().min(1) }))
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
-    return db.collectionItem.create({
-      data: { collectionId: data.shelfId, workId: data.workId },
+    const shelf = await db.collection.findUniqueOrThrow({
+      where: { id: data.shelfId },
+      select: { formatFilter: true },
     });
+    const formatWhere = shelf.formatFilter === "ALL"
+      ? {}
+      : { formatFamily: shelf.formatFilter };
+    const editions = await db.edition.findMany({
+      where: { workId: data.workId, ...formatWhere },
+      select: { id: true },
+    });
+    const editionIds = editions.map((e) => e.id);
+    if (editionIds.length === 0) return { added: 0 };
+    const existing = await db.collectionItem.findMany({
+      where: { collectionId: data.shelfId, editionId: { in: editionIds } },
+      select: { editionId: true },
+    });
+    const existingIds = new Set(existing.map((e) => e.editionId));
+    const newEditionIds = editionIds.filter((id) => !existingIds.has(id));
+    if (newEditionIds.length > 0) {
+      await db.collectionItem.createMany({
+        data: newEditionIds.map((editionId) => ({ collectionId: data.shelfId, editionId })),
+      });
+    }
+    return { added: newEditionIds.length };
   });
 
 export const bulkAddToShelfServerFn = createServerFn({
@@ -123,32 +180,63 @@ export const bulkAddToShelfServerFn = createServerFn({
   .inputValidator(z.object({ shelfId: z.string().min(1), workIds: z.array(z.string().min(1)).min(1) }))
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
-    const existing = await db.collectionItem.findMany({
-      where: { collectionId: data.shelfId, workId: { in: data.workIds } },
-      select: { workId: true },
+    const shelf = await db.collection.findUniqueOrThrow({
+      where: { id: data.shelfId },
+      select: { formatFilter: true },
     });
-    const existingIds = new Set(existing.map((e) => e.workId));
-    const newWorkIds = data.workIds.filter((id) => !existingIds.has(id));
-    if (newWorkIds.length > 0) {
+    const formatWhere = shelf.formatFilter === "ALL"
+      ? {}
+      : { formatFamily: shelf.formatFilter };
+    const editions = await db.edition.findMany({
+      where: { workId: { in: data.workIds }, ...formatWhere },
+      select: { id: true },
+    });
+    const editionIds = editions.map((e) => e.id);
+    if (editionIds.length === 0) return { added: 0 };
+    const existing = await db.collectionItem.findMany({
+      where: { collectionId: data.shelfId, editionId: { in: editionIds } },
+      select: { editionId: true },
+    });
+    const existingIds = new Set(existing.map((e) => e.editionId));
+    const newEditionIds = editionIds.filter((id) => !existingIds.has(id));
+    if (newEditionIds.length > 0) {
       await db.collectionItem.createMany({
-        data: newWorkIds.map((workId) => ({ collectionId: data.shelfId, workId })),
+        data: newEditionIds.map((editionId) => ({ collectionId: data.shelfId, editionId })),
       });
     }
-    return { added: newWorkIds.length };
+    return { added: newEditionIds.length };
   });
 
-export const removeWorkFromShelfServerFn = createServerFn({
+export const removeEditionFromShelfServerFn = createServerFn({
+  method: "POST",
+})
+  .inputValidator(z.object({ shelfId: z.string().min(1), editionId: z.string().min(1) }))
+  .handler(async ({ data }) => {
+    const { db } = await import("@bookhouse/db");
+    return db.collectionItem.delete({
+      where: {
+        collectionId_editionId: {
+          collectionId: data.shelfId,
+          editionId: data.editionId,
+        },
+      },
+    });
+  });
+
+export const removeWorkEditionsFromShelfServerFn = createServerFn({
   method: "POST",
 })
   .inputValidator(z.object({ shelfId: z.string().min(1), workId: z.string().min(1) }))
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
-    return db.collectionItem.delete({
-      where: {
-        collectionId_workId: {
-          collectionId: data.shelfId,
-          workId: data.workId,
-        },
-      },
+    const editions = await db.edition.findMany({
+      where: { workId: data.workId },
+      select: { id: true },
     });
+    const editionIds = editions.map((e) => e.id);
+    if (editionIds.length === 0) return { removed: 0 };
+    const result = await db.collectionItem.deleteMany({
+      where: { collectionId: data.shelfId, editionId: { in: editionIds } },
+    });
+    return { removed: result.count };
   });

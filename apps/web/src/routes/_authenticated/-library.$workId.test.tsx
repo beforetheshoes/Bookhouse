@@ -11,7 +11,6 @@ interface MockWork {
   coverPath: string | null;
   coverColors: string[] | null;
   seriesPosition: number | null;
-  preferredSyncEditionId: string | null;
   series: { id: string; name: string } | null;
   tags: { tag: { id: string; name: string } }[];
   editedFields: string[];
@@ -56,7 +55,7 @@ let mockLoaderData: { work: MockWork; progress: MockProgress[]; trackingMode: st
     coverPath: "/covers/work-1",
     coverColors: null,
     seriesPosition: 1,
-    preferredSyncEditionId: null,
+
     series: { id: "series-1", name: "The Kingkiller Chronicle" },
     tags: [],
     editedFields: [],
@@ -183,7 +182,6 @@ vi.mock("~/lib/server-fns/editing", () => ({
   updateEditionServerFn: vi.fn(),
   updateWorkAuthorsServerFn: vi.fn(),
   getContributorNamesServerFn: vi.fn().mockResolvedValue([]),
-  setSyncEditionServerFn: vi.fn().mockResolvedValue({}),
 }));
 
 vi.mock("~/lib/server-fns/tags", () => ({
@@ -201,8 +199,8 @@ vi.mock("~/lib/server-fns/kindle", () => ({
 
 vi.mock("~/lib/server-fns/shelves", () => ({
   getShelvesForWorkServerFn: vi.fn().mockResolvedValue([]),
-  addWorkToShelfServerFn: vi.fn().mockResolvedValue({}),
-  removeWorkFromShelfServerFn: vi.fn().mockResolvedValue({}),
+  addEditionsForWorkToShelfServerFn: vi.fn().mockResolvedValue({ added: 1 }),
+  removeWorkEditionsFromShelfServerFn: vi.fn().mockResolvedValue({ removed: 1 }),
 }));
 
 const mockFetch = vi.fn();
@@ -288,7 +286,7 @@ describe("WorkDetailPage", () => {
         coverPath: "/covers/work-1",
         coverColors: null,
         seriesPosition: 1,
-        preferredSyncEditionId: null,
+    
         series: { id: "series-1", name: "The Kingkiller Chronicle" },
         tags: [],
         editedFields: [],
@@ -1511,13 +1509,13 @@ describe("WorkDetailPage", () => {
     expect(screen.getByTestId("shelf-toggle-s2")).toBeTruthy();
   });
 
-  it("calls addWorkToShelfServerFn when clicking non-member shelf badge", async () => {
+  it("calls addEditionsForWorkToShelfServerFn when clicking non-member shelf badge", async () => {
     mockLoaderData.shelves = [
       { id: "s1", name: "Fiction", isMember: false },
     ];
-    const { addWorkToShelfServerFn } = await import("~/lib/server-fns/shelves");
-    const addMock = vi.mocked(addWorkToShelfServerFn);
-    addMock.mockResolvedValue({} as never);
+    const { addEditionsForWorkToShelfServerFn } = await import("~/lib/server-fns/shelves");
+    const addMock = vi.mocked(addEditionsForWorkToShelfServerFn);
+    addMock.mockResolvedValue({ added: 1 } as never);
 
     const { Route } = await import("./library.$workId");
     const WorkDetailPage = Route.options.component as React.ComponentType;
@@ -1530,13 +1528,13 @@ describe("WorkDetailPage", () => {
     });
   });
 
-  it("calls removeWorkFromShelfServerFn when clicking member shelf badge", async () => {
+  it("calls removeWorkEditionsFromShelfServerFn when clicking member shelf badge", async () => {
     mockLoaderData.shelves = [
       { id: "s1", name: "Fiction", isMember: true },
     ];
-    const { removeWorkFromShelfServerFn } = await import("~/lib/server-fns/shelves");
-    const removeMock = vi.mocked(removeWorkFromShelfServerFn);
-    removeMock.mockResolvedValue({} as never);
+    const { removeWorkEditionsFromShelfServerFn } = await import("~/lib/server-fns/shelves");
+    const removeMock = vi.mocked(removeWorkEditionsFromShelfServerFn);
+    removeMock.mockResolvedValue({ removed: 1 } as never);
 
     const { Route } = await import("./library.$workId");
     const WorkDetailPage = Route.options.component as React.ComponentType;
@@ -1547,28 +1545,5 @@ describe("WorkDetailPage", () => {
         data: { shelfId: "s1", workId: "work-1" },
       });
     });
-  });
-
-  it("does not render sync edition picker when work has less than 2 ebook editions", async () => {
-    const { Route } = await import("./library.$workId");
-    const WorkDetailPage = Route.options.component as React.ComponentType;
-    render(<WorkDetailPage />);
-    expect(screen.queryByTestId("sync-edition-trigger")).toBeNull();
-  });
-
-  it("renders sync edition picker when work has 2+ ebook editions", async () => {
-    mockLoaderData.work = {
-      ...mockLoaderData.work,
-      editions: [
-        { id: "ed-1", formatFamily: "EBOOK", publisher: "Publisher A", isbn13: "978-1", isbn10: null, asin: null, language: "en", pageCount: null, editedFields: [], publishedAt: null, contributors: [{ role: "AUTHOR", contributor: { id: "c1", nameDisplay: "Author" } }], editionFiles: [{ id: "ef-1", role: "PRIMARY", fileAsset: { id: "fa-1", basename: "book-a.epub", sizeBytes: 1024n, mediaKind: "EPUB", availabilityStatus: "PRESENT" } }] },
-        { id: "ed-2", formatFamily: "EBOOK", publisher: "Publisher B", isbn13: "978-2", isbn10: null, asin: null, language: "en", pageCount: null, editedFields: [], publishedAt: null, contributors: [{ role: "AUTHOR", contributor: { id: "c1", nameDisplay: "Author" } }], editionFiles: [{ id: "ef-2", role: "PRIMARY", fileAsset: { id: "fa-2", basename: "book-b.epub", sizeBytes: 2048n, mediaKind: "EPUB", availabilityStatus: "PRESENT" } }] },
-      ],
-    };
-
-    const { Route } = await import("./library.$workId");
-    const WorkDetailPage = Route.options.component as React.ComponentType;
-    render(<WorkDetailPage />);
-    expect(screen.getByTestId("sync-edition-trigger")).toBeTruthy();
-    expect(screen.getByText("Sync Edition")).toBeTruthy();
   });
 });

@@ -4,7 +4,7 @@ import type * as TanstackRouter from "@tanstack/react-router";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-let mockLoaderData: { shelves: { id: string; name: string; kind: string; _count: { items: number } }[] } = { shelves: [] };
+let mockLoaderData: { shelves: { id: string; name: string; kind: string; formatFilter: string; _count: { items: number } }[] } = { shelves: [] };
 
 vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
@@ -60,6 +60,21 @@ vi.mock("~/components/ui/dropdown-menu", () => ({
   ),
 }));
 
+let selectOnValueChangeCapture: ((v: string) => void) | null = null;
+
+vi.mock("~/components/ui/select", () => ({
+  Select: ({ children, value, onValueChange }: { children: React.ReactNode; value: string; onValueChange: (v: string) => void }) => {
+    selectOnValueChangeCapture = onValueChange;
+    return <div data-testid="format-select" data-value={value}>{children}</div>;
+  },
+  SelectTrigger: ({ children, ...props }: { children: React.ReactNode; [key: string]: string | undefined | React.ReactNode }) => <div {...props}>{children}</div>,
+  SelectContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  SelectItem: ({ children, value }: { children: React.ReactNode; value: string }) => (
+    <button data-testid={`select-option-${value}`} onClick={() => { selectOnValueChangeCapture?.(value); }}>{children}</button>
+  ),
+  SelectValue: () => <span>ALL</span>,
+}));
+
 describe("ShelvesPage", () => {
   beforeEach(() => {
     mockLoaderData = { shelves: [] };
@@ -84,8 +99,8 @@ describe("ShelvesPage", () => {
   it("renders shelf data in table with links", async () => {
     mockLoaderData = {
       shelves: [
-        { id: "s1", name: "Fantasy", kind: "MANUAL", _count: { items: 5 } },
-        { id: "s2", name: "Sci-Fi", kind: "MANUAL", _count: { items: 3 } },
+        { id: "s1", name: "Fantasy", kind: "MANUAL", formatFilter: "ALL", _count: { items: 5 } },
+        { id: "s2", name: "Sci-Fi", kind: "MANUAL", formatFilter: "EBOOK", _count: { items: 3 } },
       ],
     };
     const { Route } = await import("./shelves.index");
@@ -98,7 +113,7 @@ describe("ShelvesPage", () => {
   it("renders shelf names as links", async () => {
     mockLoaderData = {
       shelves: [
-        { id: "s1", name: "Fantasy", kind: "MANUAL", _count: { items: 5 } },
+        { id: "s1", name: "Fantasy", kind: "MANUAL", formatFilter: "ALL", _count: { items: 5 } },
       ],
     };
     const { Route } = await import("./shelves.index");
@@ -137,9 +152,10 @@ describe("ShelvesPage", () => {
     expect(screen.getByTestId("dialog")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Create Shelf" })).toBeTruthy();
     expect(screen.getByTestId("create-shelf-name")).toBeTruthy();
+    expect(screen.getByTestId("create-shelf-format")).toBeTruthy();
   });
 
-  it("calls createShelfServerFn when submitting create dialog", async () => {
+  it("calls createShelfServerFn with default format filter when submitting create dialog", async () => {
     const { createShelfServerFn } = await import("~/lib/server-fns/shelves");
     vi.mocked(createShelfServerFn).mockResolvedValue({} as never);
     const { Route } = await import("./shelves.index");
@@ -152,15 +168,58 @@ describe("ShelvesPage", () => {
     fireEvent.click(screen.getByTestId("create-shelf-submit"));
     await waitFor(() => {
       expect(vi.mocked(createShelfServerFn)).toHaveBeenCalledWith({
-        data: { name: "My New Shelf" },
+        data: { name: "My New Shelf", formatFilter: "ALL" },
       });
     });
+  });
+
+  it("calls createShelfServerFn with selected format filter", async () => {
+    const { createShelfServerFn } = await import("~/lib/server-fns/shelves");
+    vi.mocked(createShelfServerFn).mockResolvedValue({} as never);
+    const { Route } = await import("./shelves.index");
+    const ShelvesPage = (Route.options.component as React.ComponentType);
+    render(<ShelvesPage />);
+    fireEvent.click(screen.getByTestId("create-shelf-btn"));
+    fireEvent.change(screen.getByTestId("create-shelf-name"), {
+      target: { value: "Ebook Shelf" },
+    });
+    fireEvent.click(screen.getByTestId("select-option-EBOOK"));
+    fireEvent.click(screen.getByTestId("create-shelf-submit"));
+    await waitFor(() => {
+      expect(vi.mocked(createShelfServerFn)).toHaveBeenCalledWith({
+        data: { name: "Ebook Shelf", formatFilter: "EBOOK" },
+      });
+    });
+  });
+
+  it("renders format badge in table", async () => {
+    mockLoaderData = {
+      shelves: [
+        { id: "s1", name: "Fantasy", kind: "MANUAL", formatFilter: "EBOOK", _count: { items: 5 } },
+      ],
+    };
+    const { Route } = await import("./shelves.index");
+    const ShelvesPage = (Route.options.component as React.ComponentType);
+    render(<ShelvesPage />);
+    expect(screen.getByText("Ebooks")).toBeTruthy();
+  });
+
+  it("renders Editions column header", async () => {
+    mockLoaderData = {
+      shelves: [
+        { id: "s1", name: "Fantasy", kind: "MANUAL", formatFilter: "ALL", _count: { items: 5 } },
+      ],
+    };
+    const { Route } = await import("./shelves.index");
+    const ShelvesPage = (Route.options.component as React.ComponentType);
+    render(<ShelvesPage />);
+    expect(screen.getByText("Editions")).toBeTruthy();
   });
 
   it("opens rename dialog from actions menu", async () => {
     mockLoaderData = {
       shelves: [
-        { id: "s1", name: "Fantasy", kind: "MANUAL", _count: { items: 5 } },
+        { id: "s1", name: "Fantasy", kind: "MANUAL", formatFilter: "ALL", _count: { items: 5 } },
       ],
     };
     const { Route } = await import("./shelves.index");
@@ -175,7 +234,7 @@ describe("ShelvesPage", () => {
   it("opens delete dialog from actions menu", async () => {
     mockLoaderData = {
       shelves: [
-        { id: "s1", name: "Fantasy", kind: "MANUAL", _count: { items: 5 } },
+        { id: "s1", name: "Fantasy", kind: "MANUAL", formatFilter: "ALL", _count: { items: 5 } },
       ],
     };
     const { Route } = await import("./shelves.index");
@@ -192,7 +251,7 @@ describe("ShelvesPage", () => {
     vi.mocked(deleteShelfServerFn).mockResolvedValue({} as never);
     mockLoaderData = {
       shelves: [
-        { id: "s1", name: "Fantasy", kind: "MANUAL", _count: { items: 5 } },
+        { id: "s1", name: "Fantasy", kind: "MANUAL", formatFilter: "ALL", _count: { items: 5 } },
       ],
     };
     const { Route } = await import("./shelves.index");
@@ -213,7 +272,7 @@ describe("ShelvesPage", () => {
     vi.mocked(renameShelfServerFn).mockResolvedValue({} as never);
     mockLoaderData = {
       shelves: [
-        { id: "s1", name: "Fantasy", kind: "MANUAL", _count: { items: 5 } },
+        { id: "s1", name: "Fantasy", kind: "MANUAL", formatFilter: "ALL", _count: { items: 5 } },
       ],
     };
     const { Route } = await import("./shelves.index");
@@ -235,7 +294,7 @@ describe("ShelvesPage", () => {
   it("renders cancel button in delete dialog", async () => {
     mockLoaderData = {
       shelves: [
-        { id: "s1", name: "Fantasy", kind: "MANUAL", _count: { items: 5 } },
+        { id: "s1", name: "Fantasy", kind: "MANUAL", formatFilter: "ALL", _count: { items: 5 } },
       ],
     };
     const { Route } = await import("./shelves.index");

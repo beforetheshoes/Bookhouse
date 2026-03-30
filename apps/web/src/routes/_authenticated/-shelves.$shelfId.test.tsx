@@ -4,62 +4,47 @@ import type * as DataTableModule from "~/components/data-table";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const mockWork = {
-  id: "w1",
-  titleDisplay: "1984",
-  titleCanonical: "1984",
-  sortTitle: "1984",
-  coverPath: "w1",
-  coverColors: null,
-  createdAt: new Date(),
-  enrichmentStatus: "ENRICHED",
-  description: null,
-  seriesPosition: null,
-  series: null,
-  editedFields: [],
-  editions: [{
-    id: "e1",
-    formatFamily: "EBOOK",
-    contributors: [{ role: "AUTHOR", contributor: { id: "c1", nameDisplay: "George Orwell" } }],
-  }],
-};
-
-const mockAudiobookWork = {
-  id: "w2",
-  titleDisplay: "Dune",
-  titleCanonical: "dune",
-  sortTitle: "Dune",
-  coverPath: "w2",
-  coverColors: null,
-  createdAt: new Date(),
-  enrichmentStatus: "ENRICHED",
-  description: null,
-  seriesPosition: null,
-  series: null,
-  editedFields: [],
-  editions: [{
-    id: "e2",
-    formatFamily: "AUDIOBOOK",
-    contributors: [{ role: "AUTHOR", contributor: { id: "c2", nameDisplay: "Frank Herbert" } }],
-  }],
+const mockEdition = {
+  id: "e1",
+  formatFamily: "EBOOK",
+  publisher: "DAW Books",
+  isbn13: "9780756404079",
+  isbn10: null,
+  contributors: [{ role: "AUTHOR", contributor: { id: "c1", nameDisplay: "George Orwell" } }],
+  editionFiles: [],
+  work: {
+    id: "w1",
+    titleDisplay: "1984",
+    titleCanonical: "1984",
+    sortTitle: "1984",
+    coverPath: "w1",
+    coverColors: null,
+    createdAt: new Date(),
+    enrichmentStatus: "ENRICHED",
+    description: null,
+    seriesPosition: null,
+    series: null,
+    editedFields: [],
+  },
 };
 
 let mockLoaderData: {
   shelf: {
     id: string;
     name: string;
-    items: { id: string; work: typeof mockWork }[];
+    formatFilter: string;
+    items: { id: string; edition: typeof mockEdition }[];
   };
 } = {
-  shelf: { id: "s1", name: "Fiction", items: [] },
+  shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [] },
 };
 
 let mockView = "grid";
 let mockTileSize = "small";
 
 const getShelfDetailServerFnMock = vi.fn();
-const addWorkToShelfServerFnMock = vi.fn().mockResolvedValue({});
-const removeWorkFromShelfServerFnMock = vi.fn().mockResolvedValue({});
+const addEditionsForWorkToShelfServerFnMock = vi.fn().mockResolvedValue({ added: 1 });
+const removeEditionFromShelfServerFnMock = vi.fn().mockResolvedValue({});
 const searchLibraryServerFnMock = vi.fn().mockResolvedValue({ works: [], authors: [], series: [] });
 
 vi.mock("@tanstack/react-router", async () => {
@@ -79,8 +64,8 @@ vi.mock("@tanstack/react-router", async () => {
 
 vi.mock("~/lib/server-fns/shelves", () => ({
   getShelfDetailServerFn: getShelfDetailServerFnMock,
-  addWorkToShelfServerFn: addWorkToShelfServerFnMock,
-  removeWorkFromShelfServerFn: removeWorkFromShelfServerFnMock,
+  addEditionsForWorkToShelfServerFn: addEditionsForWorkToShelfServerFnMock,
+  removeEditionFromShelfServerFn: removeEditionFromShelfServerFnMock,
 }));
 
 vi.mock("~/lib/server-fns/search", () => ({
@@ -107,19 +92,12 @@ vi.mock("~/components/skeletons/grid-page-skeleton", () => ({
 }));
 
 vi.mock("~/components/library-toolbar", () => ({
-  LibraryToolbar: ({ view, onViewChange, tileSize, onTileSizeChange, formatFilter, onFormatFilterChange }: { view: string; onViewChange: (v: string) => void; tileSize: string; onTileSizeChange: (v: string) => void; formatFilter?: string; onFormatFilterChange?: (v: string) => void }) => (
-    <div data-testid="library-toolbar" data-view={view} data-tile-size={tileSize} data-format-filter={formatFilter}>
+  LibraryToolbar: ({ view, onViewChange, tileSize, onTileSizeChange }: { view: string; onViewChange: (v: string) => void; tileSize: string; onTileSizeChange: (v: string) => void }) => (
+    <div data-testid="library-toolbar" data-view={view} data-tile-size={tileSize}>
       <button data-testid="view-grid" onClick={() => { onViewChange("grid"); }}>Grid</button>
       <button data-testid="view-table" onClick={() => { onViewChange("table"); }}>Table</button>
       <button data-testid="tile-small" onClick={() => { onTileSizeChange("small"); }}>Small</button>
       <button data-testid="tile-large" onClick={() => { onTileSizeChange("large"); }}>Large</button>
-      {onFormatFilterChange && (
-        <>
-          <button data-testid="format-ebook" onClick={() => { onFormatFilterChange("ebook"); }}>Ebooks</button>
-          <button data-testid="format-audiobook" onClick={() => { onFormatFilterChange("audiobook"); }}>Audiobooks</button>
-          <button data-testid="format-all" onClick={() => { onFormatFilterChange("all"); }}>All Formats</button>
-        </>
-      )}
     </div>
   ),
 }));
@@ -136,24 +114,24 @@ vi.mock("~/lib/sort-filter-works", () => ({}));
 
 describe("ShelfDetailPage", () => {
   beforeEach(() => {
-    mockLoaderData = { shelf: { id: "s1", name: "Fiction", items: [] } };
+    mockLoaderData = { shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [] } };
     mockView = "grid";
     mockTileSize = "small";
     vi.clearAllMocks();
-    addWorkToShelfServerFnMock.mockResolvedValue({});
-    removeWorkFromShelfServerFnMock.mockResolvedValue({});
+    addEditionsForWorkToShelfServerFnMock.mockResolvedValue({ added: 1 });
+    removeEditionFromShelfServerFnMock.mockResolvedValue({});
     searchLibraryServerFnMock.mockResolvedValue({ works: [], authors: [], series: [] });
   });
 
   it("loader calls getShelfDetailServerFn", async () => {
-    getShelfDetailServerFnMock.mockResolvedValue({ id: "s1", name: "Fiction", items: [] });
+    getShelfDetailServerFnMock.mockResolvedValue({ id: "s1", name: "Fiction", formatFilter: "ALL", items: [] });
     const { Route } = await import("./shelves.$shelfId");
     const loader = Route.options.loader as never as (
       args: { params: Record<string, string> },
     ) => Promise<object>;
     const result = await loader({ params: { shelfId: "s1" } });
     expect(getShelfDetailServerFnMock).toHaveBeenCalledWith({ data: { shelfId: "s1" } });
-    expect(result).toEqual({ shelf: { id: "s1", name: "Fiction", items: [] } });
+    expect(result).toEqual({ shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [] } });
   });
 
   it("renders shelf name as heading", async () => {
@@ -171,16 +149,25 @@ describe("ShelfDetailPage", () => {
     expect(link?.getAttribute("href")).toBe("/shelves");
   });
 
-  it("shows empty state when no works on shelf", async () => {
+  it("renders format badge showing shelf format type", async () => {
+    mockLoaderData = { shelf: { id: "s1", name: "Fiction", formatFilter: "EBOOK", items: [] } };
+    const { Route } = await import("./shelves.$shelfId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    expect(screen.getByTestId("shelf-format-badge")).toBeTruthy();
+    expect(screen.getByText("Ebooks")).toBeTruthy();
+  });
+
+  it("shows empty state when no editions on shelf", async () => {
     const { Route } = await import("./shelves.$shelfId");
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
     expect(screen.getByText("No works on this shelf yet.")).toBeTruthy();
   });
 
-  it("renders LibraryGrid in grid view", async () => {
+  it("renders LibraryGrid in grid view with deduplicated works", async () => {
     mockLoaderData = {
-      shelf: { id: "s1", name: "Fiction", items: [{ id: "ci1", work: mockWork }] },
+      shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [{ id: "ci1", edition: mockEdition }] },
     };
     const { Route } = await import("./shelves.$shelfId");
     const Page = Route.options.component as React.ComponentType;
@@ -192,7 +179,7 @@ describe("ShelfDetailPage", () => {
   it("does not render LibraryGrid in table view", async () => {
     mockView = "table";
     mockLoaderData = {
-      shelf: { id: "s1", name: "Fiction", items: [{ id: "ci1", work: mockWork }] },
+      shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [{ id: "ci1", edition: mockEdition }] },
     };
     const { Route } = await import("./shelves.$shelfId");
     const Page = Route.options.component as React.ComponentType;
@@ -237,7 +224,7 @@ describe("ShelfDetailPage", () => {
     });
   });
 
-  it("calls addWorkToShelfServerFn when clicking Add", async () => {
+  it("calls addEditionsForWorkToShelfServerFn when clicking Add", async () => {
     searchLibraryServerFnMock.mockResolvedValue({
       works: [{ id: "w2", titleDisplay: "Brave New World", editions: [{ formatFamily: "EBOOK", contributors: [{ role: "AUTHOR", contributor: { id: "c2", nameDisplay: "Huxley" } }] }] }],
       authors: [],
@@ -257,7 +244,7 @@ describe("ShelfDetailPage", () => {
     fireEvent.click(screen.getByText("Add"));
 
     await waitFor(() => {
-      expect(addWorkToShelfServerFnMock).toHaveBeenCalledWith({
+      expect(addEditionsForWorkToShelfServerFnMock).toHaveBeenCalledWith({
         data: { shelfId: "s1", workId: "w2" },
       });
     });
@@ -265,7 +252,7 @@ describe("ShelfDetailPage", () => {
 
   it("filters out already-shelved works from search results", async () => {
     mockLoaderData = {
-      shelf: { id: "s1", name: "Fiction", items: [{ id: "ci1", work: mockWork }] },
+      shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [{ id: "ci1", edition: mockEdition }] },
     };
     searchLibraryServerFnMock.mockResolvedValue({
       works: [{ id: "w1", titleDisplay: "1984", editions: [] }],
@@ -300,7 +287,7 @@ describe("ShelfDetailPage", () => {
 
   it("renders LibraryToolbar", async () => {
     mockLoaderData = {
-      shelf: { id: "s1", name: "Fiction", items: [{ id: "ci1", work: mockWork }] },
+      shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [{ id: "ci1", edition: mockEdition }] },
     };
     const { Route } = await import("./shelves.$shelfId");
     const Page = Route.options.component as React.ComponentType;
@@ -311,7 +298,7 @@ describe("ShelfDetailPage", () => {
   it("renders grid view by default", async () => {
     mockView = "grid";
     mockLoaderData = {
-      shelf: { id: "s1", name: "Fiction", items: [{ id: "ci1", work: mockWork }] },
+      shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [{ id: "ci1", edition: mockEdition }] },
     };
     const { Route } = await import("./shelves.$shelfId");
     const Page = Route.options.component as React.ComponentType;
@@ -322,7 +309,7 @@ describe("ShelfDetailPage", () => {
   it("renders table view when preference is table", async () => {
     mockView = "table";
     mockLoaderData = {
-      shelf: { id: "s1", name: "Fiction", items: [{ id: "ci1", work: mockWork }] },
+      shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [{ id: "ci1", edition: mockEdition }] },
     };
     const { Route } = await import("./shelves.$shelfId");
     const Page = Route.options.component as React.ComponentType;
@@ -330,50 +317,27 @@ describe("ShelfDetailPage", () => {
     expect(screen.queryByTestId("library-grid")).toBeNull();
   });
 
-  it("filters works to ebooks when ebook format filter is selected", async () => {
+  it("deduplicates works from multiple editions in grid view", async () => {
+    const secondEditionSameWork = {
+      ...mockEdition,
+      id: "e1b",
+      formatFamily: "AUDIOBOOK",
+    };
     mockLoaderData = {
       shelf: {
         id: "s1",
         name: "Fiction",
+        formatFilter: "ALL",
         items: [
-          { id: "ci1", work: mockWork },
-          { id: "ci2", work: mockAudiobookWork },
+          { id: "ci1", edition: mockEdition },
+          { id: "ci2", edition: secondEditionSameWork },
         ],
       },
     };
     const { Route } = await import("./shelves.$shelfId");
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
-    expect(screen.getByText("Grid: 2 works")).toBeTruthy();
-
-    fireEvent.click(screen.getByTestId("format-ebook"));
-
-    await waitFor(() => {
-      expect(screen.getByText("Grid: 1 works")).toBeTruthy();
-    });
-  });
-
-  it("filters works to audiobooks when audiobook format filter is selected", async () => {
-    mockLoaderData = {
-      shelf: {
-        id: "s1",
-        name: "Fiction",
-        items: [
-          { id: "ci1", work: mockWork },
-          { id: "ci2", work: mockAudiobookWork },
-        ],
-      },
-    };
-    const { Route } = await import("./shelves.$shelfId");
-    const Page = Route.options.component as React.ComponentType;
-    render(<Page />);
-    expect(screen.getByText("Grid: 2 works")).toBeTruthy();
-
-    fireEvent.click(screen.getByTestId("format-audiobook"));
-
-    await waitFor(() => {
-      expect(screen.getByText("Grid: 1 works")).toBeTruthy();
-    });
+    expect(screen.getByText("Grid: 1 works")).toBeTruthy();
   });
 
   it("clears search results when query is too short", async () => {

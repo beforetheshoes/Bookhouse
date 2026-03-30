@@ -13,11 +13,11 @@ import { useLibraryViewPreference } from "~/hooks/use-library-view-preference";
 import { useGridTileSize } from "~/hooks/use-grid-tile-size";
 import {
   getShelfDetailServerFn,
-  addWorkToShelfServerFn,
+  addEditionsForWorkToShelfServerFn,
   type ShelfDetail,
 } from "~/lib/server-fns/shelves";
 import { searchLibraryServerFn } from "~/lib/server-fns/search";
-import type { SortValue, FormatFilter } from "~/components/library-toolbar";
+import type { SortValue } from "~/components/library-toolbar";
 import type { ReadingFilter } from "~/lib/sort-filter-works";
 
 export const Route = createFileRoute("/_authenticated/shelves/$shelfId")({
@@ -31,29 +31,51 @@ export const Route = createFileRoute("/_authenticated/shelves/$shelfId")({
   component: ShelfDetailPage,
 });
 
-type ShelfWork = ShelfDetail["items"][number]["work"];
+type ShelfEdition = ShelfDetail["items"][number]["edition"];
 
-function getAuthors(work: ShelfWork): string {
-  const authors = work.editions
-    .flatMap((e) => e.contributors)
+type WorkWithEditions = ShelfEdition["work"] & { editions: ShelfEdition[] };
+
+function getWorksWithEditions(items: ShelfDetail["items"]): WorkWithEditions[] {
+  const workMap = new Map<string, WorkWithEditions>();
+  for (const item of items) {
+    const existing = workMap.get(item.edition.work.id);
+    if (existing) {
+      existing.editions.push(item.edition);
+    } else {
+      workMap.set(item.edition.work.id, {
+        ...item.edition.work,
+        editions: [item.edition],
+      });
+    }
+  }
+  return [...workMap.values()];
+}
+
+/* c8 ignore start -- column cell renderers require real table virtualization, tested via library.index */
+function getAuthors(edition: ShelfEdition): string {
+  const authors = edition.contributors
     .filter((c) => c.role === "AUTHOR")
     .map((c) => c.contributor.nameDisplay);
   return [...new Set(authors)].join(", ");
 }
 
-/* c8 ignore start — column cell renderers require real table virtualization, tested via library.index */
-function getFormats(work: ShelfWork): string[] {
-  return [...new Set(work.editions.map((e) => e.formatFamily))];
-}
-
-const tableColumns: ColumnDef<ShelfWork>[] = [
+const tableColumns: ColumnDef<ShelfEdition>[] = [
   {
-    accessorKey: "titleDisplay",
+    id: "titleDisplay",
+    accessorFn: (row) => row.work.titleDisplay,
     header: ({ column }) => <DataTableColumnHeader column={column} title="Title" />,
     cell: ({ row }) => (
-      <Link to="/library/$workId" params={{ workId: row.original.id }} className="font-medium hover:underline">
-        {row.original.titleDisplay}
+      <Link to="/library/$workId" params={{ workId: row.original.work.id }} className="font-medium hover:underline">
+        {row.original.work.titleDisplay}
       </Link>
+    ),
+  },
+  {
+    id: "format",
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Format" />,
+    accessorFn: (row) => row.formatFamily,
+    cell: ({ row }) => (
+      <Badge variant="secondary" className="text-xs">{row.original.formatFamily}</Badge>
     ),
   },
   {
@@ -62,21 +84,19 @@ const tableColumns: ColumnDef<ShelfWork>[] = [
     accessorFn: (row) => getAuthors(row),
   },
   {
-    id: "formats",
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Format" />,
-    cell: ({ row }) => (
-      <div className="flex gap-1">
-        {getFormats(row.original).map((f) => (
-          <Badge key={f} variant="secondary" className="text-xs">{f}</Badge>
-        ))}
-      </div>
-    ),
-    accessorFn: (row) => getFormats(row).join(", "),
+    id: "publisher",
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Publisher" />,
+    accessorFn: (row) => row.publisher ?? "",
+  },
+  {
+    id: "isbn",
+    header: ({ column }) => <DataTableColumnHeader column={column} title="ISBN" />,
+    accessorFn: (row) => row.isbn13 ?? row.isbn10 ?? "",
   },
   {
     id: "series",
     header: ({ column }) => <DataTableColumnHeader column={column} title="Series" />,
-    accessorFn: (row) => row.series?.name ?? "",
+    accessorFn: (row) => row.work.series?.name ?? "",
   },
 ];
 /* c8 ignore stop */
@@ -94,13 +114,10 @@ function ShelfDetailPage() {
   const [showSearch, setShowSearch] = useState(false);
   const [sortValue, setSortValue] = useState<SortValue>("title-asc");
   const [readingFilter, setReadingFilter] = useState<ReadingFilter>("all");
-  const [formatFilter, setFormatFilter] = useState<FormatFilter>("all");
   const [, setToolbarSearch] = useState("");
 
-  const works = shelf.items.map((item) => item.work);
-  const filteredWorks = formatFilter === "all"
-    ? works
-    : works.filter((w) => w.editions.some((e) => e.formatFamily === (formatFilter === "ebook" ? "EBOOK" : "AUDIOBOOK")));
+  const editions = shelf.items.map((item) => item.edition);
+  const works = getWorksWithEditions(shelf.items);
   const memberWorkIds = new Set(works.map((w) => w.id));
 
   const handleSearch = async (query: string) => {
@@ -119,7 +136,7 @@ function ShelfDetailPage() {
   };
 
   const handleAddWork = async (workId: string) => {
-    await addWorkToShelfServerFn({ data: { shelfId: shelf.id, workId } });
+    await addEditionsForWorkToShelfServerFn({ data: { shelfId: shelf.id, workId } });
     setSearchQuery("");
     setSearchResults([]);
     void router.invalidate();
@@ -138,7 +155,12 @@ function ShelfDetailPage() {
       </nav>
 
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">{shelf.name}</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold">{shelf.name}</h1>
+          <Badge variant="secondary" data-testid="shelf-format-badge">
+            {shelf.formatFilter === "ALL" ? "All Formats" : shelf.formatFilter === "EBOOK" ? "Ebooks" : "Audiobooks"}
+          </Badge>
+        </div>
         <Button
           variant="outline"
           onClick={() => { setShowSearch(!showSearch); }}
@@ -170,7 +192,6 @@ function ShelfDetailPage() {
                 >
                   <div>
                     <p className="font-medium">{work.titleDisplay}</p>
-                    <p className="text-sm text-muted-foreground">{getAuthors(work as ShelfWork)}</p>
                   </div>
                   <Button
                     size="sm"
@@ -200,18 +221,16 @@ function ShelfDetailPage() {
         showSort={view !== "table"}
         tileSize={tileSize}
         onTileSizeChange={setTileSize}
-        formatFilter={formatFilter}
-        onFormatFilterChange={setFormatFilter}
       />
 
-      {works.length === 0 ? (
+      {editions.length === 0 ? (
         <p className="text-muted-foreground">No works on this shelf yet.</p>
       ) : view === "grid" ? (
-        <LibraryGrid works={filteredWorks} tileSize={tileSize} />
+        <LibraryGrid works={works} tileSize={tileSize} />
       ) : (
         <VirtualizedDataTable
           columns={tableColumns}
-          data={filteredWorks}
+          data={editions}
           filterColumn="titleDisplay"
           filterPlaceholder="Filter by title..."
         />
