@@ -7,11 +7,16 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockEdition = {
   id: "e1",
   formatFamily: "EBOOK",
-  publisher: "DAW Books",
-  isbn13: "9780756404079",
+  publisher: "Penguin",
+  isbn13: "978-1",
   isbn10: null,
+  asin: null,
+  language: "en",
+  pageCount: null,
+  editedFields: [],
+  publishedAt: null,
   contributors: [{ role: "AUTHOR", contributor: { id: "c1", nameDisplay: "George Orwell" } }],
-  editionFiles: [],
+  editionFiles: [{ id: "ef-1", role: "PRIMARY", fileAsset: { id: "fa-1", basename: "1984.epub", sizeBytes: 1024n, mediaKind: "EPUB", availabilityStatus: "PRESENT" } }],
   work: {
     id: "w1",
     titleDisplay: "1984",
@@ -43,9 +48,8 @@ let mockView = "grid";
 let mockTileSize = "small";
 
 const getShelfDetailServerFnMock = vi.fn();
-const addEditionsForWorkToShelfServerFnMock = vi.fn().mockResolvedValue({ added: 1 });
-const removeEditionFromShelfServerFnMock = vi.fn().mockResolvedValue({});
-const searchLibraryServerFnMock = vi.fn().mockResolvedValue({ works: [], authors: [], series: [] });
+const getAvailableEditionsServerFnMock = vi.fn().mockResolvedValue([]);
+const addEditionToShelfServerFnMock = vi.fn().mockResolvedValue({});
 
 vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
@@ -64,12 +68,8 @@ vi.mock("@tanstack/react-router", async () => {
 
 vi.mock("~/lib/server-fns/shelves", () => ({
   getShelfDetailServerFn: getShelfDetailServerFnMock,
-  addEditionsForWorkToShelfServerFn: addEditionsForWorkToShelfServerFnMock,
-  removeEditionFromShelfServerFn: removeEditionFromShelfServerFnMock,
-}));
-
-vi.mock("~/lib/server-fns/search", () => ({
-  searchLibraryServerFn: searchLibraryServerFnMock,
+  getAvailableEditionsServerFn: getAvailableEditionsServerFnMock,
+  addEditionToShelfServerFn: addEditionToShelfServerFnMock,
 }));
 
 vi.mock("~/components/library-grid", () => ({
@@ -83,22 +83,13 @@ vi.mock("~/components/data-table", async () => {
   return actual;
 });
 
-vi.mock("~/components/work-card", () => ({
-  WorkCard: ({ id, title }: { id: string; title: string }) => <div data-testid={`work-${id}`}>{title}</div>,
-}));
-
 vi.mock("~/components/skeletons/grid-page-skeleton", () => ({
   GridPageSkeleton: () => <div>Loading...</div>,
 }));
 
 vi.mock("~/components/library-toolbar", () => ({
-  LibraryToolbar: ({ view, onViewChange, tileSize, onTileSizeChange }: { view: string; onViewChange: (v: string) => void; tileSize: string; onTileSizeChange: (v: string) => void }) => (
-    <div data-testid="library-toolbar" data-view={view} data-tile-size={tileSize}>
-      <button data-testid="view-grid" onClick={() => { onViewChange("grid"); }}>Grid</button>
-      <button data-testid="view-table" onClick={() => { onViewChange("table"); }}>Table</button>
-      <button data-testid="tile-small" onClick={() => { onTileSizeChange("small"); }}>Small</button>
-      <button data-testid="tile-large" onClick={() => { onTileSizeChange("large"); }}>Large</button>
-    </div>
+  LibraryToolbar: ({ view }: { view: string }) => (
+    <div data-testid="library-toolbar" data-view={view} />
   ),
 }));
 
@@ -112,15 +103,22 @@ vi.mock("~/hooks/use-grid-tile-size", () => ({
 
 vi.mock("~/lib/sort-filter-works", () => ({}));
 
+vi.mock("~/components/ui/dialog", () => ({
+  Dialog: ({ children, open }: { children: React.ReactNode; open: boolean }) => open ? <div data-testid="dialog">{children}</div> : null,
+  DialogContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DialogHeader: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DialogTitle: ({ children }: { children: React.ReactNode }) => <h2>{children}</h2>,
+  DialogFooter: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}));
+
 describe("ShelfDetailPage", () => {
   beforeEach(() => {
     mockLoaderData = { shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [] } };
     mockView = "grid";
     mockTileSize = "small";
     vi.clearAllMocks();
-    addEditionsForWorkToShelfServerFnMock.mockResolvedValue({ added: 1 });
-    removeEditionFromShelfServerFnMock.mockResolvedValue({});
-    searchLibraryServerFnMock.mockResolvedValue({ works: [], authors: [], series: [] });
+    getAvailableEditionsServerFnMock.mockResolvedValue([]);
+    addEditionToShelfServerFnMock.mockResolvedValue({});
   });
 
   it("loader calls getShelfDetailServerFn", async () => {
@@ -149,23 +147,22 @@ describe("ShelfDetailPage", () => {
     expect(link?.getAttribute("href")).toBe("/shelves");
   });
 
-  it("renders format badge showing shelf format type", async () => {
-    mockLoaderData = { shelf: { id: "s1", name: "Fiction", formatFilter: "EBOOK", items: [] } };
-    const { Route } = await import("./shelves.$shelfId");
-    const Page = Route.options.component as React.ComponentType;
-    render(<Page />);
-    expect(screen.getByTestId("shelf-format-badge")).toBeTruthy();
-    expect(screen.getByText("Ebooks")).toBeTruthy();
-  });
-
   it("shows empty state when no editions on shelf", async () => {
     const { Route } = await import("./shelves.$shelfId");
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
-    expect(screen.getByText("No works on this shelf yet.")).toBeTruthy();
+    expect(screen.getByText("No editions on this shelf yet.")).toBeTruthy();
   });
 
-  it("renders LibraryGrid in grid view with deduplicated works", async () => {
+  it("renders format badge", async () => {
+    mockLoaderData.shelf.formatFilter = "EBOOK";
+    const { Route } = await import("./shelves.$shelfId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    expect(screen.getByText("Ebooks")).toBeTruthy();
+  });
+
+  it("renders LibraryGrid with works in grid view", async () => {
     mockLoaderData = {
       shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [{ id: "ci1", edition: mockEdition }] },
     };
@@ -173,10 +170,9 @@ describe("ShelfDetailPage", () => {
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
     expect(screen.getByTestId("library-grid")).toBeTruthy();
-    expect(screen.getByText("Grid: 1 works")).toBeTruthy();
   });
 
-  it("does not render LibraryGrid in table view", async () => {
+  it("renders table view without grid", async () => {
     mockView = "table";
     mockLoaderData = {
       shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [{ id: "ci1", edition: mockEdition }] },
@@ -187,177 +183,121 @@ describe("ShelfDetailPage", () => {
     expect(screen.queryByTestId("library-grid")).toBeNull();
   });
 
-  it("renders toolbar with view toggles", async () => {
+  it("renders Add Books button", async () => {
     const { Route } = await import("./shelves.$shelfId");
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
-    expect(screen.getByTestId("library-toolbar")).toBeTruthy();
-    expect(screen.getByTestId("view-grid")).toBeTruthy();
-    expect(screen.getByTestId("view-table")).toBeTruthy();
+    expect(screen.getByTestId("add-editions-btn")).toBeTruthy();
   });
 
-  it("toggles search panel when clicking Add Works", async () => {
-    const { Route } = await import("./shelves.$shelfId");
-    const Page = Route.options.component as React.ComponentType;
-    render(<Page />);
-    fireEvent.click(screen.getByTestId("toggle-add-works"));
-    expect(screen.getByTestId("add-works-panel")).toBeTruthy();
-    fireEvent.click(screen.getByTestId("toggle-add-works"));
-    expect(screen.queryByTestId("add-works-panel")).toBeNull();
-  });
-
-  it("shows search results after typing", async () => {
-    searchLibraryServerFnMock.mockResolvedValue({
-      works: [{ id: "w2", titleDisplay: "Brave New World", editions: [{ formatFamily: "EBOOK", contributors: [{ role: "AUTHOR", contributor: { id: "c2", nameDisplay: "Aldous Huxley" } }] }] }],
-      authors: [],
-      series: [],
-    });
+  it("opens Add Editions dialog and loads available editions", async () => {
+    getAvailableEditionsServerFnMock.mockResolvedValue([
+      { id: "e2", formatFamily: "EBOOK", publisher: "Penguin", work: { titleDisplay: "Brave New World", series: null }, contributors: [{ role: "AUTHOR", contributor: { nameDisplay: "Aldous Huxley" } }] },
+    ]);
 
     const { Route } = await import("./shelves.$shelfId");
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
-    fireEvent.click(screen.getByTestId("toggle-add-works"));
-    fireEvent.change(screen.getByTestId("add-works-search"), { target: { value: "brave" } });
+    fireEvent.click(screen.getByTestId("add-editions-btn"));
 
     await waitFor(() => {
+      expect(screen.getByTestId("dialog")).toBeTruthy();
       expect(screen.getByText("Brave New World")).toBeTruthy();
     });
   });
 
-  it("calls addEditionsForWorkToShelfServerFn when clicking Add", async () => {
-    searchLibraryServerFnMock.mockResolvedValue({
-      works: [{ id: "w2", titleDisplay: "Brave New World", editions: [{ formatFamily: "EBOOK", contributors: [{ role: "AUTHOR", contributor: { id: "c2", nameDisplay: "Huxley" } }] }] }],
-      authors: [],
-      series: [],
-    });
+  it("allows selecting and adding editions", async () => {
+    getAvailableEditionsServerFnMock.mockResolvedValue([
+      { id: "e2", formatFamily: "EBOOK", publisher: null, work: { titleDisplay: "Brave New World", series: null }, contributors: [] },
+    ]);
 
     const { Route } = await import("./shelves.$shelfId");
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
-    fireEvent.click(screen.getByTestId("toggle-add-works"));
-    fireEvent.change(screen.getByTestId("add-works-search"), { target: { value: "brave" } });
+    fireEvent.click(screen.getByTestId("add-editions-btn"));
 
     await waitFor(() => {
-      expect(screen.getByText("Brave New World")).toBeTruthy();
+      expect(screen.getByTestId("edition-check-e2")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByText("Add"));
+    fireEvent.click(screen.getByTestId("edition-check-e2"));
+    fireEvent.click(screen.getByTestId("add-selected-btn"));
 
     await waitFor(() => {
-      expect(addEditionsForWorkToShelfServerFnMock).toHaveBeenCalledWith({
-        data: { shelfId: "s1", workId: "w2" },
+      expect(addEditionToShelfServerFnMock).toHaveBeenCalledWith({
+        data: { shelfId: "s1", editionId: "e2" },
       });
     });
   });
 
-  it("filters out already-shelved works from search results", async () => {
-    mockLoaderData = {
-      shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [{ id: "ci1", edition: mockEdition }] },
-    };
-    searchLibraryServerFnMock.mockResolvedValue({
-      works: [{ id: "w1", titleDisplay: "1984", editions: [] }],
-      authors: [],
-      series: [],
-    });
+  it("supports select all and deselect all", async () => {
+    getAvailableEditionsServerFnMock.mockResolvedValue([
+      { id: "e2", formatFamily: "EBOOK", publisher: null, work: { titleDisplay: "Book A", series: null }, contributors: [] },
+      { id: "e3", formatFamily: "EBOOK", publisher: null, work: { titleDisplay: "Book B", series: null }, contributors: [] },
+    ]);
 
     const { Route } = await import("./shelves.$shelfId");
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
-    fireEvent.click(screen.getByTestId("toggle-add-works"));
-    fireEvent.change(screen.getByTestId("add-works-search"), { target: { value: "1984" } });
+    fireEvent.click(screen.getByTestId("add-editions-btn"));
 
     await waitFor(() => {
-      expect(searchLibraryServerFnMock).toHaveBeenCalled();
+      expect(screen.getByTestId("select-all-editions")).toBeTruthy();
     });
 
-    expect(screen.queryByTestId("search-result")).toBeNull();
+    fireEvent.click(screen.getByTestId("select-all-editions"));
+    expect(screen.getByTestId("add-selected-btn").textContent).toContain("2");
+
+    fireEvent.click(screen.getByTestId("select-all-editions"));
+    const addBtn = screen.getByTestId("add-selected-btn");
+    expect(addBtn.getAttribute("disabled")).not.toBeNull();
   });
 
-  it("shows no matching works message", async () => {
+  it("filters editions by text in dialog", async () => {
+    getAvailableEditionsServerFnMock.mockResolvedValue([
+      { id: "e2", formatFamily: "EBOOK", publisher: null, work: { titleDisplay: "Brave New World", series: null }, contributors: [] },
+      { id: "e3", formatFamily: "EBOOK", publisher: null, work: { titleDisplay: "1984", series: null }, contributors: [] },
+    ]);
+
     const { Route } = await import("./shelves.$shelfId");
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
-    fireEvent.click(screen.getByTestId("toggle-add-works"));
-    fireEvent.change(screen.getByTestId("add-works-search"), { target: { value: "zzz" } });
+    fireEvent.click(screen.getByTestId("add-editions-btn"));
 
     await waitFor(() => {
-      expect(screen.getByText("No matching works found.")).toBeTruthy();
-    });
-  });
-
-  it("renders LibraryToolbar", async () => {
-    mockLoaderData = {
-      shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [{ id: "ci1", edition: mockEdition }] },
-    };
-    const { Route } = await import("./shelves.$shelfId");
-    const Page = Route.options.component as React.ComponentType;
-    render(<Page />);
-    expect(screen.getByTestId("library-toolbar")).toBeTruthy();
-  });
-
-  it("renders grid view by default", async () => {
-    mockView = "grid";
-    mockLoaderData = {
-      shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [{ id: "ci1", edition: mockEdition }] },
-    };
-    const { Route } = await import("./shelves.$shelfId");
-    const Page = Route.options.component as React.ComponentType;
-    render(<Page />);
-    expect(screen.getByTestId("library-grid")).toBeTruthy();
-  });
-
-  it("renders table view when preference is table", async () => {
-    mockView = "table";
-    mockLoaderData = {
-      shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [{ id: "ci1", edition: mockEdition }] },
-    };
-    const { Route } = await import("./shelves.$shelfId");
-    const Page = Route.options.component as React.ComponentType;
-    render(<Page />);
-    expect(screen.queryByTestId("library-grid")).toBeNull();
-  });
-
-  it("deduplicates works from multiple editions in grid view", async () => {
-    const secondEditionSameWork = {
-      ...mockEdition,
-      id: "e1b",
-      formatFamily: "AUDIOBOOK",
-    };
-    mockLoaderData = {
-      shelf: {
-        id: "s1",
-        name: "Fiction",
-        formatFilter: "ALL",
-        items: [
-          { id: "ci1", edition: mockEdition },
-          { id: "ci2", edition: secondEditionSameWork },
-        ],
-      },
-    };
-    const { Route } = await import("./shelves.$shelfId");
-    const Page = Route.options.component as React.ComponentType;
-    render(<Page />);
-    expect(screen.getByText("Grid: 1 works")).toBeTruthy();
-  });
-
-  it("clears search results when query is too short", async () => {
-    searchLibraryServerFnMock.mockResolvedValue({
-      works: [{ id: "w2", titleDisplay: "Test", editions: [] }],
-      authors: [],
-      series: [],
+      expect(screen.getByTestId("add-editions-filter")).toBeTruthy();
     });
 
+    fireEvent.change(screen.getByTestId("add-editions-filter"), { target: { value: "Brave" } });
+    expect(screen.getByText("Brave New World")).toBeTruthy();
+    expect(screen.queryByTestId("edition-row-e3")).toBeNull();
+  });
+
+  it("shows empty state in dialog when no editions available", async () => {
+    getAvailableEditionsServerFnMock.mockResolvedValue([]);
+
     const { Route } = await import("./shelves.$shelfId");
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
-    fireEvent.click(screen.getByTestId("toggle-add-works"));
-    fireEvent.change(screen.getByTestId("add-works-search"), { target: { value: "te" } });
+    fireEvent.click(screen.getByTestId("add-editions-btn"));
 
     await waitFor(() => {
-      expect(searchLibraryServerFnMock).toHaveBeenCalled();
+      expect(screen.getByText("No matching editions available.")).toBeTruthy();
     });
+  });
 
-    fireEvent.change(screen.getByTestId("add-works-search"), { target: { value: "t" } });
-    expect(screen.queryByTestId("search-result")).toBeNull();
+  it("shows edition publisher in dialog", async () => {
+    getAvailableEditionsServerFnMock.mockResolvedValue([
+      { id: "e2", formatFamily: "EBOOK", publisher: "Penguin Classics", work: { titleDisplay: "1984", series: null }, contributors: [{ role: "AUTHOR", contributor: { nameDisplay: "Orwell" } }] },
+    ]);
+
+    const { Route } = await import("./shelves.$shelfId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    fireEvent.click(screen.getByTestId("add-editions-btn"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Penguin Classics/)).toBeTruthy();
+    });
   });
 });

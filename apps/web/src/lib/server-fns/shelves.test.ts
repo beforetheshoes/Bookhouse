@@ -61,6 +61,7 @@ import {
   bulkAddToShelfServerFn,
   removeEditionFromShelfServerFn,
   removeWorkEditionsFromShelfServerFn,
+  getAvailableEditionsServerFn,
 } from "./shelves";
 
 describe("shelves server functions", () => {
@@ -431,6 +432,46 @@ describe("shelves server functions", () => {
 
       expect(collectionItemDeleteManyMock).not.toHaveBeenCalled();
       expect(result).toEqual({ removed: 0 });
+    });
+  });
+
+  describe("getAvailableEditionsServerFn", () => {
+    it("returns editions not already on the shelf matching format filter", async () => {
+      collectionFindUniqueOrThrowMock.mockResolvedValue({ formatFilter: "EBOOK" });
+      collectionItemFindManyMock.mockResolvedValue([{ editionId: "e1" }]);
+      const available = [{ id: "e2", formatFamily: "EBOOK", work: { titleDisplay: "Book" } }];
+      editionFindManyMock.mockResolvedValue(available);
+
+      const result = await getAvailableEditionsServerFn({ data: { shelfId: "s1" } } as never);
+
+      expect(collectionFindUniqueOrThrowMock).toHaveBeenCalledWith({
+        where: { id: "s1" },
+        select: { formatFilter: true },
+      });
+      expect(editionFindManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            formatFamily: "EBOOK",
+          }) as Record<string, string>,
+        }),
+      );
+      expect(result).toBe(available);
+    });
+
+    it("returns all formats when shelf filter is ALL", async () => {
+      collectionFindUniqueOrThrowMock.mockResolvedValue({ formatFilter: "ALL" });
+      collectionItemFindManyMock.mockResolvedValue([]);
+      editionFindManyMock.mockResolvedValue([]);
+
+      await getAvailableEditionsServerFn({ data: { shelfId: "s1" } } as never);
+
+      expect(editionFindManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.not.objectContaining({
+            formatFamily: expect.anything() as string,
+          }) as Record<string, string>,
+        }),
+      );
     });
   });
 });

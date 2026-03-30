@@ -1,10 +1,17 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ChevronRight, Search, X } from "lucide-react";
+import { ChevronRight, Plus } from "lucide-react";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog";
 import { VirtualizedDataTable, DataTableColumnHeader } from "~/components/data-table";
 import { LibraryGrid } from "~/components/library-grid";
 import { LibraryToolbar } from "~/components/library-toolbar";
@@ -13,10 +20,11 @@ import { useLibraryViewPreference } from "~/hooks/use-library-view-preference";
 import { useGridTileSize } from "~/hooks/use-grid-tile-size";
 import {
   getShelfDetailServerFn,
-  addEditionsForWorkToShelfServerFn,
+  getAvailableEditionsServerFn,
+  addEditionToShelfServerFn,
   type ShelfDetail,
+  type AvailableEdition,
 } from "~/lib/server-fns/shelves";
-import { searchLibraryServerFn } from "~/lib/server-fns/search";
 import type { SortValue } from "~/components/library-toolbar";
 import type { ReadingFilter } from "~/lib/sort-filter-works";
 
@@ -51,7 +59,7 @@ function getWorksWithEditions(items: ShelfDetail["items"]): WorkWithEditions[] {
   return [...workMap.values()];
 }
 
-/* c8 ignore start -- column cell renderers require real table virtualization, tested via library.index */
+/* c8 ignore start -- column cell renderers require real table virtualization */
 function getAuthors(edition: ShelfEdition): string {
   const authors = edition.contributors
     .filter((c) => c.role === "AUTHOR")
@@ -106,43 +114,13 @@ function ShelfDetailPage() {
   const router = useRouter();
   const [view, setView] = useLibraryViewPreference();
   const [tileSize, setTileSize] = useGridTileSize();
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<
-    Awaited<ReturnType<typeof searchLibraryServerFn>>["works"]
-  >([]);
-  const [searching, setSearching] = useState(false);
-  const [showSearch, setShowSearch] = useState(false);
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [sortValue, setSortValue] = useState<SortValue>("title-asc");
   const [readingFilter, setReadingFilter] = useState<ReadingFilter>("all");
   const [, setToolbarSearch] = useState("");
 
   const editions = shelf.items.map((item) => item.edition);
   const works = getWorksWithEditions(shelf.items);
-  const memberWorkIds = new Set(works.map((w) => w.id));
-
-  const handleSearch = async (query: string) => {
-    setSearchQuery(query);
-    if (query.trim().length < 2) {
-      setSearchResults([]);
-      return;
-    }
-    setSearching(true);
-    try {
-      const results = await searchLibraryServerFn({ data: { query } });
-      setSearchResults(results.works);
-    } finally {
-      setSearching(false);
-    }
-  };
-
-  const handleAddWork = async (workId: string) => {
-    await addEditionsForWorkToShelfServerFn({ data: { shelfId: shelf.id, workId } });
-    setSearchQuery("");
-    setSearchResults([]);
-    void router.invalidate();
-  };
-
-  const filteredResults = searchResults.filter((r) => !memberWorkIds.has(r.id));
 
   return (
     <div className="space-y-6">
@@ -162,52 +140,13 @@ function ShelfDetailPage() {
           </Badge>
         </div>
         <Button
-          variant="outline"
-          onClick={() => { setShowSearch(!showSearch); }}
-          data-testid="toggle-add-works"
+          onClick={() => { setAddDialogOpen(true); }}
+          data-testid="add-editions-btn"
         >
-          {showSearch ? <X className="mr-2 h-4 w-4" /> : <Search className="mr-2 h-4 w-4" />}
-          {showSearch ? "Done" : "Add Works"}
+          <Plus className="mr-2 h-4 w-4" />
+          Add Books
         </Button>
       </div>
-
-      {showSearch && (
-        <div className="space-y-3 rounded-md border p-4" data-testid="add-works-panel">
-          <Input
-            placeholder="Search by title or author..."
-            value={searchQuery}
-            onChange={(e) => { void handleSearch(e.target.value); }}
-            data-testid="add-works-search"
-          />
-          {searching && (
-            <p className="text-sm text-muted-foreground">Searching...</p>
-          )}
-          {filteredResults.length > 0 && (
-            <div className="space-y-2">
-              {filteredResults.map((work) => (
-                <div
-                  key={work.id}
-                  className="flex items-center justify-between rounded-md border p-2"
-                  data-testid="search-result"
-                >
-                  <div>
-                    <p className="font-medium">{work.titleDisplay}</p>
-                  </div>
-                  <Button
-                    size="sm"
-                    onClick={() => { void handleAddWork(work.id); }}
-                  >
-                    Add
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
-          {searchQuery.trim().length >= 2 && !searching && filteredResults.length === 0 && (
-            <p className="text-sm text-muted-foreground">No matching works found.</p>
-          )}
-        </div>
-      )}
 
       <LibraryToolbar
         searchValue=""
@@ -224,7 +163,7 @@ function ShelfDetailPage() {
       />
 
       {editions.length === 0 ? (
-        <p className="text-muted-foreground">No works on this shelf yet.</p>
+        <p className="text-muted-foreground">No editions on this shelf yet.</p>
       ) : view === "grid" ? (
         <LibraryGrid works={works} tileSize={tileSize} />
       ) : (
@@ -235,6 +174,167 @@ function ShelfDetailPage() {
           filterPlaceholder="Filter by title..."
         />
       )}
+
+      <AddEditionsDialog
+        shelfId={shelf.id}
+        open={addDialogOpen}
+        onOpenChange={setAddDialogOpen}
+        onAdded={() => { void router.invalidate(); }}
+      />
     </div>
+  );
+}
+
+function editionLabel(edition: AvailableEdition): string {
+  const authors = edition.contributors
+    .filter((c) => c.role === "AUTHOR")
+    .map((c) => c.contributor.nameDisplay);
+  return [...new Set(authors)].join(", ");
+}
+
+function AddEditionsDialog({
+  shelfId,
+  open,
+  onOpenChange,
+  onAdded,
+}: {
+  shelfId: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onAdded: () => void;
+}) {
+  const [available, setAvailable] = useState<AvailableEdition[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [adding, setAdding] = useState(false);
+  const [filter, setFilter] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      setSelected(new Set());
+      setFilter("");
+      setLoading(true);
+      void getAvailableEditionsServerFn({ data: { shelfId } })
+        .then((editions) => { setAvailable(editions); })
+        .catch(() => { setAvailable([]); })
+        .finally(() => { setLoading(false); });
+    }
+  }, [open, shelfId]);
+
+  const handleToggle = (editionId: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(editionId)) {
+        next.delete(editionId);
+      } else {
+        next.add(editionId);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selected.size === filtered.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(filtered.map((e) => e.id)));
+    }
+  };
+
+  const handleAdd = async () => {
+    setAdding(true);
+    try {
+      for (const editionId of selected) {
+        await addEditionToShelfServerFn({ data: { shelfId, editionId } });
+      }
+      onOpenChange(false);
+      onAdded();
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const filtered = useMemo(() => {
+    if (!filter.trim()) return available;
+    const q = filter.toLowerCase();
+    return available.filter((e) =>
+      e.work.titleDisplay.toLowerCase().includes(q) ||
+      editionLabel(e).toLowerCase().includes(q),
+    );
+  }, [available, filter]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle>Add Editions to Shelf</DialogTitle>
+        </DialogHeader>
+
+        <Input
+          placeholder="Filter by title or author..."
+          value={filter}
+          onChange={(e) => { setFilter(e.target.value); }}
+          data-testid="add-editions-filter"
+        />
+
+        <div className="flex-1 overflow-y-auto min-h-0 space-y-1" data-testid="add-editions-list">
+          {loading && <p className="text-sm text-muted-foreground p-2">Loading editions...</p>}
+
+          {!loading && filtered.length === 0 && (
+            <p className="text-sm text-muted-foreground p-2">No matching editions available.</p>
+          )}
+
+          {!loading && filtered.length > 0 && (
+            <>
+              <label className="flex items-center gap-2 rounded p-2 hover:bg-muted cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={selected.size === filtered.length && filtered.length > 0}
+                  onChange={handleSelectAll}
+                  data-testid="select-all-editions"
+                />
+                <span className="text-sm font-medium">Select all ({String(filtered.length)})</span>
+              </label>
+
+              {filtered.map((edition) => (
+                <label
+                  key={edition.id}
+                  className="flex items-center gap-2 rounded p-2 hover:bg-muted cursor-pointer"
+                  data-testid={`edition-row-${edition.id}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected.has(edition.id)}
+                    onChange={() => { handleToggle(edition.id); }}
+                    data-testid={`edition-check-${edition.id}`}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{edition.work.titleDisplay}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {editionLabel(edition)}
+                      {edition.publisher ? ` · ${edition.publisher}` : ""}
+                    </p>
+                  </div>
+                  <Badge variant="secondary" className="text-xs shrink-0">{edition.formatFamily}</Badge>
+                </label>
+              ))}
+            </>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => { onOpenChange(false); }}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => { void handleAdd(); }}
+            disabled={adding || selected.size === 0}
+            data-testid="add-selected-btn"
+          >
+            {adding ? "Adding..." : `Add ${String(selected.size)} Edition${selected.size === 1 ? "" : "s"}`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

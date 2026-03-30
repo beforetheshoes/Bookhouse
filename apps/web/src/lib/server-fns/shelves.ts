@@ -107,6 +107,45 @@ export const createShelfServerFn = createServerFn({
     });
   });
 
+export const getAvailableEditionsServerFn = createServerFn({
+  method: "GET",
+})
+  .inputValidator(z.object({ shelfId: z.string().min(1) }))
+  .handler(async ({ data }) => {
+    const { db } = await import("@bookhouse/db");
+    const shelf = await db.collection.findUniqueOrThrow({
+      where: { id: data.shelfId },
+      select: { formatFilter: true },
+    });
+    const existing = await db.collectionItem.findMany({
+      where: { collectionId: data.shelfId },
+      select: { editionId: true },
+    });
+    const existingIds = existing.map((e) => e.editionId);
+    const formatWhere = shelf.formatFilter === "ALL"
+      ? {}
+      : { formatFamily: shelf.formatFilter };
+    return db.edition.findMany({
+      where: {
+        id: { notIn: existingIds.length > 0 ? existingIds : ["__none__"] },
+        ...formatWhere,
+        editionFiles: {
+          some: {
+            role: "PRIMARY",
+            fileAsset: { availabilityStatus: "PRESENT" },
+          },
+        },
+      },
+      include: {
+        work: { include: { series: true } },
+        contributors: { include: { contributor: true } },
+      },
+      orderBy: { work: { titleDisplay: "asc" } },
+    });
+  });
+
+export type AvailableEdition = Awaited<ReturnType<typeof getAvailableEditionsServerFn>>[number];
+
 export const renameShelfServerFn = createServerFn({
   method: "POST",
 })
