@@ -24,6 +24,26 @@ const mockWork = {
   }],
 };
 
+const mockAudiobookWork = {
+  id: "w2",
+  titleDisplay: "Dune",
+  titleCanonical: "dune",
+  sortTitle: "Dune",
+  coverPath: "w2",
+  coverColors: null,
+  createdAt: new Date(),
+  enrichmentStatus: "ENRICHED",
+  description: null,
+  seriesPosition: null,
+  series: null,
+  editedFields: [],
+  editions: [{
+    id: "e2",
+    formatFamily: "AUDIOBOOK",
+    contributors: [{ role: "AUTHOR", contributor: { id: "c2", nameDisplay: "Frank Herbert" } }],
+  }],
+};
+
 let mockLoaderData: {
   shelf: {
     id: string;
@@ -87,12 +107,19 @@ vi.mock("~/components/skeletons/grid-page-skeleton", () => ({
 }));
 
 vi.mock("~/components/library-toolbar", () => ({
-  LibraryToolbar: ({ view, onViewChange, tileSize, onTileSizeChange }: { view: string; onViewChange: (v: string) => void; tileSize: string; onTileSizeChange: (v: string) => void }) => (
-    <div data-testid="library-toolbar" data-view={view} data-tile-size={tileSize}>
+  LibraryToolbar: ({ view, onViewChange, tileSize, onTileSizeChange, formatFilter, onFormatFilterChange }: { view: string; onViewChange: (v: string) => void; tileSize: string; onTileSizeChange: (v: string) => void; formatFilter?: string; onFormatFilterChange?: (v: string) => void }) => (
+    <div data-testid="library-toolbar" data-view={view} data-tile-size={tileSize} data-format-filter={formatFilter}>
       <button data-testid="view-grid" onClick={() => { onViewChange("grid"); }}>Grid</button>
       <button data-testid="view-table" onClick={() => { onViewChange("table"); }}>Table</button>
       <button data-testid="tile-small" onClick={() => { onTileSizeChange("small"); }}>Small</button>
       <button data-testid="tile-large" onClick={() => { onTileSizeChange("large"); }}>Large</button>
+      {onFormatFilterChange && (
+        <>
+          <button data-testid="format-ebook" onClick={() => { onFormatFilterChange("ebook"); }}>Ebooks</button>
+          <button data-testid="format-audiobook" onClick={() => { onFormatFilterChange("audiobook"); }}>Audiobooks</button>
+          <button data-testid="format-all" onClick={() => { onFormatFilterChange("all"); }}>All Formats</button>
+        </>
+      )}
     </div>
   ),
 }));
@@ -301,6 +328,52 @@ describe("ShelfDetailPage", () => {
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
     expect(screen.queryByTestId("library-grid")).toBeNull();
+  });
+
+  it("filters works to ebooks when ebook format filter is selected", async () => {
+    mockLoaderData = {
+      shelf: {
+        id: "s1",
+        name: "Fiction",
+        items: [
+          { id: "ci1", work: mockWork },
+          { id: "ci2", work: mockAudiobookWork },
+        ],
+      },
+    };
+    const { Route } = await import("./shelves.$shelfId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    expect(screen.getByText("Grid: 2 works")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("format-ebook"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Grid: 1 works")).toBeTruthy();
+    });
+  });
+
+  it("filters works to audiobooks when audiobook format filter is selected", async () => {
+    mockLoaderData = {
+      shelf: {
+        id: "s1",
+        name: "Fiction",
+        items: [
+          { id: "ci1", work: mockWork },
+          { id: "ci2", work: mockAudiobookWork },
+        ],
+      },
+    };
+    const { Route } = await import("./shelves.$shelfId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    expect(screen.getByText("Grid: 2 works")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("format-audiobook"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Grid: 1 works")).toBeTruthy();
+    });
   });
 
   it("clears search results when query is too short", async () => {

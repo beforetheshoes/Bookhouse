@@ -2,7 +2,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
-import { LibraryToolbar, type SortValue } from "./library-toolbar";
+import { LibraryToolbar, type SortValue, type FormatFilter } from "./library-toolbar";
 import type { ReadingFilter } from "~/lib/sort-filter-works";
 import type { LibraryView } from "~/hooks/use-library-view-preference";
 import type { GridTileSize } from "~/hooks/use-grid-tile-size";
@@ -178,5 +178,44 @@ describe("LibraryToolbar", () => {
     render(<LibraryToolbar {...propsWithoutTileSize} view="grid" />);
     expect(screen.queryByLabelText("Small tiles")).toBeNull();
     expect(screen.queryByLabelText("Large tiles")).toBeNull();
+  });
+
+  it("renders format filter select when formatFilter and onFormatFilterChange are provided", () => {
+    render(
+      <LibraryToolbar
+        {...defaultProps}
+        formatFilter={"all" as FormatFilter}
+        onFormatFilterChange={vi.fn()}
+      />,
+    );
+    const comboboxes = screen.getAllByRole("combobox");
+    // 3 comboboxes: format filter + reading filter + sort
+    expect(comboboxes).toHaveLength(3);
+  });
+
+  it("does not render format filter select when props are omitted", () => {
+    render(<LibraryToolbar {...defaultProps} />);
+    const comboboxes = screen.getAllByRole("combobox");
+    // 2 comboboxes: reading filter + sort
+    expect(comboboxes).toHaveLength(2);
+  });
+
+  it("calls onFormatFilterChange when a format option is selected", async () => {
+    const onFormatFilterChange = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <LibraryToolbar
+        {...defaultProps}
+        formatFilter={"all" as FormatFilter}
+        onFormatFilterChange={onFormatFilterChange}
+      />,
+    );
+    const comboboxes = screen.getAllByRole("combobox");
+    // Format filter is the first combobox
+    const formatCombobox = comboboxes.at(0);
+    expect(formatCombobox).toBeTruthy();
+    await user.click(formatCombobox as HTMLElement);
+    await user.click(screen.getByText("Ebooks"));
+    expect(onFormatFilterChange).toHaveBeenCalledWith("ebook");
   });
 });

@@ -212,13 +212,15 @@ model Work {
   coverColors    Json?
   seriesId         String?
   seriesPosition   Float?
+  preferredSyncEditionId String? @unique
   enrichmentStatus EnrichmentStatus @default(ENRICHED)
   editedFields     String[]         @default([])
   createdAt        DateTime         @default(now())
   updatedAt      DateTime @updatedAt
 
-  series   Series?   @relation(fields: [seriesId], references: [id])
-  editions Edition[]
+  series               Series?   @relation(fields: [seriesId], references: [id])
+  preferredSyncEdition Edition?  @relation("PreferredSyncEdition", fields: [preferredSyncEditionId], references: [id], onDelete: SetNull)
+  editions             Edition[]
   collections CollectionItem[]
   progressPreferences WorkProgressPreference[]
 
@@ -246,11 +248,12 @@ model Edition {
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
-  work            Work                 @relation(fields: [workId], references: [id], onDelete: Cascade)
-  editionFiles    EditionFile[]
-  contributors    EditionContributor[]
-  readingProgress ReadingProgress[]
-  externalLinks   ExternalLink[]
+  work                 Work                 @relation(fields: [workId], references: [id], onDelete: Cascade)
+  preferredSyncForWork Work?                @relation("PreferredSyncEdition")
+  editionFiles         EditionFile[]
+  contributors         EditionContributor[]
+  readingProgress      ReadingProgress[]
+  externalLinks        ExternalLink[]
 
   duplicateLeft  DuplicateCandidate[] @relation("DuplicateLeftEdition")
   duplicateRight DuplicateCandidate[] @relation("DuplicateRightEdition")

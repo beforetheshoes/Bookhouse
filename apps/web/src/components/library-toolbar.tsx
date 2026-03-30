@@ -16,6 +16,8 @@ import type { GridTileSize } from "~/hooks/use-grid-tile-size";
 
 export type SortValue = "title-asc" | "title-desc" | "author-asc" | "author-desc" | "publisher-asc" | "publisher-desc" | "format-asc" | "format-desc" | "isbn-asc" | "isbn-desc" | "recent";
 
+export type FormatFilter = "all" | "ebook" | "audiobook";
+
 interface LibraryToolbarProps {
   searchValue: string;
   onSearchChange: (value: string) => void;
@@ -28,7 +30,15 @@ interface LibraryToolbarProps {
   showSort?: boolean;
   tileSize?: GridTileSize;
   onTileSizeChange?: (size: GridTileSize) => void;
+  formatFilter?: FormatFilter;
+  onFormatFilterChange?: (value: FormatFilter) => void;
 }
+
+const FORMAT_FILTER_OPTIONS: { value: FormatFilter; label: string }[] = [
+  { value: "all", label: "All Formats" },
+  { value: "ebook", label: "Ebooks" },
+  { value: "audiobook", label: "Audiobooks" },
+];
 
 const FILTER_OPTIONS: { value: ReadingFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -59,6 +69,8 @@ export function LibraryToolbar({
   showSort = true,
   tileSize,
   onTileSizeChange,
+  formatFilter,
+  onFormatFilterChange,
 }: LibraryToolbarProps) {
   const [localSearch, setLocalSearch] = useState(searchValue);
   const debouncedSearch = useDebounce(localSearch, 300);
@@ -92,6 +104,20 @@ export function LibraryToolbar({
         )}
       </div>
       <div className="flex items-center gap-2">
+        {formatFilter && onFormatFilterChange && (
+          <Select value={formatFilter} onValueChange={(v) => { onFormatFilterChange(v as FormatFilter); }}>
+            <SelectTrigger size="sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {FORMAT_FILTER_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <Select value={filterValue} onValueChange={(v) => { onFilterChange(v as ReadingFilter); }}>
           <SelectTrigger size="sm">
             <SelectValue />

@@ -18,6 +18,13 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { Badge } from "~/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "~/components/ui/tabs";
 import { ProgressBar } from "~/components/progress-bar";
@@ -38,7 +45,7 @@ import { getReadingProgressServerFn } from "~/lib/server-fns/reading-progress";
 import { deleteWorkServerFn, deleteEditionServerFn } from "~/lib/server-fns/deletion";
 import { EditableField } from "~/components/editable-field";
 import { EditableTagField } from "~/components/editable-tag-field";
-import { updateWorkServerFn, updateWorkAuthorsServerFn, getContributorNamesServerFn } from "~/lib/server-fns/editing";
+import { updateWorkServerFn, updateWorkAuthorsServerFn, getContributorNamesServerFn, setSyncEditionServerFn } from "~/lib/server-fns/editing";
 import { getSmtpStatusServerFn } from "~/lib/server-fns/smtp";
 import { getKindleStatusServerFn } from "~/lib/server-fns/kindle";
 import { updateWorkTagsServerFn } from "~/lib/server-fns/tags";
@@ -328,6 +335,8 @@ function WorkDetailPage() {
           <MetadataItem label="Shelves">
             <ShelfMembership workId={work.id} shelves={shelves} />
           </MetadataItem>
+
+          <SyncEditionPicker work={work} />
         </div>
       </div>
 
@@ -538,3 +547,50 @@ function ShelfMembership({
   );
 }
 
+function SyncEditionPicker({ work }: { work: WorkDetail }) {
+  const router = useRouter();
+  const ebookEditions = work.editions.filter((e) => e.formatFamily === "EBOOK");
+
+  if (ebookEditions.length < 2) {
+    return null;
+  }
+
+  const handleChange = async (value: string) => {
+    const editionId = value === "default" ? null : value;
+    await setSyncEditionServerFn({ data: { workId: work.id, editionId } });
+    void router.invalidate();
+  };
+
+  const currentValue = work.preferredSyncEditionId ?? "default";
+
+  function editionLabel(edition: WorkDetail["editions"][number]): string {
+    const parts: string[] = [];
+    if (edition.publisher) parts.push(edition.publisher);
+    if (edition.isbn13) parts.push(edition.isbn13);
+    if (parts.length === 0) {
+      const primaryFile = edition.editionFiles[0];
+      if (primaryFile) {
+        parts.push(primaryFile.fileAsset.basename);
+      }
+    }
+    return parts.join(" · ") || edition.id;
+  }
+
+  return (
+    <MetadataItem label="Sync Edition">
+      <Select value={currentValue} onValueChange={(v) => { void handleChange(v); }} data-testid="sync-edition-select">
+        <SelectTrigger className="w-64" data-testid="sync-edition-trigger">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="default">Default (first available)</SelectItem>
+          {ebookEditions.map((edition) => (
+            <SelectItem key={edition.id} value={edition.id}>
+              {editionLabel(edition)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </MetadataItem>
+  );
+}

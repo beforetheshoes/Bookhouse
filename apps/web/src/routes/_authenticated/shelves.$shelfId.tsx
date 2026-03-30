@@ -17,7 +17,7 @@ import {
   type ShelfDetail,
 } from "~/lib/server-fns/shelves";
 import { searchLibraryServerFn } from "~/lib/server-fns/search";
-import type { SortValue } from "~/components/library-toolbar";
+import type { SortValue, FormatFilter } from "~/components/library-toolbar";
 import type { ReadingFilter } from "~/lib/sort-filter-works";
 
 export const Route = createFileRoute("/_authenticated/shelves/$shelfId")({
@@ -94,9 +94,13 @@ function ShelfDetailPage() {
   const [showSearch, setShowSearch] = useState(false);
   const [sortValue, setSortValue] = useState<SortValue>("title-asc");
   const [readingFilter, setReadingFilter] = useState<ReadingFilter>("all");
+  const [formatFilter, setFormatFilter] = useState<FormatFilter>("all");
   const [, setToolbarSearch] = useState("");
 
   const works = shelf.items.map((item) => item.work);
+  const filteredWorks = formatFilter === "all"
+    ? works
+    : works.filter((w) => w.editions.some((e) => e.formatFamily === (formatFilter === "ebook" ? "EBOOK" : "AUDIOBOOK")));
   const memberWorkIds = new Set(works.map((w) => w.id));
 
   const handleSearch = async (query: string) => {
@@ -196,16 +200,18 @@ function ShelfDetailPage() {
         showSort={view !== "table"}
         tileSize={tileSize}
         onTileSizeChange={setTileSize}
+        formatFilter={formatFilter}
+        onFormatFilterChange={setFormatFilter}
       />
 
       {works.length === 0 ? (
         <p className="text-muted-foreground">No works on this shelf yet.</p>
       ) : view === "grid" ? (
-        <LibraryGrid works={works} tileSize={tileSize} />
+        <LibraryGrid works={filteredWorks} tileSize={tileSize} />
       ) : (
         <VirtualizedDataTable
           columns={tableColumns}
-          data={works}
+          data={filteredWorks}
           filterColumn="titleDisplay"
           filterPlaceholder="Filter by title..."
         />
