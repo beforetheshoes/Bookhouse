@@ -61,7 +61,7 @@ function getWorksWithEditions(items: ShelfDetail["items"]): WorkWithEditions[] {
   return [...workMap.values()];
 }
 
-/* c8 ignore start -- column cell renderers require real table virtualization */
+/* v8 ignore start */
 function getAuthors(edition: ShelfEdition): string {
   const authors = edition.contributors
     .filter((c) => c.role === "AUTHOR")
@@ -140,7 +140,7 @@ function getTableColumns(): ColumnDef<ShelfEdition>[] {
     },
   ];
 }
-/* c8 ignore stop */
+/* v8 ignore stop */
 
 function ShelfDetailPage() {
   const { shelf } = Route.useLoaderData();

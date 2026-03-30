@@ -315,6 +315,19 @@ describe("shelves server functions", () => {
       expect(collectionItemCreateManyMock).not.toHaveBeenCalled();
       expect(result).toEqual({ added: 0 });
     });
+
+    it("returns zero when all editions already exist on shelf", async () => {
+      collectionFindUniqueOrThrowMock.mockResolvedValue({ formatFilter: "ALL" });
+      editionFindManyMock.mockResolvedValue([{ id: "e1" }]);
+      collectionItemFindManyMock.mockResolvedValue([{ editionId: "e1" }]);
+
+      const result = await addEditionsForWorkToShelfServerFn({
+        data: { shelfId: "s1", workId: "w1" },
+      } as never);
+
+      expect(collectionItemCreateManyMock).not.toHaveBeenCalled();
+      expect(result).toEqual({ added: 0 });
+    });
   });
 
   describe("bulkAddToShelfServerFn", () => {

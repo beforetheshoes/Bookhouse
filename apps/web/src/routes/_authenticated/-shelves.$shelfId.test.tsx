@@ -83,7 +83,12 @@ vi.mock("~/components/library-grid", () => ({
 
 vi.mock("~/components/data-table", async () => {
   const actual = await vi.importActual<typeof DataTableModule>("~/components/data-table");
-  return actual;
+  return {
+    ...actual,
+    VirtualizedDataTable: ({ data }: { data: { id: string }[] }) => (
+      <div data-testid="data-table">{String(data.length)} rows</div>
+    ),
+  };
 });
 
 vi.mock("~/components/skeletons/grid-page-skeleton", () => ({
@@ -175,7 +180,7 @@ describe("ShelfDetailPage", () => {
     expect(screen.getByTestId("library-grid")).toBeTruthy();
   });
 
-  it("renders table view without grid", async () => {
+  it("renders table view with edition data", async () => {
     mockView = "table";
     mockLoaderData = {
       shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [{ id: "ci1", edition: mockEdition }] },
@@ -184,6 +189,7 @@ describe("ShelfDetailPage", () => {
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
     expect(screen.queryByTestId("library-grid")).toBeNull();
+    expect(screen.getByTestId("data-table")).toBeTruthy();
   });
 
   it("renders Add Books button", async () => {
