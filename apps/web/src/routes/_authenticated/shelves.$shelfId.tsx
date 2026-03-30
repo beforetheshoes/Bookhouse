@@ -95,6 +95,7 @@ function getTableColumns(): ColumnDef<ShelfEdition>[] {
     },
     {
       id: "titleDisplay",
+      size: 300,
       accessorFn: (row) => row.work.titleDisplay,
       header: ({ column }) => <DataTableColumnHeader column={column} title="Title" />,
       cell: ({ row }) => (
@@ -105,6 +106,8 @@ function getTableColumns(): ColumnDef<ShelfEdition>[] {
     },
     {
       id: "format",
+      size: 100,
+      maxSize: 100,
       header: ({ column }) => <DataTableColumnHeader column={column} title="Format" />,
       accessorFn: (row) => row.formatFamily,
       cell: ({ row }) => (
@@ -113,21 +116,25 @@ function getTableColumns(): ColumnDef<ShelfEdition>[] {
     },
     {
       id: "authors",
+      size: 200,
       header: ({ column }) => <DataTableColumnHeader column={column} title="Author" />,
       accessorFn: (row) => getAuthors(row),
     },
     {
       id: "publisher",
+      size: 150,
       header: ({ column }) => <DataTableColumnHeader column={column} title="Publisher" />,
       accessorFn: (row) => row.publisher ?? "",
     },
     {
       id: "isbn",
+      size: 140,
       header: ({ column }) => <DataTableColumnHeader column={column} title="ISBN" />,
       accessorFn: (row) => row.isbn13 ?? row.isbn10 ?? "",
     },
     {
       id: "series",
+      size: 150,
       header: ({ column }) => <DataTableColumnHeader column={column} title="Series" />,
       accessorFn: (row) => row.work.series?.name ?? "",
     },
