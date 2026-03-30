@@ -291,6 +291,18 @@ describe("ShelvesPage", () => {
     });
   });
 
+  it("renders raw formatFilter when not in FORMAT_LABELS", async () => {
+    mockLoaderData = {
+      shelves: [
+        { id: "s1", name: "Custom", kind: "MANUAL", formatFilter: "UNKNOWN_FORMAT", _count: { items: 1 } },
+      ],
+    };
+    const { Route } = await import("./shelves.index");
+    const ShelvesPage = (Route.options.component as React.ComponentType);
+    render(<ShelvesPage />);
+    expect(screen.getByText("UNKNOWN_FORMAT")).toBeTruthy();
+  });
+
   it("renders cancel button in delete dialog", async () => {
     mockLoaderData = {
       shelves: [

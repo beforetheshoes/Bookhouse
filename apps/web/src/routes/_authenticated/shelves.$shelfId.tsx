@@ -41,7 +41,7 @@ export const Route = createFileRoute("/_authenticated/shelves/$shelfId")({
   component: ShelfDetailPage,
 });
 
-type ShelfEdition = ShelfDetail["items"][number]["edition"];
+export type ShelfEdition = ShelfDetail["items"][number]["edition"];
 
 type WorkWithEditions = ShelfEdition["work"] & { editions: ShelfEdition[] };
 
@@ -61,15 +61,14 @@ function getWorksWithEditions(items: ShelfDetail["items"]): WorkWithEditions[] {
   return [...workMap.values()];
 }
 
-/* v8 ignore start */
-function getAuthors(edition: ShelfEdition): string {
+export function getAuthors(edition: ShelfEdition): string {
   const authors = edition.contributors
     .filter((c) => c.role === "AUTHOR")
     .map((c) => c.contributor.nameDisplay);
   return [...new Set(authors)].join(", ");
 }
 
-function getTableColumns(): ColumnDef<ShelfEdition>[] {
+export function getTableColumns(): ColumnDef<ShelfEdition>[] {
   return [
     {
       id: "select",
@@ -140,7 +139,6 @@ function getTableColumns(): ColumnDef<ShelfEdition>[] {
     },
   ];
 }
-/* v8 ignore stop */
 
 function ShelfDetailPage() {
   const { shelf } = Route.useLoaderData();
@@ -265,7 +263,7 @@ function ShelfDetailPage() {
   );
 }
 
-function editionLabel(edition: AvailableEdition): string {
+export function editionLabel(edition: AvailableEdition): string {
   const authors = edition.contributors
     .filter((c) => c.role === "AUTHOR")
     .map((c) => c.contributor.nameDisplay);
