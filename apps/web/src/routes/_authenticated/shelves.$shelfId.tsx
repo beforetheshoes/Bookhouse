@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
-import type { ColumnDef } from "@tanstack/react-table";
-import { ChevronRight, Plus } from "lucide-react";
+import type { ColumnDef, RowSelectionState } from "@tanstack/react-table";
+import { ChevronRight, Plus, Trash2, X } from "lucide-react";
+import { toast } from "sonner";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -22,6 +23,7 @@ import {
   getShelfDetailServerFn,
   getAvailableEditionsServerFn,
   addEditionToShelfServerFn,
+  removeEditionFromShelfServerFn,
   type ShelfDetail,
   type AvailableEdition,
 } from "~/lib/server-fns/shelves";
@@ -67,46 +69,68 @@ function getAuthors(edition: ShelfEdition): string {
   return [...new Set(authors)].join(", ");
 }
 
-const tableColumns: ColumnDef<ShelfEdition>[] = [
-  {
-    id: "titleDisplay",
-    accessorFn: (row) => row.work.titleDisplay,
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Title" />,
-    cell: ({ row }) => (
-      <Link to="/library/$workId" params={{ workId: row.original.work.id }} className="font-medium hover:underline">
-        {row.original.work.titleDisplay}
-      </Link>
-    ),
-  },
-  {
-    id: "format",
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Format" />,
-    accessorFn: (row) => row.formatFamily,
-    cell: ({ row }) => (
-      <Badge variant="secondary" className="text-xs">{row.original.formatFamily}</Badge>
-    ),
-  },
-  {
-    id: "authors",
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Author" />,
-    accessorFn: (row) => getAuthors(row),
-  },
-  {
-    id: "publisher",
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Publisher" />,
-    accessorFn: (row) => row.publisher ?? "",
-  },
-  {
-    id: "isbn",
-    header: ({ column }) => <DataTableColumnHeader column={column} title="ISBN" />,
-    accessorFn: (row) => row.isbn13 ?? row.isbn10 ?? "",
-  },
-  {
-    id: "series",
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Series" />,
-    accessorFn: (row) => row.work.series?.name ?? "",
-  },
-];
+function getTableColumns(): ColumnDef<ShelfEdition>[] {
+  return [
+    {
+      id: "select",
+      header: ({ table }) => (
+        <input
+          type="checkbox"
+          checked={table.getIsAllPageRowsSelected()}
+          onChange={(e) => { table.toggleAllPageRowsSelected(e.target.checked); }}
+          aria-label="Select all"
+        />
+      ),
+      cell: ({ row }) => (
+        <input
+          type="checkbox"
+          checked={row.getIsSelected()}
+          onChange={(e) => { row.toggleSelected(e.target.checked); }}
+          aria-label="Select row"
+        />
+      ),
+      enableSorting: false,
+    },
+    {
+      id: "titleDisplay",
+      accessorFn: (row) => row.work.titleDisplay,
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Title" />,
+      cell: ({ row }) => (
+        <Link to="/library/$workId" params={{ workId: row.original.work.id }} className="font-medium hover:underline">
+          {row.original.work.titleDisplay}
+        </Link>
+      ),
+    },
+    {
+      id: "format",
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Format" />,
+      accessorFn: (row) => row.formatFamily,
+      cell: ({ row }) => (
+        <Badge variant="secondary" className="text-xs">{row.original.formatFamily}</Badge>
+      ),
+    },
+    {
+      id: "authors",
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Author" />,
+      accessorFn: (row) => getAuthors(row),
+    },
+    {
+      id: "publisher",
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Publisher" />,
+      accessorFn: (row) => row.publisher ?? "",
+    },
+    {
+      id: "isbn",
+      header: ({ column }) => <DataTableColumnHeader column={column} title="ISBN" />,
+      accessorFn: (row) => row.isbn13 ?? row.isbn10 ?? "",
+    },
+    {
+      id: "series",
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Series" />,
+      accessorFn: (row) => row.work.series?.name ?? "",
+    },
+  ];
+}
 /* c8 ignore stop */
 
 function ShelfDetailPage() {
@@ -118,9 +142,36 @@ function ShelfDetailPage() {
   const [sortValue, setSortValue] = useState<SortValue>("title-asc");
   const [readingFilter, setReadingFilter] = useState<ReadingFilter>("all");
   const [, setToolbarSearch] = useState("");
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [removing, setRemoving] = useState(false);
 
   const editions = shelf.items.map((item) => item.edition);
   const works = getWorksWithEditions(shelf.items);
+  const selectedCount = Object.keys(rowSelection).length;
+
+  const selectedEditionIds = useMemo(() => {
+    return Object.keys(rowSelection)
+      .map((idx) => editions[Number(idx)]?.id)
+      .filter((id): id is string => id !== undefined);
+  }, [rowSelection, editions]);
+
+  const handleRemoveSelected = async () => {
+    setRemoving(true);
+    try {
+      for (const editionId of selectedEditionIds) {
+        await removeEditionFromShelfServerFn({ data: { shelfId: shelf.id, editionId } });
+      }
+      toast.success(`Removed ${String(selectedEditionIds.length)} from shelf`);
+      setRowSelection({});
+      void router.invalidate();
+    } catch {
+      toast.error("Failed to remove editions");
+    } finally {
+      setRemoving(false);
+    }
+  };
+
+  const tableColumns = useMemo(() => getTableColumns(), []);
 
   return (
     <div className="space-y-6">
@@ -170,9 +221,29 @@ function ShelfDetailPage() {
         <VirtualizedDataTable
           columns={tableColumns}
           data={editions}
-          filterColumn="titleDisplay"
-          filterPlaceholder="Filter by title..."
+          rowSelection={rowSelection}
+          onRowSelectionChange={setRowSelection}
         />
+      )}
+
+      {selectedCount > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-lg border bg-background p-3 shadow-lg" data-testid="selection-bar">
+          <span className="text-sm font-medium">{selectedCount} edition{selectedCount === 1 ? "" : "s"} selected</span>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => { void handleRemoveSelected(); }}
+            disabled={removing}
+            data-testid="remove-selected-btn"
+          >
+            <Trash2 className="mr-1.5 size-3.5" />
+            {removing ? "Removing..." : "Remove from Shelf"}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => { setRowSelection({}); }}>
+            <X className="mr-1.5 size-3.5" />
+            Clear
+          </Button>
+        </div>
       )}
 
       <AddEditionsDialog

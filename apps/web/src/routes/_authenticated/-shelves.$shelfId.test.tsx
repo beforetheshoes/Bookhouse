@@ -66,8 +66,11 @@ vi.mock("@tanstack/react-router", async () => {
   };
 });
 
+const removeEditionFromShelfServerFnMock = vi.fn().mockResolvedValue({});
+
 vi.mock("~/lib/server-fns/shelves", () => ({
   getShelfDetailServerFn: getShelfDetailServerFnMock,
+  removeEditionFromShelfServerFn: removeEditionFromShelfServerFnMock,
   getAvailableEditionsServerFn: getAvailableEditionsServerFnMock,
   addEditionToShelfServerFn: addEditionToShelfServerFnMock,
 }));
