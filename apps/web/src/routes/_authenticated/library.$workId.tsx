@@ -26,6 +26,11 @@ import { CoverSearchDialog } from "~/components/cover-search-dialog";
 import { EditionTabPanel } from "~/components/edition-tab-panel";
 import { MetadataItem } from "~/components/metadata-item";
 import {
+  getShelvesForWorkServerFn,
+  addEditionsForWorkToShelfServerFn,
+  removeWorkEditionsFromShelfServerFn,
+} from "~/lib/server-fns/shelves";
+import {
   getWorkDetailServerFn,
   type WorkDetail,
 } from "~/lib/server-fns/work-detail";
@@ -41,14 +46,15 @@ import { useAppColor } from "~/hooks/use-app-color";
 
 export const Route = createFileRoute("/_authenticated/library/$workId")({
   loader: async ({ params }) => {
-    const [work, { progress, trackingMode }, contributorNames, smtpStatus, kindleStatus] = await Promise.all([
+    const [work, { progress, trackingMode }, contributorNames, smtpStatus, kindleStatus, shelves] = await Promise.all([
       getWorkDetailServerFn({ data: { workId: params.workId } }),
       getReadingProgressServerFn({ data: { workId: params.workId } }),
       getContributorNamesServerFn(),
       getSmtpStatusServerFn(),
       getKindleStatusServerFn(),
+      getShelvesForWorkServerFn({ data: { workId: params.workId } }),
     ]);
-    return { work, progress, trackingMode, contributorNames, smtpConfigured: smtpStatus.configured, kindleConfigured: kindleStatus.configured };
+    return { work, progress, trackingMode, contributorNames, smtpConfigured: smtpStatus.configured, kindleConfigured: kindleStatus.configured, shelves };
   },
   pendingComponent: WorkDetailSkeleton,
   component: WorkDetailPage,
@@ -86,7 +92,7 @@ function getAuthors(work: WorkDetail): { id: string; name: string }[] {
 
 
 function WorkDetailPage() {
-  const { work, progress, trackingMode, contributorNames, smtpConfigured, kindleConfigured } = Route.useLoaderData();
+  const { work, progress, trackingMode, contributorNames, smtpConfigured, kindleConfigured, shelves } = Route.useLoaderData();
   const router = useRouter();
   const [imgFailed, setImgFailed] = useState(false);
   const [deleteWorkOpen, setDeleteWorkOpen] = useState(false);
@@ -318,6 +324,10 @@ function WorkDetailPage() {
               placeholder="No tags"
             />
           </MetadataItem>
+
+          <MetadataItem label="Shelves">
+            <ShelfMembership workId={work.id} shelves={shelves} />
+          </MetadataItem>
         </div>
       </div>
 
@@ -485,6 +495,45 @@ function EditionProgress({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function ShelfMembership({
+  workId,
+  shelves,
+}: {
+  workId: string;
+  shelves: { id: string; name: string; isMember: boolean }[];
+}) {
+  const router = useRouter();
+
+  const handleToggle = async (shelfId: string, isMember: boolean) => {
+    if (isMember) {
+      await removeWorkEditionsFromShelfServerFn({ data: { shelfId, workId } });
+    } else {
+      await addEditionsForWorkToShelfServerFn({ data: { shelfId, workId } });
+    }
+    void router.invalidate();
+  };
+
+  if (shelves.length === 0) {
+    return <span className="text-muted-foreground">No shelves created yet</span>;
+  }
+
+  return (
+    <div className="flex flex-wrap gap-1.5" data-testid="shelf-membership">
+      {shelves.map((shelf) => (
+        <Badge
+          key={shelf.id}
+          variant={shelf.isMember ? "default" : "outline"}
+          className="cursor-pointer select-none"
+          onClick={() => { void handleToggle(shelf.id, shelf.isMember); }}
+          data-testid={`shelf-toggle-${shelf.id}`}
+        >
+          {shelf.name}
+        </Badge>
+      ))}
     </div>
   );
 }

@@ -58,6 +58,12 @@ enum CollectionKind {
   MANUAL
 }
 
+enum ShelfFormatFilter {
+  ALL
+  EBOOK
+  AUDIOBOOK
+}
+
 enum ProgressKind {
   EBOOK
   AUDIO
@@ -219,7 +225,6 @@ model Work {
 
   series   Series?   @relation(fields: [seriesId], references: [id])
   editions Edition[]
-  collections CollectionItem[]
   progressPreferences WorkProgressPreference[]
 
   tags WorkTag[]
@@ -251,6 +256,7 @@ model Edition {
   contributors    EditionContributor[]
   readingProgress ReadingProgress[]
   externalLinks   ExternalLink[]
+  collectionItems CollectionItem[]
 
   duplicateLeft  DuplicateCandidate[] @relation("DuplicateLeftEdition")
   duplicateRight DuplicateCandidate[] @relation("DuplicateRightEdition")
@@ -309,10 +315,11 @@ model Series {
 }
 
 model Collection {
-  id          String         @id @default(cuid())
-  ownerUserId String?
-  name        String
-  kind        CollectionKind @default(MANUAL)
+  id           String            @id @default(cuid())
+  ownerUserId  String?
+  name         String
+  kind         CollectionKind    @default(MANUAL)
+  formatFilter ShelfFormatFilter @default(ALL)
 
   ownerUser User? @relation(fields: [ownerUserId], references: [id])
   items     CollectionItem[]
@@ -321,12 +328,12 @@ model Collection {
 model CollectionItem {
   id           String @id @default(cuid())
   collectionId String
-  workId       String
+  editionId    String
 
   collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
-  work       Work       @relation(fields: [workId], references: [id], onDelete: Cascade)
+  edition    Edition    @relation(fields: [editionId], references: [id], onDelete: Cascade)
 
-  @@unique([collectionId, workId])
+  @@unique([collectionId, editionId])
 }
 
 model ReadingProgress {

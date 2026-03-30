@@ -179,4 +179,5 @@ describe("LibraryToolbar", () => {
     expect(screen.queryByLabelText("Small tiles")).toBeNull();
     expect(screen.queryByLabelText("Large tiles")).toBeNull();
   });
+
 });

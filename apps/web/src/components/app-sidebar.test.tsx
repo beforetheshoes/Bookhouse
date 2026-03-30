@@ -31,7 +31,7 @@ describe("AppSidebar", () => {
     expect(screen.getByText("Library")).toBeTruthy();
     expect(screen.getByText("Series")).toBeTruthy();
     expect(screen.getByText("Authors")).toBeTruthy();
-    expect(screen.getByText("Collections")).toBeTruthy();
+    expect(screen.getByText("Shelves")).toBeTruthy();
     expect(screen.getByText("Duplicates")).toBeTruthy();
     expect(screen.getByText("Match Suggestions")).toBeTruthy();
     expect(screen.getByText("Settings")).toBeTruthy();

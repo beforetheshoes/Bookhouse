@@ -19,7 +19,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
+import { FolderOpen } from "lucide-react";
 import { bulkDeleteWorksServerFn } from "~/lib/server-fns/deletion";
+import { getShelvesServerFn, bulkAddToShelfServerFn } from "~/lib/server-fns/shelves";
 import { EditableTableCell } from "~/components/editable-table-cell";
 import { updateWorkServerFn, updateEditionServerFn, updateWorkAuthorsServerFn } from "~/lib/server-fns/editing";
 import { GridPageSkeleton } from "~/components/skeletons/grid-page-skeleton";
@@ -40,12 +42,13 @@ export const Route = createFileRoute("/_authenticated/library/")({
   validateSearch: (search) => librarySearchSchema.parse(search),
   loaderDeps: ({ search }) => search,
   loader: async ({ deps }) => {
-    const [libraryResult, activeJobCount, progressMap] = await Promise.all([
+    const [libraryResult, activeJobCount, progressMap, shelves] = await Promise.all([
       getFilteredLibraryWorksServerFn({ data: deps }),
       getActiveJobCountServerFn(),
       getBulkReadingProgressServerFn(),
+      getShelvesServerFn(),
     ]);
-    return { libraryResult, activeJobCount, progressMap };
+    return { libraryResult, activeJobCount, progressMap, shelves };
   },
   pendingComponent: GridPageSkeleton,
   component: LibraryPage,
@@ -250,7 +253,7 @@ export function columnSortToParam(
 }
 
 function LibraryPage() {
-  const { libraryResult, activeJobCount, progressMap } = Route.useLoaderData();
+  const { libraryResult, activeJobCount, progressMap, shelves } = Route.useLoaderData();
   const { works, totalCount, facetCounts, totalFacetCounts } = libraryResult;
   const search = Route.useSearch();
   const navigate = useNavigate();
@@ -264,6 +267,8 @@ function LibraryPage() {
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [addToShelfOpen, setAddToShelfOpen] = useState(false);
+  const [addingToShelf, setAddingToShelf] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const isScanning = activeJobCount > 0;
   const newCount = totalCount - prevCount;
@@ -281,6 +286,21 @@ function LibraryPage() {
       toast.error(error instanceof Error ? error.message : "Failed to delete works");
     } finally {
       setBulkDeleting(false);
+    }
+  }
+
+  async function handleAddToShelf(shelfId: string) {
+    setAddingToShelf(true);
+    try {
+      const result = await bulkAddToShelfServerFn({ data: { shelfId, workIds: selectedWorkIds } });
+      toast.success(`Added ${String(result.added)} to shelf`);
+      setRowSelection({});
+      setAddToShelfOpen(false);
+      void router.invalidate();
+    } catch {
+      toast.error("Failed to add to shelf");
+    } finally {
+      setAddingToShelf(false);
     }
   }
 
@@ -548,6 +568,10 @@ function LibraryPage() {
       {selectedCount > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-lg border bg-background p-3 shadow-lg">
           <span className="text-sm font-medium">{selectedCount} work{selectedCount === 1 ? "" : "s"} selected</span>
+          <Button variant="outline" size="sm" onClick={() => { setAddToShelfOpen(true); }} data-testid="bulk-add-to-shelf-btn">
+            <FolderOpen className="mr-1.5 size-3.5" />
+            Add to Shelf
+          </Button>
           <Button variant="destructive" size="sm" onClick={() => { setBulkDeleteOpen(true); }}>
             <Trash2 className="mr-1.5 size-3.5" />
             Delete Selected
@@ -576,6 +600,34 @@ function LibraryPage() {
               {bulkDeleting ? "Deleting..." : "Delete"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={addToShelfOpen} onOpenChange={setAddToShelfOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add {selectedCount} Work{selectedCount === 1 ? "" : "s"} to Shelf</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2" data-testid="shelf-picker">
+            {shelves.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No shelves created yet. Create one from the Shelves page.</p>
+            ) : (
+              shelves.map((shelf) => (
+                <Button
+                  key={shelf.id}
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() => { void handleAddToShelf(shelf.id); }}
+                  disabled={addingToShelf}
+                  data-testid={`shelf-pick-${shelf.id}`}
+                >
+                  <FolderOpen className="mr-2 size-4" />
+                  {shelf.name}
+                  <span className="ml-auto text-muted-foreground">{shelf._count.items} works</span>
+                </Button>
+              ))
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
