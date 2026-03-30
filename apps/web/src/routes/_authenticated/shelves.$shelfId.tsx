@@ -73,6 +73,8 @@ function getTableColumns(): ColumnDef<ShelfEdition>[] {
   return [
     {
       id: "select",
+      size: 40,
+      maxSize: 40,
       header: ({ table }) => (
         <input
           type="checkbox"
