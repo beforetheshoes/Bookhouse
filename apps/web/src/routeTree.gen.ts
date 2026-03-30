@@ -15,17 +15,19 @@ import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/
 import { Route as AuthLogoutRouteImport } from './routes/auth/logout'
 import { Route as AuthLoginRouteImport } from './routes/auth/login'
 import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
+import { Route as AuthenticatedShelvesRouteImport } from './routes/_authenticated/shelves'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedSeriesRouteImport } from './routes/_authenticated/series'
 import { Route as AuthenticatedMatchSuggestionsRouteImport } from './routes/_authenticated/match-suggestions'
 import { Route as AuthenticatedLibraryRouteImport } from './routes/_authenticated/library'
 import { Route as AuthenticatedDuplicatesRouteImport } from './routes/_authenticated/duplicates'
-import { Route as AuthenticatedCollectionsRouteImport } from './routes/_authenticated/collections'
 import { Route as AuthenticatedAuthorsRouteImport } from './routes/_authenticated/authors'
+import { Route as AuthenticatedShelvesIndexRouteImport } from './routes/_authenticated/shelves.index'
 import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
 import { Route as AuthenticatedSeriesIndexRouteImport } from './routes/_authenticated/series.index'
 import { Route as AuthenticatedLibraryIndexRouteImport } from './routes/_authenticated/library.index'
 import { Route as AuthenticatedAuthorsIndexRouteImport } from './routes/_authenticated/authors.index'
+import { Route as AuthenticatedShelvesShelfIdRouteImport } from './routes/_authenticated/shelves.$shelfId'
 import { Route as AuthenticatedSettingsMissingFilesRouteImport } from './routes/_authenticated/settings/missing-files'
 import { Route as AuthenticatedSettingsLibrariesRouteImport } from './routes/_authenticated/settings/libraries'
 import { Route as AuthenticatedSettingsJobsRouteImport } from './routes/_authenticated/settings/jobs'
@@ -65,6 +67,11 @@ const AuthCallbackRoute = AuthCallbackRouteImport.update({
   path: '/auth/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedShelvesRoute = AuthenticatedShelvesRouteImport.update({
+  id: '/shelves',
+  path: '/shelves',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -91,17 +98,17 @@ const AuthenticatedDuplicatesRoute = AuthenticatedDuplicatesRouteImport.update({
   path: '/duplicates',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedCollectionsRoute =
-  AuthenticatedCollectionsRouteImport.update({
-    id: '/collections',
-    path: '/collections',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
 const AuthenticatedAuthorsRoute = AuthenticatedAuthorsRouteImport.update({
   id: '/authors',
   path: '/authors',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedShelvesIndexRoute =
+  AuthenticatedShelvesIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedShelvesRoute,
+  } as any)
 const AuthenticatedSettingsIndexRoute =
   AuthenticatedSettingsIndexRouteImport.update({
     id: '/',
@@ -125,6 +132,12 @@ const AuthenticatedAuthorsIndexRoute =
     id: '/',
     path: '/',
     getParentRoute: () => AuthenticatedAuthorsRoute,
+  } as any)
+const AuthenticatedShelvesShelfIdRoute =
+  AuthenticatedShelvesShelfIdRouteImport.update({
+    id: '/$shelfId',
+    path: '/$shelfId',
+    getParentRoute: () => AuthenticatedShelvesRoute,
   } as any)
 const AuthenticatedSettingsMissingFilesRoute =
   AuthenticatedSettingsMissingFilesRouteImport.update({
@@ -185,12 +198,12 @@ export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
   '/logged-out': typeof LoggedOutRoute
   '/authors': typeof AuthenticatedAuthorsRouteWithChildren
-  '/collections': typeof AuthenticatedCollectionsRoute
   '/duplicates': typeof AuthenticatedDuplicatesRoute
   '/library': typeof AuthenticatedLibraryRouteWithChildren
   '/match-suggestions': typeof AuthenticatedMatchSuggestionsRoute
   '/series': typeof AuthenticatedSeriesRouteWithChildren
   '/settings': typeof AuthenticatedSettingsRouteWithChildren
+  '/shelves': typeof AuthenticatedShelvesRouteWithChildren
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/logout': typeof AuthLogoutRoute
@@ -200,17 +213,18 @@ export interface FileRoutesByFullPath {
   '/settings/jobs': typeof AuthenticatedSettingsJobsRouteWithChildren
   '/settings/libraries': typeof AuthenticatedSettingsLibrariesRoute
   '/settings/missing-files': typeof AuthenticatedSettingsMissingFilesRoute
+  '/shelves/$shelfId': typeof AuthenticatedShelvesShelfIdRoute
   '/authors/': typeof AuthenticatedAuthorsIndexRoute
   '/library/': typeof AuthenticatedLibraryIndexRoute
   '/series/': typeof AuthenticatedSeriesIndexRoute
   '/settings/': typeof AuthenticatedSettingsIndexRoute
+  '/shelves/': typeof AuthenticatedShelvesIndexRoute
   '/settings/jobs/$jobId': typeof AuthenticatedSettingsJobsJobIdRoute
   '/settings/library-issues/$libraryRootId': typeof AuthenticatedSettingsLibraryIssuesLibraryRootIdRoute
   '/settings/jobs/': typeof AuthenticatedSettingsJobsIndexRoute
 }
 export interface FileRoutesByTo {
   '/logged-out': typeof LoggedOutRoute
-  '/collections': typeof AuthenticatedCollectionsRoute
   '/duplicates': typeof AuthenticatedDuplicatesRoute
   '/match-suggestions': typeof AuthenticatedMatchSuggestionsRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -222,10 +236,12 @@ export interface FileRoutesByTo {
   '/series/$seriesId': typeof AuthenticatedSeriesSeriesIdRoute
   '/settings/libraries': typeof AuthenticatedSettingsLibrariesRoute
   '/settings/missing-files': typeof AuthenticatedSettingsMissingFilesRoute
+  '/shelves/$shelfId': typeof AuthenticatedShelvesShelfIdRoute
   '/authors': typeof AuthenticatedAuthorsIndexRoute
   '/library': typeof AuthenticatedLibraryIndexRoute
   '/series': typeof AuthenticatedSeriesIndexRoute
   '/settings': typeof AuthenticatedSettingsIndexRoute
+  '/shelves': typeof AuthenticatedShelvesIndexRoute
   '/settings/jobs/$jobId': typeof AuthenticatedSettingsJobsJobIdRoute
   '/settings/library-issues/$libraryRootId': typeof AuthenticatedSettingsLibraryIssuesLibraryRootIdRoute
   '/settings/jobs': typeof AuthenticatedSettingsJobsIndexRoute
@@ -235,12 +251,12 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/logged-out': typeof LoggedOutRoute
   '/_authenticated/authors': typeof AuthenticatedAuthorsRouteWithChildren
-  '/_authenticated/collections': typeof AuthenticatedCollectionsRoute
   '/_authenticated/duplicates': typeof AuthenticatedDuplicatesRoute
   '/_authenticated/library': typeof AuthenticatedLibraryRouteWithChildren
   '/_authenticated/match-suggestions': typeof AuthenticatedMatchSuggestionsRoute
   '/_authenticated/series': typeof AuthenticatedSeriesRouteWithChildren
   '/_authenticated/settings': typeof AuthenticatedSettingsRouteWithChildren
+  '/_authenticated/shelves': typeof AuthenticatedShelvesRouteWithChildren
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/logout': typeof AuthLogoutRoute
@@ -251,10 +267,12 @@ export interface FileRoutesById {
   '/_authenticated/settings/jobs': typeof AuthenticatedSettingsJobsRouteWithChildren
   '/_authenticated/settings/libraries': typeof AuthenticatedSettingsLibrariesRoute
   '/_authenticated/settings/missing-files': typeof AuthenticatedSettingsMissingFilesRoute
+  '/_authenticated/shelves/$shelfId': typeof AuthenticatedShelvesShelfIdRoute
   '/_authenticated/authors/': typeof AuthenticatedAuthorsIndexRoute
   '/_authenticated/library/': typeof AuthenticatedLibraryIndexRoute
   '/_authenticated/series/': typeof AuthenticatedSeriesIndexRoute
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
+  '/_authenticated/shelves/': typeof AuthenticatedShelvesIndexRoute
   '/_authenticated/settings/jobs/$jobId': typeof AuthenticatedSettingsJobsJobIdRoute
   '/_authenticated/settings/library-issues/$libraryRootId': typeof AuthenticatedSettingsLibraryIssuesLibraryRootIdRoute
   '/_authenticated/settings/jobs/': typeof AuthenticatedSettingsJobsIndexRoute
@@ -265,12 +283,12 @@ export interface FileRouteTypes {
     | '/'
     | '/logged-out'
     | '/authors'
-    | '/collections'
     | '/duplicates'
     | '/library'
     | '/match-suggestions'
     | '/series'
     | '/settings'
+    | '/shelves'
     | '/auth/callback'
     | '/auth/login'
     | '/auth/logout'
@@ -280,17 +298,18 @@ export interface FileRouteTypes {
     | '/settings/jobs'
     | '/settings/libraries'
     | '/settings/missing-files'
+    | '/shelves/$shelfId'
     | '/authors/'
     | '/library/'
     | '/series/'
     | '/settings/'
+    | '/shelves/'
     | '/settings/jobs/$jobId'
     | '/settings/library-issues/$libraryRootId'
     | '/settings/jobs/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/logged-out'
-    | '/collections'
     | '/duplicates'
     | '/match-suggestions'
     | '/auth/callback'
@@ -302,10 +321,12 @@ export interface FileRouteTypes {
     | '/series/$seriesId'
     | '/settings/libraries'
     | '/settings/missing-files'
+    | '/shelves/$shelfId'
     | '/authors'
     | '/library'
     | '/series'
     | '/settings'
+    | '/shelves'
     | '/settings/jobs/$jobId'
     | '/settings/library-issues/$libraryRootId'
     | '/settings/jobs'
@@ -314,12 +335,12 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/logged-out'
     | '/_authenticated/authors'
-    | '/_authenticated/collections'
     | '/_authenticated/duplicates'
     | '/_authenticated/library'
     | '/_authenticated/match-suggestions'
     | '/_authenticated/series'
     | '/_authenticated/settings'
+    | '/_authenticated/shelves'
     | '/auth/callback'
     | '/auth/login'
     | '/auth/logout'
@@ -330,10 +351,12 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/jobs'
     | '/_authenticated/settings/libraries'
     | '/_authenticated/settings/missing-files'
+    | '/_authenticated/shelves/$shelfId'
     | '/_authenticated/authors/'
     | '/_authenticated/library/'
     | '/_authenticated/series/'
     | '/_authenticated/settings/'
+    | '/_authenticated/shelves/'
     | '/_authenticated/settings/jobs/$jobId'
     | '/_authenticated/settings/library-issues/$libraryRootId'
     | '/_authenticated/settings/jobs/'
@@ -391,6 +414,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/shelves': {
+      id: '/_authenticated/shelves'
+      path: '/shelves'
+      fullPath: '/shelves'
+      preLoaderRoute: typeof AuthenticatedShelvesRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/settings': {
       id: '/_authenticated/settings'
       path: '/settings'
@@ -426,19 +456,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDuplicatesRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/collections': {
-      id: '/_authenticated/collections'
-      path: '/collections'
-      fullPath: '/collections'
-      preLoaderRoute: typeof AuthenticatedCollectionsRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
     '/_authenticated/authors': {
       id: '/_authenticated/authors'
       path: '/authors'
       fullPath: '/authors'
       preLoaderRoute: typeof AuthenticatedAuthorsRouteImport
       parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/shelves/': {
+      id: '/_authenticated/shelves/'
+      path: '/'
+      fullPath: '/shelves/'
+      preLoaderRoute: typeof AuthenticatedShelvesIndexRouteImport
+      parentRoute: typeof AuthenticatedShelvesRoute
     }
     '/_authenticated/settings/': {
       id: '/_authenticated/settings/'
@@ -467,6 +497,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/authors/'
       preLoaderRoute: typeof AuthenticatedAuthorsIndexRouteImport
       parentRoute: typeof AuthenticatedAuthorsRoute
+    }
+    '/_authenticated/shelves/$shelfId': {
+      id: '/_authenticated/shelves/$shelfId'
+      path: '/$shelfId'
+      fullPath: '/shelves/$shelfId'
+      preLoaderRoute: typeof AuthenticatedShelvesShelfIdRouteImport
+      parentRoute: typeof AuthenticatedShelvesRoute
     }
     '/_authenticated/settings/missing-files': {
       id: '/_authenticated/settings/missing-files'
@@ -612,25 +649,38 @@ const AuthenticatedSettingsRouteWithChildren =
     AuthenticatedSettingsRouteChildren,
   )
 
+interface AuthenticatedShelvesRouteChildren {
+  AuthenticatedShelvesShelfIdRoute: typeof AuthenticatedShelvesShelfIdRoute
+  AuthenticatedShelvesIndexRoute: typeof AuthenticatedShelvesIndexRoute
+}
+
+const AuthenticatedShelvesRouteChildren: AuthenticatedShelvesRouteChildren = {
+  AuthenticatedShelvesShelfIdRoute: AuthenticatedShelvesShelfIdRoute,
+  AuthenticatedShelvesIndexRoute: AuthenticatedShelvesIndexRoute,
+}
+
+const AuthenticatedShelvesRouteWithChildren =
+  AuthenticatedShelvesRoute._addFileChildren(AuthenticatedShelvesRouteChildren)
+
 interface AuthenticatedRouteChildren {
   AuthenticatedAuthorsRoute: typeof AuthenticatedAuthorsRouteWithChildren
-  AuthenticatedCollectionsRoute: typeof AuthenticatedCollectionsRoute
   AuthenticatedDuplicatesRoute: typeof AuthenticatedDuplicatesRoute
   AuthenticatedLibraryRoute: typeof AuthenticatedLibraryRouteWithChildren
   AuthenticatedMatchSuggestionsRoute: typeof AuthenticatedMatchSuggestionsRoute
   AuthenticatedSeriesRoute: typeof AuthenticatedSeriesRouteWithChildren
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRouteWithChildren
+  AuthenticatedShelvesRoute: typeof AuthenticatedShelvesRouteWithChildren
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAuthorsRoute: AuthenticatedAuthorsRouteWithChildren,
-  AuthenticatedCollectionsRoute: AuthenticatedCollectionsRoute,
   AuthenticatedDuplicatesRoute: AuthenticatedDuplicatesRoute,
   AuthenticatedLibraryRoute: AuthenticatedLibraryRouteWithChildren,
   AuthenticatedMatchSuggestionsRoute: AuthenticatedMatchSuggestionsRoute,
   AuthenticatedSeriesRoute: AuthenticatedSeriesRouteWithChildren,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRouteWithChildren,
+  AuthenticatedShelvesRoute: AuthenticatedShelvesRouteWithChildren,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
 }
 

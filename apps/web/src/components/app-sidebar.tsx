@@ -34,7 +34,7 @@ const navItems = [
   { title: "Library", href: "/library", icon: BookOpen },
   { title: "Series", href: "/series", icon: BookCopy },
   { title: "Authors", href: "/authors", icon: Users },
-  { title: "Collections", href: "/collections", icon: FolderOpen },
+  { title: "Shelves", href: "/shelves", icon: FolderOpen },
   { title: "Duplicates", href: "/duplicates", icon: Copy },
   { title: "Match Suggestions", href: "/match-suggestions", icon: Headphones },
   { title: "Settings", href: "/settings", icon: Settings },

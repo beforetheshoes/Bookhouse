@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import React from "react";
 import type * as TanstackRouter from "@tanstack/react-router";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 interface MockWork {
@@ -47,7 +47,7 @@ interface MockProgress {
   percent: number | null;
 }
 
-let mockLoaderData: { work: MockWork; progress: MockProgress[]; trackingMode: string; contributorNames: string[]; smtpConfigured: boolean; kindleConfigured: boolean } = {
+let mockLoaderData: { work: MockWork; progress: MockProgress[]; trackingMode: string; contributorNames: string[]; smtpConfigured: boolean; kindleConfigured: boolean; shelves: { id: string; name: string; isMember: boolean }[] } = {
   work: {
     id: "work-1",
     titleDisplay: "The Name of the Wind",
@@ -94,6 +94,7 @@ let mockLoaderData: { work: MockWork; progress: MockProgress[]; trackingMode: st
   contributorNames: ["Patrick Rothfuss", "Brandon Sanderson"],
   smtpConfigured: false,
   kindleConfigured: false,
+  shelves: [],
 };
 
 const mockNavigate = vi.fn();
@@ -193,6 +194,12 @@ vi.mock("~/lib/server-fns/smtp", () => ({
 vi.mock("~/lib/server-fns/kindle", () => ({
   getKindleStatusServerFn: vi.fn().mockResolvedValue({ configured: false }),
   sendToKindleServerFn: vi.fn(),
+}));
+
+vi.mock("~/lib/server-fns/shelves", () => ({
+  getShelvesForWorkServerFn: vi.fn().mockResolvedValue([]),
+  addWorkToShelfServerFn: vi.fn().mockResolvedValue({}),
+  removeWorkFromShelfServerFn: vi.fn().mockResolvedValue({}),
 }));
 
 const mockFetch = vi.fn();
@@ -317,6 +324,7 @@ describe("WorkDetailPage", () => {
       contributorNames: ["Patrick Rothfuss", "Brandon Sanderson"],
       smtpConfigured: false,
       kindleConfigured: false,
+      shelves: [],
     };
     capturedDialogProps.length = 0;
     forceRenderClosed = false;
@@ -347,6 +355,7 @@ describe("WorkDetailPage", () => {
       contributorNames: [],
       smtpConfigured: false,
       kindleConfigured: false,
+      shelves: [],
     });
   });
 
@@ -1475,5 +1484,64 @@ describe("WorkDetailPage", () => {
     // but clicking the option should trigger setCoverSearchOpen(true)
     // The mock doesn't track open state, so we just verify the click handler runs
     expect(screen.getByTestId("cover-search-dialog")).toBeTruthy();
+  });
+
+  it("renders 'No shelves created yet' when no shelves exist", async () => {
+    mockLoaderData.shelves = [];
+    const { Route } = await import("./library.$workId");
+    const WorkDetailPage = Route.options.component as React.ComponentType;
+    render(<WorkDetailPage />);
+    expect(screen.getByText("No shelves created yet")).toBeTruthy();
+  });
+
+  it("renders shelf badges for available shelves", async () => {
+    mockLoaderData.shelves = [
+      { id: "s1", name: "Fiction", isMember: true },
+      { id: "s2", name: "Sci-Fi", isMember: false },
+    ];
+    const { Route } = await import("./library.$workId");
+    const WorkDetailPage = Route.options.component as React.ComponentType;
+    render(<WorkDetailPage />);
+    expect(screen.getByTestId("shelf-membership")).toBeTruthy();
+    expect(screen.getByTestId("shelf-toggle-s1")).toBeTruthy();
+    expect(screen.getByTestId("shelf-toggle-s2")).toBeTruthy();
+  });
+
+  it("calls addWorkToShelfServerFn when clicking non-member shelf badge", async () => {
+    mockLoaderData.shelves = [
+      { id: "s1", name: "Fiction", isMember: false },
+    ];
+    const { addWorkToShelfServerFn } = await import("~/lib/server-fns/shelves");
+    const addMock = vi.mocked(addWorkToShelfServerFn);
+    addMock.mockResolvedValue({} as never);
+
+    const { Route } = await import("./library.$workId");
+    const WorkDetailPage = Route.options.component as React.ComponentType;
+    render(<WorkDetailPage />);
+    fireEvent.click(screen.getByTestId("shelf-toggle-s1"));
+    await waitFor(() => {
+      expect(addMock).toHaveBeenCalledWith({
+        data: { shelfId: "s1", workId: "work-1" },
+      });
+    });
+  });
+
+  it("calls removeWorkFromShelfServerFn when clicking member shelf badge", async () => {
+    mockLoaderData.shelves = [
+      { id: "s1", name: "Fiction", isMember: true },
+    ];
+    const { removeWorkFromShelfServerFn } = await import("~/lib/server-fns/shelves");
+    const removeMock = vi.mocked(removeWorkFromShelfServerFn);
+    removeMock.mockResolvedValue({} as never);
+
+    const { Route } = await import("./library.$workId");
+    const WorkDetailPage = Route.options.component as React.ComponentType;
+    render(<WorkDetailPage />);
+    fireEvent.click(screen.getByTestId("shelf-toggle-s1"));
+    await waitFor(() => {
+      expect(removeMock).toHaveBeenCalledWith({
+        data: { shelfId: "s1", workId: "work-1" },
+      });
+    });
   });
 });

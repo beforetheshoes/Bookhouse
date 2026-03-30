@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import type * as DataTableModule from "~/components/data-table";
 import type * as TanstackRouter from "@tanstack/react-router";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 /** Cast route option function types that have no overlap with simple function types */
@@ -52,6 +52,7 @@ let mockLoaderData: {
   };
   activeJobCount: number;
   progressMap: Record<string, number>;
+  shelves: { id: string; name: string; _count: { items: number } }[];
 } = {
   libraryResult: {
     works: [],
@@ -61,6 +62,7 @@ let mockLoaderData: {
   },
   activeJobCount: 0,
   progressMap: {},
+  shelves: [],
 };
 
 let mockSearch: { page: number; pageSize: number; sort: string } = { page: 1, pageSize: 50, sort: "title-asc" };
@@ -69,6 +71,11 @@ const bulkDeleteWorksServerFnMock = vi.fn();
 
 vi.mock("~/lib/server-fns/deletion", () => ({
   bulkDeleteWorksServerFn: bulkDeleteWorksServerFnMock,
+}));
+
+vi.mock("~/lib/server-fns/shelves", () => ({
+  getShelvesServerFn: vi.fn().mockResolvedValue([]),
+  bulkAddToShelfServerFn: vi.fn().mockResolvedValue({ added: 0 }),
 }));
 
 const mockToast = { success: vi.fn(), error: vi.fn() };
@@ -303,6 +310,7 @@ describe("LibraryPage", () => {
       },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     mockSearch = { page: 1, pageSize: 50, sort: "title-asc" };
     mockView = "grid";
@@ -328,6 +336,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     });
   });
 
@@ -336,6 +345,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -354,6 +364,7 @@ describe("LibraryPage", () => {
       },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -372,6 +383,7 @@ describe("LibraryPage", () => {
       },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -392,6 +404,7 @@ describe("LibraryPage", () => {
       },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -412,6 +425,7 @@ describe("LibraryPage", () => {
       },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -442,6 +456,7 @@ describe("LibraryPage", () => {
       },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -460,6 +475,7 @@ describe("LibraryPage", () => {
       },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -478,6 +494,7 @@ describe("LibraryPage", () => {
       },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -497,6 +514,7 @@ describe("LibraryPage", () => {
       },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -516,6 +534,7 @@ describe("LibraryPage", () => {
       },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -535,6 +554,7 @@ describe("LibraryPage", () => {
       },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -554,6 +574,7 @@ describe("LibraryPage", () => {
       },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -572,6 +593,7 @@ describe("LibraryPage", () => {
       },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -591,6 +613,7 @@ describe("LibraryPage", () => {
       },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -610,6 +633,7 @@ describe("LibraryPage", () => {
       },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -629,6 +653,7 @@ describe("LibraryPage", () => {
       },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -661,6 +686,7 @@ describe("LibraryPage", () => {
       },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -706,6 +732,7 @@ describe("LibraryPage", () => {
       },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -727,6 +754,7 @@ describe("LibraryPage", () => {
       },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -746,6 +774,7 @@ describe("LibraryPage", () => {
       },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -766,6 +795,7 @@ describe("LibraryPage", () => {
       },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -781,6 +811,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -793,6 +824,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -805,6 +837,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -817,6 +850,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -830,6 +864,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -843,6 +878,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 1,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -857,6 +893,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -869,6 +906,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 2,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -881,6 +919,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Old Book")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -892,6 +931,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Old Book"), makeWork("New Book")], totalCount: 2, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 1,
       progressMap: {},
+      shelves: [],
     };
     rerender(<LibraryPage />);
 
@@ -909,6 +949,7 @@ describe("LibraryPage", () => {
       },
       activeJobCount: 1,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -927,6 +968,7 @@ describe("LibraryPage", () => {
       },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -945,6 +987,7 @@ describe("LibraryPage", () => {
       },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -958,6 +1001,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: { "work-test": 42 },
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -973,6 +1017,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -988,6 +1033,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1001,6 +1047,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1013,6 +1060,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1030,6 +1078,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1044,6 +1093,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1058,6 +1108,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1072,6 +1123,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Test")], totalCount: 100, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1086,6 +1138,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Test")], totalCount: 100, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1106,6 +1159,7 @@ describe("LibraryPage", () => {
       },
       activeJobCount: 0,
       progressMap: { "work-reading": 50, "work-done": 100 },
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1132,6 +1186,7 @@ describe("LibraryPage", () => {
       },
       activeJobCount: 0,
       progressMap: { "work-done": 100 },
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1155,6 +1210,7 @@ describe("LibraryPage", () => {
       },
       activeJobCount: 0,
       progressMap: { "work-done": 100 },
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1173,6 +1229,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1186,6 +1243,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1199,6 +1257,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1212,6 +1271,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1225,6 +1285,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1238,6 +1299,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1251,6 +1313,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1266,6 +1329,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1280,6 +1344,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1296,6 +1361,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1310,6 +1376,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1329,6 +1396,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1348,6 +1416,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1368,6 +1437,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1382,6 +1452,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1405,6 +1476,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1441,6 +1513,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Book A"), makeWork("Book B")], totalCount: 2, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1470,6 +1543,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Book A"), makeWork("Book B")], totalCount: 2, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1491,6 +1565,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1522,6 +1597,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1552,6 +1628,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1578,6 +1655,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      shelves: [],
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
@@ -1851,6 +1929,124 @@ describe("LibraryPage", () => {
       expect(updateEditionServerFnMock).toHaveBeenCalledWith({
         data: { editionId: "edition-test-book", fields: { isbn13: null } },
       });
+    });
+  });
+
+  it("shows Add to Shelf button when works are selected", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [{ id: "s1", name: "Fiction", _count: { items: 3 } }],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    const checkbox = screen.getAllByRole("checkbox")[1];
+    if (checkbox) fireEvent.click(checkbox);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("bulk-add-to-shelf-btn")).toBeTruthy();
+    });
+  });
+
+  it("opens shelf picker dialog and adds works to selected shelf", async () => {
+    mockView = "table";
+    const { bulkAddToShelfServerFn } = await import("~/lib/server-fns/shelves");
+    vi.mocked(bulkAddToShelfServerFn).mockResolvedValue({ added: 1 } as never);
+
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [{ id: "s1", name: "Fiction", _count: { items: 3 } }],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    const checkbox = screen.getAllByRole("checkbox")[1];
+    if (checkbox) fireEvent.click(checkbox);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("bulk-add-to-shelf-btn")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTestId("bulk-add-to-shelf-btn"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("shelf-picker")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTestId("shelf-pick-s1"));
+
+    await waitFor(() => {
+      expect(vi.mocked(bulkAddToShelfServerFn)).toHaveBeenCalledWith({
+        data: { shelfId: "s1", workIds: expect.any(Array) as string[] },
+      });
+    });
+  });
+
+  it("shows error toast when bulk add fails", async () => {
+    mockView = "table";
+    const { bulkAddToShelfServerFn } = await import("~/lib/server-fns/shelves");
+    vi.mocked(bulkAddToShelfServerFn).mockRejectedValue(new Error("DB error"));
+
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [{ id: "s1", name: "Fiction", _count: { items: 3 } }],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    const checkbox = screen.getAllByRole("checkbox")[1];
+    if (checkbox) fireEvent.click(checkbox);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("bulk-add-to-shelf-btn")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTestId("bulk-add-to-shelf-btn"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("shelf-pick-s1")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTestId("shelf-pick-s1"));
+
+    await waitFor(() => {
+      expect(vi.mocked(bulkAddToShelfServerFn)).toHaveBeenCalled();
+    });
+  });
+
+  it("shows empty shelf message in picker when no shelves exist", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    const checkbox = screen.getAllByRole("checkbox")[1];
+    if (checkbox) fireEvent.click(checkbox);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("bulk-add-to-shelf-btn")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTestId("bulk-add-to-shelf-btn"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/No shelves created yet/)).toBeTruthy();
     });
   });
 });
