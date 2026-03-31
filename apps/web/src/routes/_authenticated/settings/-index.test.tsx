@@ -32,7 +32,9 @@ let mockLoaderData: {
   backupHistory: { version: number; timestamp: string; databaseSize: number; coverCount: number; coverSize: number }[];
   smtpStatus: { configured: boolean };
   kindleStatus: { configured: boolean };
-} = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false } };
+  koboDevices: { id: string; deviceId: string; status: string; lastSyncAt: string | null; createdAt: string; authToken: string; collections: { collection: { id: string; name: string } }[] }[];
+  shelves: { id: string; name: string; kind: string; formatFilter: string; ownerUserId: string | null; _count: { items: number } }[];
+} = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false }, koboDevices: [], shelves: [] };
 
 const getLibraryRootsServerFnMock = vi.fn();
 const scanLibraryRootServerFnMock = vi.fn();
@@ -98,6 +100,18 @@ vi.mock("~/lib/server-fns/kindle", () => ({
   getKindleConfigServerFn: vi.fn().mockResolvedValue({ configured: false }),
   saveKindleConfigServerFn: vi.fn().mockResolvedValue({ saved: true }),
   removeKindleConfigServerFn: vi.fn().mockResolvedValue({ removed: true }),
+}));
+
+vi.mock("~/lib/server-fns/kobo-devices", () => ({
+  getKoboDevicesServerFn: vi.fn().mockResolvedValue([]),
+  addKoboDeviceServerFn: vi.fn().mockResolvedValue({ id: "d1", authToken: "tok", deviceId: "name", status: "ACTIVE" }),
+  revokeKoboDeviceServerFn: vi.fn().mockResolvedValue({}),
+  removeKoboDeviceServerFn: vi.fn().mockResolvedValue({}),
+  updateDeviceCollectionsServerFn: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock("~/lib/server-fns/shelves", () => ({
+  getShelvesServerFn: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("~/lib/mutation", () => ({
@@ -221,7 +235,7 @@ const makeJob = (overrides: Partial<{
 describe("SettingsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false } };
+    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false }, koboDevices: [], shelves: [] };
     mockTheme = "system";
     mockColorMode = "book";
     mockAccentColor = null;
@@ -538,6 +552,8 @@ describe("SettingsPage", () => {
       backupHistory: [],
       smtpStatus: { configured: false },
       kindleStatus: { configured: false },
+      koboDevices: [],
+      shelves: [],
     });
   });
 
@@ -791,7 +807,7 @@ describe("SettingsPage", () => {
 describe("AppearanceCard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false } };
+    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false }, koboDevices: [], shelves: [] };
     mockTheme = "system";
     mockColorMode = "book";
     mockAccentColor = null;
@@ -860,7 +876,7 @@ describe("AppearanceCard", () => {
 describe("ColorCard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false } };
+    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false }, koboDevices: [], shelves: [] };
     mockTheme = "system";
     mockColorMode = "book";
     mockAccentColor = null;
@@ -1037,7 +1053,7 @@ describe("ColorCard", () => {
 describe("JobsTab", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false } };
+    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false }, koboDevices: [], shelves: [] };
     mockTheme = "system";
     mockColorMode = "book";
     mockAccentColor = null;
@@ -1600,6 +1616,472 @@ describe("Integrations Tab", () => {
 
     await waitFor(() => {
       expect(recordMock).toHaveBeenCalled();
+    });
+  });
+});
+
+describe("Kobo Devices Tab", () => {
+  it("renders the Devices tab trigger", async () => {
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    expect(screen.getByRole("tab", { name: "Devices" })).toBeTruthy();
+  });
+
+  it("shows empty state when no devices are paired", async () => {
+    mockLoaderData.koboDevices = [];
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+
+    expect(screen.getByText("No Kobo devices paired yet.")).toBeTruthy();
+  });
+
+  it("renders paired devices", async () => {
+    mockLoaderData.koboDevices = [
+      {
+        id: "d1",
+        deviceId: "My Kobo Clara",
+        status: "ACTIVE",
+        lastSyncAt: null,
+        createdAt: new Date().toISOString(),
+        authToken: "tok-1",
+        collections: [],
+      },
+    ];
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+
+    expect(screen.getByText("My Kobo Clara")).toBeTruthy();
+  });
+
+  it("renders device with shelves", async () => {
+    mockLoaderData.koboDevices = [
+      {
+        id: "d1",
+        deviceId: "Kobo",
+        status: "ACTIVE",
+        lastSyncAt: null,
+        createdAt: new Date().toISOString(),
+        authToken: "tok-1",
+        collections: [{ collection: { id: "c1", name: "Fiction" } }],
+      },
+    ];
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+
+    expect(screen.getByText(/Fiction/)).toBeTruthy();
+  });
+
+  it("renders add device input and button", async () => {
+    mockLoaderData.koboDevices = [];
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+
+    expect(screen.getByTestId("kobo-device-name-input")).toBeTruthy();
+    expect(screen.getByTestId("add-kobo-device-btn")).toBeTruthy();
+  });
+
+  it("disables add button when device name is empty", async () => {
+    mockLoaderData.koboDevices = [];
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+
+    const addBtn = screen.getByTestId("add-kobo-device-btn");
+    expect((addBtn as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("shows revoke button for active devices", async () => {
+    mockLoaderData.koboDevices = [
+      {
+        id: "d1",
+        deviceId: "Kobo",
+        status: "ACTIVE",
+        lastSyncAt: null,
+        createdAt: new Date().toISOString(),
+        authToken: "tok-1",
+        collections: [],
+      },
+    ];
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+
+    expect(screen.getByRole("button", { name: "Revoke" })).toBeTruthy();
+  });
+
+  it("adds a device and shows setup URL", async () => {
+    mockLoaderData.koboDevices = [];
+
+    const { addKoboDeviceServerFn } = await import("~/lib/server-fns/kobo-devices");
+    vi.mocked(addKoboDeviceServerFn).mockResolvedValue({
+      id: "new-d", authToken: "new-token-abc", deviceId: "New Kobo", status: "ACTIVE",
+      userId: "u1", userKey: "", lastSyncAt: null, createdAt: new Date(),
+    } as never);
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+
+    const input = screen.getByTestId("kobo-device-name-input");
+    fireEvent.change(input, { target: { value: "New Kobo" } });
+
+    fireEvent.click(screen.getByTestId("add-kobo-device-btn"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("kobo-setup-url")).toBeTruthy();
+    });
+    expect(screen.getByText(/new-token-abc/)).toBeTruthy();
+  });
+
+  it("dismisses setup URL when clicking Dismiss", async () => {
+    mockLoaderData.koboDevices = [];
+
+    const { addKoboDeviceServerFn } = await import("~/lib/server-fns/kobo-devices");
+    vi.mocked(addKoboDeviceServerFn).mockResolvedValue({
+      id: "new-d", authToken: "dismiss-tok", deviceId: "DK", status: "ACTIVE",
+      userId: "u1", userKey: "", lastSyncAt: null, createdAt: new Date(),
+    } as never);
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+
+    const input = screen.getByTestId("kobo-device-name-input");
+    fireEvent.change(input, { target: { value: "DK" } });
+    fireEvent.click(screen.getByTestId("add-kobo-device-btn"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("kobo-setup-url")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+
+    expect(screen.queryByTestId("kobo-setup-url")).toBeNull();
+  });
+
+  it("calls revoke server function when clicking Revoke", async () => {
+    mockLoaderData.koboDevices = [
+      {
+        id: "d1",
+        deviceId: "Kobo",
+        status: "ACTIVE",
+        lastSyncAt: null,
+        createdAt: new Date().toISOString(),
+        authToken: "tok-1",
+        collections: [],
+      },
+    ];
+
+    const { revokeKoboDeviceServerFn } = await import("~/lib/server-fns/kobo-devices");
+    const revokeMock = vi.mocked(revokeKoboDeviceServerFn);
+    revokeMock.mockResolvedValue({} as never);
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+    fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
+
+    await waitFor(() => {
+      expect(revokeMock).toHaveBeenCalledWith({ data: { deviceId: "d1" } });
+    });
+  });
+
+  it("calls remove server function when clicking delete button", async () => {
+    mockLoaderData.koboDevices = [
+      {
+        id: "d1",
+        deviceId: "Kobo",
+        status: "REVOKED",
+        lastSyncAt: null,
+        createdAt: new Date().toISOString(),
+        authToken: "tok-1",
+        collections: [],
+      },
+    ];
+
+    const { removeKoboDeviceServerFn } = await import("~/lib/server-fns/kobo-devices");
+    const removeMock = vi.mocked(removeKoboDeviceServerFn);
+    removeMock.mockResolvedValue({} as never);
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+    const deleteButtons = screen.getAllByRole("button").filter((btn) => btn.querySelector(".lucide-trash-2"));
+    const firstDeleteBtn = deleteButtons[0];
+    if (firstDeleteBtn) fireEvent.click(firstDeleteBtn);
+
+    await waitFor(() => {
+      expect(removeMock).toHaveBeenCalledWith({ data: { deviceId: "d1" } });
+    });
+  });
+
+  it("shows last sync time for devices", async () => {
+    mockLoaderData.koboDevices = [
+      {
+        id: "d1",
+        deviceId: "Kobo",
+        status: "ACTIVE",
+        lastSyncAt: new Date(Date.now() - 3600000).toISOString(),
+        createdAt: new Date().toISOString(),
+        authToken: "tok-1",
+        collections: [],
+      },
+    ];
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+
+    expect(screen.getByText(/Last sync:/)).toBeTruthy();
+  });
+
+  it("hides revoke button for revoked devices", async () => {
+    mockLoaderData.koboDevices = [
+      {
+        id: "d1",
+        deviceId: "Kobo",
+        status: "REVOKED",
+        lastSyncAt: null,
+        createdAt: new Date().toISOString(),
+        authToken: "tok-1",
+        collections: [],
+      },
+    ];
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+
+    expect(screen.queryByRole("button", { name: "Revoke" })).toBeNull();
+  });
+
+  it("shows shelf picker when clicking Shelves button", async () => {
+    mockLoaderData.koboDevices = [
+      {
+        id: "d1",
+        deviceId: "Kobo",
+        status: "ACTIVE",
+        lastSyncAt: null,
+        createdAt: new Date().toISOString(),
+        authToken: "tok-1",
+        collections: [],
+      },
+    ];
+    mockLoaderData.shelves = [
+      { id: "s1", name: "Fiction", kind: "MANUAL", formatFilter: "ALL", ownerUserId: null, _count: { items: 3 } },
+      { id: "s2", name: "Non-Fiction", kind: "MANUAL", formatFilter: "ALL", ownerUserId: null, _count: { items: 5 } },
+    ];
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+    fireEvent.click(screen.getByTestId("edit-shelves-btn"));
+
+    expect(screen.getByTestId("shelf-picker")).toBeTruthy();
+    expect(screen.getByText("Fiction (3)")).toBeTruthy();
+    expect(screen.getByText("Non-Fiction (5)")).toBeTruthy();
+  });
+
+  it("toggles shelf selection and calls updateDeviceCollectionsServerFn", async () => {
+    mockLoaderData.koboDevices = [
+      {
+        id: "d1",
+        deviceId: "Kobo",
+        status: "ACTIVE",
+        lastSyncAt: null,
+        createdAt: new Date().toISOString(),
+        authToken: "tok-1",
+        collections: [],
+      },
+    ];
+    mockLoaderData.shelves = [
+      { id: "s1", name: "Fiction", kind: "MANUAL", formatFilter: "ALL", ownerUserId: null, _count: { items: 3 } },
+    ];
+
+    const { updateDeviceCollectionsServerFn } = await import("~/lib/server-fns/kobo-devices");
+    const updateMock = vi.mocked(updateDeviceCollectionsServerFn);
+    updateMock.mockResolvedValue([] as never);
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+    fireEvent.click(screen.getByTestId("edit-shelves-btn"));
+    fireEvent.click(screen.getByText("Fiction (3)"));
+
+    await waitFor(() => {
+      expect(updateMock).toHaveBeenCalledWith({ data: { deviceId: "d1", collectionIds: ["s1"] } });
+    });
+  });
+
+  it("shows syncing shelves when not in edit mode", async () => {
+    mockLoaderData.koboDevices = [
+      {
+        id: "d1",
+        deviceId: "Kobo",
+        status: "ACTIVE",
+        lastSyncAt: null,
+        createdAt: new Date().toISOString(),
+        authToken: "tok-1",
+        collections: [{ collection: { id: "s1", name: "Fiction" } }],
+      },
+    ];
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+
+    expect(screen.getByText("Syncing: Fiction")).toBeTruthy();
+  });
+
+  it("shows no shelves message when no shelves exist", async () => {
+    mockLoaderData.koboDevices = [
+      {
+        id: "d1",
+        deviceId: "Kobo",
+        status: "ACTIVE",
+        lastSyncAt: null,
+        createdAt: new Date().toISOString(),
+        authToken: "tok-1",
+        collections: [],
+      },
+    ];
+    mockLoaderData.shelves = [];
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+    fireEvent.click(screen.getByTestId("edit-shelves-btn"));
+
+    expect(screen.getByText("No shelves created yet.")).toBeTruthy();
+  });
+
+  it("hides shelves button for revoked devices", async () => {
+    mockLoaderData.koboDevices = [
+      {
+        id: "d1",
+        deviceId: "Kobo",
+        status: "REVOKED",
+        lastSyncAt: null,
+        createdAt: new Date().toISOString(),
+        authToken: "tok-1",
+        collections: [],
+      },
+    ];
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+
+    expect(screen.queryByTestId("edit-shelves-btn")).toBeNull();
+  });
+
+  it("closes shelf picker when clicking Shelves button again", async () => {
+    mockLoaderData.koboDevices = [
+      {
+        id: "d1",
+        deviceId: "Kobo",
+        status: "ACTIVE",
+        lastSyncAt: null,
+        createdAt: new Date().toISOString(),
+        authToken: "tok-1",
+        collections: [],
+      },
+    ];
+    mockLoaderData.shelves = [
+      { id: "s1", name: "Fiction", kind: "MANUAL", formatFilter: "ALL", ownerUserId: null, _count: { items: 3 } },
+    ];
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+    fireEvent.click(screen.getByTestId("edit-shelves-btn"));
+
+    expect(screen.getByTestId("shelf-picker")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("edit-shelves-btn"));
+
+    expect(screen.queryByTestId("shelf-picker")).toBeNull();
+  });
+
+  it("removes a shelf when toggling an already-selected shelf", async () => {
+    mockLoaderData.koboDevices = [
+      {
+        id: "d1",
+        deviceId: "Kobo",
+        status: "ACTIVE",
+        lastSyncAt: null,
+        createdAt: new Date().toISOString(),
+        authToken: "tok-1",
+        collections: [{ collection: { id: "s1", name: "Fiction" } }],
+      },
+    ];
+    mockLoaderData.shelves = [
+      { id: "s1", name: "Fiction", kind: "MANUAL", formatFilter: "ALL", ownerUserId: null, _count: { items: 3 } },
+      { id: "s2", name: "Sci-Fi", kind: "MANUAL", formatFilter: "ALL", ownerUserId: null, _count: { items: 2 } },
+    ];
+
+    const { updateDeviceCollectionsServerFn } = await import("~/lib/server-fns/kobo-devices");
+    const updateMock = vi.mocked(updateDeviceCollectionsServerFn);
+    updateMock.mockResolvedValue([] as never);
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+    fireEvent.click(screen.getByTestId("edit-shelves-btn"));
+    fireEvent.click(screen.getByText("Fiction (3)"));
+
+    await waitFor(() => {
+      expect(updateMock).toHaveBeenCalledWith({ data: { deviceId: "d1", collectionIds: [] } });
     });
   });
 });
