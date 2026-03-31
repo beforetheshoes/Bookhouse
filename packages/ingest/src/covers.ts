@@ -54,7 +54,7 @@ export interface CoverDependencies {
   extractEpubCover: (absolutePath: string) => Promise<EpubCoverResult | null>;
   readFile: ReadFileFn;
   detectAdjacentCover: (directory: string, listDirectory?: ListDirectoryFn) => Promise<string | null>;
-  resizeCoverImage: (input: { imageBuffer: Buffer; outputDir: string }, deps: ResizeCoverDeps) => Promise<{ thumbPath: string; mediumPath: string }>;
+  resizeCoverImage: (input: { imageBuffer: Buffer; outputDir: string }) => Promise<{ thumbPath: string; mediumPath: string }>;
   extractColors: (imageBuffer: Buffer) => Promise<string[]>;
   db: CoverDb;
   logger?: CoverLogger;
@@ -182,7 +182,7 @@ export async function processCoverForWork(
   }
 
   const outputDir = path.join(input.coverCacheDir, input.workId);
-  await deps.resizeCoverImage({ imageBuffer, outputDir }, {} as ResizeCoverDeps);
+  await deps.resizeCoverImage({ imageBuffer, outputDir });
 
   let coverColors: string[] | undefined;
   try {

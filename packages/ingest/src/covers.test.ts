@@ -351,6 +351,27 @@ describe("processCoverForWork", () => {
     );
   });
 
+  it("calls resizeCoverImage with only input, not extra deps", async () => {
+    const resizeCoverImage = vi.fn().mockResolvedValue({
+      thumbPath: "/data/covers/work-1/thumb.webp",
+      mediumPath: "/data/covers/work-1/medium.webp",
+    });
+    const deps = createMockDeps({
+      extractEpubCover: vi.fn().mockResolvedValue({
+        buffer: Buffer.from("epub-cover"),
+        mediaType: "image/jpeg",
+      }),
+      resizeCoverImage,
+    });
+
+    await processCoverForWork(createInput(), deps);
+
+    expect(resizeCoverImage).toHaveBeenCalledWith({
+      imageBuffer: Buffer.from("epub-cover"),
+      outputDir: path.join("/data/covers", "work-1"),
+    });
+  });
+
   it("proceeds without colors when extractColors fails", async () => {
     const workUpdate = vi.fn().mockResolvedValue({});
     const deps = createMockDeps({
