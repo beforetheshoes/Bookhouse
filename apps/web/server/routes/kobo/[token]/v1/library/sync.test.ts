@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createSyncHandler } from "./sync";
 import type { SyncHandlerDeps } from "./sync";
 import type { H3Event } from "h3";
-import type { EligibleEdition } from "@bookhouse/kobo";
+import type { EligibleEdition, ReadingProgressRecord } from "@bookhouse/kobo";
 
 const validToken = "a".repeat(64);
 
@@ -57,6 +57,7 @@ function makeDeps(overrides: Partial<SyncHandlerDeps> = {}): SyncHandlerDeps {
     getSyncedBooks: vi.fn().mockResolvedValue([]),
     markSynced: vi.fn().mockResolvedValue(undefined),
     markRemoved: vi.fn().mockResolvedValue(undefined),
+    getReadingProgress: vi.fn().mockResolvedValue([]),
     getBaseUrl: () => "http://localhost:3000",
     setResponseHeader: vi.fn(),
     ...overrides,
@@ -200,5 +201,65 @@ describe("createSyncHandler", () => {
     // Only 100 items sent in this page
     const [, editionIds] = (deps.markSynced as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string[]];
     expect(editionIds).toHaveLength(100);
+  });
+
+  it("fetches reading progress for eligible editions", async () => {
+    const deps = makeDeps({
+      getDeviceCollectionEditions: vi.fn().mockResolvedValue([makeEdition("e1"), makeEdition("e2")]),
+    });
+    const handler = createSyncHandler(deps);
+    await handler(makeEvent());
+
+    expect(deps.getReadingProgress).toHaveBeenCalledWith("u1", ["e1", "e2"]);
+  });
+
+  it("includes ChangedReadingState for already-synced books with Location", async () => {
+    const progressRecords: ReadingProgressRecord[] = [{
+      id: "rp-1",
+      userId: "u1",
+      editionId: "e1",
+      progressKind: "EBOOK",
+      locator: { koboLocation: { Source: "OEBPS/ch01.xhtml", Type: "KoboSpan", Value: "kobo.1.1" } },
+      percent: 42,
+      source: "kobo",
+      updatedAt: new Date("2024-07-01T00:00:00.000Z"),
+    }];
+    const deps = makeDeps({
+      getDeviceCollectionEditions: vi.fn().mockResolvedValue([makeEdition("e1")]),
+      getSyncedBooks: vi.fn().mockResolvedValue([{ editionId: "e1", removedAt: null }]),
+      getReadingProgress: vi.fn().mockResolvedValue(progressRecords),
+    });
+    const handler = createSyncHandler(deps);
+    const result = await handler(makeEvent()) as Record<string, unknown>[];
+
+    const changedStates = result.filter(
+      (r) => "ChangedReadingState" in r,
+    ) as { ChangedReadingState: { ReadingState: { EntitlementId: string; CurrentBookmark: { ProgressPercent: number } } } }[];
+    expect(changedStates).toHaveLength(1);
+    expect(changedStates.at(0)?.ChangedReadingState.ReadingState.EntitlementId).toBe("e1");
+    expect(changedStates.at(0)?.ChangedReadingState.ReadingState.CurrentBookmark.ProgressPercent).toBe(42);
+  });
+
+  it("includes reading state in NewEntitlement when progress exists", async () => {
+    const progressRecords: ReadingProgressRecord[] = [{
+      id: "rp-1",
+      userId: "u1",
+      editionId: "e1",
+      progressKind: "EBOOK",
+      locator: {},
+      percent: 75,
+      source: "kobo",
+      updatedAt: new Date("2024-07-01T00:00:00.000Z"),
+    }];
+    const deps = makeDeps({
+      getDeviceCollectionEditions: vi.fn().mockResolvedValue([makeEdition("e1")]),
+      getReadingProgress: vi.fn().mockResolvedValue(progressRecords),
+    });
+    const handler = createSyncHandler(deps);
+    const result = await handler(makeEvent()) as Record<string, unknown>[];
+
+    const item = result.at(0) as { NewEntitlement: { ReadingState: { StatusInfo: { Status: string }; CurrentBookmark: { ProgressPercent: number } } } };
+    expect(item.NewEntitlement.ReadingState.StatusInfo.Status).toBe("Reading");
+    expect(item.NewEntitlement.ReadingState.CurrentBookmark.ProgressPercent).toBe(75);
   });
 });

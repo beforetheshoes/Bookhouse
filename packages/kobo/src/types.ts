@@ -13,6 +13,8 @@ export interface KoboReadingState {
   };
   CurrentBookmark: {
     LastModified: string;
+    Location?: KoboLocation | null;
+    ProgressPercent?: number;
   };
 }
 
@@ -87,6 +89,49 @@ export interface SyncToken {
 export interface SyncResult {
   newEntitlements: KoboEntitlement[];
   removedIds: string[];
+  changedReadingStates: KoboReadingState[];
+}
+
+export interface KoboRequestResult {
+  RequestResult: string;
+  UpdateResults: KoboUpdateResult[];
+}
+
+export interface KoboUpdateResult {
+  EntitlementId: string;
+  CurrentBookmarkResult: { Result: string };
+  StatisticsResult: { Result: string };
+  StatusInfoResult: { Result: string };
+}
+
+export type LocatorValue = string | number | boolean | null | LocatorValue[] | { [key: string]: LocatorValue };
+
+export interface KoboLocation {
+  Source: string;
+  Type: string;
+  Value: string;
+}
+
+export interface LocatorData {
+  koboLocation?: KoboLocation;
+}
+
+export interface ReadingProgressRecord {
+  id: string;
+  userId: string;
+  editionId: string;
+  progressKind: string;
+  locator: LocatorData;
+  percent: number | null;
+  source: string | null;
+  updatedAt: Date;
+}
+
+export interface KoboStateUpdatePayload {
+  status: string;
+  progress: number;
+  location: KoboLocation | null;
+  lastModified: string;
 }
 
 export interface EligibleEdition {

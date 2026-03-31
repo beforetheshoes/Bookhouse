@@ -5,7 +5,7 @@ import {
   buildSyncResponse,
 } from "./sync";
 import type { FindEligibleEditionsDeps, SyncedBookRecord } from "./sync";
-import type { EligibleEdition } from "./types";
+import type { EligibleEdition, ReadingProgressRecord } from "./types";
 import type { MetadataOptions } from "./metadata";
 
 const makeEdition = (id: string): EligibleEdition => ({
@@ -136,5 +136,84 @@ describe("buildSyncResponse", () => {
     const result = buildSyncResponse([], [], options);
     expect(result.newEntitlements).toEqual([]);
     expect(result.removedIds).toEqual([]);
+  });
+
+  it("passes progress to entitlement when progressMap provided", () => {
+    const toAdd = [makeEdition("e1")];
+    const progressMap = new Map<string, ReadingProgressRecord>([
+      ["e1", {
+        id: "rp-1",
+        userId: "u1",
+        editionId: "e1",
+        progressKind: "EBOOK",
+        locator: {},
+        percent: 65,
+        source: "kobo",
+        updatedAt: new Date("2024-07-01T00:00:00.000Z"),
+      }],
+    ]);
+    const result = buildSyncResponse(toAdd, [], options, progressMap);
+    expect(result.newEntitlements.at(0)?.ReadingState.StatusInfo.Status).toBe("Reading");
+    expect(result.newEntitlements.at(0)?.ReadingState.CurrentBookmark.ProgressPercent).toBe(65);
+  });
+
+  it("falls back to ReadyToRead when edition not in progressMap", () => {
+    const toAdd = [makeEdition("e1")];
+    const progressMap = new Map<string, ReadingProgressRecord>();
+    const result = buildSyncResponse(toAdd, [], options, progressMap);
+    expect(result.newEntitlements.at(0)?.ReadingState.StatusInfo.Status).toBe("ReadyToRead");
+  });
+
+  it("returns changedReadingStates for progress entries with Location not in toAdd", () => {
+    const koboLocation = { Source: "OEBPS/ch02.xhtml", Type: "KoboSpan", Value: "kobo.2.1" };
+    const toAdd = [makeEdition("e1")];
+    const progressMap = new Map<string, ReadingProgressRecord>([
+      ["e1", {
+        id: "rp-1", userId: "u1", editionId: "e1", progressKind: "EBOOK",
+        locator: { koboLocation }, percent: 50, source: "kobo",
+        updatedAt: new Date("2024-07-01T00:00:00.000Z"),
+      }],
+      ["e2", {
+        id: "rp-2", userId: "u1", editionId: "e2", progressKind: "EBOOK",
+        locator: { koboLocation }, percent: 75, source: "kobo",
+        updatedAt: new Date("2024-07-01T00:00:00.000Z"),
+      }],
+    ]);
+    const result = buildSyncResponse(toAdd, [], options, progressMap);
+    // e1 is in toAdd so it goes in newEntitlements, not changedReadingStates
+    expect(result.newEntitlements).toHaveLength(1);
+    expect(result.changedReadingStates).toHaveLength(1);
+    expect(result.changedReadingStates.at(0)?.EntitlementId).toBe("e2");
+    expect(result.changedReadingStates.at(0)?.CurrentBookmark.ProgressPercent).toBe(75);
+  });
+
+  it("excludes progress without Location from changedReadingStates", () => {
+    const progressMap = new Map<string, ReadingProgressRecord>([
+      ["e1", {
+        id: "rp-1", userId: "u1", editionId: "e1", progressKind: "EBOOK",
+        locator: {}, percent: 50, source: "manual",
+        updatedAt: new Date("2024-07-01T00:00:00.000Z"),
+      }],
+    ]);
+    const result = buildSyncResponse([], [], options, progressMap);
+    expect(result.changedReadingStates).toHaveLength(0);
+  });
+
+  it("returns empty changedReadingStates when all progress is in toAdd", () => {
+    const toAdd = [makeEdition("e1")];
+    const progressMap = new Map<string, ReadingProgressRecord>([
+      ["e1", {
+        id: "rp-1", userId: "u1", editionId: "e1", progressKind: "EBOOK",
+        locator: {}, percent: 50, source: "kobo",
+        updatedAt: new Date("2024-07-01T00:00:00.000Z"),
+      }],
+    ]);
+    const result = buildSyncResponse(toAdd, [], options, progressMap);
+    expect(result.changedReadingStates).toHaveLength(0);
+  });
+
+  it("returns empty changedReadingStates when no progressMap provided", () => {
+    const result = buildSyncResponse([], [], options);
+    expect(result.changedReadingStates).toHaveLength(0);
   });
 });

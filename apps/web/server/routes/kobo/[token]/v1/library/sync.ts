@@ -1,7 +1,7 @@
 import { defineEventHandler, getQuery, setResponseHeader } from "h3";
 import type { H3Event } from "h3";
 import type { KoboAuthDeps } from "../../../auth-helper";
-import type { EligibleEdition } from "@bookhouse/kobo";
+import type { EligibleEdition, ReadingProgressRecord, LocatorData } from "@bookhouse/kobo";
 import type { SyncedBookRecord } from "@bookhouse/kobo";
 
 const SYNC_ITEM_LIMIT = 100;
@@ -12,6 +12,7 @@ export interface SyncHandlerDeps {
   getSyncedBooks: (deviceId: string) => Promise<SyncedBookRecord[]>;
   markSynced: (deviceId: string, editionIds: string[]) => Promise<void>;
   markRemoved: (deviceId: string, editionIds: string[]) => Promise<void>;
+  getReadingProgress: (userId: string, editionIds: string[]) => Promise<ReadingProgressRecord[]>;
   getBaseUrl: () => string;
   setResponseHeader: (event: H3Event, name: string, value: string) => void;
 }
@@ -46,11 +47,18 @@ export function createSyncHandler(deps: SyncHandlerDeps) {
     const additionsRemaining = toAdd.length > SYNC_ITEM_LIMIT;
     const pageRemove = additionsRemaining ? [] : toRemove;
 
+    // Fetch reading progress for eligible editions to include in sync response
+    const eligibleIds = eligible.map((e) => e.id);
+    const progressRecords = eligibleIds.length > 0
+      ? await deps.getReadingProgress(device.userId, eligibleIds)
+      : [];
+    const progressMap = new Map(progressRecords.map((p) => [p.editionId, p]));
+
     const baseUrl = deps.getBaseUrl();
     const result = buildSyncResponse(pageAdd, pageRemove, {
       baseUrl,
       deviceToken: device.authToken,
-    });
+    }, progressMap);
 
     if (pageAdd.length > 0) {
       await deps.markSynced(
@@ -76,6 +84,10 @@ export function createSyncHandler(deps: SyncHandlerDeps) {
           BookEntitlement: { Id: id, IsRemoved: true },
         },
       });
+    }
+
+    for (const readingState of result.changedReadingStates) {
+      syncResults.push({ ChangedReadingState: { ReadingState: readingState } });
     }
 
     // One-time cleanup: remove legacy UUID-format entries from old syncs
@@ -221,6 +233,21 @@ export default defineEventHandler(async (event) => {
         where: { koboDeviceId: deviceId, editionId: { in: editionIds } },
         data: { removedAt: new Date() },
       });
+    },
+    getReadingProgress: async (userId, editionIds) => {
+      const records = await db.readingProgress.findMany({
+        where: { userId, editionId: { in: editionIds }, progressKind: "EBOOK" },
+      });
+      return records.map((r) => ({
+        id: r.id,
+        userId: r.userId,
+        editionId: r.editionId,
+        progressKind: r.progressKind,
+        locator: r.locator as LocatorData,
+        percent: r.percent,
+        source: r.source,
+        updatedAt: r.updatedAt,
+      }));
     },
     getBaseUrl: () => process.env.KOBO_API_BASE_URL ?? process.env.APP_URL ?? "http://localhost:3000",
     setResponseHeader,

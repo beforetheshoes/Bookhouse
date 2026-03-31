@@ -1,5 +1,6 @@
-import type { EligibleEdition, SyncResult } from "./types";
+import type { EligibleEdition, ReadingProgressRecord, SyncResult } from "./types";
 import { buildEntitlement } from "./metadata";
+import { formatReadingState } from "./reading-state";
 import type { MetadataOptions } from "./metadata";
 
 export interface SyncedBookRecord {
@@ -39,13 +40,26 @@ export function buildSyncResponse(
   toAdd: EligibleEdition[],
   toRemove: string[],
   options: MetadataOptions,
+  progressMap?: Map<string, ReadingProgressRecord>,
 ): SyncResult {
   const newEntitlements = toAdd.map((edition) =>
-    buildEntitlement(edition, options),
+    buildEntitlement(edition, options, progressMap?.get(edition.id) ?? null),
   );
+
+  // Build ChangedReadingState entries for already-synced books with progress.
+  // Only include records that have a valid Location (from Kobo device);
+  // manual-source records lack Location data and would confuse the device.
+  // Use the current time for timestamps so the Kobo treats them as newer
+  // than its local state (which uses the time of the last sync).
+  const addedIds = new Set(toAdd.map((e) => e.id));
+  const now = new Date();
+  const changedReadingStates = [...(progressMap?.entries() ?? [])]
+    .filter(([id, progress]) => !addedIds.has(id) && progress.locator.koboLocation != null)
+    .map(([id, progress]) => formatReadingState({ ...progress, updatedAt: now }, id));
 
   return {
     newEntitlements,
     removedIds: toRemove,
+    changedReadingStates,
   };
 }

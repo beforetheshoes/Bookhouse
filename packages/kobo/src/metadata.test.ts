@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { buildEntitlement, buildBookMetadata, buildContentUrls, toKoboId } from "./metadata";
-import type { EligibleEdition } from "./types";
+import type { EligibleEdition, ReadingProgressRecord } from "./types";
 import type { MetadataOptions } from "./metadata";
 
 const mockEdition: EligibleEdition = {
@@ -114,6 +114,44 @@ describe("buildEntitlement", () => {
   it("does not include ContentUrls inside the entitlement", () => {
     const result = buildEntitlement(mockEdition, options);
     expect(result).not.toHaveProperty("ContentUrls");
+  });
+
+  it("uses real reading state when progress is provided", () => {
+    const progress: ReadingProgressRecord = {
+      id: "rp-1",
+      userId: "u1",
+      editionId: "ed-1",
+      progressKind: "EBOOK",
+      locator: { koboLocation: { Source: "OEBPS/xhtml/ch01.xhtml", Type: "KoboSpan", Value: "kobo.1.1" } },
+      percent: 50,
+      source: "kobo",
+      updatedAt: new Date("2024-07-01T00:00:00.000Z"),
+    };
+    const result = buildEntitlement(mockEdition, options, progress);
+    expect(result.ReadingState.StatusInfo.Status).toBe("Reading");
+    expect(result.ReadingState.StatusInfo.TimesStartedReading).toBe(1);
+    expect(result.ReadingState.CurrentBookmark.ProgressPercent).toBe(50);
+  });
+
+  it("uses ReadyToRead when progress is explicitly null", () => {
+    const result = buildEntitlement(mockEdition, options, null);
+    expect(result.ReadingState.StatusInfo.Status).toBe("ReadyToRead");
+    expect(result.ReadingState.StatusInfo.TimesStartedReading).toBe(0);
+  });
+
+  it("maps 100% progress to Finished in entitlement", () => {
+    const progress: ReadingProgressRecord = {
+      id: "rp-2",
+      userId: "u1",
+      editionId: "ed-1",
+      progressKind: "EBOOK",
+      locator: {},
+      percent: 100,
+      source: "kobo",
+      updatedAt: new Date("2024-07-01T00:00:00.000Z"),
+    };
+    const result = buildEntitlement(mockEdition, options, progress);
+    expect(result.ReadingState.StatusInfo.Status).toBe("Finished");
   });
 });
 

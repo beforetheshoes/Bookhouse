@@ -21,7 +21,7 @@ const mockDelete = vi.fn();
 const mockDeviceCollectionDeleteMany = vi.fn();
 const mockDeviceCollectionCreateMany = vi.fn();
 const mockDeviceCollectionFindMany = vi.fn();
-const mockUserFindFirstOrThrow = vi.fn();
+const mockGetCurrentUser = vi.fn();
 
 vi.mock("@bookhouse/db", () => ({
   db: {
@@ -36,10 +36,11 @@ vi.mock("@bookhouse/db", () => ({
       createMany: mockDeviceCollectionCreateMany,
       findMany: mockDeviceCollectionFindMany,
     },
-    user: {
-      findFirstOrThrow: mockUserFindFirstOrThrow,
-    },
   },
+}));
+
+vi.mock("~/lib/auth-server", () => ({
+  getCurrentUser: mockGetCurrentUser,
 }));
 
 const mockGenerateAuthToken = vi.fn().mockReturnValue("a".repeat(64));
@@ -61,7 +62,7 @@ import {
 describe("kobo-devices server functions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUserFindFirstOrThrow.mockResolvedValue({ id: "u1" });
+    mockGetCurrentUser.mockResolvedValue({ id: "u1" });
   });
 
   describe("getKoboDevicesServerFn", () => {
@@ -111,6 +112,16 @@ describe("kobo-devices server functions", () => {
       });
       expect(mockGenerateAuthToken).toHaveBeenCalled();
       expect(mockGenerateUserKey).toHaveBeenCalledWith("u1", "My Kobo");
+    });
+
+    it("throws when user is not authenticated", async () => {
+      mockGetCurrentUser.mockResolvedValue(null);
+
+      await expect(
+        addKoboDeviceServerFn({ data: { deviceName: "My Kobo" } }),
+      ).rejects.toThrow("Not authenticated");
+
+      expect(mockCreate).not.toHaveBeenCalled();
     });
   });
 

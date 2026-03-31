@@ -65,7 +65,7 @@ export const updateReadingProgressServerFn = createServerFn({
     if (existing) {
       return db.readingProgress.update({
         where: { id: existing.id },
-        data: { percent: data.percent, locator: {} },
+        data: { percent: data.percent, locator: {}, source: "manual" },
       });
     }
 
@@ -76,6 +76,7 @@ export const updateReadingProgressServerFn = createServerFn({
         progressKind: data.progressKind,
         percent: data.percent,
         locator: {},
+        source: "manual",
       },
     });
   });
