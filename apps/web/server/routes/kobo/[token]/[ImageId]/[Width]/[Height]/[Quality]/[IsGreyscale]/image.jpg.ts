@@ -13,15 +13,13 @@ export default defineEventHandler(async (event) => {
   console.log(`[kobo] IMAGE ${imageId} (${params.Width}x${params.Height})`);
 
   const { db } = await import("@bookhouse/db");
-  const { existsSync, createReadStream, statSync } = await import("node:fs");
-  const { Readable } = await import("node:stream");
-  const { sendStream } = await import("h3");
+  const { existsSync } = await import("node:fs");
 
   let coverRef: string | null = null;
 
   // Strip version suffix (e.g., "cmn9jp...-v2" → "cmn9jp...")
   const versionMatch = IS_CUID_VERSIONED.exec(imageId);
-  const lookupId = versionMatch ? versionMatch[1] : imageId;
+  const lookupId = versionMatch ? versionMatch[1] as string : imageId;
 
   if (IS_CUID.test(lookupId)) {
     // Direct edition ID lookup
