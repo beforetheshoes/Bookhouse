@@ -137,7 +137,7 @@ describe("updateReadingProgressServerFn", () => {
     });
     expect(readingProgressUpdateMock).toHaveBeenCalledWith({
       where: { id: "rp1" },
-      data: { percent: 50, locator: {} },
+      data: { percent: 50, locator: {}, source: "manual" },
     });
     expect(result).toBe(updated);
   });
@@ -159,6 +159,7 @@ describe("updateReadingProgressServerFn", () => {
         progressKind: "AUDIO",
         percent: 75,
         locator: {},
+        source: "manual",
       },
     });
     expect(result).toBe(created);

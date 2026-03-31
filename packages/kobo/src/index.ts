@@ -31,6 +31,12 @@ export {
 
 export type { SyncedBookRecord, FindEligibleEditionsDeps } from "./sync";
 
+export {
+  formatReadingState,
+  parseStateUpdate,
+  resolveConflict,
+} from "./reading-state";
+
 export { getKepubCachePath, convertToKepub } from "./kepub";
 
 export type { KepubConvertDeps } from "./kepub";
@@ -44,4 +50,12 @@ export type {
   SyncToken,
   SyncResult,
   EligibleEdition,
+  ReadingProgressRecord,
+  KoboStateUpdatePayload,
+  KoboReadingState,
+  LocatorData,
+  LocatorValue,
+  KoboLocation,
+  KoboRequestResult,
+  KoboUpdateResult,
 } from "./types";

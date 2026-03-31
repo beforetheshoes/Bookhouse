@@ -30,14 +30,17 @@ export const addKoboDeviceServerFn = createServerFn({
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
     const { generateAuthToken, generateUserKey } = await import("@bookhouse/kobo");
+    const { getCurrentUser } = await import("~/lib/auth-server");
 
-    const userId = await getFirstUserId();
+    const user = await getCurrentUser();
+    if (!user) throw new Error("Not authenticated");
+
     const authToken = generateAuthToken();
-    const userKey = generateUserKey(userId, data.deviceName);
+    const userKey = generateUserKey(user.id, data.deviceName);
 
     return db.koboDevice.create({
       data: {
-        userId,
+        userId: user.id,
         deviceId: data.deviceName,
         authToken,
         userKey,
@@ -107,8 +110,3 @@ export const updateDeviceCollectionsServerFn = createServerFn({
     });
   });
 
-async function getFirstUserId(): Promise<string> {
-  const { db } = await import("@bookhouse/db");
-  const user = await db.user.findFirstOrThrow();
-  return user.id;
-}

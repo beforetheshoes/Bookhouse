@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { BookOpen, ChevronRight, ImagePlus, Loader2, Search, Sparkles, Trash2, Upload } from "lucide-react";
+import { BookOpen, ChevronRight, ImagePlus, Loader2, Pencil, Search, Sparkles, Trash2, Upload } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -34,7 +34,7 @@ import {
   getWorkDetailServerFn,
   type WorkDetail,
 } from "~/lib/server-fns/work-detail";
-import { getReadingProgressServerFn } from "~/lib/server-fns/reading-progress";
+import { getReadingProgressServerFn, updateReadingProgressServerFn } from "~/lib/server-fns/reading-progress";
 import { deleteWorkServerFn, deleteEditionServerFn } from "~/lib/server-fns/deletion";
 import { EditableField } from "~/components/editable-field";
 import { EditableTagField } from "~/components/editable-tag-field";
@@ -114,6 +114,15 @@ function WorkDetailPage() {
   useEffect(() => {
     setBookColors(coverColors);
   }, [coverColors, setBookColors]);
+
+  const maxPercent = progress.length > 0
+    ? Math.max(...progress.map((p) => p.percent ?? 0))
+    : null;
+
+  async function handleUpdateProgress(editionId: string, percent: number, progressKind: string) {
+    await updateReadingProgressServerFn({ data: { editionId, percent, progressKind: progressKind as "EBOOK" | "AUDIO" | "READALOUD" } });
+    void router.invalidate();
+  }
 
   const firstPublishYear = (() => {
     let earliest: Date | null = null;
@@ -245,6 +254,12 @@ function WorkDetailPage() {
             data-testid="cover-file-input"
             onChange={(e) => { void handleCoverUpload(e); }}
           />
+          {maxPercent !== null && (
+            <div className="mt-2 text-center" data-testid="cover-progress">
+              <span className="text-xl font-bold tabular-nums">{String(maxPercent)}%</span>
+              <p className="text-xs text-muted-foreground">read</p>
+            </div>
+          )}
         </div>
 
         <div className="flex-1 space-y-4">
@@ -364,6 +379,19 @@ function WorkDetailPage() {
         onApplied={() => { setCoverVersion((v) => v + 1); void router.invalidate(); }}
       />
 
+      <div className="space-y-4">
+        <h2 className="text-lg font-semibold">Reading Progress</h2>
+        {trackingMode === "BY_WORK" ? (
+          progress.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No reading progress yet</p>
+          ) : (
+            <WorkProgress progress={progress} />
+          )
+        ) : (
+          <EditionProgress progress={progress} editions={work.editions} onUpdate={handleUpdateProgress} />
+        )}
+      </div>
+
       {work.editions.length > 0 && (
         <div className="space-y-4">
           <h2 className="text-lg font-semibold">Editions</h2>
@@ -396,17 +424,6 @@ function WorkDetailPage() {
           </Tabs>
         </div>
       )}
-
-      <div className="space-y-4">
-        <h2 className="text-lg font-semibold">Reading Progress</h2>
-        {progress.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No reading progress yet</p>
-        ) : trackingMode === "BY_WORK" ? (
-          <WorkProgress progress={progress} />
-        ) : (
-          <EditionProgress progress={progress} editions={work.editions} />
-        )}
-      </div>
 
       <Dialog open={deleteWorkOpen} onOpenChange={setDeleteWorkOpen}>
         <DialogContent>
@@ -468,29 +485,103 @@ function WorkProgress({ progress }: { progress: { percent: number | null }[] }) 
   );
 }
 
+function progressKindForEdition(formatFamily: string): "EBOOK" | "AUDIO" | "READALOUD" {
+  if (formatFamily === "AUDIOBOOK") return "AUDIO";
+  return "EBOOK";
+}
+
 function EditionProgress({
   progress,
   editions,
+  onUpdate,
 }: {
-  progress: { editionId: string; progressKind: string; percent: number | null }[];
+  progress: { editionId: string; progressKind: string; percent: number | null; source: string | null }[];
   editions: WorkDetail["editions"];
+  onUpdate: (editionId: string, percent: number, progressKind: string) => Promise<void>;
 }) {
-  const editionMap = new Map(editions.map((e) => [e.id, e]));
+  const progressMap = new Map(progress.map((p) => [p.editionId, p]));
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave(editionId: string, progressKind: string) {
+    const val = parseInt(editValue, 10);
+    if (isNaN(val) || val < 0 || val > 100) return;
+    setSaving(true);
+    try {
+      await onUpdate(editionId, val, progressKind);
+      setEditingId(null);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="space-y-3">
-      {progress.map((p) => {
-        const edition = editionMap.get(p.editionId);
+      {editions.map((edition) => {
+        const p = progressMap.get(edition.id);
+        const percent = p?.percent ?? 0;
+        const progressKind = p?.progressKind ?? progressKindForEdition(edition.formatFamily);
+        const isEditing = editingId === edition.id;
+
         return (
-          <div key={`${p.editionId}-${p.progressKind}`} className="space-y-1">
+          <div key={edition.id} className="space-y-1">
             <div className="flex items-center gap-2 text-sm">
-              {edition && <Badge variant="secondary">{edition.formatFamily}</Badge>}
-              <span className="text-muted-foreground">{p.progressKind}</span>
+              <Badge variant="secondary">{edition.formatFamily}</Badge>
+              {p?.source && <Badge variant="outline" className="text-xs">via {p.source}</Badge>}
             </div>
             <div className="flex items-center gap-2">
               <div className="flex-1">
-                <ProgressBar percent={p.percent} />
+                <ProgressBar percent={percent} />
               </div>
-              <span className="text-sm text-muted-foreground">{String(p.percent ?? 0)}%</span>
+              {isEditing ? (
+                <div className="flex items-center gap-1">
+                  <input
+                    data-testid={`progress-input-${edition.id}`}
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={editValue}
+                    onChange={(e) => { setEditValue(e.target.value); }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") { void handleSave(edition.id, progressKind); }
+                      if (e.key === "Escape") { setEditingId(null); }
+                    }}
+                    className="w-16 rounded border px-2 py-0.5 text-sm text-right"
+                    autoFocus
+                    disabled={saving}
+                  />
+                  <span className="text-sm">%</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={saving}
+                    onClick={() => { void handleSave(edition.id, progressKind); }}
+                    data-testid={`progress-save-${edition.id}`}
+                  >
+                    {saving ? <Loader2 className="size-3 animate-spin" /> : "Save"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={saving}
+                    onClick={() => { setEditingId(null); }}
+                    data-testid={`progress-cancel-${edition.id}`}
+                  >
+                    ✕
+                  </Button>
+                </div>
+              ) : (
+                <button
+                  className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground group"
+                  onClick={() => { setEditingId(edition.id); setEditValue(String(percent)); }}
+                  data-testid={`progress-edit-${edition.id}`}
+                  aria-label={`Edit progress for ${edition.formatFamily}`}
+                >
+                  <span>{String(percent)}%</span>
+                  <Pencil className="size-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                </button>
+              )}
             </div>
           </div>
         );

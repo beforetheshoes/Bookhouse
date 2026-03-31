@@ -45,6 +45,7 @@ interface MockProgress {
   editionId: string;
   progressKind: string;
   percent: number | null;
+  source?: string | null;
 }
 
 let mockLoaderData: { work: MockWork; progress: MockProgress[]; trackingMode: string; contributorNames: string[]; smtpConfigured: boolean; kindleConfigured: boolean; shelves: { id: string; name: string; isMember: boolean }[] } = {
@@ -460,7 +461,7 @@ describe("WorkDetailPage", () => {
     const { Route } = await import("./library.$workId");
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
-    expect(screen.getByText("EBOOK")).toBeTruthy();
+    expect(screen.getAllByText("EBOOK").length).toBeGreaterThanOrEqual(1);
   });
 
 
@@ -525,7 +526,7 @@ describe("WorkDetailPage", () => {
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
     expect(screen.getByRole("progressbar")).toBeTruthy();
-    expect(screen.getByText("42%")).toBeTruthy();
+    expect(screen.getAllByText("42%").length).toBeGreaterThanOrEqual(1);
     // EBOOK appears in both editions section and progress section
     expect(screen.getAllByText("EBOOK").length).toBeGreaterThanOrEqual(2);
   });
@@ -540,7 +541,7 @@ describe("WorkDetailPage", () => {
     render(<Page />);
     const bars = screen.getAllByRole("progressbar");
     expect(bars).toHaveLength(1);
-    expect(screen.getByText("42%")).toBeTruthy();
+    expect(screen.getAllByText("42%").length).toBeGreaterThanOrEqual(1);
   });
 
   it("renders BY_WORK with null percent treated as 0", async () => {
@@ -551,7 +552,7 @@ describe("WorkDetailPage", () => {
     const { Route } = await import("./library.$workId");
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
-    expect(screen.getByText("0%")).toBeTruthy();
+    expect(screen.getAllByText("0%").length).toBeGreaterThanOrEqual(1);
   });
 
   it("renders BY_EDITION with null percent treated as 0", async () => {
@@ -562,15 +563,26 @@ describe("WorkDetailPage", () => {
     const { Route } = await import("./library.$workId");
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
-    expect(screen.getByText("0%")).toBeTruthy();
+    expect(screen.getAllByText("0%").length).toBeGreaterThanOrEqual(1);
   });
 
-  it("shows no progress message when empty", async () => {
+  it("shows no progress message in BY_WORK mode when empty", async () => {
     mockLoaderData.progress = [];
+    mockLoaderData.trackingMode = "BY_WORK";
     const { Route } = await import("./library.$workId");
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
     expect(screen.getByText("No reading progress yet")).toBeTruthy();
+  });
+
+  it("shows 0% for edition in BY_EDITION mode when no progress recorded", async () => {
+    mockLoaderData.progress = [];
+    mockLoaderData.trackingMode = "BY_EDITION";
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    expect(screen.getAllByText("0%").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole("progressbar")).toBeTruthy();
   });
 
   it("renders BY_WORK with max percent from multiple editions", async () => {
@@ -598,7 +610,7 @@ describe("WorkDetailPage", () => {
     render(<Page />);
     const bars = screen.getAllByRole("progressbar");
     expect(bars).toHaveLength(1);
-    expect(screen.getByText("75%")).toBeTruthy();
+    expect(screen.getAllByText("75%").length).toBeGreaterThanOrEqual(1);
   });
 
   it("renders BY_EDITION with multiple edition progress entries", async () => {
@@ -626,8 +638,229 @@ describe("WorkDetailPage", () => {
     render(<Page />);
     const bars = screen.getAllByRole("progressbar");
     expect(bars).toHaveLength(2);
-    expect(screen.getByText("30%")).toBeTruthy();
-    expect(screen.getByText("75%")).toBeTruthy();
+    expect(screen.getAllByText("30%").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("75%").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("uses AUDIO progressKind when saving for AUDIOBOOK edition with no existing record", async () => {
+    updateReadingProgressServerFnMock.mockResolvedValue({});
+    mockLoaderData.work.editions = [{
+      id: "edition-1",
+      formatFamily: "AUDIOBOOK",
+      publisher: "DAW Books",
+      publishedAt: "2007-03-27T00:00:00.000Z",
+      isbn13: "9780756404079",
+      isbn10: null,
+      asin: "B003HV0TN2",
+      language: "en",
+      pageCount: null,
+      editedFields: [],
+      contributors: [{ role: "AUTHOR", contributor: { id: "contrib-1", nameDisplay: "Patrick Rothfuss" } }],
+      editionFiles: [{ id: "ef-1", role: "PRIMARY", fileAsset: { id: "fa-1", basename: "the-name-of-the-wind.epub", sizeBytes: 1048576n, mediaKind: "EPUB", availabilityStatus: "PRESENT" } }],
+    }];
+    mockLoaderData.progress = [];
+    mockLoaderData.trackingMode = "BY_EDITION";
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    fireEvent.click(screen.getByTestId("progress-edit-edition-1"));
+    fireEvent.change(screen.getByTestId("progress-input-edition-1"), { target: { value: "20" } });
+    fireEvent.click(screen.getByTestId("progress-save-edition-1"));
+    await waitFor(() => {
+      expect(updateReadingProgressServerFnMock).toHaveBeenCalledWith({
+        data: { editionId: "edition-1", percent: 20, progressKind: "AUDIO" },
+      });
+    });
+  });
+
+  it("uses EBOOK progressKind when saving for non-AUDIOBOOK edition with no existing record", async () => {
+    updateReadingProgressServerFnMock.mockResolvedValue({});
+    mockLoaderData.progress = [];
+    mockLoaderData.trackingMode = "BY_EDITION";
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    fireEvent.click(screen.getByTestId("progress-edit-edition-1"));
+    fireEvent.change(screen.getByTestId("progress-input-edition-1"), { target: { value: "10" } });
+    fireEvent.click(screen.getByTestId("progress-save-edition-1"));
+    await waitFor(() => {
+      expect(updateReadingProgressServerFnMock).toHaveBeenCalledWith({
+        data: { editionId: "edition-1", percent: 10, progressKind: "EBOOK" },
+      });
+    });
+  });
+
+  it("shows cover-area progress display when progress exists", async () => {
+    mockLoaderData.progress = [
+      { id: "rp1", editionId: "edition-1", progressKind: "EBOOK", percent: 55 },
+    ];
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    expect(screen.getByTestId("cover-progress")).toBeTruthy();
+    expect(screen.getByText("read")).toBeTruthy();
+  });
+
+  it("hides cover-area progress display when no progress", async () => {
+    mockLoaderData.progress = [];
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    expect(screen.queryByTestId("cover-progress")).toBeNull();
+  });
+
+  it("shows max percent in cover area when multiple progress records", async () => {
+    mockLoaderData.work.editions.push({
+      id: "edition-2",
+      formatFamily: "AUDIOBOOK",
+      publisher: null,
+      publishedAt: null,
+      isbn13: null,
+      isbn10: null,
+      asin: null,
+      language: null,
+      pageCount: null,
+      editedFields: [],
+      contributors: [],
+      editionFiles: [],
+    });
+    mockLoaderData.progress = [
+      { id: "rp1", editionId: "edition-1", progressKind: "EBOOK", percent: 20 },
+      { id: "rp2", editionId: "edition-2", progressKind: "AUDIO", percent: 60 },
+    ];
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    const coverProgress = screen.getByTestId("cover-progress");
+    expect(coverProgress.textContent).toContain("60");
+  });
+
+  it("enters edit mode when percent button is clicked", async () => {
+    mockLoaderData.progress = [
+      { id: "rp1", editionId: "edition-1", progressKind: "EBOOK", percent: 42 },
+    ];
+    mockLoaderData.trackingMode = "BY_EDITION";
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    fireEvent.click(screen.getByTestId("progress-edit-edition-1"));
+    expect(screen.getByTestId("progress-input-edition-1")).toBeTruthy();
+    expect(screen.getByTestId("progress-save-edition-1")).toBeTruthy();
+    expect(screen.getByTestId("progress-cancel-edition-1")).toBeTruthy();
+  });
+
+  it("cancels edit mode when cancel button clicked", async () => {
+    mockLoaderData.progress = [
+      { id: "rp1", editionId: "edition-1", progressKind: "EBOOK", percent: 42 },
+    ];
+    mockLoaderData.trackingMode = "BY_EDITION";
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    fireEvent.click(screen.getByTestId("progress-edit-edition-1"));
+    fireEvent.click(screen.getByTestId("progress-cancel-edition-1"));
+    expect(screen.queryByTestId("progress-input-edition-1")).toBeNull();
+  });
+
+  it("cancels edit mode when Escape key pressed", async () => {
+    mockLoaderData.progress = [
+      { id: "rp1", editionId: "edition-1", progressKind: "EBOOK", percent: 42 },
+    ];
+    mockLoaderData.trackingMode = "BY_EDITION";
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    fireEvent.click(screen.getByTestId("progress-edit-edition-1"));
+    fireEvent.keyDown(screen.getByTestId("progress-input-edition-1"), { key: "Escape" });
+    expect(screen.queryByTestId("progress-input-edition-1")).toBeNull();
+  });
+
+  it("saves progress when Save button clicked", async () => {
+    updateReadingProgressServerFnMock.mockResolvedValue({});
+    mockLoaderData.progress = [
+      { id: "rp1", editionId: "edition-1", progressKind: "EBOOK", percent: 42 },
+    ];
+    mockLoaderData.trackingMode = "BY_EDITION";
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    fireEvent.click(screen.getByTestId("progress-edit-edition-1"));
+    fireEvent.change(screen.getByTestId("progress-input-edition-1"), { target: { value: "75" } });
+    fireEvent.click(screen.getByTestId("progress-save-edition-1"));
+    await waitFor(() => {
+      expect(updateReadingProgressServerFnMock).toHaveBeenCalledWith({
+        data: { editionId: "edition-1", percent: 75, progressKind: "EBOOK" },
+      });
+    });
+  });
+
+  it("saves progress when Enter key pressed", async () => {
+    updateReadingProgressServerFnMock.mockResolvedValue({});
+    mockLoaderData.progress = [
+      { id: "rp1", editionId: "edition-1", progressKind: "EBOOK", percent: 10 },
+    ];
+    mockLoaderData.trackingMode = "BY_EDITION";
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    fireEvent.click(screen.getByTestId("progress-edit-edition-1"));
+    fireEvent.change(screen.getByTestId("progress-input-edition-1"), { target: { value: "50" } });
+    fireEvent.keyDown(screen.getByTestId("progress-input-edition-1"), { key: "Enter" });
+    await waitFor(() => {
+      expect(updateReadingProgressServerFnMock).toHaveBeenCalledWith({
+        data: { editionId: "edition-1", percent: 50, progressKind: "EBOOK" },
+      });
+    });
+  });
+
+  it("does not save when value is invalid (NaN)", async () => {
+    mockLoaderData.progress = [
+      { id: "rp1", editionId: "edition-1", progressKind: "EBOOK", percent: 42 },
+    ];
+    mockLoaderData.trackingMode = "BY_EDITION";
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    fireEvent.click(screen.getByTestId("progress-edit-edition-1"));
+    fireEvent.change(screen.getByTestId("progress-input-edition-1"), { target: { value: "abc" } });
+    fireEvent.keyDown(screen.getByTestId("progress-input-edition-1"), { key: "Enter" });
+    expect(updateReadingProgressServerFnMock).not.toHaveBeenCalled();
+  });
+
+  it("does not save when value is out of range", async () => {
+    mockLoaderData.progress = [
+      { id: "rp1", editionId: "edition-1", progressKind: "EBOOK", percent: 42 },
+    ];
+    mockLoaderData.trackingMode = "BY_EDITION";
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    fireEvent.click(screen.getByTestId("progress-edit-edition-1"));
+    fireEvent.change(screen.getByTestId("progress-input-edition-1"), { target: { value: "150" } });
+    fireEvent.keyDown(screen.getByTestId("progress-input-edition-1"), { key: "Enter" });
+    expect(updateReadingProgressServerFnMock).not.toHaveBeenCalled();
+  });
+
+  it("renders source badge when progress has source", async () => {
+    mockLoaderData.progress = [
+      { id: "rp1", editionId: "edition-1", progressKind: "EBOOK", percent: 42, source: "kobo" },
+    ];
+    mockLoaderData.trackingMode = "BY_EDITION";
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    expect(screen.getByText("via kobo")).toBeTruthy();
+  });
+
+  it("does not render source badge when source is null", async () => {
+    mockLoaderData.progress = [
+      { id: "rp1", editionId: "edition-1", progressKind: "EBOOK", percent: 42, source: null },
+    ];
+    mockLoaderData.trackingMode = "BY_EDITION";
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    expect(screen.queryByText(/^via /)).toBeNull();
   });
 
   it("renders enrichment dialog component", async () => {

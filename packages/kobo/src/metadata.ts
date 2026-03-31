@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import type { EligibleEdition, KoboEntitlement, KoboBookMetadata, KoboContentUrls } from "./types";
+import type { EligibleEdition, KoboEntitlement, KoboBookMetadata, KoboContentUrls, ReadingProgressRecord } from "./types";
+import { formatReadingState } from "./reading-state";
 
 export interface MetadataOptions {
   baseUrl: string;
@@ -24,9 +25,30 @@ export function toKoboId(input: string): string {
 export function buildEntitlement(
   edition: EligibleEdition,
   options: MetadataOptions,
+  progress?: ReadingProgressRecord | null,
 ): KoboEntitlement {
   const bookMetadata = buildBookMetadata(edition, options);
   const now = new Date().toISOString();
+
+  const readingState = progress
+    ? formatReadingState(progress, edition.id)
+    : {
+        EntitlementId: edition.id,
+        Created: now,
+        LastModified: now,
+        PriorityTimestamp: now,
+        StatusInfo: {
+          LastModified: now,
+          Status: "ReadyToRead",
+          TimesStartedReading: 0,
+        },
+        Statistics: {
+          LastModified: now,
+        },
+        CurrentBookmark: {
+          LastModified: now,
+        },
+      };
 
   return {
     BookEntitlement: {
@@ -44,23 +66,7 @@ export function buildEntitlement(
       Status: "Active",
     },
     BookMetadata: bookMetadata,
-    ReadingState: {
-      EntitlementId: edition.id,
-      Created: now,
-      LastModified: now,
-      PriorityTimestamp: now,
-      StatusInfo: {
-        LastModified: now,
-        Status: "ReadyToRead",
-        TimesStartedReading: 0,
-      },
-      Statistics: {
-        LastModified: now,
-      },
-      CurrentBookmark: {
-        LastModified: now,
-      },
-    },
+    ReadingState: readingState,
   };
 }
 
