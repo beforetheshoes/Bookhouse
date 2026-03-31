@@ -23,10 +23,22 @@ export default defineConfig({
         "apps/web/src/**/*.ts",
         "apps/web/src/**/*.tsx",
         "apps/web/server/routes/api/**/*.ts",
+        "apps/web/server/routes/kobo/**/*.ts",
         "apps/web/server/utils/**/*.ts",
         "workers/**/*.ts",
       ],
-      exclude: ["**/*.d.ts", "apps/web/src/routeTree.gen.ts"],
+      exclude: [
+        "**/*.d.ts",
+        "apps/web/src/routeTree.gen.ts",
+        "packages/kobo/src/types.ts",
+        "packages/kobo/src/index.ts",
+        // Runtime-only files: no testable factory functions, covered by c8 ignore
+        "**/*unmatched*",
+        "**/image.jpg.ts",
+        "apps/web/server/routes/kobo/**/oauth/.well-known/**",
+        "apps/web/server/routes/api/editions/download-all/**",
+        "apps/web/server/routes/api/edition-files/download/**",
+      ],
       thresholds: {
         statements: 100,
         branches: 100,

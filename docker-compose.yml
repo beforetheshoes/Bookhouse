@@ -36,8 +36,11 @@ services:
       AUTH_OIDC_SCOPES: ${AUTH_OIDC_SCOPES:-openid profile email}
       APP_URL: ${APP_URL}
       COVER_CACHE_DIR: /data/covers
+      KEPUB_CACHE_DIR: /data/kepub-cache
+      KOBO_API_BASE_URL: ${KOBO_API_BASE_URL:-http://localhost:3000/kobo}
     volumes:
       - covers:/data/covers:ro
+      - kepub-cache:/data/kepub-cache
     depends_on:
       - db
       - queue
@@ -64,3 +67,4 @@ services:
 volumes:
   pgdata:
   covers:
+  kepub-cache:

@@ -46,6 +46,7 @@ export default defineConfig({
   },
   server: {
     port: 3000,
+    host: true,
   },
   plugins: [
     tailwindcss(),
@@ -53,6 +54,19 @@ export default defineConfig({
       srcDirectory: "src",
     }),
     viteReact(),
-    nitro({ serverDir: true, ignore: ["**/*.test.ts"] }),
+    nitro({
+      serverDir: true,
+      ignore: ["**/*.test.ts"],
+      rollupConfig: {
+        output: {
+          chunkFileNames: (chunkInfo: { name?: string }) => {
+            const name = (chunkInfo.name ?? "chunk")
+              .replace(/\[/g, "_")
+              .replace(/\]/g, "_");
+            return `_chunks/${name}-[hash].js`;
+          },
+        },
+      },
+    }),
   ],
 });

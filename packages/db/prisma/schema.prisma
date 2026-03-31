@@ -102,6 +102,11 @@ enum EnrichmentStatus {
   ENRICHED
 }
 
+enum KoboDeviceStatus {
+  ACTIVE
+  REVOKED
+}
+
 enum ImportJobKind {
   SCAN_ROOT
   HASH_FILE
@@ -138,6 +143,7 @@ model User {
   collections     Collection[]
   readingProgress ReadingProgress[]
   workProgressPreferences WorkProgressPreference[]
+  koboDevices     KoboDevice[]
 }
 
 model UserIdentity {
@@ -257,6 +263,7 @@ model Edition {
   readingProgress ReadingProgress[]
   externalLinks   ExternalLink[]
   collectionItems CollectionItem[]
+  koboSyncedBooks KoboSyncedBook[]
 
   duplicateLeft  DuplicateCandidate[] @relation("DuplicateLeftEdition")
   duplicateRight DuplicateCandidate[] @relation("DuplicateRightEdition")
@@ -321,8 +328,9 @@ model Collection {
   kind         CollectionKind    @default(MANUAL)
   formatFilter ShelfFormatFilter @default(ALL)
 
-  ownerUser User? @relation(fields: [ownerUserId], references: [id])
-  items     CollectionItem[]
+  ownerUser             User?                  @relation(fields: [ownerUserId], references: [id])
+  items                 CollectionItem[]
+  koboDeviceCollections KoboDeviceCollection[]
 }
 
 model CollectionItem {
@@ -472,4 +480,46 @@ model WorkTag {
   tag  Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
   @@unique([workId, tagId])
+}
+
+model KoboDevice {
+  id         String           @id @default(cuid())
+  userId     String
+  deviceId   String
+  userKey    String
+  authToken  String           @unique
+  status     KoboDeviceStatus @default(ACTIVE)
+  lastSyncAt DateTime?
+  createdAt  DateTime         @default(now())
+
+  user        User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  collections KoboDeviceCollection[]
+  syncedBooks KoboSyncedBook[]
+
+  @@unique([userId, deviceId])
+}
+
+model KoboDeviceCollection {
+  id           String @id @default(cuid())
+  koboDeviceId String
+  collectionId String
+
+  device     KoboDevice @relation(fields: [koboDeviceId], references: [id], onDelete: Cascade)
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@unique([koboDeviceId, collectionId])
+}
+
+model KoboSyncedBook {
+  id           String    @id @default(cuid())
+  koboDeviceId String
+  editionId    String
+  syncedAt     DateTime  @default(now())
+  removedAt    DateTime?
+
+  device  KoboDevice @relation(fields: [koboDeviceId], references: [id], onDelete: Cascade)
+  edition Edition    @relation(fields: [editionId], references: [id], onDelete: Cascade)
+
+  @@unique([koboDeviceId, editionId])
+  @@index([koboDeviceId])
 }

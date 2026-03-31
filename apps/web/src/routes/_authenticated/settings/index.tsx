@@ -6,6 +6,7 @@ import { formatDistanceToNow } from "date-fns";
 import {
   AlertCircle,
   AlertTriangle,
+  Check,
   ExternalLink,
   FolderOpen,
   Loader2,
@@ -72,6 +73,15 @@ import {
 import { getSmtpStatusServerFn } from "~/lib/server-fns/smtp";
 import { getKindleStatusServerFn } from "~/lib/server-fns/kindle";
 import {
+  getKoboDevicesServerFn,
+  addKoboDeviceServerFn,
+  revokeKoboDeviceServerFn,
+  removeKoboDeviceServerFn,
+  updateDeviceCollectionsServerFn,
+  type KoboDeviceRow,
+} from "~/lib/server-fns/kobo-devices";
+import { getShelvesServerFn, type ShelfRow } from "~/lib/server-fns/shelves";
+import {
   getImportJobsServerFn,
   stopAllJobsServerFn,
   type ImportJobRow,
@@ -89,7 +99,7 @@ export interface LibraryRootWithExtras extends LibraryRootRow {
 
 export const Route = createFileRoute("/_authenticated/settings/")({
   loader: async () => {
-    const [roots, missingFileBehavior, jobsResult, concurrencies, integrations, backupHistory, smtpStatus, kindleStatus] = await Promise.all([
+    const [roots, missingFileBehavior, jobsResult, concurrencies, integrations, backupHistory, smtpStatus, kindleStatus, koboDevices, shelves] = await Promise.all([
       getLibraryRootsServerFn(),
       getMissingFileBehaviorServerFn(),
       getImportJobsServerFn({ data: { page: 1, pageSize: 100 } }),
@@ -98,6 +108,8 @@ export const Route = createFileRoute("/_authenticated/settings/")({
       getBackupHistoryServerFn(),
       getSmtpStatusServerFn(),
       getKindleStatusServerFn(),
+      getKoboDevicesServerFn(),
+      getShelvesServerFn(),
     ]);
     const rootsWithExtras: LibraryRootWithExtras[] = await Promise.all(
       roots.map(async (root) => {
@@ -118,6 +130,8 @@ export const Route = createFileRoute("/_authenticated/settings/")({
       backupHistory,
       smtpStatus,
       kindleStatus,
+      koboDevices,
+      shelves,
     };
   },
   pendingComponent: SettingsSkeleton,
@@ -137,7 +151,7 @@ function SettingsSkeleton() {
 }
 
 function SettingsPage() {
-  const { roots, missingFileBehavior, jobs, totalCount, concurrencies, integrations, backupHistory: initialBackupHistory, smtpStatus, kindleStatus } = Route.useLoaderData();
+  const { roots, missingFileBehavior, jobs, totalCount, concurrencies, integrations, backupHistory: initialBackupHistory, smtpStatus, kindleStatus, koboDevices, shelves } = Route.useLoaderData();
   const [backupHistory, setBackupHistory] = useState(initialBackupHistory);
 
   const handleBackupComplete = async (manifest: BackupManifest) => {
@@ -166,6 +180,7 @@ function SettingsPage() {
           <TabsTrigger value="jobs" className="px-4 py-1.5">Jobs</TabsTrigger>
           <TabsTrigger value="integrations" className="px-4 py-1.5">Integrations</TabsTrigger>
           <TabsTrigger value="backup" className="px-4 py-1.5">Backup</TabsTrigger>
+          <TabsTrigger value="devices" className="px-4 py-1.5">Devices</TabsTrigger>
         </TabsList>
 
         <TabsContent value="library" forceMount className="space-y-6 data-[state=inactive]:hidden">
@@ -187,6 +202,10 @@ function SettingsPage() {
 
         <TabsContent value="backup" forceMount className="space-y-6 data-[state=inactive]:hidden">
           <BackupTab history={backupHistory} onBackupComplete={(manifest) => { void handleBackupComplete(manifest); }} />
+        </TabsContent>
+
+        <TabsContent value="devices" forceMount className="space-y-6 data-[state=inactive]:hidden">
+          <KoboDevicesTab devices={koboDevices} shelves={shelves} />
         </TabsContent>
       </Tabs>
     </div>
@@ -1006,6 +1025,151 @@ function IntegrationCard({ provider, status }: { provider: string; status: Integ
             </Button>
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Kobo Devices Tab
+// ---------------------------------------------------------------------------
+
+function KoboDevicesTab({ devices, shelves }: { devices: KoboDeviceRow[]; shelves: ShelfRow[] }) {
+  const router = useRouter();
+  const [adding, setAdding] = useState(false);
+  const [newDeviceName, setNewDeviceName] = useState("");
+  const [newDeviceToken, setNewDeviceToken] = useState<string | null>(null);
+  const [shelfPickerDeviceId, setShelfPickerDeviceId] = useState<string | null>(null);
+
+  const koboApiBaseUrl = "/kobo";
+
+  const handleAddDevice = async () => {
+    setAdding(true);
+    try {
+      const device = await addKoboDeviceServerFn({ data: { deviceName: newDeviceName } });
+      setNewDeviceToken(device.authToken);
+      setNewDeviceName("");
+      void router.invalidate();
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleRevoke = async (deviceId: string) => {
+    await revokeKoboDeviceServerFn({ data: { deviceId } });
+    void router.invalidate();
+  };
+
+  const handleRemoveDevice = async (deviceId: string) => {
+    await removeKoboDeviceServerFn({ data: { deviceId } });
+    void router.invalidate();
+  };
+
+  const handleToggleShelf = async (deviceId: string, shelfId: string, currentCollections: KoboDeviceRow["collections"]) => {
+    const currentIds = currentCollections.map((c) => c.collection.id);
+    const newIds = currentIds.includes(shelfId)
+      ? currentIds.filter((id) => id !== shelfId)
+      : [...currentIds, shelfId];
+    await updateDeviceCollectionsServerFn({ data: { deviceId, collectionIds: newIds } });
+    void router.invalidate();
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Kobo Devices</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {devices.length === 0 && !newDeviceToken && (
+          <p className="text-sm text-muted-foreground">No Kobo devices paired yet.</p>
+        )}
+
+        {devices.map((device) => (
+          <div key={device.id} className="rounded-md border p-3" data-testid="kobo-device">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">{device.deviceId}</p>
+                <p className="text-sm text-muted-foreground">
+                  Status: <Badge variant={device.status === "ACTIVE" ? "default" : "secondary"}>{device.status}</Badge>
+                  {device.lastSyncAt && (
+                    <span className="ml-2">Last sync: {formatDistanceToNow(new Date(device.lastSyncAt))} ago</span>
+                  )}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                {device.status === "ACTIVE" && (
+                  <Button variant="outline" size="sm" onClick={() => { setShelfPickerDeviceId(shelfPickerDeviceId === device.id ? null : device.id); }} data-testid="edit-shelves-btn">
+                    <FolderOpen className="mr-1 h-4 w-4" />
+                    Shelves
+                  </Button>
+                )}
+                {device.status === "ACTIVE" && (
+                  <Button variant="outline" size="sm" onClick={() => { void handleRevoke(device.id); }}>Revoke</Button>
+                )}
+                <Button variant="destructive" size="sm" onClick={() => { void handleRemoveDevice(device.id); }}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            {device.collections.length > 0 && shelfPickerDeviceId !== device.id && (
+              <p className="mt-1 text-sm text-muted-foreground">
+                Syncing: {device.collections.map((c) => c.collection.name).join(", ")}
+              </p>
+            )}
+            {shelfPickerDeviceId === device.id && (
+              <div className="mt-3 space-y-1" data-testid="shelf-picker">
+                <p className="text-sm font-medium">Select shelves to sync:</p>
+                {shelves.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No shelves created yet.</p>
+                )}
+                {shelves.map((shelf) => {
+                  const isSelected = device.collections.some((c) => c.collection.id === shelf.id);
+                  return (
+                    <Button
+                      key={shelf.id}
+                      variant={isSelected ? "default" : "outline"}
+                      size="sm"
+                      className={`mr-2 ${isSelected ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : "opacity-60"}`}
+                      onClick={() => { void handleToggleShelf(device.id, shelf.id, device.collections); }}
+                      data-testid="shelf-toggle-btn"
+                    >
+                      {isSelected ? <Check className="mr-1 h-3 w-3" /> : <FolderOpen className="mr-1 h-3 w-3" />}
+                      {shelf.name} ({shelf._count.items})
+                    </Button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ))}
+
+        {newDeviceToken && (
+          <div className="rounded-md border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-950" data-testid="kobo-setup-url">
+            <p className="text-sm font-medium">Device added! Configure your Kobo with this URL:</p>
+            <code className="mt-2 block break-all rounded bg-white p-2 text-xs dark:bg-gray-900">
+              {koboApiBaseUrl}/{newDeviceToken}
+            </code>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Set this as the API endpoint in your Kobo&apos;s configuration file.
+            </p>
+            <Button variant="outline" size="sm" className="mt-2" onClick={() => { setNewDeviceToken(null); }}>
+              Dismiss
+            </Button>
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          <Input
+            placeholder="Device name"
+            value={newDeviceName}
+            onChange={(e) => { setNewDeviceName(e.target.value); }}
+            className="max-w-xs"
+            data-testid="kobo-device-name-input"
+          />
+          <Button onClick={() => { void handleAddDevice(); }} disabled={adding || !newDeviceName.trim()} data-testid="add-kobo-device-btn">
+            {adding ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add Device"}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );

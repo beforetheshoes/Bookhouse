@@ -6,6 +6,7 @@ export {
   EditionFileRole,
   EnrichmentStatus,
   FormatFamily,
+  KoboDeviceStatus,
   ImportJobKind,
   ImportJobStatus,
   ScanStage,
