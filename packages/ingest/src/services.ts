@@ -2368,6 +2368,25 @@ export function createIngestServices(
     }
   }
 
+  async function findEditionByIdentifiers(
+    identifiers: NormalizedBookMetadata["identifiers"] | undefined,
+  ): Promise<EditionRecord | null> {
+    if (!identifiers?.isbn13 && !identifiers?.isbn10 && !identifiers?.asin) {
+      return null;
+    }
+    return (
+      (identifiers.isbn13
+        ? await ingestDb.edition.findFirst({ where: { isbn13: identifiers.isbn13 } })
+        : null) ??
+      (identifiers.isbn10
+        ? await ingestDb.edition.findFirst({ where: { isbn10: identifiers.isbn10 } })
+        : null) ??
+      (identifiers.asin
+        ? await ingestDb.edition.findFirst({ where: { asin: identifiers.asin } })
+        : null)
+    );
+  }
+
   async function matchFileAssetToEdition(
     input: MatchFileAssetToEditionInput,
   ): Promise<MatchFileAssetToEditionResult> {
@@ -2433,16 +2452,7 @@ export function createIngestServices(
           if (storedMeta?.status === "parsed" && matchableMeta !== undefined) {
             // Check for ISBN/title+author match against other works
             const identifiers = storedMeta.normalized?.identifiers;
-            const editionMatch =
-              (identifiers?.isbn13
-                ? await ingestDb.edition.findFirst({ where: { isbn13: identifiers.isbn13 } })
-                : null) ??
-              (identifiers?.isbn10
-                ? await ingestDb.edition.findFirst({ where: { isbn10: identifiers.isbn10 } })
-                : null) ??
-              (identifiers?.asin
-                ? await ingestDb.edition.findFirst({ where: { asin: identifiers.asin } })
-                : null);
+            const editionMatch = await findEditionByIdentifiers(identifiers);
 
             const matchedDifferentWork = editionMatch !== null && editionMatch.workId !== finalWorkId;
 
@@ -2634,16 +2644,7 @@ export function createIngestServices(
     }
 
     const identifiers = storedMetadata.normalized?.identifiers;
-    const editionMatch =
-      (identifiers?.isbn13
-        ? await ingestDb.edition.findFirst({ where: { isbn13: identifiers.isbn13 } })
-        : null) ??
-      (identifiers?.isbn10
-        ? await ingestDb.edition.findFirst({ where: { isbn10: identifiers.isbn10 } })
-        : null) ??
-      (identifiers?.asin
-        ? await ingestDb.edition.findFirst({ where: { asin: identifiers.asin } })
-        : null);
+    const editionMatch = await findEditionByIdentifiers(identifiers);
 
     if (editionMatch !== null) {
       const createdEditionFile = await ensureEditionFileLink(ingestDb, editionMatch.id, fileAsset.id);
