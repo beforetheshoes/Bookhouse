@@ -7314,6 +7314,219 @@ describe("ingest services", () => {
     expect(result.editionId).toBe("fallback-edition");
   });
 
+  it("sidecar picks first valid AUDIOBOOK match among multiple siblings", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    // Target AUDIOBOOK work/edition that should be matched
+    addWork(state, {
+      enrichmentStatus: "STUB",
+      id: "audiobook-work",
+      titleCanonical: "multi sibling book",
+      titleDisplay: "Multi Sibling Book",
+    });
+    addEdition(state, {
+      formatFamily: FormatFamily.AUDIOBOOK,
+      id: "audiobook-edition",
+      workId: "audiobook-work",
+    });
+
+    // EBOOK work/edition (should be skipped by directory match)
+    addWork(state, {
+      enrichmentStatus: "ENRICHED",
+      id: "ebook-work",
+      titleCanonical: "ebook title",
+      titleDisplay: "Ebook Title",
+    });
+    addEdition(state, {
+      formatFamily: FormatFamily.EBOOK,
+      id: "ebook-edition",
+      workId: "ebook-work",
+    });
+
+    // Sibling 1: audio file with NO edition-file link
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Multi Sibling Book/track1.mp3",
+      basename: "track1.mp3",
+      extension: "mp3",
+      fullHash: "hash1",
+      id: "file-audio-1",
+      mediaKind: MediaKind.AUDIO,
+      relativePath: "Author/Multi Sibling Book/track1.mp3",
+    });
+
+    // Sibling 2: audio file linked to EBOOK edition
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Multi Sibling Book/track2.mp3",
+      basename: "track2.mp3",
+      extension: "mp3",
+      fullHash: "hash2",
+      id: "file-audio-2",
+      mediaKind: MediaKind.AUDIO,
+      relativePath: "Author/Multi Sibling Book/track2.mp3",
+    });
+    addEditionFile(state, {
+      editionId: "ebook-edition",
+      fileAssetId: "file-audio-2",
+      id: "ef-ebook",
+      role: EditionFileRole.AUDIO_TRACK,
+    });
+
+    // Sibling 3: audio file linked to AUDIOBOOK edition (the valid match)
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Multi Sibling Book/track3.mp3",
+      basename: "track3.mp3",
+      extension: "mp3",
+      fullHash: "hash3",
+      id: "file-audio-3",
+      mediaKind: MediaKind.AUDIO,
+      relativePath: "Author/Multi Sibling Book/track3.mp3",
+    });
+    addEditionFile(state, {
+      editionId: "audiobook-edition",
+      fileAssetId: "file-audio-3",
+      id: "ef-audiobook",
+      role: EditionFileRole.AUDIO_TRACK,
+    });
+
+    // Sidecar in the same directory
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Multi Sibling Book/metadata.json",
+      basename: "metadata.json",
+      extension: "json",
+      id: "file-sidecar",
+      mediaKind: MediaKind.SIDECAR,
+      relativePath: "Author/Multi Sibling Book/metadata.json",
+      metadata: {
+        normalized: {
+          authors: ["Test Author"],
+          narrators: ["Test Narrator"],
+          identifiers: { unknown: [] },
+          title: "Multi Sibling Book",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "audiobook-json",
+        status: "parsed",
+        warnings: [],
+      } as object as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-sidecar" });
+
+    // Should match sibling 3's AUDIOBOOK edition, skipping sibling 1 (no link) and sibling 2 (EBOOK)
+    expect(result).toMatchObject({
+      createdEdition: false,
+      createdWork: false,
+      enrichedExistingWork: true,
+      skipped: false,
+    });
+    expect(result.workId).toBe("audiobook-work");
+    expect(result.editionId).toBe("audiobook-edition");
+
+    // Stub work should be enriched
+    const enrichedWork = state.works.get("audiobook-work");
+    expect(enrichedWork?.enrichmentStatus).toBe("ENRICHED");
+    expect(enrichedWork?.titleDisplay).toBe("Multi Sibling Book");
+
+    // Sidecar should be linked to the audiobook edition
+    const sidecarLink = [...state.editionFiles.values()].find(
+      (ef) => ef.fileAssetId === "file-sidecar" && ef.editionId === "audiobook-edition",
+    );
+    expect(sidecarLink).toBeDefined();
+
+    // Contributors should be added
+    const authorLinks = [...state.editionContributors.values()].filter(
+      (ec) => ec.editionId === "audiobook-edition" && ec.role === ContributorRole.AUTHOR,
+    );
+    expect(authorLinks).toHaveLength(1);
+
+    const narratorLinks = [...state.editionContributors.values()].filter(
+      (ec) => ec.editionId === "audiobook-edition" && ec.role === ContributorRole.NARRATOR,
+    );
+    expect(narratorLinks).toHaveLength(1);
+  });
+
+  it("falls through directory match when sibling audio files have no edition-file links", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    // A stub work the sidecar can match via title fallback
+    addWork(state, {
+      enrichmentStatus: "STUB",
+      id: "stub-work",
+      titleCanonical: "unlinked siblings book",
+      titleDisplay: "Unlinked Siblings Book",
+    });
+    addEdition(state, {
+      formatFamily: FormatFamily.AUDIOBOOK,
+      id: "stub-edition",
+      workId: "stub-work",
+    });
+
+    // Sibling audio files exist but are NOT linked to any edition yet
+    // (simulates sidecar processed before audio siblings are matched — see #184)
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Unlinked Siblings Book/track1.mp3",
+      basename: "track1.mp3",
+      extension: "mp3",
+      fullHash: "hash1",
+      id: "file-audio-1",
+      mediaKind: MediaKind.AUDIO,
+      relativePath: "Author/Unlinked Siblings Book/track1.mp3",
+    });
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Unlinked Siblings Book/track2.mp3",
+      basename: "track2.mp3",
+      extension: "mp3",
+      fullHash: "hash2",
+      id: "file-audio-2",
+      mediaKind: MediaKind.AUDIO,
+      relativePath: "Author/Unlinked Siblings Book/track2.mp3",
+    });
+
+    // Sidecar in the same directory
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Unlinked Siblings Book/metadata.json",
+      basename: "metadata.json",
+      extension: "json",
+      id: "file-sidecar",
+      mediaKind: MediaKind.SIDECAR,
+      relativePath: "Author/Unlinked Siblings Book/metadata.json",
+      metadata: {
+        normalized: {
+          authors: ["Test Author"],
+          narrators: [],
+          identifiers: { unknown: [] },
+          title: "Unlinked Siblings Book",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "audiobook-json",
+        status: "parsed",
+        warnings: [],
+      } as object as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-sidecar" });
+
+    // Directory match finds no edition-file links, falls through to title-based match
+    // which finds stub-work and enriches it
+    expect(result.skipped).toBe(false);
+    expect(result.workId).toBe("stub-work");
+    expect(result.editionId).toBe("stub-edition");
+    expect(result.createdWork).toBe(false);
+    expect(result.createdEdition).toBe(false);
+  });
+
   it("enriches existing audiobook stub edition without narrators when sidecar has none", async () => {
     const state = createEmptyState("/tmp/root");
 

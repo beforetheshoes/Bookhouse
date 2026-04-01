@@ -2551,71 +2551,94 @@ export function createIngestServices(
       return null;
     }
 
-    // Find the edition that any sibling audio file is linked to
+    // Batch-fetch all edition-file links for sibling audio files
+    const siblingIds = siblingAudioFiles.map((s) => s.id);
+    const siblingLinks = await ingestDb.editionFile.findMany({
+      where: { fileAssetId: { in: siblingIds } },
+    });
+
+    if (siblingLinks.length === 0) {
+      return null;
+    }
+
+    // Batch-fetch all referenced editions
+    const editionIds = [...new Set(siblingLinks.map((link) => link.editionId))];
+    const editions = await ingestDb.edition.findManyByIds({ ids: editionIds });
+    const editionById = new Map(editions.map((e) => [e.id, e]));
+
+    const audiobookEditions = editions.filter(
+      (e) => e.formatFamily === FormatFamily.AUDIOBOOK,
+    );
+    if (audiobookEditions.length === 0) {
+      return null;
+    }
+
+    // Batch-fetch all works for AUDIOBOOK editions
+    const workIds = [...new Set(audiobookEditions.map((e) => e.workId))];
+    const works = await ingestDb.work.findManyByIds({ ids: workIds });
+    const workById = new Map(works.map((w) => [w.id, w]));
+
+    // Find the first valid match in original sibling order
     for (const sibling of siblingAudioFiles) {
-      const siblingLink = await ingestDb.editionFile.findFirst({
-        where: { fileAssetId: sibling.id },
-      });
-      if (siblingLink !== null) {
-        const siblingEdition = await ingestDb.edition.findUnique({
-          where: { id: siblingLink.editionId },
+      const link = siblingLinks.find((l) => l.fileAssetId === sibling.id);
+      if (!link) continue;
+
+      const siblingEdition = editionById.get(link.editionId);
+      if (!siblingEdition || siblingEdition.formatFamily !== FormatFamily.AUDIOBOOK) continue;
+
+      const siblingWork = workById.get(siblingEdition.workId);
+      if (!siblingWork) continue;
+
+      // Enrich the work
+      if (siblingWork.enrichmentStatus === "STUB") {
+        await ingestDb.work.update({
+          where: { id: siblingEdition.workId },
+          data: {
+            description: ctx.storedMetadata.normalized?.description ?? null,
+            enrichmentStatus: "ENRICHED",
+            sortTitle: null,
+            titleCanonical: ctx.matchableMetadata.titleCanonical,
+            titleDisplay: ctx.matchableMetadata.title,
+          },
         });
-        if (siblingEdition && siblingEdition.formatFamily === FormatFamily.AUDIOBOOK) {
-          const siblingWork = await ingestDb.work.findUnique({ where: { id: siblingEdition.workId } });
-          if (!siblingWork) continue;
-
-          // Enrich the work
-          if (siblingWork.enrichmentStatus === "STUB") {
-            await ingestDb.work.update({
-              where: { id: siblingEdition.workId },
-              data: {
-                description: ctx.storedMetadata.normalized?.description ?? null,
-                enrichmentStatus: "ENRICHED",
-                sortTitle: null,
-                titleCanonical: ctx.matchableMetadata.titleCanonical,
-                titleDisplay: ctx.matchableMetadata.title,
-              },
-            });
-          }
-
-          // Enrich the edition
-          await ingestDb.edition.update({
-            where: { id: siblingEdition.id },
-            data: {
-              asin: ctx.identifiers?.asin ?? siblingEdition.asin,
-              isbn10: ctx.identifiers?.isbn10 ?? siblingEdition.isbn10,
-              isbn13: ctx.identifiers?.isbn13 ?? siblingEdition.isbn13,
-              language: ctx.storedMetadata.normalized?.language ?? null,
-            },
-          });
-
-          await ensureContributors(ingestDb, siblingEdition.id, ctx.matchableMetadata.authors, ContributorRole.AUTHOR);
-
-          if (ctx.storedMetadata.normalized?.narrators && ctx.storedMetadata.normalized.narrators.length > 0) {
-            await ensureContributors(ingestDb, siblingEdition.id, ctx.storedMetadata.normalized.narrators, ContributorRole.NARRATOR);
-          }
-
-          await ensureEditionFileLink(ingestDb, siblingEdition.id, ctx.fileAsset.id);
-
-          await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
-            workId: siblingEdition.workId,
-            fileAssetId: ctx.fileAsset.id,
-          });
-
-          return {
-            createdEdition: false,
-            createdEditionFile: true,
-            createdWork: false,
-            editionId: siblingEdition.id,
-            enrichedExistingWork: true,
-            enqueuedCoverJob: true,
-            fileAssetId: ctx.fileAsset.id,
-            mediaKind: ctx.fileAsset.mediaKind,
-            skipped: false,
-            workId: siblingEdition.workId,
-          };
-        }
       }
+
+      // Enrich the edition
+      await ingestDb.edition.update({
+        where: { id: siblingEdition.id },
+        data: {
+          asin: ctx.identifiers?.asin ?? siblingEdition.asin,
+          isbn10: ctx.identifiers?.isbn10 ?? siblingEdition.isbn10,
+          isbn13: ctx.identifiers?.isbn13 ?? siblingEdition.isbn13,
+          language: ctx.storedMetadata.normalized?.language ?? null,
+        },
+      });
+
+      await ensureContributors(ingestDb, siblingEdition.id, ctx.matchableMetadata.authors, ContributorRole.AUTHOR);
+
+      if (ctx.storedMetadata.normalized?.narrators && ctx.storedMetadata.normalized.narrators.length > 0) {
+        await ensureContributors(ingestDb, siblingEdition.id, ctx.storedMetadata.normalized.narrators, ContributorRole.NARRATOR);
+      }
+
+      await ensureEditionFileLink(ingestDb, siblingEdition.id, ctx.fileAsset.id);
+
+      await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
+        workId: siblingEdition.workId,
+        fileAssetId: ctx.fileAsset.id,
+      });
+
+      return {
+        createdEdition: false,
+        createdEditionFile: true,
+        createdWork: false,
+        editionId: siblingEdition.id,
+        enrichedExistingWork: true,
+        enqueuedCoverJob: true,
+        fileAssetId: ctx.fileAsset.id,
+        mediaKind: ctx.fileAsset.mediaKind,
+        skipped: false,
+        workId: siblingEdition.workId,
+      };
     }
 
     return null;
