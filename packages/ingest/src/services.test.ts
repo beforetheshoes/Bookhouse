@@ -7599,10 +7599,13 @@ describe("ingest services", () => {
       } as object as FileAsset["metadata"],
     });
 
-    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const enqueuedJobs: Array<{ jobName: LibraryJobName; payload: LibraryJobPayloads[LibraryJobName] }> = [];
     const services = createIngestServices({
       db: createTestDb(state),
-      enqueueLibraryJob,
+      enqueueLibraryJob: (jobName, payload) => {
+        enqueuedJobs.push({ jobName, payload });
+        return Promise.resolve(undefined);
+      },
     });
 
     const result = await services.matchFileAssetToEdition({ fileAssetId: "file-sidecar" });
@@ -7612,13 +7615,11 @@ describe("ingest services", () => {
     expect(result.workId).toBeUndefined();
     expect(result.editionId).toBeUndefined();
 
-    const matchCalls = enqueueLibraryJob.mock.calls.filter(
-      (call: unknown[]) => call[0] === LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION,
-    );
-    expect(matchCalls).toHaveLength(3);
-    expect(matchCalls[0]).toEqual([LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, { fileAssetId: "file-audio-1" }]);
-    expect(matchCalls[1]).toEqual([LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, { fileAssetId: "file-audio-2" }]);
-    expect(matchCalls[2]).toEqual([LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, { fileAssetId: "file-sidecar" }]);
+    const matchJobs = enqueuedJobs.filter((j) => j.jobName === LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION);
+    expect(matchJobs).toHaveLength(3);
+    expect(matchJobs[0]).toEqual({ jobName: LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, payload: { fileAssetId: "file-audio-1" } });
+    expect(matchJobs[1]).toEqual({ jobName: LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, payload: { fileAssetId: "file-audio-2" } });
+    expect(matchJobs[2]).toEqual({ jobName: LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, payload: { fileAssetId: "file-sidecar" } });
   });
 
   it("does not defer when unlinked audio siblings have no parsed metadata", async () => {
@@ -7680,10 +7681,13 @@ describe("ingest services", () => {
       } as object as FileAsset["metadata"],
     });
 
-    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const enqueuedJobs: Array<{ jobName: LibraryJobName; payload: LibraryJobPayloads[LibraryJobName] }> = [];
     const services = createIngestServices({
       db: createTestDb(state),
-      enqueueLibraryJob,
+      enqueueLibraryJob: (jobName, payload) => {
+        enqueuedJobs.push({ jobName, payload });
+        return Promise.resolve(undefined);
+      },
     });
 
     const result = await services.matchFileAssetToEdition({ fileAssetId: "file-sidecar" });
@@ -7694,10 +7698,8 @@ describe("ingest services", () => {
     expect(result.editionId).toBe("stub-edition");
 
     // No MATCH_FILE_ASSET_TO_EDITION jobs should be enqueued for siblings
-    const matchCalls = enqueueLibraryJob.mock.calls.filter(
-      (call: unknown[]) => call[0] === LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION,
-    );
-    expect(matchCalls).toHaveLength(0);
+    const matchJobs = enqueuedJobs.filter((j) => j.jobName === LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION);
+    expect(matchJobs).toHaveLength(0);
   });
 
   it("defers only for siblings with parsed metadata, skipping unparsed ones", async () => {
@@ -7761,10 +7763,13 @@ describe("ingest services", () => {
       } as object as FileAsset["metadata"],
     });
 
-    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const enqueuedJobs: Array<{ jobName: LibraryJobName; payload: LibraryJobPayloads[LibraryJobName] }> = [];
     const services = createIngestServices({
       db: createTestDb(state),
-      enqueueLibraryJob,
+      enqueueLibraryJob: (jobName, payload) => {
+        enqueuedJobs.push({ jobName, payload });
+        return Promise.resolve(undefined);
+      },
     });
 
     const result = await services.matchFileAssetToEdition({ fileAssetId: "file-sidecar" });
@@ -7772,12 +7777,10 @@ describe("ingest services", () => {
     // Should defer: only enqueue the parsed sibling + sidecar
     expect(result.skipped).toBe(true);
 
-    const matchCalls = enqueueLibraryJob.mock.calls.filter(
-      (call: unknown[]) => call[0] === LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION,
-    );
-    expect(matchCalls).toHaveLength(2);
-    expect(matchCalls[0]).toEqual([LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, { fileAssetId: "file-audio-parsed" }]);
-    expect(matchCalls[1]).toEqual([LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, { fileAssetId: "file-sidecar" }]);
+    const matchJobs = enqueuedJobs.filter((j) => j.jobName === LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION);
+    expect(matchJobs).toHaveLength(2);
+    expect(matchJobs[0]).toEqual({ jobName: LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, payload: { fileAssetId: "file-audio-parsed" } });
+    expect(matchJobs[1]).toEqual({ jobName: LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, payload: { fileAssetId: "file-sidecar" } });
   });
 
   it("enriches existing audiobook stub edition without narrators when sidecar has none", async () => {
