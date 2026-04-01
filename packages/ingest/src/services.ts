@@ -1746,7 +1746,7 @@ export function createIngestServices(
           const currentWork = await ingestDb.work.findUnique({
             where: { id: currentEdition.workId },
           });
-          if (currentWork !== null && currentWork.enrichmentStatus === "STUB") {
+          if (currentWork !== null) {
             const hashMatches = await ingestDb.fileAsset.findMany({
               where: { fullHash: hashes.fullHash, NOT: { id: fileAsset.id } },
             });

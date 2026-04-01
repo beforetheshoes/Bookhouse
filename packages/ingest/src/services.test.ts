@@ -2894,33 +2894,84 @@ describe("ingest services", () => {
     );
   });
 
-  it("skips move detection when current work is ENRICHED", async () => {
+  it("skips move detection when work for current edition is not found", async () => {
     const state = createEmptyState("/tmp/root");
 
-    // File with an ENRICHED work — should NOT trigger move detection
     const file = addFileAsset(state, {
       absolutePath: "/tmp/root/book.epub",
       fullHash: null,
       id: "file-1",
     });
-    const work = addWork(state, {
-      enrichmentStatus: "ENRICHED",
-      id: "work-1",
-    });
-    addEdition(state, { id: "edition-1", workId: work.id });
+    // Edition exists but points to a non-existent work
+    addEdition(state, { id: "edition-1", workId: "missing-work" });
     addEditionFile(state, {
       editionId: "edition-1",
       fileAssetId: file.id,
       id: "ef-1",
     });
 
-    // A MISSING file with same hash exists
-    addFileAsset(state, {
-      absolutePath: "/tmp/root/old/book.epub",
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+      hashFile: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          fullHash: "hash-abc",
+          mtime: new Date("2025-01-01T00:00:00.000Z"),
+          partialHash: "partial-abc",
+          sizeBytes: 100n,
+        };
+      }),
+    });
+
+    const result = await services.hashFileAsset({ fileAssetId: "file-1" });
+
+    expect(result.movedFromFileAssetId).toBeUndefined();
+    expect(enqueueLibraryJob).toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA,
+      { fileAssetId: "file-1" },
+    );
+  });
+
+  it("detects moved file when current work is ENRICHED", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    // New file at new path — PRESENT, no hash yet, with an ENRICHED work
+    const file = addFileAsset(state, {
+      absolutePath: "/tmp/root/new-folder/book.epub",
+      fullHash: null,
+      id: "new-file",
+      relativePath: "new-folder/book.epub",
+    });
+    const currentWork = addWork(state, {
+      enrichmentStatus: "ENRICHED",
+      id: "current-work",
+    });
+    addEdition(state, { id: "current-edition", workId: currentWork.id });
+    addEditionFile(state, {
+      editionId: "current-edition",
+      fileAssetId: file.id,
+      id: "current-ef",
+    });
+
+    // Old file at old path — MISSING, linked to an enriched work
+    const oldFile = addFileAsset(state, {
+      absolutePath: "/tmp/root/old-folder/book.epub",
       availabilityStatus: AvailabilityStatus.MISSING,
       fullHash: "hash-xyz",
       id: "old-file",
-      relativePath: "old/book.epub",
+      relativePath: "old-folder/book.epub",
+    });
+    const oldWork = addWork(state, {
+      enrichmentStatus: "ENRICHED",
+      id: "old-work",
+    });
+    addEdition(state, { id: "old-edition", workId: oldWork.id });
+    addEditionFile(state, {
+      editionId: "old-edition",
+      fileAssetId: oldFile.id,
+      id: "old-ef",
     });
 
     const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
@@ -2938,14 +2989,30 @@ describe("ingest services", () => {
       }),
     });
 
-    const result = await services.hashFileAsset({ fileAssetId: "file-1" });
+    const result = await services.hashFileAsset({ fileAssetId: "new-file" });
 
-    // Should NOT detect a move — work is ENRICHED
-    expect(result.movedFromFileAssetId).toBeUndefined();
-    // Should enqueue parse job as normal (EPUB)
-    expect(enqueueLibraryJob).toHaveBeenCalledWith(
+    // Should detect move even though current work is ENRICHED
+    expect(result).toEqual({
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      fileAssetId: "new-file",
+      fullHash: "hash-xyz",
+      movedFromFileAssetId: "old-file",
+      partialHash: "partial-xyz",
+    });
+
+    // Old edition file should now point to new file
+    const transferredEditionFile = [...state.editionFiles.values()].find(
+      (ef) => ef.id === "old-ef",
+    );
+    expect(transferredEditionFile?.fileAssetId).toBe("new-file");
+
+    // Current work should be deleted
+    expect(state.works.has("current-work")).toBe(false);
+
+    // Should NOT enqueue parse job (old edition already has metadata)
+    expect(enqueueLibraryJob).not.toHaveBeenCalledWith(
       LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA,
-      { fileAssetId: "file-1" },
+      expect.anything(),
     );
   });
 
