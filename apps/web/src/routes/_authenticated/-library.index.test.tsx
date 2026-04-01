@@ -285,25 +285,25 @@ const makeWork = (title: string, authors: string[] = [], formats: string[] = [],
 
 describe("columnSortToParam", () => {
   it("returns title-asc for empty state", async () => {
-    const { columnSortToParam } = await import("./library.index");
+    const { columnSortToParam } = await import("~/lib/library-filter-helpers");
     const map = { titleDisplay: { asc: "title-asc" as const, desc: "title-desc" as const } };
     expect(columnSortToParam([], map)).toBe("title-asc");
   });
 
   it("returns title-asc for unknown column id", async () => {
-    const { columnSortToParam } = await import("./library.index");
+    const { columnSortToParam } = await import("~/lib/library-filter-helpers");
     const map = { titleDisplay: { asc: "title-asc" as const, desc: "title-desc" as const } };
     expect(columnSortToParam([{ id: "unknown", desc: false }], map)).toBe("title-asc");
   });
 
   it("returns asc sort param for ascending column", async () => {
-    const { columnSortToParam } = await import("./library.index");
+    const { columnSortToParam } = await import("~/lib/library-filter-helpers");
     const map = { titleDisplay: { asc: "title-asc" as const, desc: "title-desc" as const } };
     expect(columnSortToParam([{ id: "titleDisplay", desc: false }], map)).toBe("title-asc");
   });
 
   it("returns desc sort param for descending column", async () => {
-    const { columnSortToParam } = await import("./library.index");
+    const { columnSortToParam } = await import("~/lib/library-filter-helpers");
     const map = { titleDisplay: { asc: "title-asc" as const, desc: "title-desc" as const } };
     expect(columnSortToParam([{ id: "titleDisplay", desc: true }], map)).toBe("title-desc");
   });

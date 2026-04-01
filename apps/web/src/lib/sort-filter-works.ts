@@ -3,7 +3,7 @@ import type { LibraryWork } from "~/lib/server-fns/library";
 export type SortOption = "title-asc" | "title-desc" | "author-asc" | "author-desc" | "publisher-asc" | "publisher-desc" | "format-asc" | "format-desc" | "isbn-asc" | "isbn-desc" | "recent";
 export type ReadingFilter = "all" | "reading" | "finished" | "unread";
 
-function getAuthors(work: LibraryWork): string {
+export function getAuthors(work: LibraryWork): string {
   const authors = work.editions
     .flatMap((e) => e.contributors)
     .filter((c) => c.role === "AUTHOR")

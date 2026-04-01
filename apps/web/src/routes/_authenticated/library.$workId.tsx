@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { BookOpen, ChevronRight, ImagePlus, Loader2, Pencil, Search, Sparkles, Trash2, Upload } from "lucide-react";
+import { ChevronRight, Sparkles, Trash2 } from "lucide-react";
+import { WorkCover } from "~/components/work-cover";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -11,25 +12,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "~/components/ui/dropdown-menu";
 import { Badge } from "~/components/ui/badge";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "~/components/ui/tabs";
-import { ProgressBar } from "~/components/progress-bar";
 import { EnrichmentDialog } from "~/components/enrichment-dialog";
+import { WorkProgress } from "~/components/work-progress";
+import { EditionProgress } from "~/components/edition-progress";
+import { ShelfMembership } from "~/components/shelf-membership";
 import { CoverSearchDialog } from "~/components/cover-search-dialog";
 import { EditionTabPanel } from "~/components/edition-tab-panel";
 import { MetadataItem } from "~/components/metadata-item";
-import {
-  getShelvesForWorkServerFn,
-  addEditionsForWorkToShelfServerFn,
-  removeWorkEditionsFromShelfServerFn,
-} from "~/lib/server-fns/shelves";
+import { getShelvesForWorkServerFn } from "~/lib/server-fns/shelves";
 import {
   getWorkDetailServerFn,
   type WorkDetail,
@@ -94,18 +87,14 @@ function getAuthors(work: WorkDetail): { id: string; name: string }[] {
 function WorkDetailPage() {
   const { work, progress, trackingMode, contributorNames, smtpConfigured, kindleConfigured, shelves } = Route.useLoaderData();
   const router = useRouter();
-  const [imgFailed, setImgFailed] = useState(false);
   const [deleteWorkOpen, setDeleteWorkOpen] = useState(false);
   const [deletingWork, setDeletingWork] = useState(false);
   const [deleteEditionOpen, setDeleteEditionOpen] = useState<string | null>(null);
   const [deletingEdition, setDeletingEdition] = useState(false);
-  const [uploadingCover, setUploadingCover] = useState(false);
   const [coverVersion, setCoverVersion] = useState(0);
   const [enrichOpen, setEnrichOpen] = useState(false);
   const [coverSearchOpen, setCoverSearchOpen] = useState(false);
   const [activeEditionIdx, setActiveEditionIdx] = useState(0);
-  const coverInputRef = useRef<HTMLInputElement>(null);
-  const showPlaceholder = !work.coverPath || imgFailed;
   const authors = getAuthors(work);
   const coverColors = work.coverColors as string[] | null;
   const { setBookColors } = useAppColor();
@@ -168,32 +157,10 @@ function WorkDetailPage() {
     }
   }
 
-  async function handleCoverUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploadingCover(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch(`/api/upload-cover/${work.id}`, {
-        method: "POST",
-        body: formData,
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || "Upload failed");
-      }
-      toast.success("Cover updated");
-      setImgFailed(false);
-      setCoverVersion((v) => v + 1);
-      void router.invalidate();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to upload cover");
-    } finally {
-      setUploadingCover(false);
-      e.target.value = "";
-    }
-  }
+  const handleCoverUpdated = () => {
+    setCoverVersion((v) => v + 1);
+    void router.invalidate();
+  };
 
   return (
     <div className="space-y-6">
@@ -206,61 +173,15 @@ function WorkDetailPage() {
       </nav>
 
       <div className="flex gap-8">
-        <div className="w-48 shrink-0">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <div
-                className="group relative aspect-[2/3] cursor-pointer overflow-hidden rounded-lg bg-muted"
-                role="button"
-                tabIndex={0}
-              >
-                {showPlaceholder ? (
-                  <div data-testid="cover-placeholder" className="flex size-full items-center justify-center text-muted-foreground">
-                    <BookOpen className="size-12" />
-                  </div>
-                ) : (
-                  <img
-                    src={`/api/covers/${work.id}/medium?v=${String(coverVersion)}`}
-                    alt={work.titleDisplay}
-                    onError={() => { setImgFailed(true); }}
-                    className="size-full object-cover"
-                  />
-                )}
-                <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
-                  {uploadingCover ? (
-                    <Loader2 className="size-8 animate-spin text-white" />
-                  ) : (
-                    <ImagePlus className="size-8 text-white" />
-                  )}
-                </div>
-              </div>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuItem data-testid="cover-upload-option" onClick={() => { coverInputRef.current?.click(); }}>
-                <Upload className="size-4 mr-2" />
-                Upload from file
-              </DropdownMenuItem>
-              <DropdownMenuItem data-testid="cover-search-option" onClick={() => { setCoverSearchOpen(true); }}>
-                <Search className="size-4 mr-2" />
-                Search for cover
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <input
-            ref={coverInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            data-testid="cover-file-input"
-            onChange={(e) => { void handleCoverUpload(e); }}
-          />
-          {maxPercent !== null && (
-            <div className="mt-2 text-center" data-testid="cover-progress">
-              <span className="text-xl font-bold tabular-nums">{String(maxPercent)}%</span>
-              <p className="text-xs text-muted-foreground">read</p>
-            </div>
-          )}
-        </div>
+        <WorkCover
+          workId={work.id}
+          coverPath={work.coverPath}
+          titleDisplay={work.titleDisplay}
+          maxPercent={maxPercent}
+          coverVersion={coverVersion}
+          onCoverUpdated={handleCoverUpdated}
+          onCoverSearchOpen={() => { setCoverSearchOpen(true); }}
+        />
 
         <div className="flex-1 space-y-4">
           <div>
@@ -341,7 +262,7 @@ function WorkDetailPage() {
           </MetadataItem>
 
           <MetadataItem label="Shelves">
-            <ShelfMembership workId={work.id} shelves={shelves} />
+            <ShelfMembership workId={work.id} shelves={shelves} onToggled={() => { void router.invalidate(); }} />
           </MetadataItem>
         </div>
       </div>
@@ -368,7 +289,7 @@ function WorkDetailPage() {
           pageCount: work.editions[activeEditionIdx].pageCount ?? null,
           editedFields: work.editions[activeEditionIdx].editedFields,
         } : null}
-        onApplied={() => { setCoverVersion((v) => v + 1); void router.invalidate(); }}
+        onApplied={handleCoverUpdated}
       />
 
       <CoverSearchDialog
@@ -376,7 +297,7 @@ function WorkDetailPage() {
         onOpenChange={setCoverSearchOpen}
         workId={work.id}
         workTitle={work.titleDisplay}
-        onApplied={() => { setCoverVersion((v) => v + 1); void router.invalidate(); }}
+        onApplied={handleCoverUpdated}
       />
 
       <div className="space-y-4">
@@ -470,162 +391,4 @@ function WorkDetailPage() {
   );
 }
 
-
-function WorkProgress({ progress }: { progress: { percent: number | null }[] }) {
-  const maxPercent = Math.max(...progress.map((p) => p.percent ?? 0));
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center gap-2">
-        <div className="flex-1">
-          <ProgressBar percent={maxPercent} />
-        </div>
-        <span className="text-sm text-muted-foreground">{String(maxPercent)}%</span>
-      </div>
-    </div>
-  );
-}
-
-function progressKindForEdition(formatFamily: string): "EBOOK" | "AUDIO" | "READALOUD" {
-  if (formatFamily === "AUDIOBOOK") return "AUDIO";
-  return "EBOOK";
-}
-
-function EditionProgress({
-  progress,
-  editions,
-  onUpdate,
-}: {
-  progress: { editionId: string; progressKind: string; percent: number | null; source: string | null }[];
-  editions: WorkDetail["editions"];
-  onUpdate: (editionId: string, percent: number, progressKind: string) => Promise<void>;
-}) {
-  const progressMap = new Map(progress.map((p) => [p.editionId, p]));
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editValue, setEditValue] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  async function handleSave(editionId: string, progressKind: string) {
-    const val = parseInt(editValue, 10);
-    if (isNaN(val) || val < 0 || val > 100) return;
-    setSaving(true);
-    try {
-      await onUpdate(editionId, val, progressKind);
-      setEditingId(null);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="space-y-3">
-      {editions.map((edition) => {
-        const p = progressMap.get(edition.id);
-        const percent = p?.percent ?? 0;
-        const progressKind = p?.progressKind ?? progressKindForEdition(edition.formatFamily);
-        const isEditing = editingId === edition.id;
-
-        return (
-          <div key={edition.id} className="space-y-1">
-            <div className="flex items-center gap-2 text-sm">
-              <Badge variant="secondary">{edition.formatFamily}</Badge>
-              {p?.source && <Badge variant="outline" className="text-xs">via {p.source}</Badge>}
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="flex-1">
-                <ProgressBar percent={percent} />
-              </div>
-              {isEditing ? (
-                <div className="flex items-center gap-1">
-                  <input
-                    data-testid={`progress-input-${edition.id}`}
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={editValue}
-                    onChange={(e) => { setEditValue(e.target.value); }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") { void handleSave(edition.id, progressKind); }
-                      if (e.key === "Escape") { setEditingId(null); }
-                    }}
-                    className="w-16 rounded border px-2 py-0.5 text-sm text-right"
-                    autoFocus
-                    disabled={saving}
-                  />
-                  <span className="text-sm">%</span>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={saving}
-                    onClick={() => { void handleSave(edition.id, progressKind); }}
-                    data-testid={`progress-save-${edition.id}`}
-                  >
-                    {saving ? <Loader2 className="size-3 animate-spin" /> : "Save"}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={saving}
-                    onClick={() => { setEditingId(null); }}
-                    data-testid={`progress-cancel-${edition.id}`}
-                  >
-                    ✕
-                  </Button>
-                </div>
-              ) : (
-                <button
-                  className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground group"
-                  onClick={() => { setEditingId(edition.id); setEditValue(String(percent)); }}
-                  data-testid={`progress-edit-${edition.id}`}
-                  aria-label={`Edit progress for ${edition.formatFamily}`}
-                >
-                  <span>{String(percent)}%</span>
-                  <Pencil className="size-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                </button>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function ShelfMembership({
-  workId,
-  shelves,
-}: {
-  workId: string;
-  shelves: { id: string; name: string; isMember: boolean }[];
-}) {
-  const router = useRouter();
-
-  const handleToggle = async (shelfId: string, isMember: boolean) => {
-    if (isMember) {
-      await removeWorkEditionsFromShelfServerFn({ data: { shelfId, workId } });
-    } else {
-      await addEditionsForWorkToShelfServerFn({ data: { shelfId, workId } });
-    }
-    void router.invalidate();
-  };
-
-  if (shelves.length === 0) {
-    return <span className="text-muted-foreground">No shelves created yet</span>;
-  }
-
-  return (
-    <div className="flex flex-wrap gap-1.5" data-testid="shelf-membership">
-      {shelves.map((shelf) => (
-        <Badge
-          key={shelf.id}
-          variant={shelf.isMember ? "default" : "outline"}
-          className="cursor-pointer select-none"
-          onClick={() => { void handleToggle(shelf.id, shelf.isMember); }}
-          data-testid={`shelf-toggle-${shelf.id}`}
-        >
-          {shelf.name}
-        </Badge>
-      ))}
-    </div>
-  );
-}
 
