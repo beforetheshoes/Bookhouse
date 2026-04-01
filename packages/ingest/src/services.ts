@@ -480,6 +480,7 @@ interface ScanPathStatsResult {
 async function collectScanPathStats(
   discoveredPaths: string[],
   readStats: ReadStatsFn,
+  logger?: IngestLogger,
 ): Promise<ScanPathStatsResult[]> {
   const results = new Array<ScanPathStatsResult>(discoveredPaths.length);
   let nextIndex = 0;
@@ -496,7 +497,11 @@ async function collectScanPathStats(
           fileStats: await readStats(absolutePath),
           statFailed: false,
         };
-      } catch {
+      } catch (error) {
+        logger?.warn(
+          { err: error instanceof Error ? error.message : String(error), path: absolutePath },
+          "Failed to stat path",
+        );
         results[currentIndex] = {
           absolutePath,
           statFailed: true,
@@ -718,6 +723,7 @@ async function walkRegularFiles(
   rootPath: string,
   listDirectory: ListDirectoryFn,
   readStats: ReadStatsFn,
+  logger?: IngestLogger,
 ): Promise<string[]> {
   const pendingDirectories = [normalizeRootPath(rootPath)];
   const files: string[] = [];
@@ -729,7 +735,11 @@ async function walkRegularFiles(
 
     try {
       entries = await listDirectory(currentDirectory, { withFileTypes: true });
-    } catch {
+    } catch (error) {
+      logger?.warn(
+        { err: error instanceof Error ? error.message : String(error), path: currentDirectory },
+        "Failed to list directory",
+      );
       continue;
     }
 
@@ -1447,8 +1457,8 @@ export function createIngestServices(
     const workById = new Map(
       existingWorks.map((work) => [work.id, work]),
     );
-    const discoveredPaths = await walkRegularFiles(normalizedRootPath, listDirectory, readStats);
-    const scanPathStats = await collectScanPathStats(discoveredPaths, readStats);
+    const discoveredPaths = await walkRegularFiles(normalizedRootPath, listDirectory, readStats, logger);
+    const scanPathStats = await collectScanPathStats(discoveredPaths, readStats, logger);
     const seenPaths = new Set<string>();
     const scannedFileAssetIds: string[] = [];
     const enqueuedHashJobs: string[] = [];
@@ -2038,8 +2048,16 @@ export function createIngestServices(
           try {
             const { tags } = await parseAudioId3(firstAudioSibling.absolutePath);
             id3Raw = tags;
-          } catch {
-            // ID3 parsing failure is non-fatal for sidecar flow
+          } catch (error) {
+            logger.warn(
+              {
+                err: error instanceof Error ? error.message : String(error),
+                audioPath: firstAudioSibling.absolutePath,
+                sidecarPath: fileAsset.absolutePath,
+                fileAssetId: fileAsset.id,
+              },
+              "ID3 parsing failed for audio sibling during sidecar flow",
+            );
           }
         }
 

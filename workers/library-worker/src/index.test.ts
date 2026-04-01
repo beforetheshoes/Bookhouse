@@ -13,6 +13,11 @@ type EnrichDeps = {
   acquireOLToken: () => Promise<void>;
 };
 
+const loggerInfoMock = vi.fn();
+const loggerWarnMock = vi.fn();
+const loggerErrorMock = vi.fn();
+const mockLogger = { info: loggerInfoMock, warn: loggerWarnMock, error: loggerErrorMock };
+
 const addMock = vi.fn();
 const onMock = vi.fn();
 const workerCloseMock = vi.fn(() => Promise.resolve(undefined));
@@ -132,6 +137,7 @@ vi.mock("@bookhouse/shared", async () => {
 
   return {
     ...actual,
+    createLogger: () => mockLogger,
     getQueueConnectionConfig: queueConnectionConfigMock,
     enqueueLibraryJob: enqueueLibraryJobMock,
   };
@@ -154,6 +160,9 @@ function createMockJob(overrides: Record<string, string | number | boolean | obj
 }
 
 beforeEach(() => {
+  loggerInfoMock.mockReset();
+  loggerWarnMock.mockReset();
+  loggerErrorMock.mockReset();
   addMock.mockReset();
   createIngestServicesMock.mockReset();
   detectDuplicatesMock.mockReset();
@@ -1399,6 +1408,34 @@ describe("library worker", () => {
 
     _setActiveScanType(null);
     expect(_getActiveScanType()).toBe("onDemand");
+  });
+
+  it("logs warning when DB is unavailable during concurrency poll", async () => {
+    appSettingFindUniqueMock.mockRejectedValue(new Error("DB down"));
+    const { _pollConcurrency } = await import("./index");
+
+    const fakeWorker = { concurrency: 5 };
+    await _pollConcurrency(fakeWorker);
+
+    expect(fakeWorker.concurrency).toBe(5);
+    expect(loggerWarnMock).toHaveBeenCalledWith(
+      { err: "DB down" },
+      "Failed to poll concurrency settings",
+    );
+  });
+
+  it("logs non-Error throw as string when DB poll fails", async () => {
+    appSettingFindUniqueMock.mockRejectedValue("CONNECTION_RESET");
+    const { _pollConcurrency } = await import("./index");
+
+    const fakeWorker = { concurrency: 5 };
+    await _pollConcurrency(fakeWorker);
+
+    expect(fakeWorker.concurrency).toBe(5);
+    expect(loggerWarnMock).toHaveBeenCalledWith(
+      { err: "CONNECTION_RESET" },
+      "Failed to poll concurrency settings",
+    );
   });
 
   it("polls DB using concurrencyIncremental key when an incremental scan is active", async () => {

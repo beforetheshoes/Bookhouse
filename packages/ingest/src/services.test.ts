@@ -711,6 +711,22 @@ describe("ingest services", () => {
   });
 
   it("continues when a directory cannot be listed", async () => {
+    const warnMock = vi.fn();
+    const files = await walkRegularFiles(
+      "/tmp/unreadable-root",
+      (() => Promise.reject(new Error("permission denied"))) as ReaddirFn,
+      (() => Promise.reject(new Error("should not be called"))) as LstatFn,
+      { info: vi.fn(), warn: warnMock },
+    );
+
+    expect(files).toEqual([]);
+    expect(warnMock).toHaveBeenCalledWith(
+      { err: "permission denied", path: "/tmp/unreadable-root" },
+      "Failed to list directory",
+    );
+  });
+
+  it("continues silently when a directory cannot be listed and no logger is provided", async () => {
     const files = await walkRegularFiles(
       "/tmp/unreadable-root",
       (() => Promise.reject(new Error("permission denied"))) as ReaddirFn,
@@ -718,6 +734,23 @@ describe("ingest services", () => {
     );
 
     expect(files).toEqual([]);
+  });
+
+  it("logs non-Error throw as string when listing directory fails", async () => {
+    const warnMock = vi.fn();
+    const listDir = vi.fn().mockRejectedValue("EPERM");
+    const files = await walkRegularFiles(
+      "/tmp/unreadable-root",
+      listDir as ReaddirFn,
+      (() => Promise.reject(new Error("should not be called"))) as LstatFn,
+      { info: vi.fn(), warn: warnMock },
+    );
+
+    expect(files).toEqual([]);
+    expect(warnMock).toHaveBeenCalledWith(
+      { err: "EPERM", path: "/tmp/unreadable-root" },
+      "Failed to list directory",
+    );
   });
 
   it("falls back to lstat for ambiguous directory entries", async () => {
@@ -1330,6 +1363,52 @@ describe("ingest services", () => {
     );
     expect(batchCall).toBeDefined();
     expect(batchCall?.[0].errorCount).toBe(count);
+  });
+
+  it("logs warning when stat collection fails for a path", async () => {
+    const state = createEmptyState("/tmp/root");
+    const entries = [{ isDirectory: () => false, isFile: () => true, isSymbolicLink: () => false, name: "broken.epub" }];
+    const listDirectory = (() => Promise.resolve(entries as never)) as ReaddirFn;
+    const readStats = vi.fn(() => Promise.reject(new Error("gone"))) as object as LstatFn;
+    const warnMock = vi.fn();
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      listDirectory,
+      readStats,
+      logger: { info: vi.fn(), warn: warnMock },
+    });
+
+    await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    expect(warnMock).toHaveBeenCalledWith(
+      { err: "gone", path: "/tmp/root/broken.epub" },
+      "Failed to stat path",
+    );
+  });
+
+  it("logs non-Error throw as string when stat collection fails", async () => {
+    const state = createEmptyState("/tmp/root");
+    const entries = [{ isDirectory: () => false, isFile: () => true, isSymbolicLink: () => false, name: "broken.epub" }];
+    const listDirectory = (() => Promise.resolve(entries as never)) as ReaddirFn;
+    const readStats = vi.fn().mockRejectedValue("ENOENT") as object as LstatFn;
+    const warnMock = vi.fn();
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      listDirectory,
+      readStats,
+      logger: { info: vi.fn(), warn: warnMock },
+    });
+
+    await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    expect(warnMock).toHaveBeenCalledWith(
+      { err: "ENOENT", path: "/tmp/root/broken.epub" },
+      "Failed to stat path",
+    );
   });
 
   it("calls reportProgress at batch intervals for non-file entries", async () => {
@@ -5510,6 +5589,147 @@ describe("ingest services", () => {
     expect(enqueueLibraryJob).toHaveBeenCalledWith(
       LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION,
       { fileAssetId: "file-1" },
+    );
+  });
+
+  it("logs warning when ID3 parsing fails for audio sibling during sidecar flow", async () => {
+    const state = createEmptyState("/tmp/root");
+    const sidecarAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.json",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.json",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "json",
+      fullHash: "hash",
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/metadata.json",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(sidecarAsset.absolutePath, sidecarAsset);
+    state.fileAssetsById.set(sidecarAsset.id, sidecarAsset);
+
+    const audioSibling: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/chapter01.mp3",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "chapter01.mp3",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "mp3",
+      fullHash: "audio-hash",
+      id: "file-audio",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.AUDIO,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "audio-phash",
+      relativePath: "Author/Book/chapter01.mp3",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(audioSibling.absolutePath, audioSibling);
+    state.fileAssetsById.set(audioSibling.id, audioSibling);
+
+    const warnMock = vi.fn();
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      parseAudiobookJson: vi.fn().mockResolvedValue({
+        title: "Project Hail Mary",
+        authors: ["Andy Weir"],
+        narrators: [],
+        series: [],
+        genres: [],
+      }),
+      parseAudioId3: vi.fn().mockRejectedValue(new Error("corrupt ID3 header")),
+      logger: { info: vi.fn(), warn: warnMock },
+    });
+
+    await services.parseFileAssetMetadata({
+      fileAssetId: "file-1",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(warnMock).toHaveBeenCalledWith(
+      {
+        err: "corrupt ID3 header",
+        audioPath: "/tmp/root/Author/Book/chapter01.mp3",
+        sidecarPath: "/tmp/root/Author/Book/metadata.json",
+        fileAssetId: "file-1",
+      },
+      "ID3 parsing failed for audio sibling during sidecar flow",
+    );
+  });
+
+  it("logs non-Error throw as string when ID3 parsing fails during sidecar flow", async () => {
+    const state = createEmptyState("/tmp/root");
+    const sidecarAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.json",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.json",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "json",
+      fullHash: "hash",
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/metadata.json",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(sidecarAsset.absolutePath, sidecarAsset);
+    state.fileAssetsById.set(sidecarAsset.id, sidecarAsset);
+
+    const audioSibling: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/chapter01.mp3",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "chapter01.mp3",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "mp3",
+      fullHash: "audio-hash",
+      id: "file-audio",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.AUDIO,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "audio-phash",
+      relativePath: "Author/Book/chapter01.mp3",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(audioSibling.absolutePath, audioSibling);
+    state.fileAssetsById.set(audioSibling.id, audioSibling);
+
+    const warnMock = vi.fn();
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      parseAudiobookJson: vi.fn().mockResolvedValue({
+        title: "Project Hail Mary",
+        authors: ["Andy Weir"],
+        narrators: [],
+        series: [],
+        genres: [],
+      }),
+      parseAudioId3: vi.fn().mockRejectedValue("ID3_CORRUPT"),
+      logger: { info: vi.fn(), warn: warnMock },
+    });
+
+    await services.parseFileAssetMetadata({
+      fileAssetId: "file-1",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(warnMock).toHaveBeenCalledWith(
+      expect.objectContaining({ err: "ID3_CORRUPT" }),
+      "ID3 parsing failed for audio sibling during sidecar flow",
     );
   });
 

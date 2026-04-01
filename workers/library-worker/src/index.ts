@@ -396,8 +396,8 @@ async function pollConcurrency(worker: Pick<Worker, "concurrency">): Promise<voi
       worker.concurrency = desired;
       logger.info({ concurrency: desired }, "Worker concurrency updated");
     }
-  } catch {
-    // DB unavailable — keep current concurrency
+  } catch (error) {
+    logger.warn({ err: error instanceof Error ? error.message : String(error) }, "Failed to poll concurrency settings");
   }
 }
 
