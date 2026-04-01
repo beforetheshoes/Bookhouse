@@ -32,6 +32,7 @@ vi.mock("~/components/editable-table-cell", async () => {
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
+import { render, screen } from "@testing-library/react";
 import { getFormats, COLUMN_PICKER_ITEMS, getColumns } from "./library-columns";
 
 type LibraryWork = Parameters<typeof getFormats>[0];
@@ -108,6 +109,7 @@ describe("COLUMN_PICKER_ITEMS", () => {
   it("has expected shape", () => {
     expect(COLUMN_PICKER_ITEMS).toEqual([
       { id: "authors", label: "Author(s)" },
+      { id: "progress", label: "Progress" },
       { id: "formats", label: "Format" },
       { id: "publisher", label: "Publisher" },
       { id: "isbn", label: "ISBN" },
@@ -128,9 +130,9 @@ describe("getColumns", () => {
     return c;
   }
 
-  it("returns 6 columns", () => {
+  it("returns 7 columns", () => {
     const cols = getColumns(false, false, router);
-    expect(cols).toHaveLength(6);
+    expect(cols).toHaveLength(7);
   });
 
   it("first column is select with checkboxes", () => {
@@ -153,21 +155,58 @@ describe("getColumns", () => {
     expect(authorsCol.size).toBe(200);
   });
 
+  it("progress column has correct id, size, and sorting disabled", () => {
+    const progressCol = col(getColumns(false, false, router), 3);
+    expect(progressCol.id).toBe("progress");
+    expect(progressCol.size).toBe(120);
+    expect(progressCol.enableSorting).toBe(false);
+  });
+
   it("formats column has correct id and size", () => {
-    const formatsCol = col(getColumns(false, false, router), 3);
+    const formatsCol = col(getColumns(false, false, router), 4);
     expect(formatsCol.id).toBe("formats");
     expect(formatsCol.size).toBe(80);
   });
 
   it("publisher column has correct id and size", () => {
-    const publisherCol = col(getColumns(false, false, router), 4);
+    const publisherCol = col(getColumns(false, false, router), 5);
     expect(publisherCol.id).toBe("publisher");
     expect(publisherCol.size).toBe(150);
   });
 
   it("isbn column has correct id and size", () => {
-    const isbnCol = col(getColumns(false, false, router), 5);
+    const isbnCol = col(getColumns(false, false, router), 6);
     expect(isbnCol.id).toBe("isbn");
     expect(isbnCol.size).toBe(120);
+  });
+
+  it("progress column cell renders percentage when progressMap has entry", () => {
+    const progressMap = { "work-test": 42 };
+    const cols = getColumns(false, false, router, progressMap);
+    const progressCol = col(cols, 3);
+    const cellFn = progressCol.cell as (info: { row: { original: LibraryWork } }) => React.ReactNode;
+    const work = makeWork("Test");
+    const { container } = render(<>{cellFn({ row: { original: work } })}</>);
+    expect(container.textContent).toContain("42%");
+    expect(screen.getByRole("progressbar")).toBeTruthy();
+  });
+
+  it("progress column cell renders dash when progressMap has no entry", () => {
+    const cols = getColumns(false, false, router, {});
+    const progressCol = col(cols, 3);
+    const cellFn = progressCol.cell as (info: { row: { original: LibraryWork } }) => React.ReactNode;
+    const work = makeWork("Test");
+    const { container } = render(<>{cellFn({ row: { original: work } })}</>);
+    expect(container.textContent).toContain("—");
+    expect(screen.queryByRole("progressbar")).toBeNull();
+  });
+
+  it("progress column cell renders dash when progressMap is undefined", () => {
+    const cols = getColumns(false, false, router);
+    const progressCol = col(cols, 3);
+    const cellFn = progressCol.cell as (info: { row: { original: LibraryWork } }) => React.ReactNode;
+    const work = makeWork("Test");
+    const { container } = render(<>{cellFn({ row: { original: work } })}</>);
+    expect(container.textContent).toContain("—");
   });
 });

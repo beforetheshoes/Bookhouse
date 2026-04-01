@@ -62,7 +62,7 @@ export function WorkCard({ id, title, authors, enrichmentStatus, scanActive, for
           )}
         </div>
       </div>
-      <ProgressBar percent={progressPercent} />
+      <ProgressBar percent={progressPercent} size="md" />
     </Link>
   );
 }

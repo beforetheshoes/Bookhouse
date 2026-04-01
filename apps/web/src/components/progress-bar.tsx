@@ -1,4 +1,4 @@
-export function ProgressBar({ percent }: { percent: number | null | undefined }) {
+export function ProgressBar({ percent, size = "sm" }: { percent: number | null | undefined; size?: "sm" | "md" }) {
   if (percent == null) return null;
 
   return (
@@ -7,7 +7,7 @@ export function ProgressBar({ percent }: { percent: number | null | undefined })
       aria-valuenow={percent}
       aria-valuemin={0}
       aria-valuemax={100}
-      className="h-0.5 w-full overflow-hidden rounded-full bg-muted"
+      className={`${size === "md" ? "h-1.5" : "h-0.5"} w-full overflow-hidden rounded-full bg-muted`}
     >
       <div
         className={`h-full transition-all ${percent >= 100 ? "bg-green-500" : "bg-primary"}`}

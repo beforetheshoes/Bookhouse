@@ -50,4 +50,17 @@ describe("ProgressBar", () => {
     const fill = bar.firstElementChild as HTMLElement;
     expect(fill.style.width).toBe("0%");
   });
+
+  it("renders with h-0.5 class by default (sm)", () => {
+    render(<ProgressBar percent={50} />);
+    const bar = screen.getByRole("progressbar");
+    expect(bar.className).toContain("h-0.5");
+  });
+
+  it("renders with h-1.5 class when size is md", () => {
+    render(<ProgressBar percent={50} size="md" />);
+    const bar = screen.getByRole("progressbar");
+    expect(bar.className).toContain("h-1.5");
+    expect(bar.className).not.toContain("h-0.5");
+  });
 });
