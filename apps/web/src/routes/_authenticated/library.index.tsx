@@ -54,7 +54,7 @@ function LibraryPage() {
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [editMode, setEditMode] = useState(false);
   const isScanning = activeJobCount > 0;
-  const columns = useMemo(() => getColumns(isScanning, editMode, router), [isScanning, editMode, router]);
+  const columns = useMemo(() => getColumns(isScanning, editMode, router, progressMap), [isScanning, editMode, router, progressMap]);
   const newCount = totalCount - prevCount;
   const selectedCount = Object.keys(rowSelection).length;
 

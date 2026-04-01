@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { Badge } from "~/components/ui/badge";
 import { DataTableColumnHeader } from "~/components/data-table";
 import { EditableTableCell } from "~/components/editable-table-cell";
+import { ProgressBar } from "~/components/progress-bar";
 import { updateWorkServerFn, updateEditionServerFn, updateWorkAuthorsServerFn } from "~/lib/server-fns/editing";
 import { getAuthors } from "~/lib/sort-filter-works";
 import type { LibraryWork } from "~/lib/server-fns/library";
@@ -15,12 +16,13 @@ export function getFormats(work: LibraryWork): string[] {
 
 export const COLUMN_PICKER_ITEMS = [
   { id: "authors", label: "Author(s)" },
+  { id: "progress", label: "Progress" },
   { id: "formats", label: "Format" },
   { id: "publisher", label: "Publisher" },
   { id: "isbn", label: "ISBN" },
 ];
 
-export function getColumns(scanActive: boolean, editMode: boolean, router: { invalidate: () => void }): ColumnDef<LibraryWork>[] {
+export function getColumns(scanActive: boolean, editMode: boolean, router: { invalidate: () => void }, progressMap?: Record<string, number>): ColumnDef<LibraryWork>[] {
   return [
   {
     id: "select",
@@ -101,6 +103,23 @@ export function getColumns(scanActive: boolean, editMode: boolean, router: { inv
       return <span>{authorsStr}</span>;
     },
     size: 200,
+  },
+  {
+    id: "progress",
+    header: "Progress",
+    cell: ({ row }) => {
+      const percent = progressMap?.[row.original.id];
+      return (
+        <div className="flex items-center gap-2">
+          <div className="flex-1">
+            <ProgressBar percent={percent} size="md" />
+          </div>
+          <span className="text-xs text-muted-foreground">{percent != null ? `${String(percent)}%` : "—"}</span>
+        </div>
+      );
+    },
+    size: 120,
+    enableSorting: false,
   },
   {
     id: "formats",
