@@ -1,0 +1,30 @@
+// @vitest-environment happy-dom
+import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+
+vi.mock("~/components/progress-bar", () => ({
+  ProgressBar: ({ percent }: { percent: number }) => (
+    <div data-testid="progress-bar" data-percent={percent} />
+  ),
+}));
+
+import { WorkProgress } from "./work-progress";
+
+describe("WorkProgress", () => {
+  it("renders progress bar with max percent", () => {
+    render(<WorkProgress progress={[{ percent: 50 }, { percent: 75 }]} />);
+    const bar = screen.getByTestId("progress-bar");
+    expect(bar.getAttribute("data-percent")).toBe("75");
+  });
+
+  it("renders percentage text", () => {
+    render(<WorkProgress progress={[{ percent: 42 }]} />);
+    expect(screen.getByText("42%")).toBeTruthy();
+  });
+
+  it("treats null percent as 0", () => {
+    render(<WorkProgress progress={[{ percent: null }, { percent: 30 }]} />);
+    const bar = screen.getByTestId("progress-bar");
+    expect(bar.getAttribute("data-percent")).toBe("30");
+  });
+});
