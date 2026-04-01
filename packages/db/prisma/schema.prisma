@@ -210,6 +210,7 @@ model FileAsset {
   duplicateRight DuplicateCandidate[] @relation("DuplicateRightFile")
 
   @@index([libraryRootId])
+  @@index([libraryRootId, availabilityStatus])
   @@index([partialHash])
   @@index([fullHash])
 }
@@ -451,6 +452,7 @@ model ImportJob {
   libraryRoot LibraryRoot? @relation(fields: [libraryRootId], references: [id])
 
   @@index([status])
+  @@index([libraryRootId, status])
   @@index([kind])
   @@index([createdAt])
 }
