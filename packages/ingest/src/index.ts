@@ -37,6 +37,7 @@ export type {
   HashFileAssetResult,
   IngestDb,
   IngestDependencies,
+  IngestLogger,
   MatchFileAssetToEditionInput,
   MatchFileAssetToEditionResult,
   NormalizedBookMetadata,
