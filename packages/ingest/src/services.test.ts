@@ -7527,6 +7527,259 @@ describe("ingest services", () => {
     expect(result.createdEdition).toBe(false);
   });
 
+  it("defers sidecar matching and enqueues siblings when unlinked siblings have parsed metadata", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    // Two audio siblings with parsed metadata but no edition links
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Book/track1.mp3",
+      basename: "track1.mp3",
+      extension: "mp3",
+      fullHash: "hash1",
+      id: "file-audio-1",
+      mediaKind: MediaKind.AUDIO,
+      relativePath: "Author/Book/track1.mp3",
+      metadata: {
+        normalized: {
+          authors: ["Test Author"],
+          narrators: [],
+          identifiers: { unknown: [] },
+          title: "Book",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "audio-id3",
+        status: "parsed",
+        warnings: [],
+      } as object as FileAsset["metadata"],
+    });
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Book/track2.mp3",
+      basename: "track2.mp3",
+      extension: "mp3",
+      fullHash: "hash2",
+      id: "file-audio-2",
+      mediaKind: MediaKind.AUDIO,
+      relativePath: "Author/Book/track2.mp3",
+      metadata: {
+        normalized: {
+          authors: ["Test Author"],
+          narrators: [],
+          identifiers: { unknown: [] },
+          title: "Book",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "audio-id3",
+        status: "parsed",
+        warnings: [],
+      } as object as FileAsset["metadata"],
+    });
+
+    // Sidecar in the same directory
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Book/metadata.json",
+      basename: "metadata.json",
+      extension: "json",
+      id: "file-sidecar",
+      mediaKind: MediaKind.SIDECAR,
+      relativePath: "Author/Book/metadata.json",
+      metadata: {
+        normalized: {
+          authors: ["Test Author"],
+          narrators: [],
+          identifiers: { unknown: [] },
+          title: "Book",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "audiobook-json",
+        status: "parsed",
+        warnings: [],
+      } as object as FileAsset["metadata"],
+    });
+
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-sidecar" });
+
+    // Should defer: enqueue matching for each parsed sibling + re-enqueue sidecar
+    expect(result.skipped).toBe(true);
+    expect(result.workId).toBeUndefined();
+    expect(result.editionId).toBeUndefined();
+
+    const matchCalls = enqueueLibraryJob.mock.calls.filter(
+      (call: unknown[]) => call[0] === LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION,
+    );
+    expect(matchCalls).toHaveLength(3);
+    expect(matchCalls[0]).toEqual([LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, { fileAssetId: "file-audio-1" }]);
+    expect(matchCalls[1]).toEqual([LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, { fileAssetId: "file-audio-2" }]);
+    expect(matchCalls[2]).toEqual([LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, { fileAssetId: "file-sidecar" }]);
+  });
+
+  it("does not defer when unlinked audio siblings have no parsed metadata", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    // Stub work for title-based fallback
+    addWork(state, {
+      enrichmentStatus: "STUB",
+      id: "stub-work",
+      titleCanonical: "unparsed book",
+      titleDisplay: "Unparsed Book",
+    });
+    addEdition(state, {
+      formatFamily: FormatFamily.AUDIOBOOK,
+      id: "stub-edition",
+      workId: "stub-work",
+    });
+
+    // Two audio siblings with no metadata (not yet parsed)
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Unparsed Book/track1.mp3",
+      basename: "track1.mp3",
+      extension: "mp3",
+      fullHash: "hash1",
+      id: "file-audio-1",
+      mediaKind: MediaKind.AUDIO,
+      relativePath: "Author/Unparsed Book/track1.mp3",
+    });
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Unparsed Book/track2.mp3",
+      basename: "track2.mp3",
+      extension: "mp3",
+      fullHash: "hash2",
+      id: "file-audio-2",
+      mediaKind: MediaKind.AUDIO,
+      relativePath: "Author/Unparsed Book/track2.mp3",
+    });
+
+    // Sidecar in the same directory
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Unparsed Book/metadata.json",
+      basename: "metadata.json",
+      extension: "json",
+      id: "file-sidecar",
+      mediaKind: MediaKind.SIDECAR,
+      relativePath: "Author/Unparsed Book/metadata.json",
+      metadata: {
+        normalized: {
+          authors: ["Test Author"],
+          narrators: [],
+          identifiers: { unknown: [] },
+          title: "Unparsed Book",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "audiobook-json",
+        status: "parsed",
+        warnings: [],
+      } as object as FileAsset["metadata"],
+    });
+
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-sidecar" });
+
+    // No siblings have parsed metadata — falls through to title-based match
+    expect(result.skipped).toBe(false);
+    expect(result.workId).toBe("stub-work");
+    expect(result.editionId).toBe("stub-edition");
+
+    // No MATCH_FILE_ASSET_TO_EDITION jobs should be enqueued for siblings
+    const matchCalls = enqueueLibraryJob.mock.calls.filter(
+      (call: unknown[]) => call[0] === LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION,
+    );
+    expect(matchCalls).toHaveLength(0);
+  });
+
+  it("defers only for siblings with parsed metadata, skipping unparsed ones", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    // One audio sibling with parsed metadata
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Mixed Book/track1.mp3",
+      basename: "track1.mp3",
+      extension: "mp3",
+      fullHash: "hash1",
+      id: "file-audio-parsed",
+      mediaKind: MediaKind.AUDIO,
+      relativePath: "Author/Mixed Book/track1.mp3",
+      metadata: {
+        normalized: {
+          authors: ["Test Author"],
+          narrators: [],
+          identifiers: { unknown: [] },
+          title: "Mixed Book",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "audio-id3",
+        status: "parsed",
+        warnings: [],
+      } as object as FileAsset["metadata"],
+    });
+
+    // One audio sibling with no metadata (not yet parsed)
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Mixed Book/track2.mp3",
+      basename: "track2.mp3",
+      extension: "mp3",
+      fullHash: "hash2",
+      id: "file-audio-unparsed",
+      mediaKind: MediaKind.AUDIO,
+      relativePath: "Author/Mixed Book/track2.mp3",
+    });
+
+    // Sidecar in the same directory
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Mixed Book/metadata.json",
+      basename: "metadata.json",
+      extension: "json",
+      id: "file-sidecar",
+      mediaKind: MediaKind.SIDECAR,
+      relativePath: "Author/Mixed Book/metadata.json",
+      metadata: {
+        normalized: {
+          authors: ["Test Author"],
+          narrators: [],
+          identifiers: { unknown: [] },
+          title: "Mixed Book",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "audiobook-json",
+        status: "parsed",
+        warnings: [],
+      } as object as FileAsset["metadata"],
+    });
+
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-sidecar" });
+
+    // Should defer: only enqueue the parsed sibling + sidecar
+    expect(result.skipped).toBe(true);
+
+    const matchCalls = enqueueLibraryJob.mock.calls.filter(
+      (call: unknown[]) => call[0] === LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION,
+    );
+    expect(matchCalls).toHaveLength(2);
+    expect(matchCalls[0]).toEqual([LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, { fileAssetId: "file-audio-parsed" }]);
+    expect(matchCalls[1]).toEqual([LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, { fileAssetId: "file-sidecar" }]);
+  });
+
   it("enriches existing audiobook stub edition without narrators when sidecar has none", async () => {
     const state = createEmptyState("/tmp/root");
 

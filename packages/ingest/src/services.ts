@@ -2558,7 +2558,28 @@ export function createIngestServices(
     });
 
     if (siblingLinks.length === 0) {
-      return null;
+      // Siblings exist but none are linked to an edition yet.
+      // If any have parsed metadata, enqueue matching for them first,
+      // then re-enqueue the sidecar so it retries after siblings are linked.
+      const parsedSiblings = siblingAudioFiles.filter((s) => {
+        const meta = parseStoredMetadata(s.metadata);
+        return meta?.status === "parsed";
+      });
+
+      if (parsedSiblings.length === 0) {
+        return null;
+      }
+
+      for (const sibling of parsedSiblings) {
+        await enqueueJob(LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, {
+          fileAssetId: sibling.id,
+        });
+      }
+      await enqueueJob(LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, {
+        fileAssetId: ctx.fileAsset.id,
+      });
+
+      return skippedResult(ctx.fileAsset.id);
     }
 
     // Batch-fetch all referenced editions
