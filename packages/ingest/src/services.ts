@@ -2387,6 +2387,454 @@ export function createIngestServices(
     );
   }
 
+  interface MatchContext {
+    fileAsset: FileAssetRecord;
+    identifiers: NormalizedBookMetadata["identifiers"] | undefined;
+    isAudiobook: boolean;
+    matchableMetadata: {
+      authorCanonicals: string[];
+      authors: string[];
+      title: string;
+      titleCanonical: string;
+    };
+    storedMetadata: ParsedFileAssetMetadata;
+  }
+
+  type FindOrCreateWorkResult =
+    | { kind: "earlyReturn"; result: MatchFileAssetToEditionResult }
+    | { kind: "workReady"; workId: string; createdWork: boolean };
+
+  async function handleExistingEditionLink(
+    fileAsset: FileAssetRecord,
+    existingEditionFile: EditionFileRecord,
+  ): Promise<MatchFileAssetToEditionResult> {
+    const existingEdition = await ingestDb.edition.findUnique({
+      where: { id: existingEditionFile.editionId },
+    });
+
+    let enqueuedCoverJob = false;
+    let enrichedExistingWork = false;
+    let mergedIntoWorkId: string | undefined;
+    let finalWorkId = existingEdition?.workId;
+
+    if (existingEdition && finalWorkId) {
+      const existingWork = await ingestDb.work.findUnique({
+        where: { id: finalWorkId },
+      });
+
+      if (existingWork?.enrichmentStatus === "STUB") {
+        const storedMeta = parseStoredMetadata(fileAsset.metadata);
+        const matchableMeta = extractNormalizedMetadataForMatching(fileAsset);
+
+        if (storedMeta?.status === "parsed" && matchableMeta !== undefined) {
+          // Check for ISBN/title+author match against other works
+          const identifiers = storedMeta.normalized?.identifiers;
+          const editionMatch = await findEditionByIdentifiers(identifiers);
+
+          const matchedDifferentWork = editionMatch !== null && editionMatch.workId !== finalWorkId;
+
+          if (!matchedDifferentWork) {
+            // Check title+author match
+            const matchingWorks = await ingestDb.work.findMany({
+              include: { editions: { include: { contributors: { include: { contributor: true } } } } },
+              where: { titleCanonical: matchableMeta.titleCanonical },
+            });
+            const titleAuthorMatch = matchingWorks.find((work) => {
+              if (work.id === finalWorkId) return false;
+              const existingAuthors = getAuthorCanonicalsForWork(work);
+              return existingAuthors.length > 0 &&
+                existingAuthors.length === matchableMeta.authorCanonicals.length &&
+                existingAuthors.every((author, index) => author === matchableMeta.authorCanonicals[index]);
+            });
+
+            if (titleAuthorMatch) {
+              // Merge: re-link edition to matched work, delete orphan stub
+              await ingestDb.edition.update({
+                where: { id: existingEdition.id },
+                data: {
+                  workId: titleAuthorMatch.id,
+                  isbn13: identifiers?.isbn13 ?? null,
+                  isbn10: identifiers?.isbn10 ?? null,
+                  asin: identifiers?.asin ?? null,
+                },
+              });
+              await ingestDb.work.delete({ where: { id: finalWorkId } });
+              mergedIntoWorkId = titleAuthorMatch.id;
+              finalWorkId = titleAuthorMatch.id;
+              enrichedExistingWork = true;
+            } else {
+              // No match — enrich the stub in place
+              await ingestDb.work.update({
+                where: { id: finalWorkId },
+                data: {
+                  description: storedMeta.normalized?.description ?? null,
+                  enrichmentStatus: "ENRICHED",
+                  sortTitle: null,
+                  titleCanonical: matchableMeta.titleCanonical,
+                  titleDisplay: matchableMeta.title,
+                },
+              });
+              await ingestDb.edition.update({
+                where: { id: existingEdition.id },
+                data: {
+                  isbn13: identifiers?.isbn13 ?? null,
+                  isbn10: identifiers?.isbn10 ?? null,
+                  asin: identifiers?.asin ?? null,
+                  language: storedMeta.normalized?.language ?? null,
+                },
+              });
+              await ensureContributors(ingestDb, existingEdition.id, matchableMeta.authors, ContributorRole.AUTHOR);
+              enrichedExistingWork = true;
+            }
+          } else {
+            // ISBN matched a different work — merge
+            await ingestDb.edition.update({
+              where: { id: existingEdition.id },
+              data: { workId: editionMatch.workId },
+            });
+            await ingestDb.work.delete({ where: { id: finalWorkId } });
+            mergedIntoWorkId = editionMatch.workId;
+            finalWorkId = editionMatch.workId;
+            enrichedExistingWork = true;
+          }
+        }
+      }
+
+      await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
+        workId: finalWorkId,
+        fileAssetId: fileAsset.id,
+      });
+      enqueuedCoverJob = true;
+    }
+
+    return {
+      createdEdition: false,
+      createdEditionFile: false,
+      createdWork: false,
+      editionId: existingEdition?.id,
+      enrichedExistingWork,
+      enqueuedCoverJob,
+      fileAssetId: fileAsset.id,
+      mediaKind: fileAsset.mediaKind,
+      mergedIntoWorkId,
+      skipped: false,
+      workId: finalWorkId,
+    };
+  }
+
+  function skippedResult(fileAssetId: string): MatchFileAssetToEditionResult {
+    return {
+      createdEdition: false,
+      createdEditionFile: false,
+      createdWork: false,
+      enrichedExistingWork: false,
+      enqueuedCoverJob: false,
+      fileAssetId,
+      skipped: true,
+    };
+  }
+
+  async function matchAudiobookSidecarToSibling(
+    ctx: MatchContext,
+  ): Promise<MatchFileAssetToEditionResult | null> {
+    if (!ctx.isAudiobook || ctx.fileAsset.mediaKind !== MediaKind.SIDECAR) {
+      return null;
+    }
+
+    const sidecarDir = path.dirname(ctx.fileAsset.absolutePath);
+    const siblingAudioFiles = await ingestDb.fileAsset.findByDirectory({
+      directoryPath: sidecarDir,
+      mediaKinds: [MediaKind.AUDIO],
+    });
+
+    if (siblingAudioFiles.length === 0) {
+      return null;
+    }
+
+    // Find the edition that any sibling audio file is linked to
+    for (const sibling of siblingAudioFiles) {
+      const siblingLink = await ingestDb.editionFile.findFirst({
+        where: { fileAssetId: sibling.id },
+      });
+      if (siblingLink !== null) {
+        const siblingEdition = await ingestDb.edition.findUnique({
+          where: { id: siblingLink.editionId },
+        });
+        if (siblingEdition && siblingEdition.formatFamily === FormatFamily.AUDIOBOOK) {
+          const siblingWork = await ingestDb.work.findUnique({ where: { id: siblingEdition.workId } });
+          if (!siblingWork) continue;
+
+          // Enrich the work
+          if (siblingWork.enrichmentStatus === "STUB") {
+            await ingestDb.work.update({
+              where: { id: siblingEdition.workId },
+              data: {
+                description: ctx.storedMetadata.normalized?.description ?? null,
+                enrichmentStatus: "ENRICHED",
+                sortTitle: null,
+                titleCanonical: ctx.matchableMetadata.titleCanonical,
+                titleDisplay: ctx.matchableMetadata.title,
+              },
+            });
+          }
+
+          // Enrich the edition
+          await ingestDb.edition.update({
+            where: { id: siblingEdition.id },
+            data: {
+              asin: ctx.identifiers?.asin ?? siblingEdition.asin,
+              isbn10: ctx.identifiers?.isbn10 ?? siblingEdition.isbn10,
+              isbn13: ctx.identifiers?.isbn13 ?? siblingEdition.isbn13,
+              language: ctx.storedMetadata.normalized?.language ?? null,
+            },
+          });
+
+          await ensureContributors(ingestDb, siblingEdition.id, ctx.matchableMetadata.authors, ContributorRole.AUTHOR);
+
+          if (ctx.storedMetadata.normalized?.narrators && ctx.storedMetadata.normalized.narrators.length > 0) {
+            await ensureContributors(ingestDb, siblingEdition.id, ctx.storedMetadata.normalized.narrators, ContributorRole.NARRATOR);
+          }
+
+          await ensureEditionFileLink(ingestDb, siblingEdition.id, ctx.fileAsset.id);
+
+          await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
+            workId: siblingEdition.workId,
+            fileAssetId: ctx.fileAsset.id,
+          });
+
+          return {
+            createdEdition: false,
+            createdEditionFile: true,
+            createdWork: false,
+            editionId: siblingEdition.id,
+            enrichedExistingWork: true,
+            enqueuedCoverJob: true,
+            fileAssetId: ctx.fileAsset.id,
+            mediaKind: ctx.fileAsset.mediaKind,
+            skipped: false,
+            workId: siblingEdition.workId,
+          };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  async function matchByIdentifiers(
+    ctx: MatchContext,
+  ): Promise<MatchFileAssetToEditionResult | null> {
+    const editionMatch = await findEditionByIdentifiers(ctx.identifiers);
+
+    if (editionMatch === null) {
+      return null;
+    }
+
+    const createdEditionFile = await ensureEditionFileLink(ingestDb, editionMatch.id, ctx.fileAsset.id);
+
+    await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
+      workId: editionMatch.workId,
+      fileAssetId: ctx.fileAsset.id,
+    });
+
+    return {
+      createdEdition: false,
+      createdEditionFile,
+      createdWork: false,
+      editionId: editionMatch.id,
+      enrichedExistingWork: false,
+      enqueuedCoverJob: true,
+      fileAssetId: ctx.fileAsset.id,
+      mediaKind: ctx.fileAsset.mediaKind,
+      skipped: false,
+      workId: editionMatch.workId,
+    };
+  }
+
+  async function findOrCreateWork(
+    ctx: MatchContext,
+  ): Promise<FindOrCreateWorkResult> {
+    const matchingWorks = await ingestDb.work.findMany({
+      include: {
+        editions: {
+          include: {
+            contributors: {
+              include: {
+                contributor: true,
+              },
+            },
+          },
+        },
+      },
+      where: { titleCanonical: ctx.matchableMetadata.titleCanonical },
+    });
+    let matchingWork = matchingWorks.find((work) => {
+      const existingAuthors = getAuthorCanonicalsForWork(work);
+      return existingAuthors.length > 0 &&
+        existingAuthors.length === ctx.matchableMetadata.authorCanonicals.length &&
+        existingAuthors.every((author, index) => author === ctx.matchableMetadata.authorCanonicals[index]);
+    });
+
+    // Fallback for audiobook stubs: match by title when stub has no authors
+    if (matchingWork === undefined && ctx.isAudiobook) {
+      matchingWork = matchingWorks.find((work) =>
+        work.enrichmentStatus === "STUB" &&
+        getAuthorCanonicalsForWork(work).length === 0,
+      );
+    }
+
+    if (matchingWork === undefined) {
+      const createdWorkRecord = await ingestDb.work.create({
+        data: {
+          sortTitle: null,
+          titleCanonical: ctx.matchableMetadata.titleCanonical,
+          titleDisplay: ctx.matchableMetadata.title,
+        },
+      });
+      return { kind: "workReady", workId: createdWorkRecord.id, createdWork: true };
+    }
+
+    const workId = matchingWork.id;
+
+    // Enrich stub work with sidecar metadata
+    if (matchingWork.enrichmentStatus === "STUB") {
+      await ingestDb.work.update({
+        where: { id: matchingWork.id },
+        data: {
+          description: ctx.storedMetadata.normalized?.description ?? null,
+          enrichmentStatus: "ENRICHED",
+          sortTitle: null,
+          titleCanonical: ctx.matchableMetadata.titleCanonical,
+          titleDisplay: ctx.matchableMetadata.title,
+        },
+      });
+
+      // Check if the stub work already has an audiobook edition we should enrich
+      // instead of creating a new one (e.g., SCAN created a stub edition from the .m4b)
+      if (ctx.isAudiobook) {
+        const existingAudioEdition = matchingWork.editions.find(
+          (e) => e.formatFamily === FormatFamily.AUDIOBOOK,
+        );
+
+        if (existingAudioEdition) {
+          // Enrich existing edition with sidecar metadata
+          await ingestDb.edition.update({
+            where: { id: existingAudioEdition.id },
+            data: {
+              asin: ctx.identifiers?.asin ?? existingAudioEdition.asin,
+              isbn10: ctx.identifiers?.isbn10 ?? existingAudioEdition.isbn10,
+              isbn13: ctx.identifiers?.isbn13 ?? existingAudioEdition.isbn13,
+              language: ctx.storedMetadata.normalized?.language ?? null,
+            },
+          });
+
+          await ensureContributors(ingestDb, existingAudioEdition.id, ctx.matchableMetadata.authors, ContributorRole.AUTHOR);
+
+          if (ctx.storedMetadata.normalized?.narrators && ctx.storedMetadata.normalized.narrators.length > 0) {
+            await ensureContributors(ingestDb, existingAudioEdition.id, ctx.storedMetadata.normalized.narrators, ContributorRole.NARRATOR);
+          }
+
+          await ensureEditionFileLink(ingestDb, existingAudioEdition.id, ctx.fileAsset.id);
+
+          await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
+            workId,
+            fileAssetId: ctx.fileAsset.id,
+          });
+
+          return {
+            kind: "earlyReturn",
+            result: {
+              createdEdition: false,
+              createdEditionFile: true,
+              createdWork: false,
+              editionId: existingAudioEdition.id,
+              enrichedExistingWork: true,
+              enqueuedCoverJob: true,
+              fileAssetId: ctx.fileAsset.id,
+              mediaKind: ctx.fileAsset.mediaKind,
+              skipped: false,
+              workId,
+            },
+          };
+        }
+      }
+    }
+
+    return { kind: "workReady", workId, createdWork: false };
+  }
+
+  async function createEditionAndLinkFiles(
+    ctx: MatchContext,
+    workId: string,
+    createdWork: boolean,
+  ): Promise<MatchFileAssetToEditionResult> {
+    const formatFamily = ctx.isAudiobook ? FormatFamily.AUDIOBOOK : FormatFamily.EBOOK;
+
+    const createdEdition = await ingestDb.edition.create({
+      data: {
+        asin: ctx.identifiers?.asin ?? null,
+        formatFamily,
+        isbn10: ctx.identifiers?.isbn10 ?? null,
+        isbn13: ctx.identifiers?.isbn13 ?? null,
+        language: ctx.storedMetadata.normalized?.language ?? null,
+        publishedAt: null,
+        publisher: null,
+        workId,
+      },
+    });
+
+    await ensureContributors(ingestDb, createdEdition.id, ctx.matchableMetadata.authors, ContributorRole.AUTHOR);
+
+    // Add narrator contributors for audiobooks
+    if (ctx.isAudiobook && ctx.storedMetadata.normalized?.narrators && ctx.storedMetadata.normalized.narrators.length > 0) {
+      await ensureContributors(ingestDb, createdEdition.id, ctx.storedMetadata.normalized.narrators, ContributorRole.NARRATOR);
+    }
+
+    const createdEditionFile = await ensureEditionFileLink(ingestDb, createdEdition.id, ctx.fileAsset.id);
+
+    // Link sibling audio files as AUDIO_TRACK for audiobook editions
+    if (ctx.isAudiobook) {
+      const directory = path.dirname(ctx.fileAsset.absolutePath);
+      const audioSiblings = await ingestDb.fileAsset.findByDirectory({
+        directoryPath: directory,
+        mediaKinds: [MediaKind.AUDIO],
+      });
+
+      for (const sibling of audioSiblings) {
+        const existingSiblingLink = await ingestDb.editionFile.findFirst({
+          where: { fileAssetId: sibling.id },
+        });
+        if (existingSiblingLink === null) {
+          await ingestDb.editionFile.create({
+            data: {
+              editionId: createdEdition.id,
+              fileAssetId: sibling.id,
+              role: EditionFileRole.AUDIO_TRACK,
+            },
+          });
+        }
+      }
+    }
+
+    await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
+      workId,
+      fileAssetId: ctx.fileAsset.id,
+    });
+
+    return {
+      createdEdition: true,
+      createdEditionFile,
+      createdWork,
+      editionId: createdEdition.id,
+      enrichedExistingWork: false,
+      enqueuedCoverJob: true,
+      fileAssetId: ctx.fileAsset.id,
+      mediaKind: ctx.fileAsset.mediaKind,
+      skipped: false,
+      workId,
+    };
+  }
+
   async function matchFileAssetToEdition(
     input: MatchFileAssetToEditionInput,
   ): Promise<MatchFileAssetToEditionResult> {
@@ -2411,15 +2859,7 @@ export function createIngestServices(
     const matchableMediaKinds: Set<MediaKind> = new Set([MediaKind.EPUB, MediaKind.AUDIO, MediaKind.SIDECAR]);
 
     if (fileAsset === null || !matchableMediaKinds.has(fileAsset.mediaKind)) {
-      return {
-        createdEdition: false,
-        createdEditionFile: false,
-        createdWork: false,
-        enrichedExistingWork: false,
-        enqueuedCoverJob: false,
-        fileAssetId: input.fileAssetId,
-        skipped: true,
-      };
+      return skippedResult(input.fileAssetId);
     }
 
     const isAudiobook = fileAsset.mediaKind === MediaKind.AUDIO ||
@@ -2431,415 +2871,34 @@ export function createIngestServices(
     });
 
     if (existingEditionFile !== null) {
-      const existingEdition = await ingestDb.edition.findUnique({
-        where: { id: existingEditionFile.editionId },
-      });
-
-      let enqueuedCoverJob = false;
-      let enrichedExistingWork = false;
-      let mergedIntoWorkId: string | undefined;
-      let finalWorkId = existingEdition?.workId;
-
-      if (existingEdition && finalWorkId) {
-        const existingWork = await ingestDb.work.findUnique({
-          where: { id: finalWorkId },
-        });
-
-        if (existingWork?.enrichmentStatus === "STUB") {
-          const storedMeta = parseStoredMetadata(fileAsset.metadata);
-          const matchableMeta = extractNormalizedMetadataForMatching(fileAsset);
-
-          if (storedMeta?.status === "parsed" && matchableMeta !== undefined) {
-            // Check for ISBN/title+author match against other works
-            const identifiers = storedMeta.normalized?.identifiers;
-            const editionMatch = await findEditionByIdentifiers(identifiers);
-
-            const matchedDifferentWork = editionMatch !== null && editionMatch.workId !== finalWorkId;
-
-            if (!matchedDifferentWork) {
-              // Check title+author match
-              const matchingWorks = await ingestDb.work.findMany({
-                include: { editions: { include: { contributors: { include: { contributor: true } } } } },
-                where: { titleCanonical: matchableMeta.titleCanonical },
-              });
-              const titleAuthorMatch = matchingWorks.find((work) => {
-                if (work.id === finalWorkId) return false;
-                const existingAuthors = getAuthorCanonicalsForWork(work);
-                return existingAuthors.length > 0 &&
-                  existingAuthors.length === matchableMeta.authorCanonicals.length &&
-                  existingAuthors.every((author, index) => author === matchableMeta.authorCanonicals[index]);
-              });
-
-              if (titleAuthorMatch) {
-                // Merge: re-link edition to matched work, delete orphan stub
-                await ingestDb.edition.update({
-                  where: { id: existingEdition.id },
-                  data: {
-                    workId: titleAuthorMatch.id,
-                    isbn13: identifiers?.isbn13 ?? null,
-                    isbn10: identifiers?.isbn10 ?? null,
-                    asin: identifiers?.asin ?? null,
-                  },
-                });
-                await ingestDb.work.delete({ where: { id: finalWorkId } });
-                mergedIntoWorkId = titleAuthorMatch.id;
-                finalWorkId = titleAuthorMatch.id;
-                enrichedExistingWork = true;
-              } else {
-                // No match — enrich the stub in place
-                await ingestDb.work.update({
-                  where: { id: finalWorkId },
-                  data: {
-                    description: storedMeta.normalized?.description ?? null,
-                    enrichmentStatus: "ENRICHED",
-                    sortTitle: null,
-                    titleCanonical: matchableMeta.titleCanonical,
-                    titleDisplay: matchableMeta.title,
-                  },
-                });
-                await ingestDb.edition.update({
-                  where: { id: existingEdition.id },
-                  data: {
-                    isbn13: identifiers?.isbn13 ?? null,
-                    isbn10: identifiers?.isbn10 ?? null,
-                    asin: identifiers?.asin ?? null,
-                    language: storedMeta.normalized?.language ?? null,
-                  },
-                });
-                await ensureContributors(ingestDb, existingEdition.id, matchableMeta.authors, ContributorRole.AUTHOR);
-                enrichedExistingWork = true;
-              }
-            } else {
-              // ISBN matched a different work — merge
-              await ingestDb.edition.update({
-                where: { id: existingEdition.id },
-                data: { workId: editionMatch.workId },
-              });
-              await ingestDb.work.delete({ where: { id: finalWorkId } });
-              mergedIntoWorkId = editionMatch.workId;
-              finalWorkId = editionMatch.workId;
-              enrichedExistingWork = true;
-            }
-          }
-        }
-
-        await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
-          workId: finalWorkId,
-          fileAssetId: fileAsset.id,
-        });
-        enqueuedCoverJob = true;
-      }
-
-      return {
-        createdEdition: false,
-        createdEditionFile: false,
-        createdWork: false,
-        editionId: existingEdition?.id,
-        enrichedExistingWork,
-        enqueuedCoverJob,
-        fileAssetId: fileAsset.id,
-        mediaKind: fileAsset.mediaKind,
-        mergedIntoWorkId,
-        skipped: false,
-        workId: finalWorkId,
-      };
+      return handleExistingEditionLink(fileAsset, existingEditionFile);
     }
 
     const storedMetadata = parseStoredMetadata(fileAsset.metadata);
     const matchableMetadata = extractNormalizedMetadataForMatching(fileAsset);
 
     if (storedMetadata?.status !== "parsed" || matchableMetadata === undefined) {
-      return {
-        createdEdition: false,
-        createdEditionFile: false,
-        createdWork: false,
-        enrichedExistingWork: false,
-        enqueuedCoverJob: false,
-        fileAssetId: fileAsset.id,
-        skipped: true,
-      };
+      return skippedResult(fileAsset.id);
     }
 
-    // For audiobook sidecars, first check for an existing audiobook edition in the
-    // same directory. This handles the common case where the sidecar's metadata title
-    // differs from the directory-derived title (e.g., "The One Device: The Secret
-    // History of the iPhone" vs "The One Device - The Secret History of the iPhone").
-    if (isAudiobook && fileAsset.mediaKind === MediaKind.SIDECAR) {
-      const sidecarDir = path.dirname(fileAsset.absolutePath);
-      const siblingAudioFiles = await ingestDb.fileAsset.findByDirectory({
-        directoryPath: sidecarDir,
-        mediaKinds: [MediaKind.AUDIO],
-      });
-
-      if (siblingAudioFiles.length > 0) {
-        // Find the edition that any sibling audio file is linked to
-        for (const sibling of siblingAudioFiles) {
-          const siblingLink = await ingestDb.editionFile.findFirst({
-            where: { fileAssetId: sibling.id },
-          });
-          if (siblingLink !== null) {
-            const siblingEdition = await ingestDb.edition.findUnique({
-              where: { id: siblingLink.editionId },
-            });
-            if (siblingEdition && siblingEdition.formatFamily === FormatFamily.AUDIOBOOK) {
-              const siblingWork = await ingestDb.work.findUnique({ where: { id: siblingEdition.workId } });
-              if (!siblingWork) continue;
-
-              const identifiers = storedMetadata.normalized?.identifiers;
-
-              // Enrich the work
-              if (siblingWork.enrichmentStatus === "STUB") {
-                await ingestDb.work.update({
-                  where: { id: siblingEdition.workId },
-                  data: {
-                    description: storedMetadata.normalized?.description ?? null,
-                    enrichmentStatus: "ENRICHED",
-                    sortTitle: null,
-                    titleCanonical: matchableMetadata.titleCanonical,
-                    titleDisplay: matchableMetadata.title,
-                  },
-                });
-              }
-
-              // Enrich the edition
-              await ingestDb.edition.update({
-                where: { id: siblingEdition.id },
-                data: {
-                  asin: identifiers?.asin ?? siblingEdition.asin,
-                  isbn10: identifiers?.isbn10 ?? siblingEdition.isbn10,
-                  isbn13: identifiers?.isbn13 ?? siblingEdition.isbn13,
-                  language: storedMetadata.normalized?.language ?? null,
-                },
-              });
-
-              await ensureContributors(ingestDb, siblingEdition.id, matchableMetadata.authors, ContributorRole.AUTHOR);
-
-              if (storedMetadata.normalized?.narrators && storedMetadata.normalized.narrators.length > 0) {
-                await ensureContributors(ingestDb, siblingEdition.id, storedMetadata.normalized.narrators, ContributorRole.NARRATOR);
-              }
-
-              await ensureEditionFileLink(ingestDb, siblingEdition.id, fileAsset.id);
-
-              await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
-                workId: siblingEdition.workId,
-                fileAssetId: fileAsset.id,
-              });
-
-              return {
-                createdEdition: false,
-                createdEditionFile: true,
-                createdWork: false,
-                editionId: siblingEdition.id,
-                enrichedExistingWork: true,
-                enqueuedCoverJob: true,
-                fileAssetId: fileAsset.id,
-                mediaKind: fileAsset.mediaKind,
-                skipped: false,
-                workId: siblingEdition.workId,
-              };
-            }
-          }
-        }
-      }
-    }
-
-    const identifiers = storedMetadata.normalized?.identifiers;
-    const editionMatch = await findEditionByIdentifiers(identifiers);
-
-    if (editionMatch !== null) {
-      const createdEditionFile = await ensureEditionFileLink(ingestDb, editionMatch.id, fileAsset.id);
-
-      await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
-        workId: editionMatch.workId,
-        fileAssetId: fileAsset.id,
-      });
-
-      return {
-        createdEdition: false,
-        createdEditionFile,
-        createdWork: false,
-        editionId: editionMatch.id,
-        enrichedExistingWork: false,
-        enqueuedCoverJob: true,
-        fileAssetId: fileAsset.id,
-        mediaKind: fileAsset.mediaKind,
-        skipped: false,
-        workId: editionMatch.workId,
-      };
-    }
-
-    const matchingWorks = await ingestDb.work.findMany({
-      include: {
-        editions: {
-          include: {
-            contributors: {
-              include: {
-                contributor: true,
-              },
-            },
-          },
-        },
-      },
-      where: { titleCanonical: matchableMetadata.titleCanonical },
-    });
-    let matchingWork = matchingWorks.find((work) => {
-      const existingAuthors = getAuthorCanonicalsForWork(work);
-      return existingAuthors.length > 0 &&
-        existingAuthors.length === matchableMetadata.authorCanonicals.length &&
-        existingAuthors.every((author, index) => author === matchableMetadata.authorCanonicals[index]);
-    });
-
-    // Fallback for audiobook stubs: match by title when stub has no authors
-    if (matchingWork === undefined && isAudiobook) {
-      matchingWork = matchingWorks.find((work) =>
-        work.enrichmentStatus === "STUB" &&
-        getAuthorCanonicalsForWork(work).length === 0,
-      );
-    }
-
-    let workId: string;
-    let createdWork = false;
-
-    if (matchingWork === undefined) {
-      const createdWorkRecord = await ingestDb.work.create({
-        data: {
-          sortTitle: null,
-          titleCanonical: matchableMetadata.titleCanonical,
-          titleDisplay: matchableMetadata.title,
-        },
-      });
-      workId = createdWorkRecord.id;
-      createdWork = true;
-    } else {
-      workId = matchingWork.id;
-
-      // Enrich stub work with sidecar metadata
-      if (matchingWork.enrichmentStatus === "STUB") {
-        await ingestDb.work.update({
-          where: { id: matchingWork.id },
-          data: {
-            description: storedMetadata.normalized?.description ?? null,
-            enrichmentStatus: "ENRICHED",
-            sortTitle: null,
-            titleCanonical: matchableMetadata.titleCanonical,
-            titleDisplay: matchableMetadata.title,
-          },
-        });
-
-        // Check if the stub work already has an audiobook edition we should enrich
-        // instead of creating a new one (e.g., SCAN created a stub edition from the .m4b)
-        if (isAudiobook) {
-          const existingAudioEdition = matchingWork.editions.find(
-            (e) => e.formatFamily === FormatFamily.AUDIOBOOK,
-          );
-
-          if (existingAudioEdition) {
-            // Enrich existing edition with sidecar metadata
-            await ingestDb.edition.update({
-              where: { id: existingAudioEdition.id },
-              data: {
-                asin: identifiers?.asin ?? existingAudioEdition.asin,
-                isbn10: identifiers?.isbn10 ?? existingAudioEdition.isbn10,
-                isbn13: identifiers?.isbn13 ?? existingAudioEdition.isbn13,
-                language: storedMetadata.normalized?.language ?? null,
-              },
-            });
-
-            await ensureContributors(ingestDb, existingAudioEdition.id, matchableMetadata.authors, ContributorRole.AUTHOR);
-
-            if (storedMetadata.normalized?.narrators && storedMetadata.normalized.narrators.length > 0) {
-              await ensureContributors(ingestDb, existingAudioEdition.id, storedMetadata.normalized.narrators, ContributorRole.NARRATOR);
-            }
-
-            await ensureEditionFileLink(ingestDb, existingAudioEdition.id, fileAsset.id);
-
-            await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
-              workId,
-              fileAssetId: fileAsset.id,
-            });
-
-            return {
-              createdEdition: false,
-              createdEditionFile: true,
-              createdWork: false,
-              editionId: existingAudioEdition.id,
-              enrichedExistingWork: true,
-              enqueuedCoverJob: true,
-              fileAssetId: fileAsset.id,
-              mediaKind: fileAsset.mediaKind,
-              skipped: false,
-              workId,
-            };
-          }
-        }
-      }
-    }
-
-    const formatFamily = isAudiobook ? FormatFamily.AUDIOBOOK : FormatFamily.EBOOK;
-
-    const createdEdition = await ingestDb.edition.create({
-      data: {
-        asin: identifiers?.asin ?? null,
-        formatFamily,
-        isbn10: identifiers?.isbn10 ?? null,
-        isbn13: identifiers?.isbn13 ?? null,
-        language: storedMetadata.normalized?.language ?? null,
-        publishedAt: null,
-        publisher: null,
-        workId,
-      },
-    });
-
-    await ensureContributors(ingestDb, createdEdition.id, matchableMetadata.authors, ContributorRole.AUTHOR);
-
-    // Add narrator contributors for audiobooks
-    if (isAudiobook && storedMetadata.normalized?.narrators && storedMetadata.normalized.narrators.length > 0) {
-      await ensureContributors(ingestDb, createdEdition.id, storedMetadata.normalized.narrators, ContributorRole.NARRATOR);
-    }
-
-    const createdEditionFile = await ensureEditionFileLink(ingestDb, createdEdition.id, fileAsset.id);
-
-    // Link sibling audio files as AUDIO_TRACK for audiobook editions
-    if (isAudiobook) {
-      const directory = path.dirname(fileAsset.absolutePath);
-      const audioSiblings = await ingestDb.fileAsset.findByDirectory({
-        directoryPath: directory,
-        mediaKinds: [MediaKind.AUDIO],
-      });
-
-      for (const sibling of audioSiblings) {
-        const existingSiblingLink = await ingestDb.editionFile.findFirst({
-          where: { fileAssetId: sibling.id },
-        });
-        if (existingSiblingLink === null) {
-          await ingestDb.editionFile.create({
-            data: {
-              editionId: createdEdition.id,
-              fileAssetId: sibling.id,
-              role: EditionFileRole.AUDIO_TRACK,
-            },
-          });
-        }
-      }
-    }
-
-    await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
-      workId,
-      fileAssetId: fileAsset.id,
-    });
-
-    return {
-      createdEdition: true,
-      createdEditionFile,
-      createdWork,
-      editionId: createdEdition.id,
-      enrichedExistingWork: false,
-      enqueuedCoverJob: true,
-      fileAssetId: fileAsset.id,
-      mediaKind: fileAsset.mediaKind,
-      skipped: false,
-      workId,
+    const ctx: MatchContext = {
+      fileAsset,
+      identifiers: storedMetadata.normalized?.identifiers,
+      isAudiobook,
+      matchableMetadata,
+      storedMetadata,
     };
+
+    const sidecarResult = await matchAudiobookSidecarToSibling(ctx);
+    if (sidecarResult !== null) return sidecarResult;
+
+    const identifierResult = await matchByIdentifiers(ctx);
+    if (identifierResult !== null) return identifierResult;
+
+    const workResult = await findOrCreateWork(ctx);
+    if (workResult.kind === "earlyReturn") return workResult.result;
+
+    return createEditionAndLinkFiles(ctx, workResult.workId, workResult.createdWork);
   }
 
   async function detectDuplicates(
