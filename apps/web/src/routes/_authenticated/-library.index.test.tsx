@@ -67,6 +67,8 @@ let mockLoaderData: {
 
 let mockSearch: { page: number; pageSize: number; sort: string } = { page: 1, pageSize: 50, sort: "title-asc" };
 const mockRouterInvalidate = vi.fn();
+const mockRouterNavigate = vi.fn();
+const mockRouter = { invalidate: mockRouterInvalidate, navigate: mockRouterNavigate };
 const bulkDeleteWorksServerFnMock = vi.fn();
 
 vi.mock("~/lib/server-fns/deletion", () => ({
@@ -100,7 +102,7 @@ vi.mock("@tanstack/react-router", async () => {
       }
       return <a href={href} {...props}>{children}</a>;
     },
-    useRouter: () => ({ invalidate: mockRouterInvalidate, navigate: vi.fn() }),
+    useRouter: () => mockRouter,
     useNavigate: () => mockNavigate,
     createFileRoute: (_path: string) => (opts: Record<string, string | boolean | object | ((...a: object[]) => object | undefined | Promise<object>)>) => {
       // Call validateSearch and loaderDeps to exercise those branches
@@ -202,10 +204,18 @@ vi.mock("~/components/data-table/data-table-column-picker", () => ({
   },
 }));
 
-// Use real data-table so column cell renderers execute
+// Use real data-table so column cell renderers execute; wrap VirtualizedDataTable to capture columns prop
+const capturedColumnRefs: object[] = [];
 vi.mock("~/components/data-table", async () => {
   const actual = await vi.importActual<typeof DataTableModule>("~/components/data-table");
-  return actual;
+  const RealTable = actual.VirtualizedDataTable;
+  return {
+    ...actual,
+    VirtualizedDataTable: (props: React.ComponentProps<typeof RealTable>) => {
+      capturedColumnRefs.push(props.columns);
+      return <RealTable {...props} />;
+    },
+  };
 });
 
 // Use real EditableTableCell so column cell renderers execute fully
@@ -319,6 +329,7 @@ describe("LibraryPage", () => {
     capturedFiltersProps = {};
     capturedPaginationProps = {};
     capturedColumnPickerProps = {};
+    capturedColumnRefs.length = 0;
     vi.clearAllMocks();
   });
 
@@ -2048,5 +2059,35 @@ describe("LibraryPage", () => {
     await waitFor(() => {
       expect(screen.getByText(/No shelves created yet/)).toBeTruthy();
     });
+  });
+
+  it("memoizes columns so the reference is stable across re-renders", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Stable", ["Author"])], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    await waitFor(() => {
+      expect(capturedColumnRefs.length).toBeGreaterThanOrEqual(1);
+    });
+
+    const firstColumns = capturedColumnRefs[capturedColumnRefs.length - 1];
+
+    // Trigger a re-render via row selection (does not change columns deps)
+    const checkbox = screen.getAllByRole("checkbox")[1];
+    if (checkbox) fireEvent.click(checkbox);
+
+    await waitFor(() => {
+      expect(capturedColumnRefs.length).toBeGreaterThanOrEqual(2);
+    });
+
+    const laterColumns = capturedColumnRefs[capturedColumnRefs.length - 1];
+    expect(laterColumns).toBe(firstColumns);
   });
 });

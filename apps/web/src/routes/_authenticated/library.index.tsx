@@ -271,6 +271,7 @@ function LibraryPage() {
   const [addingToShelf, setAddingToShelf] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const isScanning = activeJobCount > 0;
+  const columns = useMemo(() => getColumns(isScanning, editMode, router), [isScanning, editMode, router]);
   const newCount = totalCount - prevCount;
   const selectedCount = Object.keys(rowSelection).length;
 
@@ -544,7 +545,7 @@ function LibraryPage() {
             <LibraryGrid works={filteredByReading} progressMap={progressMap} scanActive={isScanning} tileSize={tileSize} />
           ) : (
             <VirtualizedDataTable
-              columns={getColumns(isScanning, editMode, router)}
+              columns={columns}
               data={filteredByReading}
               showPagination={false}
               columnVisibility={tablePrefs.columnVisibility}
