@@ -852,6 +852,30 @@ describe("ingest services", () => {
     ]);
   });
 
+  it("skips OS junk files (.DS_Store, Thumbs.db, desktop.ini) during walk", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-walk-junk-"));
+    tempDirectories.push(directory);
+
+    await writeFile(path.join(directory, "book.epub"), "epub");
+    await writeFile(path.join(directory, ".DS_Store"), "junk");
+    await writeFile(path.join(directory, "Thumbs.db"), "junk");
+    await writeFile(path.join(directory, "desktop.ini"), "junk");
+
+    const files = await walkRegularFiles(
+      directory,
+      (async (dirPath, options) => {
+        const { readdir } = await import("node:fs/promises");
+        return readdir(dirPath, options);
+      }) as ReaddirFn,
+      (async (entryPath) => {
+        const { lstat } = await import("node:fs/promises");
+        return lstat(entryPath);
+      }) as LstatFn,
+    );
+
+    expect(files).toEqual([path.join(directory, "book.epub")]);
+  });
+
   it("scans a root, upserts discovered files, enqueues changed assets, and marks missing files", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-scan-"));
     tempDirectories.push(directory);

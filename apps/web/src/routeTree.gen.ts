@@ -20,6 +20,7 @@ import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedSeriesRouteImport } from './routes/_authenticated/series'
 import { Route as AuthenticatedMatchSuggestionsRouteImport } from './routes/_authenticated/match-suggestions'
 import { Route as AuthenticatedLibraryRouteImport } from './routes/_authenticated/library'
+import { Route as AuthenticatedHealthRouteImport } from './routes/_authenticated/health'
 import { Route as AuthenticatedDuplicatesRouteImport } from './routes/_authenticated/duplicates'
 import { Route as AuthenticatedAuthorsRouteImport } from './routes/_authenticated/authors'
 import { Route as AuthenticatedShelvesIndexRouteImport } from './routes/_authenticated/shelves.index'
@@ -91,6 +92,11 @@ const AuthenticatedMatchSuggestionsRoute =
 const AuthenticatedLibraryRoute = AuthenticatedLibraryRouteImport.update({
   id: '/library',
   path: '/library',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedHealthRoute = AuthenticatedHealthRouteImport.update({
+  id: '/health',
+  path: '/health',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedDuplicatesRoute = AuthenticatedDuplicatesRouteImport.update({
@@ -199,6 +205,7 @@ export interface FileRoutesByFullPath {
   '/logged-out': typeof LoggedOutRoute
   '/authors': typeof AuthenticatedAuthorsRouteWithChildren
   '/duplicates': typeof AuthenticatedDuplicatesRoute
+  '/health': typeof AuthenticatedHealthRoute
   '/library': typeof AuthenticatedLibraryRouteWithChildren
   '/match-suggestions': typeof AuthenticatedMatchSuggestionsRoute
   '/series': typeof AuthenticatedSeriesRouteWithChildren
@@ -226,6 +233,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/logged-out': typeof LoggedOutRoute
   '/duplicates': typeof AuthenticatedDuplicatesRoute
+  '/health': typeof AuthenticatedHealthRoute
   '/match-suggestions': typeof AuthenticatedMatchSuggestionsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/login': typeof AuthLoginRoute
@@ -252,6 +260,7 @@ export interface FileRoutesById {
   '/logged-out': typeof LoggedOutRoute
   '/_authenticated/authors': typeof AuthenticatedAuthorsRouteWithChildren
   '/_authenticated/duplicates': typeof AuthenticatedDuplicatesRoute
+  '/_authenticated/health': typeof AuthenticatedHealthRoute
   '/_authenticated/library': typeof AuthenticatedLibraryRouteWithChildren
   '/_authenticated/match-suggestions': typeof AuthenticatedMatchSuggestionsRoute
   '/_authenticated/series': typeof AuthenticatedSeriesRouteWithChildren
@@ -284,6 +293,7 @@ export interface FileRouteTypes {
     | '/logged-out'
     | '/authors'
     | '/duplicates'
+    | '/health'
     | '/library'
     | '/match-suggestions'
     | '/series'
@@ -311,6 +321,7 @@ export interface FileRouteTypes {
   to:
     | '/logged-out'
     | '/duplicates'
+    | '/health'
     | '/match-suggestions'
     | '/auth/callback'
     | '/auth/login'
@@ -336,6 +347,7 @@ export interface FileRouteTypes {
     | '/logged-out'
     | '/_authenticated/authors'
     | '/_authenticated/duplicates'
+    | '/_authenticated/health'
     | '/_authenticated/library'
     | '/_authenticated/match-suggestions'
     | '/_authenticated/series'
@@ -447,6 +459,13 @@ declare module '@tanstack/react-router' {
       path: '/library'
       fullPath: '/library'
       preLoaderRoute: typeof AuthenticatedLibraryRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/health': {
+      id: '/_authenticated/health'
+      path: '/health'
+      fullPath: '/health'
+      preLoaderRoute: typeof AuthenticatedHealthRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/duplicates': {
@@ -665,6 +684,7 @@ const AuthenticatedShelvesRouteWithChildren =
 interface AuthenticatedRouteChildren {
   AuthenticatedAuthorsRoute: typeof AuthenticatedAuthorsRouteWithChildren
   AuthenticatedDuplicatesRoute: typeof AuthenticatedDuplicatesRoute
+  AuthenticatedHealthRoute: typeof AuthenticatedHealthRoute
   AuthenticatedLibraryRoute: typeof AuthenticatedLibraryRouteWithChildren
   AuthenticatedMatchSuggestionsRoute: typeof AuthenticatedMatchSuggestionsRoute
   AuthenticatedSeriesRoute: typeof AuthenticatedSeriesRouteWithChildren
@@ -676,6 +696,7 @@ interface AuthenticatedRouteChildren {
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAuthorsRoute: AuthenticatedAuthorsRouteWithChildren,
   AuthenticatedDuplicatesRoute: AuthenticatedDuplicatesRoute,
+  AuthenticatedHealthRoute: AuthenticatedHealthRoute,
   AuthenticatedLibraryRoute: AuthenticatedLibraryRouteWithChildren,
   AuthenticatedMatchSuggestionsRoute: AuthenticatedMatchSuggestionsRoute,
   AuthenticatedSeriesRoute: AuthenticatedSeriesRouteWithChildren,

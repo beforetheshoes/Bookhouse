@@ -1,6 +1,13 @@
 import path from "node:path";
 import { FormatFamily, MediaKind } from "@bookhouse/domain";
 
+export const IGNORED_BASENAMES = [".DS_Store", "Thumbs.db", "desktop.ini"] as const;
+const IGNORED_BASENAMES_SET = new Set<string>(IGNORED_BASENAMES);
+
+export function isIgnoredBasename(filePath: string): boolean {
+  return IGNORED_BASENAMES_SET.has(path.basename(filePath));
+}
+
 const AUDIO_EXTENSIONS = new Set([
   "aac",
   "flac",
@@ -53,6 +60,7 @@ export function classifyMediaKind(filePath: string): MediaKind {
 
   switch (extension) {
     case "epub":
+    case "kepub":
       return MediaKind.EPUB;
     case "pdf":
       return MediaKind.PDF;
