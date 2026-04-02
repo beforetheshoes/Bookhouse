@@ -26,7 +26,7 @@ import {
   type ParseFileAssetMetadataJobPayload,
   enqueueLibraryJob,
 } from "@bookhouse/shared";
-import { classifyMediaKind, deriveFormatFamily, getFileExtension, normalizeRelativePath, normalizeRootPath } from "./classification";
+import { classifyMediaKind, deriveFormatFamily, getFileExtension, IGNORED_BASENAMES, isIgnoredBasename, normalizeRelativePath, normalizeRootPath } from "./classification";
 import { normalizedSimilarity, normalizeForTitleMatching, stripSubtitleForMatching } from "./similarity";
 import { deriveTitleFromPath } from "./filename-title";
 import {
@@ -756,7 +756,9 @@ async function walkRegularFiles(
       }
 
       if (entry.isFile()) {
-        files.push(absolutePath);
+        if (!isIgnoredBasename(entry.name)) {
+          files.push(absolutePath);
+        }
         continue;
       }
 
@@ -2989,7 +2991,7 @@ export const matchFileAssetToEdition = services.matchFileAssetToEdition;
 export const parseFileAssetMetadata = services.parseFileAssetMetadata;
 export const detectDuplicates = services.detectDuplicates;
 export const mergeWorksById = services.mergeWorksById;
-export { classifyMediaKind, deriveFormatFamily, getFileExtension, hashFileContents, isFileChanged, normalizeRelativePath, normalizeRootPath, walkRegularFiles };
+export { classifyMediaKind, deriveFormatFamily, getFileExtension, hashFileContents, IGNORED_BASENAMES, isFileChanged, isIgnoredBasename, normalizeRelativePath, normalizeRootPath, walkRegularFiles };
 export { parseEpubMetadata } from "./epub";
 export { parseOpfSidecar } from "./opf";
 export { parseAudiobookMetadataJson, parseAudioId3Tags, type ParseAudioId3Result } from "./audiobook";

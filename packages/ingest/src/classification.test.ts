@@ -6,6 +6,7 @@ import {
   classifyMediaKind,
   deriveFormatFamily,
   getFileExtension,
+  isIgnoredBasename,
   normalizeRelativePath,
   normalizeRootPath,
 } from "./index";
@@ -41,8 +42,29 @@ describe("classification helpers", () => {
     expect(deriveFormatFamily(MediaKind.OTHER)).toBeNull();
   });
 
+  it("identifies OS junk files by basename", () => {
+    expect(isIgnoredBasename(".DS_Store")).toBe(true);
+    expect(isIgnoredBasename("Thumbs.db")).toBe(true);
+    expect(isIgnoredBasename("desktop.ini")).toBe(true);
+  });
+
+  it("returns false for normal files", () => {
+    expect(isIgnoredBasename("book.epub")).toBe(false);
+    expect(isIgnoredBasename("cover.jpg")).toBe(false);
+    expect(isIgnoredBasename("metadata.opf")).toBe(false);
+  });
+
+  it("matches ignored basename regardless of directory path", () => {
+    expect(isIgnoredBasename("/tmp/books/Author/Series/.DS_Store")).toBe(true);
+    expect(isIgnoredBasename("/volumes/books/Thumbs.db")).toBe(true);
+  });
+
   it("classifies supported media kinds", () => {
     expect(classifyMediaKind("book.epub")).toBe(MediaKind.EPUB);
+    expect(classifyMediaKind("book.kepub")).toBe(MediaKind.EPUB);
+    expect(classifyMediaKind("book.mobi")).toBe(MediaKind.OTHER);
+    expect(classifyMediaKind("book.azw")).toBe(MediaKind.OTHER);
+    expect(classifyMediaKind("book.azw3")).toBe(MediaKind.OTHER);
     expect(classifyMediaKind("book.pdf")).toBe(MediaKind.PDF);
     expect(classifyMediaKind("book.cbz")).toBe(MediaKind.CBZ);
     expect(classifyMediaKind("track.m4b")).toBe(MediaKind.AUDIO);
