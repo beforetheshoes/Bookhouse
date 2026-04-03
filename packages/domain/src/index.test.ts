@@ -22,6 +22,10 @@ describe("domain package", () => {
     expect(LibraryRootKind.MIXED).toBe("MIXED");
     expect(ScanMode.INCREMENTAL).toBe("INCREMENTAL");
     expect(MediaKind.EPUB).toBe("EPUB");
+    expect(MediaKind.KEPUB).toBe("KEPUB");
+    expect("MOBI" in MediaKind).toBe(true);
+    expect("AZW" in MediaKind).toBe(true);
+    expect("AZW3" in MediaKind).toBe(true);
     expect(AvailabilityStatus.MISSING).toBe("MISSING");
     expect(FormatFamily.EBOOK).toBe("EBOOK");
     expect(EditionFileRole.PRIMARY).toBe("PRIMARY");

@@ -238,11 +238,26 @@ export function createLibraryWorkerProcessor(
   if ((job.data as BaseJobPayload).step === "waiting-children") {
     logger.info({ jobId: job.id, jobName: job.name }, "All children finished, entering completion phase");
     if (importJobId && isScanJob) {
-      await db.importJob.update({
-        where: { id: importJobId, status: "RUNNING" },
-        data: { status: "SUCCEEDED", finishedAt: new Date(), scanStage: null, bullmqJobId: null },
-      });
-      logger.info({ jobId: job.id, importJobId }, "Scan marked SUCCEEDED");
+      try {
+        await db.importJob.update({
+          where: { id: importJobId, status: "RUNNING" },
+          data: { status: "SUCCEEDED", finishedAt: new Date(), scanStage: null, bullmqJobId: null },
+        });
+        logger.info({ jobId: job.id, importJobId }, "Scan marked SUCCEEDED");
+      } catch (error) {
+        const prismaError = typeof error === "object" &&
+          error !== null &&
+          "code" in error
+          ? error as { code?: string }
+          : null;
+        if (prismaError?.code !== "P2025") {
+          throw error;
+        }
+        logger.warn(
+          { jobId: job.id, jobName: job.name, importJobId },
+          "ImportJob missing during completion phase; skipping SUCCEEDED update",
+        );
+      }
     }
     if (isScanJob) activeScanType = null;
     return;

@@ -11,6 +11,7 @@ export const getDuplicatesServerFn = createServerFn({
   .inputValidator(getDuplicatesSchema)
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
+    const EXCLUDED_MEDIA_KINDS = new Set(["SIDECAR", "AUDIO", "COVER", "OTHER"]);
     const rows = await db.duplicateCandidate.findMany({
       ...(data.status ? { where: { status: data.status } } : {}),
       include: {
@@ -34,12 +35,11 @@ export const getDuplicatesServerFn = createServerFn({
       orderBy: { confidence: "desc" },
     });
     return rows.filter((r) => {
-      // Exclude candidates involving sidecar files (direct or via edition files)
-      const leftIsSidecar = r.leftFileAsset?.mediaKind === "SIDECAR"
-        || r.leftEdition?.editionFiles.some((ef) => ef.fileAsset.mediaKind === "SIDECAR");
-      const rightIsSidecar = r.rightFileAsset?.mediaKind === "SIDECAR"
-        || r.rightEdition?.editionFiles.some((ef) => ef.fileAsset.mediaKind === "SIDECAR");
-      if (leftIsSidecar || rightIsSidecar) return false;
+      const leftHasExcludedMediaKind = (r.leftFileAsset?.mediaKind !== undefined && EXCLUDED_MEDIA_KINDS.has(r.leftFileAsset.mediaKind))
+        || r.leftEdition?.editionFiles.some((ef) => EXCLUDED_MEDIA_KINDS.has(ef.fileAsset.mediaKind));
+      const rightHasExcludedMediaKind = (r.rightFileAsset?.mediaKind !== undefined && EXCLUDED_MEDIA_KINDS.has(r.rightFileAsset.mediaKind))
+        || r.rightEdition?.editionFiles.some((ef) => EXCLUDED_MEDIA_KINDS.has(ef.fileAsset.mediaKind));
+      if (leftHasExcludedMediaKind || rightHasExcludedMediaKind) return false;
 
       return true;
     });

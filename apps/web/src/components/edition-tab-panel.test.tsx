@@ -129,6 +129,41 @@ describe("EditionTabPanel", () => {
     expect(screen.getByText("PRESENT")).toBeTruthy();
   });
 
+  it("renders Amazon ebook variant files", () => {
+    const edition = {
+      ...baseEdition,
+      editionFiles: [
+        ...baseEdition.editionFiles,
+        {
+          id: "ef2",
+          editionId: "e1",
+          fileAssetId: "fa2",
+          role: "ALTERNATE_FORMAT",
+          fileAsset: {
+            ...(baseEdition.editionFiles[0] as (typeof baseEdition.editionFiles)[number]).fileAsset,
+            id: "fa2",
+            basename: "wind.azw",
+            extension: "azw",
+            mediaKind: "AZW",
+          },
+        },
+      ],
+    } as EditionType;
+
+    render(
+      <EditionTabPanel
+        edition={edition}
+        isLastEdition={false}
+        onEditionFieldSaved={vi.fn()}
+        onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
+      />,
+    );
+
+    expect(screen.getByText("wind.azw")).toBeTruthy();
+  });
+
   it("renders delete button", () => {
     render(
       <EditionTabPanel

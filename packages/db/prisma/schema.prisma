@@ -19,6 +19,10 @@ enum ScanMode {
 
 enum MediaKind {
   EPUB
+  KEPUB
+  MOBI
+  AZW
+  AZW3
   PDF
   CBZ
   AUDIO

@@ -258,6 +258,32 @@ describe("processCoverForWork", () => {
     expect(result.updated).toBe(true);
   });
 
+  it("uses adjacent cover for KEPUB instead of EPUB cover extraction", async () => {
+    const deps = createMockDeps({
+      db: {
+        fileAsset: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: "fa-1",
+            absolutePath: "/books/author/title/book.kepub",
+            mediaKind: MediaKind.KEPUB,
+          }),
+        },
+        work: {
+          findUnique: vi.fn().mockResolvedValue({ id: "w-1" }),
+          update: vi.fn().mockResolvedValue({}),
+        },
+      },
+      detectAdjacentCover: vi.fn().mockResolvedValue("/books/author/title/cover.jpg"),
+    });
+
+    const result = await processCoverForWork(createInput(), deps);
+
+    expect(deps.extractEpubCover).not.toHaveBeenCalled();
+    expect(deps.detectAdjacentCover).toHaveBeenCalled();
+    expect(result.source).toBe("adjacent");
+    expect(result.updated).toBe(true);
+  });
+
   it("returns updated=false when no cover found", async () => {
     const workUpdate = vi.fn().mockResolvedValue({});
     const deps = createMockDeps({

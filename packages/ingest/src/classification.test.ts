@@ -34,8 +34,12 @@ describe("classification helpers", () => {
 
   it("derives format family from media kind", () => {
     expect(deriveFormatFamily(MediaKind.EPUB)).toBe(FormatFamily.EBOOK);
+    expect(deriveFormatFamily(MediaKind.KEPUB)).toBe(FormatFamily.EBOOK);
     expect(deriveFormatFamily(MediaKind.PDF)).toBe(FormatFamily.EBOOK);
     expect(deriveFormatFamily(MediaKind.CBZ)).toBe(FormatFamily.EBOOK);
+    expect(deriveFormatFamily("MOBI" as MediaKind)).toBe(FormatFamily.EBOOK);
+    expect(deriveFormatFamily("AZW" as MediaKind)).toBe(FormatFamily.EBOOK);
+    expect(deriveFormatFamily("AZW3" as MediaKind)).toBe(FormatFamily.EBOOK);
     expect(deriveFormatFamily(MediaKind.AUDIO)).toBe(FormatFamily.AUDIOBOOK);
     expect(deriveFormatFamily(MediaKind.COVER)).toBeNull();
     expect(deriveFormatFamily(MediaKind.SIDECAR)).toBeNull();
@@ -61,15 +65,25 @@ describe("classification helpers", () => {
 
   it("classifies supported media kinds", () => {
     expect(classifyMediaKind("book.epub")).toBe(MediaKind.EPUB);
-    expect(classifyMediaKind("book.kepub")).toBe(MediaKind.EPUB);
-    expect(classifyMediaKind("book.mobi")).toBe(MediaKind.OTHER);
-    expect(classifyMediaKind("book.azw")).toBe(MediaKind.OTHER);
-    expect(classifyMediaKind("book.azw3")).toBe(MediaKind.OTHER);
+    expect(classifyMediaKind("book.kepub")).toBe(MediaKind.KEPUB);
+    expect(classifyMediaKind("book.mobi")).toBe("MOBI");
+    expect(classifyMediaKind("book.azw")).toBe("AZW");
+    expect(classifyMediaKind("book.azw3")).toBe("AZW3");
     expect(classifyMediaKind("book.pdf")).toBe(MediaKind.PDF);
     expect(classifyMediaKind("book.cbz")).toBe(MediaKind.CBZ);
     expect(classifyMediaKind("track.m4b")).toBe(MediaKind.AUDIO);
     expect(classifyMediaKind("cover.jpg")).toBe(MediaKind.COVER);
     expect(classifyMediaKind("metadata.xml")).toBe(MediaKind.SIDECAR);
     expect(classifyMediaKind("archive.bin")).toBe(MediaKind.OTHER);
+  });
+
+  it("classifies known library companion and junk files as sidecars, not books", () => {
+    expect(classifyMediaKind("metadata.db")).toBe(MediaKind.SIDECAR);
+    expect(classifyMediaKind("metadata.db-shm")).toBe(MediaKind.SIDECAR);
+    expect(classifyMediaKind("metadata.db-wal")).toBe(MediaKind.SIDECAR);
+    expect(classifyMediaKind("checksums.sfv")).toBe(MediaKind.SIDECAR);
+    expect(classifyMediaKind("private.key")).toBe(MediaKind.SIDECAR);
+    expect(classifyMediaKind("certificate.pem")).toBe(MediaKind.SIDECAR);
+    expect(classifyMediaKind("kindle.mbp")).toBe(MediaKind.SIDECAR);
   });
 });
