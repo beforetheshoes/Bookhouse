@@ -20,8 +20,7 @@ import {
   applyEnrichmentFields,
   canonicalizeContributorName,
   applyCoverFromUrl,
-  resizeCoverImage,
-  extractDominantColors,
+  extractDominantColorsDefault,
   RateLimiter,
   type EnrichContributorDeps,
   type EnrichContributorResult,
@@ -268,9 +267,6 @@ function buildBulkEnrichDeps(
     },
     applyCoverFromUrl: async (workId, imageUrl, source) => {
       const coverCacheDir = getCoverCacheDir();
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      const sharpModule: { default: never } = await import("sharp" as string);
-      const { mkdir, writeFile } = await import("node:fs/promises");
       const result = await applyCoverFromUrl(
         { workId, imageUrl, coverCacheDir },
         {
@@ -281,13 +277,8 @@ function buildBulkEnrichDeps(
             const contentType = res.headers.get("content-type");
             return { buffer, contentType };
           },
-          resizeAndSave: async (imageBuffer, outputDir) => {
-            await resizeCoverImage(
-              { imageBuffer, outputDir },
-              { sharp: sharpModule.default, mkdir, writeFile },
-            );
-          },
-          extractColors: (buf) => extractDominantColors(buf, sharpModule.default),
+          resizeAndSave: (buf, dir) => resizeAndSaveCover(buf, dir),
+          extractColors: (buf) => extractDominantColorsDefault(buf),
         },
         {
           findWork: (id) => db.work.findUnique({ where: { id }, select: { editedFields: true } }),

@@ -111,6 +111,7 @@ vi.mock("@bookhouse/ingest", () => ({
   applyCoverFromUrl: vi.fn(),
   resizeCoverImage: vi.fn(),
   extractDominantColors: vi.fn(),
+  extractDominantColorsDefault: vi.fn().mockResolvedValue(["#000000", "#ffffff", "#808080"]),
   RateLimiter: class { check = () => ({ allowed: true }); },
   createOLFetcher: () => fetch,
   TokenBucketLimiter: class { acquire = () => Promise.resolve(); },

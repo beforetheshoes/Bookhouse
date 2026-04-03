@@ -121,3 +121,8 @@ export async function extractDominantColors(
 
   return colors.map(([r, g, b]) => rgbToHex(r, g, b));
 }
+
+export async function extractDominantColorsDefault(imageBuffer: Buffer): Promise<string[]> {
+  const sharp = await import("sharp");
+  return extractDominantColors(imageBuffer, sharp.default as SharpFn);
+}

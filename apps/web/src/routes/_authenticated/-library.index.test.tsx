@@ -80,6 +80,18 @@ vi.mock("~/lib/server-fns/shelves", () => ({
   bulkAddToShelfServerFn: vi.fn().mockResolvedValue({ added: 0 }),
 }));
 
+vi.mock("~/lib/server-fns/bulk-enrich", () => ({
+  bulkEnrichServerFn: vi.fn().mockResolvedValue({ importJobId: "ij-1", enqueuedCount: 0 }),
+}));
+
+vi.mock("~/lib/server-fns/integrations", () => ({
+  getIntegrationStatusServerFn: vi.fn().mockResolvedValue({
+    openlibrary: { configured: true, label: "Open Library" },
+    googlebooks: { configured: false, label: "Google Books" },
+    hardcover: { configured: false, label: "Hardcover" },
+  }),
+}));
+
 const mockToast = { success: vi.fn(), error: vi.fn() };
 vi.mock("sonner", () => ({ toast: mockToast }));
 
@@ -128,8 +140,10 @@ vi.mock("~/hooks/use-sse", () => ({
 }));
 
 const getFilteredLibraryWorksServerFnMock = vi.fn();
+const getAllFilteredWorkIdsServerFnMock = vi.fn().mockResolvedValue([]);
 vi.mock("~/lib/server-fns/library", () => ({
   getFilteredLibraryWorksServerFn: getFilteredLibraryWorksServerFnMock,
+  getAllFilteredWorkIdsServerFn: getAllFilteredWorkIdsServerFnMock,
 }));
 
 const getActiveJobCountServerFnMock = vi.fn();
