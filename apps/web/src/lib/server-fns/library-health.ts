@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { IGNORED_BASENAMES } from "@bookhouse/ingest";
+
+const IGNORED_LIBRARY_FILE_BASENAMES = [".DS_Store", "Thumbs.db", "desktop.ini"] as const;
 
 export const getLibraryHealthServerFn = createServerFn({
   method: "GET",
@@ -32,7 +33,7 @@ export const getLibraryHealthServerFn = createServerFn({
         editionFiles: { none: {} },
         availabilityStatus: "PRESENT",
         mediaKind: { notIn: ["COVER", "SIDECAR"] },
-        basename: { notIn: Array.from(IGNORED_BASENAMES) },
+        basename: { notIn: [...IGNORED_LIBRARY_FILE_BASENAMES] },
       },
     }),
     db.matchSuggestion.count({ where: { reviewStatus: "PENDING" } }),
@@ -75,7 +76,7 @@ export const getOrphanedFilesServerFn = createServerFn({
       editionFiles: { none: {} },
       availabilityStatus: "PRESENT",
       mediaKind: { notIn: ["COVER", "SIDECAR"] },
-      basename: { notIn: Array.from(IGNORED_BASENAMES) },
+      basename: { notIn: [...IGNORED_LIBRARY_FILE_BASENAMES] },
     },
     select: {
       id: true,
@@ -106,4 +107,3 @@ export const deleteOrphanedFileServerFn = createServerFn({
     await db.fileAsset.delete({ where: { id: data.fileAssetId } });
     return { success: true };
   });
-

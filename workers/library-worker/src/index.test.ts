@@ -984,6 +984,60 @@ describe("library worker", () => {
     });
   });
 
+  it("tolerates missing ImportJob during waiting-children completion phase", async () => {
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor({
+      hashFileAsset: hashFileAssetMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
+      parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
+      scanLibraryRoot: scanLibraryRootMock,
+      enrichWork: enrichWorkMock,
+      detectDuplicates: detectDuplicatesMock,
+      matchSuggestions: matchSuggestionsMock,
+    });
+    importJobUpdateMock.mockRejectedValueOnce({
+      code: "P2025",
+      name: "PrismaClientKnownRequestError",
+    });
+
+    await expect(processor(createMockJob({
+      data: { libraryRootId: "root-1", importJobId: "ij-missing", step: "waiting-children" },
+      name: "scan-library-root",
+    }) as never, "test-token")).resolves.toBeUndefined();
+
+    expect(loggerWarnMock).toHaveBeenCalledWith(
+      expect.objectContaining({ importJobId: "ij-missing", jobId: "job-1", jobName: "scan-library-root" }),
+      "ImportJob missing during completion phase; skipping SUCCEEDED update",
+    );
+  });
+
+  it("rethrows unexpected completion phase ImportJob update errors", async () => {
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor({
+      hashFileAsset: hashFileAssetMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
+      parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
+      scanLibraryRoot: scanLibraryRootMock,
+      enrichWork: enrichWorkMock,
+      detectDuplicates: detectDuplicatesMock,
+      matchSuggestions: matchSuggestionsMock,
+    });
+    const expectedError = new Error("db unavailable");
+    importJobUpdateMock.mockRejectedValueOnce(expectedError);
+
+    await expect(processor(createMockJob({
+      data: { libraryRootId: "root-1", importJobId: "ij-error", step: "waiting-children" },
+      name: "scan-library-root",
+    }) as never, "test-token")).rejects.toThrow("db unavailable");
+
+    expect(loggerWarnMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ importJobId: "ij-error" }),
+      "ImportJob missing during completion phase; skipping SUCCEEDED update",
+    );
+  });
+
   it("skips activeScanType reset in completion phase for non-scan jobs", async () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({

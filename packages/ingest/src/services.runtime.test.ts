@@ -21,6 +21,8 @@ const fileAssetUpsertMock = vi.fn(() => Promise.resolve({
 }));
 const editionFindManyMock = vi.fn(() => Promise.resolve([]));
 const editionFileFindManyMock = vi.fn(() => Promise.resolve([]));
+const editionCreateMock = vi.fn(({ data }) => Promise.resolve({ id: "edition-1", ...data }));
+const editionFileCreateMock = vi.fn(({ data }) => Promise.resolve({ id: "edition-file-1", ...data }));
 const editionUpdateMock = vi.fn(() => Promise.reject(new Error("not used")));
 let runtimeLibraryRoot: RuntimeLibraryRoot = {
   id: "root-1",
@@ -31,6 +33,7 @@ let runtimeLibraryRoot: RuntimeLibraryRoot = {
 const libraryRootFindUniqueMock = vi.fn(() => Promise.resolve(runtimeLibraryRoot));
 const workUpdateMock = vi.fn(() => Promise.reject(new Error("not used")));
 const workFindManyMock = vi.fn(() => Promise.resolve([]));
+const workCreateMock = vi.fn(({ data }) => Promise.resolve({ id: "work-1", ...data }));
 const seriesCreateMock = vi.fn(() => Promise.resolve({ id: "series-1", name: "test" }));
 
 vi.mock("@bookhouse/db", () => ({
@@ -59,7 +62,7 @@ vi.mock("@bookhouse/db", () => ({
       findMany: vi.fn(() => Promise.resolve([])),
     },
     edition: {
-      create: vi.fn(() => Promise.reject(new Error("not used"))),
+      create: editionCreateMock,
       findMany: editionFindManyMock,
       findFirst: vi.fn(() => Promise.resolve(null)),
       findUnique: vi.fn(() => Promise.resolve(null)),
@@ -70,12 +73,12 @@ vi.mock("@bookhouse/db", () => ({
       findFirst: vi.fn(() => Promise.resolve(null)),
     },
     editionFile: {
-      create: vi.fn(() => Promise.reject(new Error("not used"))),
+      create: editionFileCreateMock,
       findMany: editionFileFindManyMock,
       findFirst: vi.fn(() => Promise.resolve(null)),
     },
     work: {
-      create: vi.fn(() => Promise.reject(new Error("not used"))),
+      create: workCreateMock,
       findMany: workFindManyMock,
       findUnique: vi.fn(() => Promise.resolve(null)),
       update: workUpdateMock,
@@ -96,6 +99,7 @@ vi.mock("@bookhouse/domain", () => ({
     AUTHOR: "AUTHOR",
   },
   EditionFileRole: {
+    ALTERNATE_FORMAT: "ALTERNATE_FORMAT",
     PRIMARY: "PRIMARY",
   },
   FormatFamily: {
@@ -103,9 +107,12 @@ vi.mock("@bookhouse/domain", () => ({
   },
   MediaKind: {
     AUDIO: "AUDIO",
+    AZW: "AZW",
+    AZW3: "AZW3",
     CBZ: "CBZ",
     COVER: "COVER",
     EPUB: "EPUB",
+    MOBI: "MOBI",
     OTHER: "OTHER",
     PDF: "PDF",
     SIDECAR: "SIDECAR",
@@ -137,6 +144,8 @@ beforeEach(() => {
   editionFileFindManyMock.mockResolvedValue([]);
   editionFindManyMock.mockReset();
   editionFindManyMock.mockResolvedValue([]);
+  editionCreateMock.mockClear();
+  editionFileCreateMock.mockClear();
   fileAssetFindManyMock.mockReset();
   fileAssetFindManyMock.mockResolvedValue([]);
   fileAssetUpdateManyMock.mockReset();
@@ -153,6 +162,7 @@ beforeEach(() => {
   });
   libraryRootFindUniqueMock.mockReset();
   libraryRootFindUniqueMock.mockImplementation(() => Promise.resolve(runtimeLibraryRoot));
+  workCreateMock.mockClear();
   workFindManyMock.mockReset();
   workFindManyMock.mockResolvedValue([]);
 });

@@ -123,6 +123,19 @@ describe("getDuplicatesServerFn", () => {
     expect(result.map((r: { id: string }) => r.id)).toEqual(["dup-ok", "dup-null-sides"]);
   });
 
+  it("excludes candidates involving audio, cover, or other file kinds", async () => {
+    findManyMock.mockResolvedValue([
+      { id: "dup-ok", leftFileAsset: { mediaKind: "EPUB" }, rightFileAsset: { mediaKind: "PDF" }, leftEdition: null, rightEdition: null },
+      { id: "dup-audio-file", leftFileAsset: { mediaKind: "AUDIO" }, rightFileAsset: { mediaKind: "EPUB" }, leftEdition: null, rightEdition: null },
+      { id: "dup-other-file", leftFileAsset: { mediaKind: "OTHER" }, rightFileAsset: { mediaKind: "EPUB" }, leftEdition: null, rightEdition: null },
+      { id: "dup-cover-file", leftFileAsset: { mediaKind: "COVER" }, rightFileAsset: { mediaKind: "EPUB" }, leftEdition: null, rightEdition: null },
+      { id: "dup-left-edition-audio", leftFileAsset: null, rightFileAsset: null, leftEdition: { editionFiles: [{ fileAsset: { mediaKind: "AUDIO" } }], formatFamily: "AUDIOBOOK" }, rightEdition: { editionFiles: [], formatFamily: "EBOOK" } },
+      { id: "dup-right-edition-other", leftFileAsset: null, rightFileAsset: null, leftEdition: { editionFiles: [], formatFamily: "EBOOK" }, rightEdition: { editionFiles: [{ fileAsset: { mediaKind: "OTHER" } }], formatFamily: "EBOOK" } },
+    ]);
+    const result = await getDuplicatesServerFn({ data: {} });
+    expect(result.map((r: { id: string }) => r.id)).toEqual(["dup-ok"]);
+  });
+
   it("does not filter cross-format candidates (handled at detection time)", async () => {
     findManyMock.mockResolvedValue([
       { id: "dup-cross", leftFileAsset: null, rightFileAsset: null, leftEdition: { editionFiles: [], formatFamily: "EBOOK" }, rightEdition: { editionFiles: [], formatFamily: "AUDIOBOOK" } },

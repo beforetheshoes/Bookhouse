@@ -11,7 +11,7 @@ import type { WorkDetail } from "~/lib/server-fns/work-detail";
 
 type EditionType = WorkDetail["editions"][number];
 
-const KINDLE_COMPATIBLE_MEDIA_KINDS = new Set(["EPUB", "PDF"]);
+const KINDLE_COMPATIBLE_MEDIA_KINDS = new Set(["EPUB", "MOBI", "AZW", "AZW3", "PDF"]);
 
 interface EditionTabPanelProps {
   edition: EditionType;
@@ -110,7 +110,7 @@ export function EditionTabPanel({
           <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Files</div>
           <div className="space-y-1 text-sm">
             {(() => {
-              const CONTENT_MEDIA_KINDS = new Set(["EPUB", "PDF", "CBZ", "AUDIO"]);
+              const CONTENT_MEDIA_KINDS = new Set(["EPUB", "MOBI", "AZW", "AZW3", "PDF", "CBZ", "AUDIO"]);
               const contentFiles = edition.editionFiles.filter(
                 (ef) => CONTENT_MEDIA_KINDS.has(ef.fileAsset.mediaKind),
               );

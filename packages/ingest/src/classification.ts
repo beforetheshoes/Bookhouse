@@ -20,7 +20,8 @@ const AUDIO_EXTENSIONS = new Set([
 ]);
 
 const COVER_EXTENSIONS = new Set(["jpeg", "jpg", "png", "webp"]);
-const SIDECAR_EXTENSIONS = new Set(["cue", "json", "nfo", "opf", "txt", "xml"]);
+const SIDECAR_EXTENSIONS = new Set(["cue", "db", "json", "key", "mbp", "nfo", "opf", "pem", "sfv", "txt", "xml"]);
+const SIDECAR_BASENAME_SUFFIXES = [".db-shm", ".db-wal"] as const;
 
 export function normalizeRootPath(rootPath: string): string {
   return path.resolve(rootPath);
@@ -50,18 +51,34 @@ export function getFileExtension(filePath: string): string | null {
 }
 
 export function deriveFormatFamily(mediaKind: MediaKind): FormatFamily | null {
-  if (mediaKind === MediaKind.EPUB || mediaKind === MediaKind.PDF || mediaKind === MediaKind.CBZ) return FormatFamily.EBOOK;
+  if (
+    mediaKind === MediaKind.EPUB ||
+    mediaKind === MediaKind.KEPUB ||
+    mediaKind === MediaKind.MOBI ||
+    mediaKind === MediaKind.AZW ||
+    mediaKind === MediaKind.AZW3 ||
+    mediaKind === MediaKind.PDF ||
+    mediaKind === MediaKind.CBZ
+  ) return FormatFamily.EBOOK;
   if (mediaKind === MediaKind.AUDIO) return FormatFamily.AUDIOBOOK;
   return null;
 }
 
 export function classifyMediaKind(filePath: string): MediaKind {
   const extension = getFileExtension(filePath);
+  const basename = path.basename(filePath).toLowerCase();
 
   switch (extension) {
     case "epub":
-    case "kepub":
       return MediaKind.EPUB;
+    case "kepub":
+      return MediaKind.KEPUB;
+    case "mobi":
+      return MediaKind.MOBI;
+    case "azw":
+      return MediaKind.AZW;
+    case "azw3":
+      return MediaKind.AZW3;
     case "pdf":
       return MediaKind.PDF;
     case "cbz":
@@ -78,7 +95,10 @@ export function classifyMediaKind(filePath: string): MediaKind {
     return MediaKind.COVER;
   }
 
-  if (extension !== null && SIDECAR_EXTENSIONS.has(extension)) {
+  if (
+    (extension !== null && SIDECAR_EXTENSIONS.has(extension)) ||
+    SIDECAR_BASENAME_SUFFIXES.some((suffix) => basename.endsWith(suffix))
+  ) {
     return MediaKind.SIDECAR;
   }
 

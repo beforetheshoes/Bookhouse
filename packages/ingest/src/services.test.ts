@@ -660,6 +660,7 @@ describe("ingest services", () => {
       metadata: null,
       mtime: new Date("2024-01-01T00:00:00.000Z"),
       partialHash: "partial",
+      relativePath: "book.epub",
       sizeBytes: 10n,
     };
 
@@ -1641,6 +1642,58 @@ describe("ingest services", () => {
 
     expect(result.createdStubWorkIds).toHaveLength(0);
     expect(state.works.size).toBe(0);
+  });
+
+  it("creates one stub edition for ebook variants discovered in the same scan", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-ebook-variant-scan-"));
+    tempDirectories.push(directory);
+
+    await mkdir(path.join(directory, "Patrick Rothfuss", "The Name of the Wind"), { recursive: true });
+    await writeFile(path.join(directory, "Patrick Rothfuss", "The Name of the Wind", "The Name of the Wind.epub"), "epub");
+    await writeFile(path.join(directory, "Patrick Rothfuss", "The Name of the Wind", "The Name of the Wind.kepub"), "kepub");
+
+    const state = createEmptyState(directory);
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.scanLibraryRoot({
+      libraryRootId: "root-1",
+    });
+
+    expect(result.createdStubWorkIds).toHaveLength(1);
+    expect(state.works.size).toBe(1);
+    expect(state.editions.size).toBe(1);
+    expect([...state.editionFiles.values()]).toHaveLength(2);
+    expect([...state.editionFiles.values()].map((editionFile) => editionFile.role)).toEqual([
+      EditionFileRole.PRIMARY,
+      EditionFileRole.ALTERNATE_FORMAT,
+    ]);
+  });
+
+  it("collapses punctuation-only ebook variant titles discovered in the same scan", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-ebook-variant-punctuation-"));
+    tempDirectories.push(directory);
+
+    await mkdir(path.join(directory, "Author", "!!!"), { recursive: true });
+    await writeFile(path.join(directory, "Author", "!!!", "!!!.epub"), "epub");
+    await writeFile(path.join(directory, "Author", "!!!", "!!!.kepub"), "kepub");
+
+    const state = createEmptyState(directory);
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.scanLibraryRoot({
+      libraryRootId: "root-1",
+    });
+
+    expect(result.createdStubWorkIds).toHaveLength(1);
+    expect(state.works.size).toBe(1);
+    expect(state.editions.size).toBe(1);
+    expect([...state.editionFiles.values()]).toHaveLength(2);
   });
 
   it("skips stubs for files that already have an edition file link", async () => {
@@ -2859,6 +2912,50 @@ describe("ingest services", () => {
     );
   });
 
+  it("enqueues metadata parsing after hashing Amazon ebook variants", async () => {
+    const state = createEmptyState("/tmp/root");
+    const existing: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Title/book.mobi",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.mobi",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "mobi",
+      fullHash: null,
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.MOBI,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: null,
+      relativePath: "Author/Title/book.mobi",
+      sizeBytes: 4n,
+    };
+    state.fileAssets.set(existing.absolutePath, existing);
+    state.fileAssetsById.set(existing.id, existing);
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+      hashFile: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          fullHash: "next-full",
+          mtime: new Date("2025-01-01T00:00:00.000Z"),
+          partialHash: "next-partial",
+          sizeBytes: 12n,
+        };
+      }),
+    });
+
+    await services.hashFileAsset({ fileAssetId: "file-1" });
+
+    expect(enqueueLibraryJob).toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA,
+      { fileAssetId: "file-1" },
+    );
+  });
+
   it("detects moved file by fullHash and transfers edition links from MISSING asset", async () => {
     const state = createEmptyState("/tmp/root");
 
@@ -3342,6 +3439,152 @@ describe("ingest services", () => {
     });
   });
 
+  it("parses KEPUB and Amazon ebook variants from path-derived metadata without calling EPUB parser", async () => {
+    const state = createEmptyState("/tmp/root");
+    const existing: TestFileAsset = {
+      absolutePath: "/tmp/root/Patrick Rothfuss/The Name of the Wind/book.azw",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.azw",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "azw",
+      fullHash: "full",
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.AZW,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "partial",
+      relativePath: "Patrick Rothfuss/The Name of the Wind/book.azw",
+      sizeBytes: 4n,
+    };
+    state.fileAssets.set(existing.absolutePath, existing);
+    state.fileAssetsById.set(existing.id, existing);
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const parseEpub = vi.fn();
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+      parseEpub,
+    });
+
+    const result = await services.parseFileAssetMetadata({ fileAssetId: "file-1" });
+
+    expect(result).toMatchObject({
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      fileAssetId: "file-1",
+      skipped: false,
+    });
+    expect(parseEpub).not.toHaveBeenCalled();
+    expect(state.fileAssetsById.get("file-1")?.metadata).toMatchObject({
+      source: "filename",
+      status: "parsed",
+      normalized: {
+        authors: ["Patrick Rothfuss"],
+        title: "The Name of the Wind",
+      },
+    });
+    expect(enqueueLibraryJob).toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION,
+      { fileAssetId: "file-1" },
+    );
+  });
+
+  it("parses KEPUB metadata from path-derived metadata without calling EPUB parser", async () => {
+    const state = createEmptyState("/tmp/root");
+    const existing: TestFileAsset = {
+      absolutePath: "/tmp/root/Patrick Rothfuss/The Name of the Wind/book.kepub",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.kepub",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "kepub",
+      fullHash: "full",
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.KEPUB,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "partial",
+      relativePath: "Patrick Rothfuss/The Name of the Wind/book.kepub",
+      sizeBytes: 4n,
+    };
+    state.fileAssets.set(existing.absolutePath, existing);
+    state.fileAssetsById.set(existing.id, existing);
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const parseEpub = vi.fn();
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+      parseEpub,
+    });
+
+    const result = await services.parseFileAssetMetadata({ fileAssetId: "file-1" });
+
+    expect(result).toMatchObject({
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      fileAssetId: "file-1",
+      skipped: false,
+    });
+    expect(parseEpub).not.toHaveBeenCalled();
+    expect(state.fileAssetsById.get("file-1")?.metadata).toMatchObject({
+      source: "filename",
+      status: "parsed",
+      normalized: {
+        authors: ["Patrick Rothfuss"],
+        title: "The Name of the Wind",
+      },
+    });
+  });
+
+  it("parses Amazon ebook variants from a flat path without inferring an author", async () => {
+    const state = createEmptyState("/tmp/root");
+    const existing: TestFileAsset = {
+      absolutePath: "/tmp/root/book.mobi",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.mobi",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "mobi",
+      fullHash: "full",
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.MOBI,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "partial",
+      relativePath: "book.mobi",
+      sizeBytes: 4n,
+    };
+    state.fileAssets.set(existing.absolutePath, existing);
+    state.fileAssetsById.set(existing.id, existing);
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+    });
+
+    const result = await services.parseFileAssetMetadata({ fileAssetId: "file-1" });
+
+    expect(result).toMatchObject({
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      fileAssetId: "file-1",
+      skipped: false,
+    });
+    expect(state.fileAssetsById.get("file-1")?.metadata).toMatchObject({
+      source: "filename",
+      status: "parsed",
+      normalized: {
+        authors: [],
+        title: "book",
+      },
+    });
+    expect(enqueueLibraryJob).toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION,
+      { fileAssetId: "file-1" },
+    );
+  });
+
   it("uses a fallback warning for non-Error EPUB parse failures", async () => {
     const state = createEmptyState("/tmp/root");
     const existing: TestFileAsset = {
@@ -3660,6 +3903,265 @@ describe("ingest services", () => {
     });
     expect([...state.contributors.values()]).toHaveLength(1);
     expect([...state.editionContributors.values()]).toHaveLength(2);
+  });
+
+  it("links Amazon ebook variants to an existing ebook edition as alternate formats", async () => {
+    const state = createEmptyState("/tmp/root");
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Patrick Rothfuss/The Name of the Wind/book.azw",
+      basename: "book.azw",
+      extension: "azw",
+      mediaKind: MediaKind.AZW,
+      relativePath: "Patrick Rothfuss/The Name of the Wind/book.azw",
+      metadata: {
+        normalized: {
+          authors: ["Patrick Rothfuss"],
+          identifiers: { unknown: [] },
+          title: "The Name of the Wind",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "filename",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+    addWork(state, {
+      titleCanonical: canonicalizeBookTitle("The Name of the Wind") ?? "the name of the wind",
+      titleDisplay: "The Name of the Wind",
+    });
+    addEdition(state);
+    addContributor(state, {
+      nameCanonical: canonicalizeContributorNames(["Patrick Rothfuss"])[0] ?? "patrick rothfuss",
+      nameDisplay: "Patrick Rothfuss",
+    });
+    addEditionContributor(state);
+    addFileAsset(state, {
+      id: "file-2",
+      absolutePath: "/tmp/root/Patrick Rothfuss/The Name of the Wind/book.mobi",
+      basename: "book.mobi",
+      extension: "mobi",
+      mediaKind: MediaKind.MOBI,
+      relativePath: "Patrick Rothfuss/The Name of the Wind/book.mobi",
+    });
+    addEditionFile(state, {
+      editionId: "edition-1",
+      fileAssetId: "file-2",
+      id: "edition-file-2",
+      role: EditionFileRole.PRIMARY,
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-1" });
+
+    expect(result).toMatchObject({
+      createdEdition: false,
+      createdEditionFile: true,
+      editionId: "edition-1",
+      workId: "work-1",
+      skipped: false,
+    });
+    expect(state.editions.size).toBe(1);
+    expect([...state.editionFiles.values()]).toHaveLength(2);
+    expect(
+      [...state.editionFiles.values()].find((editionFile) => editionFile.fileAssetId === "file-1")?.role,
+    ).toBe(EditionFileRole.ALTERNATE_FORMAT);
+  });
+
+  it("creates a new ebook edition when an Amazon variant matches a work with only an audiobook edition", async () => {
+    const state = createEmptyState("/tmp/root");
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary/book.azw3",
+      basename: "book.azw3",
+      extension: "azw3",
+      mediaKind: MediaKind.AZW3,
+      relativePath: "Andy Weir/Project Hail Mary/book.azw3",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "filename",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+    addWork(state, {
+      titleCanonical: canonicalizeBookTitle("Project Hail Mary") ?? "project hail mary",
+      titleDisplay: "Project Hail Mary",
+    });
+    addEdition(state, {
+      formatFamily: FormatFamily.AUDIOBOOK,
+    });
+    addContributor(state, {
+      nameCanonical: canonicalizeContributorNames(["Andy Weir"])[0] ?? "andy weir",
+      nameDisplay: "Andy Weir",
+    });
+    addEditionContributor(state);
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-1" });
+
+    expect(result).toMatchObject({
+      createdEdition: true,
+      createdEditionFile: true,
+      createdWork: false,
+      workId: "work-1",
+      skipped: false,
+    });
+    expect([...state.editions.values()]).toHaveLength(2);
+    expect(
+      [...state.editions.values()].find((edition) => edition.id === result.editionId)?.formatFamily,
+    ).toBe(FormatFamily.EBOOK);
+    expect(
+      [...state.editionFiles.values()].find((editionFile) => editionFile.fileAssetId === "file-1")?.role,
+    ).toBe(EditionFileRole.PRIMARY);
+  });
+
+  it("links audio files to an existing edition as audio tracks", async () => {
+    const state = createEmptyState("/tmp/root");
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary/chapter-01.mp3",
+      basename: "chapter-01.mp3",
+      extension: "mp3",
+      mediaKind: MediaKind.AUDIO,
+      relativePath: "Andy Weir/Project Hail Mary/chapter-01.mp3",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { isbn13: "9780593135204", unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "audiobook-json",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+    addWork(state, {
+      titleCanonical: canonicalizeBookTitle("Project Hail Mary") ?? "project hail mary",
+      titleDisplay: "Project Hail Mary",
+    });
+    addEdition(state, {
+      formatFamily: FormatFamily.AUDIOBOOK,
+      isbn13: "9780593135204",
+    });
+    addContributor(state, {
+      nameCanonical: canonicalizeContributorNames(["Andy Weir"])[0] ?? "andy weir",
+      nameDisplay: "Andy Weir",
+    });
+    addEditionContributor(state);
+    addFileAsset(state, {
+      id: "file-2",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary/metadata.json",
+      basename: "metadata.json",
+      extension: "json",
+      mediaKind: MediaKind.SIDECAR,
+      relativePath: "Andy Weir/Project Hail Mary/metadata.json",
+    });
+    addEditionFile(state, {
+      editionId: "edition-1",
+      fileAssetId: "file-2",
+      id: "edition-file-2",
+      role: EditionFileRole.PRIMARY,
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-1" });
+
+    expect(result).toMatchObject({
+      createdEdition: false,
+      createdEditionFile: true,
+      editionId: "edition-1",
+      workId: "work-1",
+      skipped: false,
+    });
+    expect(
+      [...state.editionFiles.values()].find((editionFile) => editionFile.fileAssetId === "file-1")?.role,
+    ).toBe(EditionFileRole.AUDIO_TRACK);
+  });
+
+  it("keeps non-Amazon ebook matches as primary files on existing editions", async () => {
+    const state = createEmptyState("/tmp/root");
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/N. K. Jemisin/The Fifth Season/alternate.epub",
+      basename: "alternate.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      relativePath: "N. K. Jemisin/The Fifth Season/alternate.epub",
+      metadata: {
+        normalized: {
+          authors: ["N. K. Jemisin"],
+          identifiers: { isbn13: "9780316229292", unknown: [] },
+          title: "The Fifth Season",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+    addWork(state, {
+      titleCanonical: canonicalizeBookTitle("The Fifth Season") ?? "the fifth season",
+      titleDisplay: "The Fifth Season",
+    });
+    addEdition(state, {
+      isbn13: "9780316229292",
+    });
+    addContributor(state, {
+      nameCanonical: canonicalizeContributorNames(["N. K. Jemisin"])[0] ?? "n k jemisin",
+      nameDisplay: "N. K. Jemisin",
+    });
+    addEditionContributor(state);
+    addFileAsset(state, {
+      id: "file-2",
+      absolutePath: "/tmp/root/N. K. Jemisin/The Fifth Season/original.epub",
+      basename: "original.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      relativePath: "N. K. Jemisin/The Fifth Season/original.epub",
+    });
+    addEditionFile(state, {
+      editionId: "edition-1",
+      fileAssetId: "file-2",
+      id: "edition-file-2",
+      role: EditionFileRole.PRIMARY,
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-1" });
+
+    expect(result).toMatchObject({
+      createdEdition: false,
+      createdEditionFile: true,
+      editionId: "edition-1",
+      workId: "work-1",
+      skipped: false,
+    });
+    expect(
+      [...state.editionFiles.values()].find((editionFile) => editionFile.fileAssetId === "file-1")?.role,
+    ).toBe(EditionFileRole.PRIMARY);
   });
 
   it("creates a new work, edition, contributors, and file link when no match exists", async () => {
@@ -8827,6 +9329,48 @@ describe("matchFileAssetToEdition enqueues follow-up jobs", () => {
       expect.anything(),
     );
   });
+
+  it("does not enqueue DETECT_DUPLICATES for an AUDIO file asset, but still enqueues MATCH_SUGGESTIONS", async () => {
+    const state = createEmptyState("/tmp/root");
+    addFileAsset(state, {
+      id: "file-audio",
+      absolutePath: "/tmp/root/Author/Book/chapter01.mp3",
+      basename: "chapter01.mp3",
+      extension: "mp3",
+      mediaKind: MediaKind.AUDIO,
+      relativePath: "Author/Book/chapter01.mp3",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "audio-id3",
+        status: "parsed",
+        warnings: [],
+      } as object as FileAsset["metadata"],
+    });
+    const enqueueMock = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: enqueueMock,
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-audio" });
+
+    expect(result.skipped).toBe(false);
+    expect(result.mediaKind).toBe("AUDIO");
+    expect(enqueueMock).not.toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.DETECT_DUPLICATES,
+      expect.anything(),
+    );
+    expect(enqueueMock).toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS,
+      { fileAssetId: "file-audio" },
+    );
+  });
 });
 
 describe("detectDuplicates", () => {
@@ -8942,6 +9486,22 @@ describe("detectDuplicates", () => {
     const result = await services.detectDuplicates({ fileAssetId: "file-1" });
 
     expect(result).toEqual({ fileAssetId: "file-1", skipped: true, candidatesCreated: 0 });
+  });
+
+  it("skips when file asset media kind is not eligible for duplicate detection", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "abc123", "/tmp/root/book.mp3", {
+      mediaKind: MediaKind.AUDIO,
+    });
+    addDetectWork(state, "work-1", "book title", "Book Title");
+    addDetectEdition(state, "edition-1", "work-1");
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    expect(result).toEqual({ fileAssetId: "file-1", skipped: true, candidatesCreated: 0 });
+    expect(state.duplicateCandidates.size).toBe(0);
   });
 
   it("SAME_HASH: creates candidate when another file asset has the same hash", async () => {
@@ -9282,6 +9842,22 @@ describe("detectDuplicates", () => {
     const result = await services.detectDuplicates({ fileAssetId: "file-1" });
 
     expect(result.candidatesCreated).toBe(0);
+  });
+
+  it("does not create SAME_HASH duplicate candidates for Amazon variants already linked to the same edition", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "samehash", "/tmp/root/book.mobi", { mediaKind: MediaKind.MOBI, extension: "mobi" });
+    addDetectFileAsset(state, "file-2", "samehash", "/tmp/root/book.azw", { mediaKind: MediaKind.AZW, extension: "azw" });
+    addDetectWork(state, "work-1", "book title", "Book Title");
+    addDetectEdition(state, "edition-1", "work-1");
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    addDetectEditionFile(state, "ef-2", "edition-1", "file-2");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    expect(result.candidatesCreated).toBe(0);
+    expect(state.duplicateCandidates.size).toBe(0);
   });
 
   it("returns correct total count across multiple strategies", async () => {
