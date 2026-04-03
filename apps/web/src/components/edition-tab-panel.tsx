@@ -23,7 +23,7 @@ interface EditionTabPanelProps {
 }
 
 function formatBytes(bytes: bigint | number | null): string {
-  if (bytes === null) return "\u2014";
+  if (bytes === null) return "—";
   const n = Number(bytes);
   if (n < 1024) return `${String(n)} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
@@ -67,25 +67,25 @@ export function EditionTabPanel({
       {/* Metadata Grid */}
       <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm sm:grid-cols-3">
         <MetadataItem label="Publisher">
-          <EditableField value={edition.publisher ?? ""} onSave={(val) => saveField("publisher", val)} placeholder="\u2014" />
+          <EditableField value={edition.publisher ?? ""} onSave={(val) => saveField("publisher", val)} placeholder="—" />
         </MetadataItem>
         <MetadataItem label="Published">
-          <EditableField value={edition.publishedAt ? new Date(edition.publishedAt).toLocaleDateString() : ""} onSave={(val) => saveField("publishedAt", val)} placeholder="\u2014" />
+          <EditableField value={edition.publishedAt ? new Date(edition.publishedAt).toLocaleDateString() : ""} onSave={(val) => saveField("publishedAt", val)} placeholder="—" />
         </MetadataItem>
         <MetadataItem label="Pages">
-          <EditableField value={edition.pageCount != null ? String(edition.pageCount) : ""} onSave={(val) => saveField("pageCount", val)} placeholder="\u2014" />
+          <EditableField value={edition.pageCount != null ? String(edition.pageCount) : ""} onSave={(val) => saveField("pageCount", val)} placeholder="—" />
         </MetadataItem>
         <MetadataItem label="ISBN-13">
-          <EditableField value={edition.isbn13 ?? ""} onSave={(val) => saveField("isbn13", val)} placeholder="\u2014" />
+          <EditableField value={edition.isbn13 ?? ""} onSave={(val) => saveField("isbn13", val)} placeholder="—" />
         </MetadataItem>
         <MetadataItem label="ISBN-10">
-          <EditableField value={edition.isbn10 ?? ""} onSave={(val) => saveField("isbn10", val)} placeholder="\u2014" />
+          <EditableField value={edition.isbn10 ?? ""} onSave={(val) => saveField("isbn10", val)} placeholder="—" />
         </MetadataItem>
         <MetadataItem label="ASIN">
-          <EditableField value={edition.asin ?? ""} onSave={(val) => saveField("asin", val)} placeholder="\u2014" />
+          <EditableField value={edition.asin ?? ""} onSave={(val) => saveField("asin", val)} placeholder="—" />
         </MetadataItem>
         <MetadataItem label="Language">
-          <EditableField value={edition.language ?? ""} onSave={(val) => saveField("language", val)} placeholder="\u2014" />
+          <EditableField value={edition.language ?? ""} onSave={(val) => saveField("language", val)} placeholder="—" />
         </MetadataItem>
       </div>
 
