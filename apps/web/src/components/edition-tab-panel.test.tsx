@@ -462,7 +462,7 @@ describe("EditionTabPanel", () => {
       />,
     );
 
-    expect(screen.getByText("\u2014")).toBeTruthy();
+    expect(screen.getByText("—")).toBeTruthy();
   });
 
   it("calls saveField for publishedAt field", async () => {
