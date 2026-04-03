@@ -1029,8 +1029,106 @@ describe("ingest services", () => {
       now: new Date("2025-01-01T00:20:00.000Z"),
     });
 
-    expect(thirdScan.enqueuedHashJobs).toEqual(["file-1"]);
+    expect(thirdScan.enqueuedHashJobs).toEqual([]);
+    expect(thirdScan.enqueuedRecoveryJobs).toEqual(["file-1"]);
     expect(state.scanMode).toBe("INCREMENTAL");
+  });
+
+  it("reuses unchanged hashed edition-linked files during manual FULL scans and still runs recovery", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-scan-full-linked-"));
+    tempDirectories.push(directory);
+
+    const absolutePath = path.join(directory, "book.epub");
+    const timestamp = new Date("2025-01-01T00:00:00.000Z");
+    await writeFile(absolutePath, "first");
+    await utimes(absolutePath, timestamp, timestamp);
+
+    const state = createEmptyState(directory, "INCREMENTAL");
+    addFileAsset(state, {
+      absolutePath,
+      ctime: timestamp,
+      mtime: timestamp,
+      sizeBytes: BigInt("first".length),
+    });
+    addWork(state, { coverPath: null, enrichmentStatus: "ENRICHED" });
+    addEdition(state);
+    addEditionFile(state);
+
+    const enqueuedJobs: Array<{ jobName: LibraryJobName; payload: LibraryJobPayloads[LibraryJobName] }> = [];
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: (jobName, payload) => {
+        enqueuedJobs.push({ jobName, payload });
+        return Promise.resolve(undefined);
+      },
+    });
+
+    const result = await services.scanLibraryRoot({
+      libraryRootId: "root-1",
+      scanMode: "FULL",
+    });
+
+    expect(result.enqueuedHashJobs).toEqual([]);
+    expect(result.enqueuedRecoveryJobs).toEqual(["file-1"]);
+    expect(enqueuedJobs).toEqual([
+      {
+        jobName: LIBRARY_JOB_NAMES.PROCESS_COVER,
+        payload: { fileAssetId: "file-1", workId: "work-1" },
+      },
+    ]);
+  });
+
+  it("continues hashing unchanged unlinked files during manual FULL scans", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-scan-full-unlinked-"));
+    tempDirectories.push(directory);
+
+    const absolutePath = path.join(directory, "book.epub");
+    const timestamp = new Date("2025-01-01T00:00:00.000Z");
+    await writeFile(absolutePath, "first");
+    await utimes(absolutePath, timestamp, timestamp);
+
+    const state = createEmptyState(directory, "INCREMENTAL");
+    addFileAsset(state, {
+      absolutePath,
+      ctime: timestamp,
+      mtime: timestamp,
+      metadata: {
+        normalized: {
+          authors: ["N. K. Jemisin"],
+          identifiers: { unknown: [] },
+          title: "The Fifth Season",
+        },
+        parsedAt: timestamp.toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      } as object as FileAsset["metadata"],
+      sizeBytes: BigInt("first".length),
+    });
+
+    const enqueuedJobs: Array<{ jobName: LibraryJobName; payload: LibraryJobPayloads[LibraryJobName] }> = [];
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: (jobName, payload) => {
+        enqueuedJobs.push({ jobName, payload });
+        return Promise.resolve(undefined);
+      },
+    });
+
+    const result = await services.scanLibraryRoot({
+      libraryRootId: "root-1",
+      scanMode: "FULL",
+    });
+
+    expect(result.enqueuedHashJobs).toEqual(["file-1"]);
+    expect(result.enqueuedRecoveryJobs).toEqual([]);
+    expect(enqueuedJobs).toEqual([
+      {
+        jobName: LIBRARY_JOB_NAMES.HASH_FILE_ASSET,
+        payload: { fileAssetId: "file-1" },
+      },
+    ]);
   });
 
   it("skips per-file upserts for unchanged hashed files in incremental mode and bulk-refreshes lastSeenAt", async () => {
@@ -4265,6 +4363,181 @@ describe("ingest services", () => {
       isbn10: null,
       isbn13: null,
     });
+  });
+
+  it("logs rejected title matches before creating a new work", async () => {
+    const state = createEmptyState("/tmp/root");
+    const infoMock = vi.fn();
+    addFileAsset(state, {
+      metadata: {
+        normalized: {
+          authors: ["N. K. Jemisin"],
+          identifiers: { unknown: [] },
+          title: "The Fifth Season",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      },
+    });
+    addWork(state, {
+      titleCanonical: canonicalizeBookTitle("The Fifth Season") ?? "the fifth season",
+      titleDisplay: "The Fifth Season",
+    });
+    addEdition(state);
+    addContributor(state, {
+      nameCanonical: canonicalizeContributorNames(["James S. A. Corey"])[0] ?? "james s a corey",
+      nameDisplay: "James S. A. Corey",
+    });
+    addEditionContributor(state);
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      logger: { info: infoMock, warn: vi.fn() },
+    });
+
+    await expect(
+      services.matchFileAssetToEdition({ fileAssetId: "file-1" }),
+    ).resolves.toMatchObject({
+      createdEdition: true,
+      createdWork: true,
+      fileAssetId: "file-1",
+      skipped: false,
+    });
+
+    expect(infoMock).toHaveBeenCalledWith(
+      {
+        authorCanonicalsExpected: canonicalizeContributorNames(["N. K. Jemisin"]),
+        createdWorkId: "work-2",
+        fileAssetId: "file-1",
+        matchStrategy: "exact-author-match",
+        matchingWorksByTitle: 1,
+        rejections: [
+          {
+            actualAuthorCanonicals: canonicalizeContributorNames(["James S. A. Corey"]),
+            rejectionReason: "author-mismatch",
+            workEnrichmentStatus: "ENRICHED",
+            workId: "work-1",
+          },
+        ],
+        titleCanonical: canonicalizeBookTitle("The Fifth Season") ?? "the fifth season",
+      },
+      "Created new work after title lookup found no reusable match",
+    );
+  });
+
+  it("logs empty title lookup results before creating a new work", async () => {
+    const state = createEmptyState("/tmp/root");
+    const infoMock = vi.fn();
+    addFileAsset(state, {
+      metadata: {
+        normalized: {
+          authors: ["N. K. Jemisin"],
+          identifiers: { unknown: [] },
+          title: "The Fifth Season",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      },
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      logger: { info: infoMock, warn: vi.fn() },
+    });
+
+    await expect(
+      services.matchFileAssetToEdition({ fileAssetId: "file-1" }),
+    ).resolves.toMatchObject({
+      createdEdition: true,
+      createdWork: true,
+      fileAssetId: "file-1",
+      skipped: false,
+    });
+
+    expect(infoMock).toHaveBeenCalledWith(
+      {
+        authorCanonicalsExpected: canonicalizeContributorNames(["N. K. Jemisin"]),
+        createdWorkId: "work-1",
+        fileAssetId: "file-1",
+        matchStrategy: "exact-author-match",
+        matchingWorksByTitle: 0,
+        rejections: [],
+        titleCanonical: canonicalizeBookTitle("The Fifth Season") ?? "the fifth season",
+      },
+      "Created new work after title lookup found no reusable match",
+    );
+  });
+
+  it("logs author count mismatches before creating a new work", async () => {
+    const state = createEmptyState("/tmp/root");
+    const infoMock = vi.fn();
+    addFileAsset(state, {
+      metadata: {
+        normalized: {
+          authors: ["N. K. Jemisin", "Nora Jemisin"],
+          identifiers: { unknown: [] },
+          title: "The Fifth Season",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      },
+    });
+    addWork(state, {
+      titleCanonical: canonicalizeBookTitle("The Fifth Season") ?? "the fifth season",
+      titleDisplay: "The Fifth Season",
+    });
+    addEdition(state);
+    addContributor(state, {
+      nameCanonical: canonicalizeContributorNames(["N. K. Jemisin"])[0] ?? "n k jemisin",
+      nameDisplay: "N. K. Jemisin",
+    });
+    addEditionContributor(state);
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      logger: { info: infoMock, warn: vi.fn() },
+    });
+
+    await expect(
+      services.matchFileAssetToEdition({ fileAssetId: "file-1" }),
+    ).resolves.toMatchObject({
+      createdEdition: true,
+      createdWork: true,
+      fileAssetId: "file-1",
+      skipped: false,
+    });
+
+    expect(infoMock).toHaveBeenCalledWith(
+      {
+        authorCanonicalsExpected: canonicalizeContributorNames(["N. K. Jemisin", "Nora Jemisin"]),
+        createdWorkId: "work-2",
+        fileAssetId: "file-1",
+        matchStrategy: "exact-author-match",
+        matchingWorksByTitle: 1,
+        rejections: [
+          {
+            actualAuthorCanonicals: canonicalizeContributorNames(["N. K. Jemisin"]),
+            rejectionReason: "author-count-mismatch",
+            workEnrichmentStatus: "ENRICHED",
+            workId: "work-1",
+          },
+        ],
+        titleCanonical: canonicalizeBookTitle("The Fifth Season") ?? "the fifth season",
+      },
+      "Created new work after title lookup found no reusable match",
+    );
   });
 
   it("returns the existing edition mapping when the file is already linked", async () => {

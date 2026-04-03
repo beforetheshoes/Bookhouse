@@ -331,9 +331,17 @@ export interface IngestDb {
   };
 }
 
+type IngestLogValue =
+  | string
+  | number
+  | boolean
+  | null
+  | IngestLogValue[]
+  | { [key: string]: IngestLogValue };
+
 export interface IngestLogger {
-  info(obj: Record<string, string | number | boolean | null>, msg: string): void;
-  warn(obj: Record<string, string | number | boolean | null>, msg: string): void;
+  info(obj: Record<string, IngestLogValue>, msg: string): void;
+  warn(obj: Record<string, IngestLogValue>, msg: string): void;
 }
 
 export interface IngestDependencies {
@@ -1608,9 +1616,16 @@ export function createIngestServices(
         mtime: fileStats.mtime,
         sizeBytes: BigInt(fileStats.size),
       };
+      const fileChanged = isFileChanged(existingFileAsset, nextFileState);
       const fileStatsChanged = didFileStatsChange(existingFileAsset, nextFileState);
-      const shouldEnqueueHash = effectiveScanMode === ScanMode.FULL
-        || isFileChanged(existingFileAsset, nextFileState);
+      const hasExistingEditionLink = existingFileAsset !== undefined
+        && editionFileByFileAssetId.has(existingFileAsset.id);
+      const shouldReuseUnchangedLinkedFile = effectiveScanMode === ScanMode.FULL
+        && !fileChanged
+        && existingFileAsset?.fullHash !== null
+        && hasExistingEditionLink;
+      const shouldEnqueueHash = !shouldReuseUnchangedLinkedFile
+        && (effectiveScanMode === ScanMode.FULL || fileChanged);
       const shouldUpsert = effectiveScanMode === ScanMode.FULL
         || existingFileAsset === undefined
         || existingFileAsset.availabilityStatus === AvailabilityStatus.MISSING
@@ -2882,11 +2897,12 @@ export function createIngestServices(
       },
       where: { titleCanonical: ctx.matchableMetadata.titleCanonical },
     });
+    const authorCanonicalsExpected = ctx.matchableMetadata.authorCanonicals;
     let matchingWork = matchingWorks.find((work) => {
       const existingAuthors = getAuthorCanonicalsForWork(work);
       return existingAuthors.length > 0 &&
-        existingAuthors.length === ctx.matchableMetadata.authorCanonicals.length &&
-        existingAuthors.every((author, index) => author === ctx.matchableMetadata.authorCanonicals[index]);
+        existingAuthors.length === authorCanonicalsExpected.length &&
+        existingAuthors.every((author, index) => author === authorCanonicalsExpected[index]);
     });
 
     // Fallback for audiobook stubs: match by title when stub has no authors
@@ -2905,6 +2921,35 @@ export function createIngestServices(
           titleDisplay: ctx.matchableMetadata.title,
         },
       });
+      const rejections = matchingWorks.map((work) => {
+        const actualAuthorCanonicals = getAuthorCanonicalsForWork(work);
+        let rejectionReason = "author-mismatch";
+
+        if (actualAuthorCanonicals.length === 0) {
+          rejectionReason = "missing-authors";
+        } else if (actualAuthorCanonicals.length !== authorCanonicalsExpected.length) {
+          rejectionReason = "author-count-mismatch";
+        }
+
+        return {
+          actualAuthorCanonicals,
+          rejectionReason,
+          workEnrichmentStatus: work.enrichmentStatus,
+          workId: work.id,
+        };
+      });
+      logger.info(
+        {
+          authorCanonicalsExpected,
+          createdWorkId: createdWorkRecord.id,
+          fileAssetId: ctx.fileAsset.id,
+          matchStrategy: ctx.isAudiobook ? "audiobook-stub-fallback" : "exact-author-match",
+          matchingWorksByTitle: matchingWorks.length,
+          rejections,
+          titleCanonical: ctx.matchableMetadata.titleCanonical,
+        },
+        "Created new work after title lookup found no reusable match",
+      );
       return { kind: "workReady", workId: createdWorkRecord.id, createdWork: true };
     }
 
