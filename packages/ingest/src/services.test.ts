@@ -1029,8 +1029,106 @@ describe("ingest services", () => {
       now: new Date("2025-01-01T00:20:00.000Z"),
     });
 
-    expect(thirdScan.enqueuedHashJobs).toEqual(["file-1"]);
+    expect(thirdScan.enqueuedHashJobs).toEqual([]);
+    expect(thirdScan.enqueuedRecoveryJobs).toEqual(["file-1"]);
     expect(state.scanMode).toBe("INCREMENTAL");
+  });
+
+  it("reuses unchanged hashed edition-linked files during manual FULL scans and still runs recovery", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-scan-full-linked-"));
+    tempDirectories.push(directory);
+
+    const absolutePath = path.join(directory, "book.epub");
+    const timestamp = new Date("2025-01-01T00:00:00.000Z");
+    await writeFile(absolutePath, "first");
+    await utimes(absolutePath, timestamp, timestamp);
+
+    const state = createEmptyState(directory, "INCREMENTAL");
+    addFileAsset(state, {
+      absolutePath,
+      ctime: timestamp,
+      mtime: timestamp,
+      sizeBytes: BigInt("first".length),
+    });
+    addWork(state, { coverPath: null, enrichmentStatus: "ENRICHED" });
+    addEdition(state);
+    addEditionFile(state);
+
+    const enqueuedJobs: Array<{ jobName: LibraryJobName; payload: LibraryJobPayloads[LibraryJobName] }> = [];
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: (jobName, payload) => {
+        enqueuedJobs.push({ jobName, payload });
+        return Promise.resolve(undefined);
+      },
+    });
+
+    const result = await services.scanLibraryRoot({
+      libraryRootId: "root-1",
+      scanMode: "FULL",
+    });
+
+    expect(result.enqueuedHashJobs).toEqual([]);
+    expect(result.enqueuedRecoveryJobs).toEqual(["file-1"]);
+    expect(enqueuedJobs).toEqual([
+      {
+        jobName: LIBRARY_JOB_NAMES.PROCESS_COVER,
+        payload: { fileAssetId: "file-1", workId: "work-1" },
+      },
+    ]);
+  });
+
+  it("continues hashing unchanged unlinked files during manual FULL scans", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-scan-full-unlinked-"));
+    tempDirectories.push(directory);
+
+    const absolutePath = path.join(directory, "book.epub");
+    const timestamp = new Date("2025-01-01T00:00:00.000Z");
+    await writeFile(absolutePath, "first");
+    await utimes(absolutePath, timestamp, timestamp);
+
+    const state = createEmptyState(directory, "INCREMENTAL");
+    addFileAsset(state, {
+      absolutePath,
+      ctime: timestamp,
+      mtime: timestamp,
+      metadata: {
+        normalized: {
+          authors: ["N. K. Jemisin"],
+          identifiers: { unknown: [] },
+          title: "The Fifth Season",
+        },
+        parsedAt: timestamp.toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      } as object as FileAsset["metadata"],
+      sizeBytes: BigInt("first".length),
+    });
+
+    const enqueuedJobs: Array<{ jobName: LibraryJobName; payload: LibraryJobPayloads[LibraryJobName] }> = [];
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: (jobName, payload) => {
+        enqueuedJobs.push({ jobName, payload });
+        return Promise.resolve(undefined);
+      },
+    });
+
+    const result = await services.scanLibraryRoot({
+      libraryRootId: "root-1",
+      scanMode: "FULL",
+    });
+
+    expect(result.enqueuedHashJobs).toEqual(["file-1"]);
+    expect(result.enqueuedRecoveryJobs).toEqual([]);
+    expect(enqueuedJobs).toEqual([
+      {
+        jobName: LIBRARY_JOB_NAMES.HASH_FILE_ASSET,
+        payload: { fileAssetId: "file-1" },
+      },
+    ]);
   });
 
   it("skips per-file upserts for unchanged hashed files in incremental mode and bulk-refreshes lastSeenAt", async () => {

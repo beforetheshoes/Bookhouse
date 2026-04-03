@@ -1608,9 +1608,16 @@ export function createIngestServices(
         mtime: fileStats.mtime,
         sizeBytes: BigInt(fileStats.size),
       };
+      const fileChanged = isFileChanged(existingFileAsset, nextFileState);
       const fileStatsChanged = didFileStatsChange(existingFileAsset, nextFileState);
-      const shouldEnqueueHash = effectiveScanMode === ScanMode.FULL
-        || isFileChanged(existingFileAsset, nextFileState);
+      const hasExistingEditionLink = existingFileAsset !== undefined
+        && editionFileByFileAssetId.has(existingFileAsset.id);
+      const shouldReuseUnchangedLinkedFile = effectiveScanMode === ScanMode.FULL
+        && !fileChanged
+        && existingFileAsset?.fullHash !== null
+        && hasExistingEditionLink;
+      const shouldEnqueueHash = !shouldReuseUnchangedLinkedFile
+        && (effectiveScanMode === ScanMode.FULL || fileChanged);
       const shouldUpsert = effectiveScanMode === ScanMode.FULL
         || existingFileAsset === undefined
         || existingFileAsset.availabilityStatus === AvailabilityStatus.MISSING
