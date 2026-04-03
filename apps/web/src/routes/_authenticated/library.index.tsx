@@ -18,7 +18,7 @@ import { LibraryFilters } from "~/components/library-filters";
 import { LibraryPagination } from "~/components/library-pagination";
 import { librarySearchSchema } from "~/lib/library-search-schema";
 import type { ReadingFilter } from "~/lib/sort-filter-works";
-import { getFilteredLibraryWorksServerFn } from "~/lib/server-fns/library";
+import { getFilteredLibraryWorksServerFn, getAllFilteredWorkIdsServerFn } from "~/lib/server-fns/library";
 import { getActiveJobCountServerFn } from "~/lib/server-fns/import-jobs";
 import { getBulkReadingProgressServerFn } from "~/lib/server-fns/reading-progress";
 import { getShelvesServerFn } from "~/lib/server-fns/shelves";
@@ -52,22 +52,27 @@ function LibraryPage() {
 
   const router = useRouter();
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [allWorkIds, setAllWorkIds] = useState<string[] | null>(null);
+  const [selectingAll, setSelectingAll] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const isScanning = activeJobCount > 0;
   const columns = useMemo(() => getColumns(isScanning, editMode, router, progressMap), [isScanning, editMode, router, progressMap]);
   const newCount = totalCount - prevCount;
-  const selectedCount = Object.keys(rowSelection).length;
 
   const filteredByReading = useMemo(
     () => filterByReadingStatus(works, readingFilter, progressMap),
     [works, readingFilter, progressMap],
   );
 
-  const selectedWorkIds = useMemo(() => {
+  const pageSelectedWorkIds = useMemo(() => {
     return Object.keys(rowSelection)
       .map((idx) => filteredByReading[Number(idx)]?.id)
       .filter((id): id is string => id !== undefined);
   }, [rowSelection, filteredByReading]);
+
+  const selectedWorkIds = allWorkIds ?? pageSelectedWorkIds;
+  const selectedCount = allWorkIds ? allWorkIds.length : Object.keys(rowSelection).length;
+  const allPageRowsSelected = filteredByReading.length > 0 && Object.keys(rowSelection).length === filteredByReading.length;
 
   useSSE();
 
@@ -103,8 +108,32 @@ function LibraryPage() {
     });
   };
 
+  const handleSelectAll = async () => {
+    setSelectingAll(true);
+    try {
+      const ids = await getAllFilteredWorkIdsServerFn({
+        data: {
+          q: search.q,
+          format: search.format,
+          authorId: search.authorId,
+          seriesId: search.seriesId,
+          publisher: search.publisher,
+          hasCover: search.hasCover,
+          enriched: search.enriched,
+          hasDescription: search.hasDescription,
+          inSeries: search.inSeries,
+          hasIsbn: search.hasIsbn,
+        },
+      });
+      setAllWorkIds(ids);
+    } finally {
+      setSelectingAll(false);
+    }
+  };
+
   const handleSelectionDone = () => {
     setRowSelection({});
+    setAllWorkIds(null);
     void router.invalidate();
   };
 
@@ -199,9 +228,14 @@ function LibraryPage() {
         selectedCount={selectedCount}
         selectedWorkIds={selectedWorkIds}
         shelves={shelves}
+        totalCount={totalCount}
+        allPageRowsSelected={allPageRowsSelected}
+        onSelectAll={() => { void handleSelectAll(); }}
+        selectingAll={selectingAll}
         onDeleted={handleSelectionDone}
         onAddedToShelf={handleSelectionDone}
-        onClearSelection={() => { setRowSelection({}); }}
+        onEnrichStarted={handleSelectionDone}
+        onClearSelection={() => { setRowSelection({}); setAllWorkIds(null); }}
       />
     </div>
   );

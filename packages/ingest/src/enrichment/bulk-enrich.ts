@@ -1,0 +1,392 @@
+import type { EnrichmentProvider, SourceResult, SearchSourcesResult } from "./search-sources";
+import type { ApplyEnrichmentInput, ApplyEnrichmentResult, ApplyFieldValue } from "./apply-enrichment";
+
+export interface BulkEnrichEditionData {
+  id: string;
+  formatFamily: "EBOOK" | "AUDIOBOOK";
+  publisher: string | null;
+  publishedDate: string | null;
+  isbn13: string | null;
+  isbn10: string | null;
+  language: string | null;
+  pageCount: number | null;
+  editedFields: string[];
+  authors: string[];
+}
+
+export interface BulkEnrichWorkData {
+  id: string;
+  titleDisplay: string;
+  description: string | null;
+  coverPath: string | null;
+  editedFields: string[];
+  tags: string[];
+  editions: BulkEnrichEditionData[];
+}
+
+export interface BulkEnrichDeps {
+  loadWork: (workId: string) => Promise<BulkEnrichWorkData | null>;
+  searchAllSources: (title: string, author: string | undefined) => Promise<SearchSourcesResult>;
+  applyEnrichmentFields: (input: ApplyEnrichmentInput, deps: never) => Promise<ApplyEnrichmentResult>;
+  applyCoverFromUrl: (workId: string, imageUrl: string, source: { provider: string; externalId: string }) => Promise<void>;
+}
+
+export type BulkEnrichResult =
+  | { status: "enriched"; appliedFields: string[] }
+  | { status: "not-found" }
+  | { status: "no-editions" }
+  | { status: "no-results" }
+  | { status: "skipped-all" };
+
+type BulkEnrichStrategy = "fullest" | "priority";
+
+interface FieldDef {
+  key: string;
+  level: "work" | "edition";
+}
+
+const WORK_FIELDS: FieldDef[] = [
+  { key: "title", level: "work" },
+  { key: "authors", level: "work" },
+  { key: "description", level: "work" },
+  { key: "subjects", level: "work" },
+];
+
+const EDITION_FIELDS: FieldDef[] = [
+  { key: "publisher", level: "edition" },
+  { key: "publishedDate", level: "edition" },
+  { key: "pageCount", level: "edition" },
+  { key: "isbn13", level: "edition" },
+  { key: "isbn10", level: "edition" },
+];
+
+function getSourceWorkValue(work: SourceResult["work"], key: string): ApplyFieldValue {
+  if (key === "title") return work.title;
+  if (key === "authors") return work.authors;
+  if (key === "description") return work.description;
+  if (key === "subjects") return work.subjects;
+  return null;
+}
+
+function getSourceEditionValue(edition: SourceResult["edition"], key: string): ApplyFieldValue {
+  if (key === "publisher") return edition.publisher;
+  if (key === "publishedDate") return edition.publishedDate;
+  if (key === "pageCount") return edition.pageCount;
+  if (key === "isbn13") return edition.isbn13;
+  if (key === "isbn10") return edition.isbn10;
+  return null;
+}
+
+function getSourceFieldValue(result: SourceResult, field: FieldDef): ApplyFieldValue {
+  return field.level === "work"
+    ? getSourceWorkValue(result.work, field.key)
+    : getSourceEditionValue(result.edition, field.key);
+}
+
+function getEditedFieldKey(fieldKey: string): string {
+  if (fieldKey === "title") return "titleDisplay";
+  return fieldKey;
+}
+
+function getCurrentWorkValue(work: BulkEnrichWorkData, authors: string[], key: string): ApplyFieldValue {
+  if (key === "title") return work.titleDisplay;
+  if (key === "authors") return authors;
+  if (key === "description") return work.description;
+  // subjects
+  return work.tags;
+}
+
+function getCurrentEditionValue(edition: BulkEnrichEditionData, key: string): ApplyFieldValue {
+  if (key === "publisher") return edition.publisher;
+  if (key === "publishedDate") return edition.publishedDate;
+  if (key === "pageCount") return edition.pageCount;
+  if (key === "isbn13") return edition.isbn13;
+  if (key === "isbn10") return edition.isbn10;
+  if (key === "language") return edition.language;
+  return null;
+}
+
+function isFieldEmpty(value: ApplyFieldValue): boolean {
+  if (value === null) return true;
+  if (typeof value === "string" && value.trim() === "") return true;
+  if (Array.isArray(value) && value.length === 0) return true;
+  return false;
+}
+
+// Called only after isFieldEmpty check, so value is never null/empty.
+function fieldContentScore(value: NonNullable<ApplyFieldValue>): number {
+  if (typeof value === "number") return value;
+  if (Array.isArray(value)) return value.length;
+  return value.length;
+}
+
+interface MergedField {
+  value: ApplyFieldValue;
+  provider: EnrichmentProvider;
+  externalId: string;
+}
+
+function pickFieldFullest(
+  field: FieldDef,
+  results: SourceResult[],
+  currentValue: ApplyFieldValue,
+  editedFieldKeys: string[],
+): MergedField | null {
+  if (editedFieldKeys.includes(getEditedFieldKey(field.key))) return null;
+  if (!isFieldEmpty(currentValue)) return null;
+
+  const firstResult = results[0] as SourceResult;
+  let bestScore = 0;
+  let bestValue: ApplyFieldValue = null;
+  let bestProvider: EnrichmentProvider = firstResult.provider;
+  let bestExternalId: string = firstResult.externalId;
+
+  for (const result of results) {
+    const value = getSourceFieldValue(result, field);
+    if (isFieldEmpty(value)) continue;
+    const score = fieldContentScore(value as NonNullable<ApplyFieldValue>);
+    if (score > bestScore) {
+      bestScore = score;
+      bestValue = value;
+      bestProvider = result.provider;
+      bestExternalId = result.externalId;
+    }
+  }
+
+  if (isFieldEmpty(bestValue)) return null;
+  return { value: bestValue, provider: bestProvider, externalId: bestExternalId };
+}
+
+function pickFieldPriority(
+  field: FieldDef,
+  results: SourceResult[],
+  currentValue: ApplyFieldValue,
+  editedFieldKeys: string[],
+  sources: EnrichmentProvider[],
+): MergedField | null {
+  if (editedFieldKeys.includes(getEditedFieldKey(field.key))) return null;
+  if (!isFieldEmpty(currentValue)) return null;
+
+  const ordered = sources
+    .map((s) => results.find((r) => r.provider === s))
+    .filter((r): r is SourceResult => r !== undefined);
+
+  for (const result of ordered) {
+    const value = getSourceFieldValue(result, field);
+    if (!isFieldEmpty(value)) {
+      return { value, provider: result.provider, externalId: result.externalId };
+    }
+  }
+
+  return null;
+}
+
+function mergeWorkFields(
+  fields: FieldDef[],
+  results: SourceResult[],
+  work: BulkEnrichWorkData,
+  authors: string[],
+  strategy: BulkEnrichStrategy,
+  sources: EnrichmentProvider[],
+): Map<string, MergedField> {
+  const merged = new Map<string, MergedField>();
+
+  for (const field of fields) {
+    const currentValue = getCurrentWorkValue(work, authors, field.key);
+    const picked = strategy === "fullest"
+      ? pickFieldFullest(field, results, currentValue, work.editedFields)
+      : pickFieldPriority(field, results, currentValue, work.editedFields, sources);
+    if (picked) merged.set(field.key, picked);
+  }
+
+  return merged;
+}
+
+function mergeEditionFields(
+  fields: FieldDef[],
+  results: SourceResult[],
+  edition: BulkEnrichEditionData,
+  strategy: BulkEnrichStrategy,
+  sources: EnrichmentProvider[],
+): Map<string, MergedField> {
+  const merged = new Map<string, MergedField>();
+
+  for (const field of fields) {
+    const currentValue = getCurrentEditionValue(edition, field.key);
+    const picked = strategy === "fullest"
+      ? pickFieldFullest(field, results, currentValue, edition.editedFields)
+      : pickFieldPriority(field, results, currentValue, edition.editedFields, sources);
+    if (picked) merged.set(field.key, picked);
+  }
+
+  return merged;
+}
+
+function determineWinningSource(
+  merged: Map<string, MergedField>,
+  sources: EnrichmentProvider[],
+  results: SourceResult[],
+): { provider: EnrichmentProvider; externalId: string } {
+  // Count fields won per provider
+  const counts = new Map<string, number>();
+  for (const field of merged.values()) {
+    counts.set(field.provider, (counts.get(field.provider) ?? 0) + 1);
+  }
+
+  let bestProvider: EnrichmentProvider | null = null;
+  let bestCount = 0;
+  for (const source of sources) {
+    const count = counts.get(source) ?? 0;
+    if (count > bestCount) {
+      bestCount = count;
+      bestProvider = source;
+    }
+  }
+
+  if (bestProvider) {
+    const result = results.find((r) => r.provider === bestProvider) as SourceResult;
+    return { provider: result.provider, externalId: result.externalId };
+  }
+
+  // Fallback when merged map is empty (all fields already populated).
+  // results is already filtered to sources, so first entry is valid.
+  const fallback = results[0] as SourceResult;
+  return { provider: fallback.provider, externalId: fallback.externalId };
+}
+
+function pickCoverUrl(
+  results: SourceResult[],
+  strategy: BulkEnrichStrategy,
+  sources: EnrichmentProvider[],
+): { coverUrl: string; source: { provider: string; externalId: string } } | null {
+  if (strategy === "priority") {
+    for (const s of sources) {
+      const result = results.find((r) => r.provider === s);
+      if (result?.work.coverUrl) {
+        return { coverUrl: result.work.coverUrl, source: { provider: result.provider, externalId: result.externalId } };
+      }
+    }
+    return null;
+  }
+  // Fullest: first available
+  for (const result of results) {
+    if (result.work.coverUrl) {
+      return { coverUrl: result.work.coverUrl, source: { provider: result.provider, externalId: result.externalId } };
+    }
+  }
+  return null;
+}
+
+export async function processBulkEnrichWork(
+  workId: string,
+  sources: EnrichmentProvider[],
+  strategy: BulkEnrichStrategy,
+  deps: BulkEnrichDeps,
+): Promise<BulkEnrichResult> {
+  const work = await deps.loadWork(workId);
+  if (!work) return { status: "not-found" };
+  if (work.editions.length === 0) return { status: "no-editions" };
+
+  // Use first available author from any edition for search
+  const allAuthors = work.editions.flatMap((e) => e.authors);
+  const author = allAuthors.length > 0 ? allAuthors[0] : undefined;
+
+  const searchResult = await deps.searchAllSources(work.titleDisplay, author);
+
+  if (searchResult.status !== "success" || searchResult.results.length === 0) {
+    return { status: "no-results" };
+  }
+
+  const filteredResults = searchResult.results.filter((r) => sources.includes(r.provider));
+  if (filteredResults.length === 0) {
+    return { status: "no-results" };
+  }
+
+  // Merge work-level fields (shared across all editions)
+  const workMerged = mergeWorkFields(WORK_FIELDS, filteredResults, work, allAuthors, strategy, sources);
+
+  const workFields: Record<string, ApplyFieldValue> = {};
+  for (const field of WORK_FIELDS) {
+    const m = workMerged.get(field.key);
+    if (m) workFields[field.key] = m.value;
+  }
+
+  // Determine winning source from work-level fields for provenance
+  const allMerged = new Map(workMerged);
+
+  // Apply edition-level fields only to EBOOK editions.
+  // External sources (OL, Google Books, Hardcover) return print/ebook metadata
+  // — ISBNs, publishers, page counts are not meaningful for audiobook editions.
+  const ebookEditions = work.editions.filter((e) => e.formatFamily === "EBOOK");
+  const editionApplyPlan: Array<{ editionId: string; fields: Record<string, ApplyFieldValue> }> = [];
+
+  for (const edition of ebookEditions) {
+    const editionMerged = mergeEditionFields(EDITION_FIELDS, filteredResults, edition, strategy, sources);
+    if (editionMerged.size === 0) continue;
+
+    const fields: Record<string, ApplyFieldValue> = {};
+    for (const field of EDITION_FIELDS) {
+      const m = editionMerged.get(field.key);
+      if (m) {
+        fields[field.key] = m.value;
+        allMerged.set(field.key, m);
+      }
+    }
+    editionApplyPlan.push({ editionId: edition.id, fields });
+  }
+
+  // Cover — applies to the work, not edition-specific
+  let coverApplied = false;
+  if (!work.coverPath) {
+    const coverPick = pickCoverUrl(filteredResults, strategy, sources);
+    if (coverPick) {
+      await deps.applyCoverFromUrl(workId, coverPick.coverUrl, coverPick.source);
+      coverApplied = true;
+    }
+  }
+
+  const winningSource = determineWinningSource(allMerged, sources, filteredResults);
+  const allAppliedFields: string[] = [];
+
+  // Apply work-level fields (once, shared across all editions)
+  if (Object.keys(workFields).length > 0 || editionApplyPlan.length > 0) {
+    // Apply work fields with the first ebook edition (or first edition) for author linking
+    const primaryEdition = ebookEditions[0] ?? work.editions[0];
+    const applyResult = await deps.applyEnrichmentFields(
+      {
+        workId,
+        editionId: primaryEdition?.id,
+        workFields,
+        editionFields: editionApplyPlan.find((p) => p.editionId === primaryEdition?.id)?.fields ?? {},
+        source: winningSource,
+      },
+      {} as never,
+    );
+    if (applyResult.appliedFields) allAppliedFields.push(...applyResult.appliedFields);
+
+    // Apply edition fields to remaining ebook editions
+    for (const plan of editionApplyPlan) {
+      if (plan.editionId === primaryEdition?.id) continue;
+      const result = await deps.applyEnrichmentFields(
+        {
+          workId,
+          editionId: plan.editionId,
+          workFields: {},
+          editionFields: plan.fields,
+          source: winningSource,
+        },
+        {} as never,
+      );
+      if (result.appliedFields) allAppliedFields.push(...result.appliedFields);
+    }
+  }
+
+  if (allAppliedFields.length === 0 && !coverApplied) {
+    return { status: "skipped-all" };
+  }
+
+  return {
+    status: "enriched",
+    appliedFields: [...new Set(allAppliedFields)],
+  };
+}

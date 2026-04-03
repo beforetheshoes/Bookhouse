@@ -119,6 +119,7 @@ enum ImportJobKind {
   DETECT_DUPLICATES
   MATCH_SUGGESTIONS
   ENRICH_AUTHOR_PHOTOS
+  BULK_ENRICH
 }
 
 enum ImportJobStatus {

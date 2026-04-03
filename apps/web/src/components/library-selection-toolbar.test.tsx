@@ -14,6 +14,11 @@ vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 
+vi.mock("~/components/bulk-enrich-dialog", () => ({
+  BulkEnrichDialog: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="bulk-enrich-dialog">BulkEnrichDialog</div> : null,
+}));
+
 import { toast } from "sonner";
 import { bulkDeleteWorksServerFn } from "~/lib/server-fns/deletion";
 import { bulkAddToShelfServerFn } from "~/lib/server-fns/shelves";
@@ -27,8 +32,13 @@ const defaultProps = {
   selectedCount: 1,
   selectedWorkIds: ["w1"],
   shelves: [] as { id: string; name: string; _count: { items: number } }[],
+  totalCount: 100,
+  allPageRowsSelected: false,
+  onSelectAll: vi.fn(),
+  selectingAll: false,
   onDeleted: vi.fn(),
   onAddedToShelf: vi.fn(),
+  onEnrichStarted: vi.fn(),
   onClearSelection: vi.fn(),
 };
 
@@ -138,6 +148,40 @@ describe("LibrarySelectionToolbar", () => {
     await waitFor(() => {
       expect(mockToast.error).toHaveBeenCalledWith("Failed to add to shelf");
     });
+  });
+
+  it("shows select-all banner when all page rows are selected", () => {
+    render(<LibrarySelectionToolbar {...defaultProps} allPageRowsSelected={true} selectedCount={1} totalCount={100} />);
+    expect(screen.getByTestId("select-all-banner")).toBeTruthy();
+    expect(screen.getByText(/Select all 100 works/)).toBeTruthy();
+  });
+
+  it("does not show select-all banner when not all page rows selected", () => {
+    render(<LibrarySelectionToolbar {...defaultProps} allPageRowsSelected={false} selectedCount={1} totalCount={100} />);
+    expect(screen.queryByTestId("select-all-banner")).toBeFalsy();
+  });
+
+  it("does not show select-all banner when all works are already selected", () => {
+    render(<LibrarySelectionToolbar {...defaultProps} allPageRowsSelected={true} selectedCount={100} totalCount={100} />);
+    expect(screen.queryByTestId("select-all-banner")).toBeFalsy();
+  });
+
+  it("calls onSelectAll when select-all button is clicked", () => {
+    const onSelectAll = vi.fn();
+    render(<LibrarySelectionToolbar {...defaultProps} allPageRowsSelected={true} selectedCount={1} totalCount={100} onSelectAll={onSelectAll} />);
+    fireEvent.click(screen.getByTestId("select-all-btn"));
+    expect(onSelectAll).toHaveBeenCalled();
+  });
+
+  it("shows loading state when selectingAll is true", () => {
+    render(<LibrarySelectionToolbar {...defaultProps} allPageRowsSelected={true} selectedCount={1} totalCount={100} selectingAll={true} />);
+    expect(screen.getByText(/Selecting/)).toBeTruthy();
+  });
+
+  it("opens bulk enrich dialog when Enrich Metadata is clicked", () => {
+    render(<LibrarySelectionToolbar {...defaultProps} />);
+    fireEvent.click(screen.getByTestId("bulk-enrich-btn"));
+    expect(screen.getByTestId("bulk-enrich-dialog")).toBeTruthy();
   });
 
   it("shows empty shelf message when no shelves exist", () => {
