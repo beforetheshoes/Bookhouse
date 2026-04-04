@@ -24,6 +24,7 @@ export default defineConfig({
         "apps/web/src/**/*.tsx",
         "apps/web/server/routes/api/**/*.ts",
         "apps/web/server/routes/kobo/**/*.ts",
+        "apps/web/server/routes/opds/**/*.ts",
         "apps/web/server/utils/**/*.ts",
         "workers/**/*.ts",
       ],
@@ -32,6 +33,9 @@ export default defineConfig({
         "apps/web/src/routeTree.gen.ts",
         "packages/kobo/src/types.ts",
         "packages/kobo/src/index.ts",
+        "packages/opds/src/types.ts",
+        "packages/opds/src/index.ts",
+        "packages/ingest/src/index.ts",
         // Runtime-only files: no testable factory functions, covered by c8 ignore
         "**/*unmatched*",
         "**/image.jpg.ts",

@@ -149,6 +149,7 @@ model User {
   readingProgress ReadingProgress[]
   workProgressPreferences WorkProgressPreference[]
   koboDevices     KoboDevice[]
+  opdsCredentials OpdsCredential[]
 }
 
 model UserIdentity {
@@ -529,4 +530,18 @@ model KoboSyncedBook {
 
   @@unique([koboDeviceId, editionId])
   @@index([koboDeviceId])
+}
+
+model OpdsCredential {
+  id           String   @id @default(cuid())
+  userId       String
+  username     String   @unique
+  passwordHash String
+  isEnabled    Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }

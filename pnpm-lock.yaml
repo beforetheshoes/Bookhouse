@@ -65,6 +65,9 @@ importers:
       '@bookhouse/kobo':
         specifier: workspace:*
         version: link:../../packages/kobo
+      '@bookhouse/opds':
+        specifier: workspace:*
+        version: link:../../packages/opds
       '@bookhouse/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -271,6 +274,12 @@ importers:
       '@bookhouse/shared':
         specifier: workspace:*
         version: link:../shared
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  packages/opds:
     devDependencies:
       typescript:
         specifier: ^5.9.3
