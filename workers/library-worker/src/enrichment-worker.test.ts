@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { BulkEnrichDeps, BulkEnrichWorkData } from "@bookhouse/ingest";
 
 const addMock = vi.fn();
 const workerConstructorMock = vi.fn();
 const enrichContributorMock = vi.fn();
+const processBulkEnrichWorkMock = vi.fn();
 const appSettingFindUniqueMock = vi.fn();
 const contributorFindUniqueMock = vi.fn();
 const contributorUpdateMock = vi.fn();
@@ -37,27 +39,80 @@ vi.mock("bullmq", () => ({
   },
 }));
 
+const workFindUniqueMock = vi.fn();
+const workUpdateMock = vi.fn().mockResolvedValue({});
+const editionFindUniqueMock = vi.fn();
+const editionFindManyMock = vi.fn();
+const editionUpdateMock = vi.fn().mockResolvedValue({});
+const tagFindFirstMock = vi.fn();
+const tagCreateMock = vi.fn();
+const workTagUpsertMock = vi.fn().mockResolvedValue({});
+const contributorFindFirstMock = vi.fn();
+const contributorCreateMock = vi.fn();
+const editionContributorDeleteManyMock = vi.fn().mockResolvedValue({});
+const editionContributorCreateManyMock = vi.fn().mockResolvedValue({});
+const externalLinkUpsertMock = vi.fn().mockResolvedValue({});
+
 vi.mock("@bookhouse/db", () => ({
   db: {
     appSetting: { findUnique: appSettingFindUniqueMock },
     contributor: {
       findUnique: contributorFindUniqueMock,
       update: contributorUpdateMock,
+      findFirst: contributorFindFirstMock,
+      create: contributorCreateMock,
     },
     importJob: {
       update: importJobUpdateMock,
       findUnique: importJobFindUniqueMock,
+    },
+    work: {
+      findUnique: workFindUniqueMock,
+      update: workUpdateMock,
+    },
+    edition: {
+      findUnique: editionFindUniqueMock,
+      findMany: editionFindManyMock,
+      update: editionUpdateMock,
+    },
+    tag: {
+      findFirst: tagFindFirstMock,
+      create: tagCreateMock,
+    },
+    workTag: {
+      upsert: workTagUpsertMock,
+    },
+    editionContributor: {
+      deleteMany: editionContributorDeleteManyMock,
+      createMany: editionContributorCreateManyMock,
+    },
+    externalLink: {
+      upsert: externalLinkUpsertMock,
     },
   },
 }));
 
 vi.mock("@bookhouse/ingest", () => ({
   enrichContributor: enrichContributorMock,
+  processBulkEnrichWork: processBulkEnrichWorkMock,
   searchOpenLibraryAuthors: searchOpenLibraryAuthorsMock,
   searchHardcoverAuthors: searchHardcoverAuthorsMock,
   searchWikidataAuthors: searchWikidataAuthorsMock,
   applyAuthorPhotoFromUrl: applyAuthorPhotoFromUrlMock,
   resizeAndSaveCover: resizeAndSaveCoverMock,
+  searchAllSources: vi.fn().mockResolvedValue({ status: "no-results" }),
+  searchOpenLibrary: vi.fn(),
+  getOpenLibraryWork: vi.fn(),
+  getOpenLibraryEdition: vi.fn(),
+  searchGoogleBooks: vi.fn(),
+  searchHardcover: vi.fn(),
+  applyEnrichmentFields: vi.fn().mockResolvedValue({ success: true, appliedFields: ["description"] }),
+  canonicalizeContributorName: (name: string) => name.toLowerCase(),
+  applyCoverFromUrl: vi.fn(),
+  resizeCoverImage: vi.fn(),
+  extractDominantColors: vi.fn(),
+  extractDominantColorsDefault: vi.fn().mockResolvedValue(["#000000", "#ffffff", "#808080"]),
+  RateLimiter: class { check = () => ({ allowed: true }); },
   createOLFetcher: () => fetch,
   TokenBucketLimiter: class { acquire = () => Promise.resolve(); },
 }));
@@ -73,6 +128,7 @@ vi.mock("@bookhouse/shared", async () => {
 
 beforeEach(() => {
   enrichContributorMock.mockReset();
+  processBulkEnrichWorkMock.mockReset();
   appSettingFindUniqueMock.mockReset();
   contributorFindUniqueMock.mockReset();
   contributorUpdateMock.mockReset();
@@ -86,6 +142,25 @@ beforeEach(() => {
   importJobUpdateMock.mockReset();
   importJobUpdateMock.mockResolvedValue({});
   importJobFindUniqueMock.mockReset();
+  workFindUniqueMock.mockReset();
+  workUpdateMock.mockReset();
+  workUpdateMock.mockResolvedValue({});
+  editionFindUniqueMock.mockReset();
+  editionFindManyMock.mockReset();
+  editionUpdateMock.mockReset();
+  editionUpdateMock.mockResolvedValue({});
+  tagFindFirstMock.mockReset();
+  tagCreateMock.mockReset();
+  workTagUpsertMock.mockReset();
+  workTagUpsertMock.mockResolvedValue({});
+  contributorFindFirstMock.mockReset();
+  contributorCreateMock.mockReset();
+  editionContributorDeleteManyMock.mockReset();
+  editionContributorDeleteManyMock.mockResolvedValue({});
+  editionContributorCreateManyMock.mockReset();
+  editionContributorCreateManyMock.mockResolvedValue({});
+  externalLinkUpsertMock.mockReset();
+  externalLinkUpsertMock.mockResolvedValue({});
   delete process.env.COVER_CACHE_DIR;
   delete process.env.NODE_ENV;
   delete process.env.AUTH_SECRET;
@@ -100,6 +175,7 @@ describe("enrichment worker", () => {
     const { createEnrichmentWorkerProcessor } = await import("./enrichment-worker");
     const processor = createEnrichmentWorkerProcessor({
       enrichContributor: enrichContributorMock,
+      processBulkEnrichWork: processBulkEnrichWorkMock,
     });
 
     const result = await processor({
@@ -127,6 +203,7 @@ describe("enrichment worker", () => {
     const { createEnrichmentWorkerProcessor } = await import("./enrichment-worker");
     const processor = createEnrichmentWorkerProcessor({
       enrichContributor: enrichContributorMock,
+      processBulkEnrichWork: processBulkEnrichWorkMock,
     });
 
     await processor({
@@ -146,6 +223,7 @@ describe("enrichment worker", () => {
     const { createEnrichmentWorkerProcessor } = await import("./enrichment-worker");
     const processor = createEnrichmentWorkerProcessor({
       enrichContributor: enrichContributorMock,
+      processBulkEnrichWork: processBulkEnrichWorkMock,
     });
 
     await expect(
@@ -165,6 +243,7 @@ describe("enrichment worker", () => {
     const { createEnrichmentWorkerProcessor } = await import("./enrichment-worker");
     const processor = createEnrichmentWorkerProcessor({
       enrichContributor: enrichContributorMock,
+      processBulkEnrichWork: processBulkEnrichWorkMock,
     });
 
     await processor({
@@ -228,6 +307,7 @@ describe("enrichment worker", () => {
     const { createEnrichmentWorkerProcessor } = await import("./enrichment-worker");
     const processor = createEnrichmentWorkerProcessor({
       enrichContributor: enrichContributorMock,
+      processBulkEnrichWork: processBulkEnrichWorkMock,
     });
 
     await processor({
@@ -265,6 +345,7 @@ describe("enrichment worker", () => {
     const { createEnrichmentWorkerProcessor } = await import("./enrichment-worker");
     const processor = createEnrichmentWorkerProcessor({
       enrichContributor: enrichContributorMock,
+      processBulkEnrichWork: processBulkEnrichWorkMock,
     });
 
     await processor({
@@ -340,6 +421,7 @@ describe("enrichment worker", () => {
     const { createEnrichmentWorkerProcessor } = await import("./enrichment-worker");
     const processor = createEnrichmentWorkerProcessor({
       enrichContributor: enrichContributorMock,
+      processBulkEnrichWork: processBulkEnrichWorkMock,
     });
 
     await processor({
@@ -363,6 +445,7 @@ describe("enrichment worker", () => {
     const { createEnrichmentWorkerProcessor } = await import("./enrichment-worker");
     const processor = createEnrichmentWorkerProcessor({
       enrichContributor: enrichContributorMock,
+      processBulkEnrichWork: processBulkEnrichWorkMock,
     });
 
     await processor({
@@ -388,6 +471,7 @@ describe("enrichment worker", () => {
     const { createEnrichmentWorkerProcessor } = await import("./enrichment-worker");
     const processor = createEnrichmentWorkerProcessor({
       enrichContributor: enrichContributorMock,
+      processBulkEnrichWork: processBulkEnrichWorkMock,
     });
 
     await processor({
@@ -409,6 +493,7 @@ describe("enrichment worker", () => {
     const { createEnrichmentWorkerProcessor } = await import("./enrichment-worker");
     const processor = createEnrichmentWorkerProcessor({
       enrichContributor: enrichContributorMock,
+      processBulkEnrichWork: processBulkEnrichWorkMock,
     });
 
     await expect(
@@ -434,6 +519,7 @@ describe("enrichment worker", () => {
     const { createEnrichmentWorkerProcessor } = await import("./enrichment-worker");
     const processor = createEnrichmentWorkerProcessor({
       enrichContributor: enrichContributorMock,
+      processBulkEnrichWork: processBulkEnrichWorkMock,
     });
 
     await expect(
@@ -455,6 +541,7 @@ describe("enrichment worker", () => {
     const { createEnrichmentWorkerProcessor } = await import("./enrichment-worker");
     const processor = createEnrichmentWorkerProcessor({
       enrichContributor: enrichContributorMock,
+      processBulkEnrichWork: processBulkEnrichWorkMock,
     });
 
     await processor({
@@ -494,6 +581,7 @@ describe("enrichment worker", () => {
     const { createEnrichmentWorkerProcessor } = await import("./enrichment-worker");
     const processor = createEnrichmentWorkerProcessor({
       enrichContributor: enrichContributorMock,
+      processBulkEnrichWork: processBulkEnrichWorkMock,
     });
 
     await processor({
@@ -524,6 +612,7 @@ describe("enrichment worker", () => {
     const { createEnrichmentWorkerProcessor } = await import("./enrichment-worker");
     const processor = createEnrichmentWorkerProcessor({
       enrichContributor: enrichContributorMock,
+      processBulkEnrichWork: processBulkEnrichWorkMock,
     });
 
     await processor({
@@ -544,6 +633,7 @@ describe("enrichment worker", () => {
     const { createEnrichmentWorkerProcessor } = await import("./enrichment-worker");
     const processor = createEnrichmentWorkerProcessor({
       enrichContributor: enrichContributorMock,
+      processBulkEnrichWork: processBulkEnrichWorkMock,
     });
 
     await processor({
@@ -558,6 +648,311 @@ describe("enrichment worker", () => {
     expect(deps.searchHCAuthors).toBeUndefined();
   });
 
+  it("dispatches bulk-enrich-metadata jobs to processBulkEnrichWork", async () => {
+    processBulkEnrichWorkMock.mockResolvedValueOnce({ status: "enriched", appliedFields: ["description"] });
+    appSettingFindUniqueMock.mockResolvedValue(null);
+
+    const { createEnrichmentWorkerProcessor } = await import("./enrichment-worker");
+    const processor = createEnrichmentWorkerProcessor({
+      enrichContributor: enrichContributorMock,
+      processBulkEnrichWork: processBulkEnrichWorkMock,
+    });
+
+    const result = await processor({
+      id: "jbe1",
+      name: "bulk-enrich-metadata",
+      data: { workId: "w1", sources: ["openlibrary"], strategy: "fullest" },
+      opts: {},
+    } as never);
+
+    expect(result).toEqual({ status: "enriched", appliedFields: ["description"] });
+    expect(processBulkEnrichWorkMock).toHaveBeenCalledWith(
+      "w1",
+      ["openlibrary"],
+      "fullest",
+      expect.any(Object) as object,
+    );
+  });
+
+  it("increments errorCount for bulk enrich not-found status", async () => {
+    processBulkEnrichWorkMock.mockResolvedValueOnce({ status: "not-found" });
+    appSettingFindUniqueMock.mockResolvedValue(null);
+    importJobFindUniqueMock.mockResolvedValue({ totalFiles: 10, processedFiles: 3 });
+
+    const { createEnrichmentWorkerProcessor } = await import("./enrichment-worker");
+    const processor = createEnrichmentWorkerProcessor({
+      enrichContributor: enrichContributorMock,
+      processBulkEnrichWork: processBulkEnrichWorkMock,
+    });
+
+    await processor({
+      id: "jbe2",
+      name: "bulk-enrich-metadata",
+      data: { workId: "w1", sources: ["openlibrary"], strategy: "fullest", importJobId: "ij-be" },
+      opts: {},
+    } as never);
+
+    const errCall = importJobUpdateMock.mock.calls[0] as [{ where: { id: string }; data: { errorCount: { increment: number } } }];
+    expect(errCall[0].where.id).toBe("ij-be");
+    expect(errCall[0].data.errorCount).toEqual({ increment: 1 });
+  });
+
+  it("exercises buildBulkEnrichDeps: loadWork returns null when not found", async () => {
+    workFindUniqueMock.mockResolvedValue(null);
+    processBulkEnrichWorkMock.mockImplementation(async (_workId: string, _sources: string[], _strategy: string, deps: BulkEnrichDeps) => {
+      const result = await deps.loadWork("w1");
+      expect(result).toBeNull();
+      return { status: "not-found" };
+    });
+    appSettingFindUniqueMock.mockResolvedValue(null);
+
+    const { createEnrichmentWorkerProcessor } = await import("./enrichment-worker");
+    const processor = createEnrichmentWorkerProcessor({
+      enrichContributor: enrichContributorMock,
+      processBulkEnrichWork: processBulkEnrichWorkMock,
+    });
+
+    await processor({
+      id: "jdeps1",
+      name: "bulk-enrich-metadata",
+      data: { workId: "w1", sources: ["openlibrary"], strategy: "fullest" },
+      opts: {},
+    } as never);
+  });
+
+  it("exercises buildBulkEnrichDeps: loadWork builds correct shape", async () => {
+    workFindUniqueMock.mockResolvedValue({
+      id: "w1",
+      titleDisplay: "Test",
+      description: "Desc",
+      coverPath: null,
+      editedFields: [],
+      editions: [{
+        id: "e1",
+        formatFamily: "EBOOK",
+        publisher: "Pub",
+        publishedAt: new Date("2020-01-01"),
+        isbn13: "9781234567890",
+        isbn10: null,
+        language: "en",
+        pageCount: 300,
+        editedFields: [],
+        contributors: [{ role: "AUTHOR", contributor: { nameDisplay: "Author" } }],
+      }],
+      tags: [{ tag: { name: "Fiction" } }],
+    });
+    processBulkEnrichWorkMock.mockImplementation(async (_workId: string, _sources: string[], _strategy: string, deps: BulkEnrichDeps) => {
+      const result = await deps.loadWork("w1") as BulkEnrichWorkData;
+      expect(result).toBeTruthy();
+      expect(result.id).toBe("w1");
+      expect(result.tags).toEqual(["Fiction"]);
+      const edition = result.editions[0];
+      expect(edition?.authors).toEqual(["Author"]);
+      expect(edition?.publishedDate).toBe("2020-01-01");
+      return { status: "enriched", appliedFields: ["description"] };
+    });
+    appSettingFindUniqueMock.mockResolvedValue(null);
+
+    const { createEnrichmentWorkerProcessor } = await import("./enrichment-worker");
+    const processor = createEnrichmentWorkerProcessor({
+      enrichContributor: enrichContributorMock,
+      processBulkEnrichWork: processBulkEnrichWorkMock,
+    });
+
+    await processor({
+      id: "jdeps2",
+      name: "bulk-enrich-metadata",
+      data: { workId: "w1", sources: ["openlibrary"], strategy: "fullest" },
+      opts: {},
+    } as never);
+  });
+
+  it("exercises buildBulkEnrichDeps: applyEnrichmentFields deps", async () => {
+    processBulkEnrichWorkMock.mockImplementation(async (_workId: string, _sources: string[], _strategy: string, deps: BulkEnrichDeps) => {
+      // Exercise applyEnrichmentFields — it calls the inner deps
+      workFindUniqueMock.mockResolvedValueOnce({ editedFields: [] });
+      editionFindUniqueMock.mockResolvedValueOnce({ editedFields: [] });
+      tagFindFirstMock.mockResolvedValueOnce({ id: "t1" });
+      contributorFindFirstMock.mockResolvedValueOnce(null);
+      contributorCreateMock.mockResolvedValueOnce({ id: "c1" });
+      editionFindManyMock.mockResolvedValueOnce([{ id: "e1" }]);
+
+      const applyFn = deps.applyEnrichmentFields;
+      const applyResult = await applyFn({
+        workId: "w1",
+        editionId: "e1",
+        workFields: { description: "test", subjects: ["Fiction"], authors: ["Author"] },
+        editionFields: { publisher: "Pub", publishedDate: "2020-01-01" },
+        source: { provider: "openlibrary", externalId: "OL1W" },
+      }, {} as never);
+      expect(applyResult).toBeTruthy();
+      return { status: "enriched", appliedFields: ["description"] };
+    });
+    appSettingFindUniqueMock.mockResolvedValue(null);
+
+    const { createEnrichmentWorkerProcessor } = await import("./enrichment-worker");
+    const processor = createEnrichmentWorkerProcessor({
+      enrichContributor: enrichContributorMock,
+      processBulkEnrichWork: processBulkEnrichWorkMock,
+    });
+
+    await processor({
+      id: "jdeps3",
+      name: "bulk-enrich-metadata",
+      data: { workId: "w1", sources: ["openlibrary"], strategy: "fullest" },
+      opts: {},
+    } as never);
+  });
+
+  it("exercises buildBulkEnrichDeps: searchAllSources dep", async () => {
+    processBulkEnrichWorkMock.mockImplementation(async (_workId: string, _sources: string[], _strategy: string, deps: BulkEnrichDeps) => {
+      const searchResult = await deps.searchAllSources("Test Title", "Author");
+      expect(searchResult).toBeTruthy();
+      return { status: "enriched", appliedFields: [] };
+    });
+    appSettingFindUniqueMock.mockResolvedValue(null);
+
+    const { createEnrichmentWorkerProcessor } = await import("./enrichment-worker");
+    const processor = createEnrichmentWorkerProcessor({
+      enrichContributor: enrichContributorMock,
+      processBulkEnrichWork: processBulkEnrichWorkMock,
+    });
+
+    await processor({
+      id: "jdeps4",
+      name: "bulk-enrich-metadata",
+      data: { workId: "w1", sources: ["openlibrary"], strategy: "fullest" },
+      opts: {},
+    } as never);
+  });
+
+  it("exercises getGoogleBooksApiKey when key is missing", async () => {
+    processBulkEnrichWorkMock.mockResolvedValueOnce({ status: "enriched", appliedFields: [] });
+    appSettingFindUniqueMock.mockResolvedValue(null); // No GB key
+
+    const { createEnrichmentWorkerProcessor } = await import("./enrichment-worker");
+    const processor = createEnrichmentWorkerProcessor({
+      enrichContributor: enrichContributorMock,
+      processBulkEnrichWork: processBulkEnrichWorkMock,
+    });
+
+    await processor({
+      id: "jgb1",
+      name: "bulk-enrich-metadata",
+      data: { workId: "w1", sources: ["openlibrary"], strategy: "fullest" },
+      opts: {},
+    } as never);
+
+    expect(processBulkEnrichWorkMock).toHaveBeenCalled();
+  });
+
+  it("exercises getGoogleBooksApiKey warn path when AUTH_SECRET missing", async () => {
+    processBulkEnrichWorkMock.mockResolvedValueOnce({ status: "enriched", appliedFields: [] });
+    // Return a value for both HC and GB keys
+    appSettingFindUniqueMock.mockResolvedValue({ value: "encrypted-stuff" });
+    // AUTH_SECRET is not set (cleared in beforeEach)
+
+    const { createEnrichmentWorkerProcessor } = await import("./enrichment-worker");
+    const processor = createEnrichmentWorkerProcessor({
+      enrichContributor: enrichContributorMock,
+      processBulkEnrichWork: processBulkEnrichWorkMock,
+    });
+
+    await processor({
+      id: "jgb2",
+      name: "bulk-enrich-metadata",
+      data: { workId: "w1", sources: ["openlibrary", "googlebooks"], strategy: "fullest" },
+      opts: {},
+    } as never);
+
+    expect(processBulkEnrichWorkMock).toHaveBeenCalled();
+  });
+
+  it("exercises getGoogleBooksApiKey error path", async () => {
+    processBulkEnrichWorkMock.mockResolvedValueOnce({ status: "enriched", appliedFields: [] });
+    appSettingFindUniqueMock.mockRejectedValue(new Error("gb db error"));
+
+    const { createEnrichmentWorkerProcessor } = await import("./enrichment-worker");
+    const processor = createEnrichmentWorkerProcessor({
+      enrichContributor: enrichContributorMock,
+      processBulkEnrichWork: processBulkEnrichWorkMock,
+    });
+
+    await processor({
+      id: "jgb3",
+      name: "bulk-enrich-metadata",
+      data: { workId: "w1", sources: ["openlibrary"], strategy: "fullest" },
+      opts: {},
+    } as never);
+
+    expect(processBulkEnrichWorkMock).toHaveBeenCalled();
+  });
+
+  it("exercises loadWork with null publishedAt", async () => {
+    workFindUniqueMock.mockResolvedValue({
+      id: "w1",
+      titleDisplay: "Test",
+      description: null,
+      coverPath: null,
+      editedFields: [],
+      editions: [{
+        id: "e1",
+        formatFamily: "EBOOK",
+        publisher: null,
+        publishedAt: null,
+        isbn13: null,
+        isbn10: null,
+        language: null,
+        pageCount: null,
+        editedFields: [],
+        contributors: [],
+      }],
+      tags: [],
+    });
+    processBulkEnrichWorkMock.mockImplementation(async (_workId: string, _sources: string[], _strategy: string, deps: BulkEnrichDeps) => {
+      const result = await deps.loadWork("w1");
+      expect(result?.editions[0]?.publishedDate).toBeNull();
+      return { status: "enriched", appliedFields: [] };
+    });
+    appSettingFindUniqueMock.mockResolvedValue(null);
+
+    const { createEnrichmentWorkerProcessor } = await import("./enrichment-worker");
+    const processor = createEnrichmentWorkerProcessor({
+      enrichContributor: enrichContributorMock,
+      processBulkEnrichWork: processBulkEnrichWorkMock,
+    });
+
+    await processor({
+      id: "jdeps5",
+      name: "bulk-enrich-metadata",
+      data: { workId: "w1", sources: ["openlibrary"], strategy: "fullest" },
+      opts: {},
+    } as never);
+  });
+
+  it("increments errorCount for bulk enrich no-editions status", async () => {
+    processBulkEnrichWorkMock.mockResolvedValueOnce({ status: "no-editions" });
+    appSettingFindUniqueMock.mockResolvedValue(null);
+    importJobFindUniqueMock.mockResolvedValue({ totalFiles: 10, processedFiles: 3 });
+
+    const { createEnrichmentWorkerProcessor } = await import("./enrichment-worker");
+    const processor = createEnrichmentWorkerProcessor({
+      enrichContributor: enrichContributorMock,
+      processBulkEnrichWork: processBulkEnrichWorkMock,
+    });
+
+    await processor({
+      id: "jbe3",
+      name: "bulk-enrich-metadata",
+      data: { workId: "w1", sources: ["openlibrary"], strategy: "fullest", importJobId: "ij-be2" },
+      opts: {},
+    } as never);
+
+    const errCall = importJobUpdateMock.mock.calls[0] as [{ where: { id: string }; data: { errorCount: { increment: number } } }];
+    expect(errCall[0].where.id).toBe("ij-be2");
+    expect(errCall[0].data.errorCount).toEqual({ increment: 1 });
+  });
+
   it("uses /data/covers in production", async () => {
     process.env.NODE_ENV = "production";
     enrichContributorMock.mockResolvedValueOnce({ status: "enriched", authorOlid: "OL1A" });
@@ -566,6 +961,7 @@ describe("enrichment worker", () => {
     const { createEnrichmentWorkerProcessor } = await import("./enrichment-worker");
     const processor = createEnrichmentWorkerProcessor({
       enrichContributor: enrichContributorMock,
+      processBulkEnrichWork: processBulkEnrichWorkMock,
     });
 
     await processor({

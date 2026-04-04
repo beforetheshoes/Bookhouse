@@ -16,6 +16,7 @@ export const LIBRARY_JOB_NAMES = {
 
 export const ENRICHMENT_JOB_NAMES = {
   ENRICH_CONTRIBUTOR: "enrich-contributor",
+  BULK_ENRICH_METADATA: "bulk-enrich-metadata",
 } as const;
 
 export interface BaseJobPayload {
@@ -65,6 +66,16 @@ export interface EnrichContributorJobPayload extends BaseJobPayload {
   contributorId: string;
 }
 
+export type BulkEnrichStrategy = "fullest" | "priority";
+
+export type BulkEnrichProvider = "openlibrary" | "googlebooks" | "hardcover";
+
+export interface BulkEnrichMetadataJobPayload extends BaseJobPayload {
+  workId: string;
+  sources: BulkEnrichProvider[];
+  strategy: BulkEnrichStrategy;
+}
+
 export interface LibraryJobPayloads {
   [LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT]: ScanLibraryRootJobPayload;
   [LIBRARY_JOB_NAMES.HASH_FILE_ASSET]: HashFileAssetJobPayload;
@@ -78,6 +89,7 @@ export interface LibraryJobPayloads {
 
 export interface EnrichmentJobPayloads {
   [ENRICHMENT_JOB_NAMES.ENRICH_CONTRIBUTOR]: EnrichContributorJobPayload;
+  [ENRICHMENT_JOB_NAMES.BULK_ENRICH_METADATA]: BulkEnrichMetadataJobPayload;
 }
 
 export type LibraryJobName = keyof LibraryJobPayloads;
@@ -131,6 +143,10 @@ export const ENRICHMENT_RETRY_CONFIG: Record<EnrichmentJobName, JobRetryConfig> 
     attempts: 5,
     backoff: { type: "exponential", delay: 10000 },
   },
+  [ENRICHMENT_JOB_NAMES.BULK_ENRICH_METADATA]: {
+    attempts: 2,
+    backoff: { type: "exponential", delay: 5000 },
+  },
 };
 
 // Lower number = higher priority. BullMQ processes prioritized jobs before non-prioritized ones.
@@ -147,6 +163,7 @@ export const JOB_PRIORITY: Record<LibraryJobName, number> = {
 
 export const ENRICHMENT_JOB_PRIORITY: Record<EnrichmentJobName, number> = {
   [ENRICHMENT_JOB_NAMES.ENRICH_CONTRIBUTOR]: 1,
+  [ENRICHMENT_JOB_NAMES.BULK_ENRICH_METADATA]: 2,
 };
 
 export function getQueueUrl(): string {

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { FolderOpen, Trash2, X } from "lucide-react";
+import { FolderOpen, Loader2, Trash2, Wand2, X } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -12,13 +12,19 @@ import {
 } from "~/components/ui/dialog";
 import { bulkDeleteWorksServerFn } from "~/lib/server-fns/deletion";
 import { bulkAddToShelfServerFn } from "~/lib/server-fns/shelves";
+import { BulkEnrichDialog } from "~/components/bulk-enrich-dialog";
 
 interface LibrarySelectionToolbarProps {
   selectedCount: number;
   selectedWorkIds: string[];
   shelves: { id: string; name: string; _count: { items: number } }[];
+  totalCount: number;
+  allPageRowsSelected: boolean;
+  onSelectAll: () => void;
+  selectingAll: boolean;
   onDeleted: () => void;
   onAddedToShelf: () => void;
+  onEnrichStarted: () => void;
   onClearSelection: () => void;
 }
 
@@ -26,14 +32,20 @@ export function LibrarySelectionToolbar({
   selectedCount,
   selectedWorkIds,
   shelves,
+  totalCount,
+  allPageRowsSelected,
+  onSelectAll,
+  selectingAll,
   onDeleted,
   onAddedToShelf,
+  onEnrichStarted,
   onClearSelection,
 }: LibrarySelectionToolbarProps) {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [addToShelfOpen, setAddToShelfOpen] = useState(false);
   const [addingToShelf, setAddingToShelf] = useState(false);
+  const [bulkEnrichOpen, setBulkEnrichOpen] = useState(false);
 
   if (selectedCount === 0) return null;
 
@@ -67,11 +79,34 @@ export function LibrarySelectionToolbar({
 
   return (
     <>
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-lg border bg-background p-3 shadow-lg">
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-1.5 rounded-lg border bg-background p-3 shadow-lg">
+        {allPageRowsSelected && selectedCount < totalCount && (
+          <div className="text-xs text-muted-foreground" data-testid="select-all-banner">
+            All {selectedCount} on this page selected.{" "}
+            <button
+              type="button"
+              className="underline font-medium text-foreground hover:text-primary"
+              onClick={onSelectAll}
+              disabled={selectingAll}
+              data-testid="select-all-btn"
+            >
+              {selectingAll ? (
+                <><Loader2 className="inline size-3 animate-spin mr-0.5" />Selecting...</>
+              ) : (
+                `Select all ${String(totalCount)} works`
+              )}
+            </button>
+          </div>
+        )}
+        <div className="flex items-center gap-3">
         <span className="text-sm font-medium">{selectedCount} work{selectedCount === 1 ? "" : "s"} selected</span>
         <Button variant="outline" size="sm" onClick={() => { setAddToShelfOpen(true); }} data-testid="bulk-add-to-shelf-btn">
           <FolderOpen className="mr-1.5 size-3.5" />
           Add to Shelf
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => { setBulkEnrichOpen(true); }} data-testid="bulk-enrich-btn">
+          <Wand2 className="mr-1.5 size-3.5" />
+          Enrich Metadata
         </Button>
         <Button variant="destructive" size="sm" onClick={() => { setBulkDeleteOpen(true); }}>
           <Trash2 className="mr-1.5 size-3.5" />
@@ -81,6 +116,7 @@ export function LibrarySelectionToolbar({
           <X className="mr-1.5 size-3.5" />
           Clear
         </Button>
+        </div>
       </div>
 
       <Dialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
@@ -130,6 +166,17 @@ export function LibrarySelectionToolbar({
           </div>
         </DialogContent>
       </Dialog>
+
+      <BulkEnrichDialog
+        open={bulkEnrichOpen}
+        onOpenChange={setBulkEnrichOpen}
+        selectedCount={selectedCount}
+        selectedWorkIds={selectedWorkIds}
+        onStarted={() => {
+          setBulkEnrichOpen(false);
+          onEnrichStarted();
+        }}
+      />
     </>
   );
 }

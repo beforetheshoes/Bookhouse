@@ -418,3 +418,23 @@ export const getFilteredLibraryWorksServerFn = createServerFn({
 export type FilteredLibraryResult = Awaited<
   ReturnType<typeof getFilteredLibraryWorksServerFn>
 >;
+
+const idsOnlyFilterSchema = filterSchema.omit({ page: true, pageSize: true, sort: true });
+
+export const getAllFilteredWorkIdsServerFn = createServerFn({
+  method: "GET",
+})
+  .inputValidator(idsOnlyFilterSchema)
+  .handler(async ({ data }) => {
+    const { db } = await import("@bookhouse/db");
+
+    const parsed = idsOnlyFilterSchema.parse(data);
+    const where = buildWhere({ ...parsed, page: 1, pageSize: 1, sort: "title-asc" });
+
+    const works = await db.work.findMany({
+      where,
+      select: { id: true },
+    });
+
+    return works.map((w: { id: string }) => w.id);
+  });

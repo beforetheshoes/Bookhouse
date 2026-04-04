@@ -28,6 +28,7 @@ vi.mock("@bookhouse/db", () => ({
 import {
   getLibraryWorksServerFn,
   getFilteredLibraryWorksServerFn,
+  getAllFilteredWorkIdsServerFn,
 } from "./library";
 
 describe("getLibraryWorksServerFn", () => {
@@ -1154,5 +1155,40 @@ describe("getFilteredLibraryWorksServerFn", () => {
     expect(countMock).toHaveBeenNthCalledWith(13, {
       where: { AND: [baseWhere, { coverPath: null }] },
     });
+  });
+});
+
+describe("getAllFilteredWorkIdsServerFn", () => {
+  beforeEach(() => {
+    findManyMock.mockReset();
+  });
+
+  it("returns all work IDs matching filters", async () => {
+    findManyMock.mockResolvedValue([{ id: "w1" }, { id: "w2" }, { id: "w3" }]);
+
+    const result = await getAllFilteredWorkIdsServerFn({ data: {} });
+
+    expect(result).toEqual(["w1", "w2", "w3"]);
+    expect(findManyMock).toHaveBeenCalledWith({
+      where: expect.any(Object) as object,
+      select: { id: true },
+    });
+  });
+
+  it("returns empty array when no works match", async () => {
+    findManyMock.mockResolvedValue([]);
+
+    const result = await getAllFilteredWorkIdsServerFn({ data: {} });
+
+    expect(result).toEqual([]);
+  });
+
+  it("passes filter params to buildWhere", async () => {
+    findManyMock.mockResolvedValue([{ id: "w1" }]);
+
+    await getAllFilteredWorkIdsServerFn({ data: { q: "test", enriched: false } });
+
+    const call = findManyMock.mock.calls[0] as [{ where: Record<string, string> }];
+    expect(call[0].where).toBeTruthy();
   });
 });

@@ -10,12 +10,28 @@ import {
   resizeAndSaveCover,
   createOLFetcher,
   TokenBucketLimiter,
+  processBulkEnrichWork,
+  searchAllSources,
+  searchOpenLibrary,
+  getOpenLibraryWork,
+  getOpenLibraryEdition,
+  searchGoogleBooks,
+  searchHardcover,
+  applyEnrichmentFields,
+  canonicalizeContributorName,
+  applyCoverFromUrl,
+  extractDominantColorsDefault,
+  RateLimiter,
   type EnrichContributorDeps,
   type EnrichContributorResult,
+  type BulkEnrichDeps,
+  type BulkEnrichResult,
+  type ApplyEnrichmentDeps,
 } from "@bookhouse/ingest";
 import {
   ENRICHMENT_JOB_NAMES,
   type BaseJobPayload,
+  type BulkEnrichMetadataJobPayload,
   type EnrichmentJobName,
   type EnrichmentJobPayload,
   QUEUES,
@@ -86,15 +102,223 @@ function applyPhoto(contributorId: string, imageUrl: string) {
 
 export interface EnrichmentWorkerHandlers {
   enrichContributor: typeof enrichContributor;
+  processBulkEnrichWork: typeof processBulkEnrichWork;
 }
 
+type EnrichmentJobResult = EnrichContributorResult | BulkEnrichResult;
+
+/* c8 ignore start — runtime wiring, mirrors getHardcoverApiKey */
+async function getGoogleBooksApiKey(): Promise<string | null> {
+  try {
+    const setting = await db.appSetting.findUnique({ where: { key: "apiKey:googlebooks" } });
+    if (!setting) return null;
+    const secret = process.env.AUTH_SECRET;
+    if (!secret) {
+      logger.warn("AUTH_SECRET not set — cannot decrypt Google Books API key");
+      return null;
+    }
+    return await decryptValue(setting.value, secret);
+  } catch (err) {
+    logger.warn({ err }, "Failed to decrypt Google Books API key");
+    return null;
+  }
+}
+/* c8 ignore stop */
+
+/* c8 ignore start — runtime wiring, tested via unit tests on processBulkEnrichWork and applyEnrichmentFields */
+function buildBulkEnrichDeps(
+  hcKey: string | null,
+  gbKey: string | null,
+): BulkEnrichDeps {
+  const rateLimiter = new RateLimiter();
+
+  return {
+    loadWork: async (workId) => {
+      const work = await db.work.findUnique({
+        where: { id: workId },
+        include: {
+          editions: {
+            include: { contributors: { include: { contributor: true } } },
+          },
+          tags: { include: { tag: true } },
+        },
+      });
+      if (!work) return null;
+      return {
+        id: work.id,
+        titleDisplay: work.titleDisplay,
+        description: work.description,
+        coverPath: work.coverPath,
+        editedFields: work.editedFields,
+        tags: work.tags.map((wt: { tag: { name: string } }) => wt.tag.name),
+        editions: work.editions.map((edition: {
+          id: string;
+          formatFamily: string;
+          publisher: string | null;
+          publishedAt: Date | null;
+          isbn13: string | null;
+          isbn10: string | null;
+          language: string | null;
+          pageCount: number | null;
+          editedFields: string[];
+          contributors: Array<{ role: string; contributor: { nameDisplay: string } }>;
+        }) => ({
+          id: edition.id,
+          formatFamily: edition.formatFamily as "EBOOK" | "AUDIOBOOK",
+          publisher: edition.publisher,
+          publishedDate: edition.publishedAt ? (edition.publishedAt.toISOString().split("T")[0] ?? null) : null,
+          isbn13: edition.isbn13,
+          isbn10: edition.isbn10,
+          language: edition.language,
+          pageCount: edition.pageCount,
+          editedFields: edition.editedFields,
+          authors: edition.contributors
+            .filter((ec) => ec.role === "AUTHOR")
+            .map((ec) => ec.contributor.nameDisplay),
+        })),
+      };
+    },
+    searchAllSources: (title, author) => {
+      const searchDeps = {
+        searchOL: (t: string, a: string | undefined) => searchOpenLibrary(t, a, olFetch),
+        getOLWork: (olid: string) => getOpenLibraryWork(olid, olFetch),
+        getOLEdition: (isbn: string) => getOpenLibraryEdition(isbn, olFetch),
+        searchGB: gbKey
+          ? (t: string, a: string | undefined) => searchGoogleBooks(t, a, gbKey, fetch)
+          : () => Promise.resolve(null),
+        searchHC: hcKey
+          ? (t: string, a: string | undefined) => searchHardcover(t, a, hcKey, fetch)
+          : () => Promise.resolve(null),
+        checkRateLimit: () => rateLimiter.check(),
+      };
+      return searchAllSources(title, author, searchDeps);
+    },
+    applyEnrichmentFields: (input) => {
+      const applyDeps: ApplyEnrichmentDeps = {
+        findWork: (id) => db.work.findUnique({ where: { id }, select: { editedFields: true } }),
+        updateWork: async (id, data) => { await db.work.update({ where: { id }, data }); },
+        findEdition: (id) => db.edition.findUnique({ where: { id }, select: { editedFields: true } }),
+        updateEdition: async (id, data) => { await db.edition.update({ where: { id }, data }); },
+        findTagByCanonical: async (canonical) => {
+          const tag = await db.tag.findFirst({ where: { nameCanonical: canonical } });
+          return tag?.id ?? null;
+        },
+        createTag: async (name, canonical) => {
+          const tag = await db.tag.create({ data: { name, nameCanonical: canonical } });
+          return tag.id;
+        },
+        upsertWorkTag: async (workId, tagId) => {
+          await db.workTag.upsert({
+            where: { workId_tagId: { workId, tagId } },
+            create: { workId, tagId },
+            update: {},
+          });
+        },
+        findContributorByCanonical: async (canonical) => {
+          const c = await db.contributor.findFirst({ where: { nameCanonical: canonical } });
+          return c?.id ?? null;
+        },
+        createContributor: async (name, canonical) => {
+          const c = await db.contributor.create({ data: { nameDisplay: name, nameCanonical: canonical } });
+          return c.id;
+        },
+        findEditionIdsByWorkId: async (workId) => {
+          const editions = await db.edition.findMany({ where: { workId }, select: { id: true } });
+          return editions.map((e: { id: string }) => e.id);
+        },
+        deleteAuthorContributors: async (editionIds) => {
+          await db.editionContributor.deleteMany({ where: { editionId: { in: editionIds }, role: "AUTHOR" } });
+        },
+        createEditionContributors: async (editionIds, contributorIds) => {
+          const data = editionIds.flatMap((editionId: string) =>
+            contributorIds.map((contributorId) => ({
+              editionId,
+              contributorId,
+              role: "AUTHOR" as const,
+            })),
+          );
+          await db.editionContributor.createMany({ data, skipDuplicates: true });
+        },
+        upsertExternalLink: async (linkData) => {
+          await db.externalLink.upsert({
+            where: {
+              workId_provider_externalId: {
+                workId: linkData.workId,
+                provider: linkData.provider,
+                externalId: linkData.externalId,
+              },
+            },
+            create: {
+              workId: linkData.workId,
+              provider: linkData.provider,
+              externalId: linkData.externalId,
+              appliedAt: new Date(),
+              appliedFields: linkData.appliedFields,
+            },
+            update: {
+              appliedAt: new Date(),
+              appliedFields: linkData.appliedFields,
+            },
+          });
+        },
+        canonicalizeContributorName,
+      };
+      return applyEnrichmentFields(input, applyDeps);
+    },
+    applyCoverFromUrl: async (workId, imageUrl, source) => {
+      const coverCacheDir = getCoverCacheDir();
+      const result = await applyCoverFromUrl(
+        { workId, imageUrl, coverCacheDir },
+        {
+          fetchUrl: async (url: string) => {
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`Failed to fetch image: ${String(res.status)}`);
+            const buffer = Buffer.from(await res.arrayBuffer());
+            const contentType = res.headers.get("content-type");
+            return { buffer, contentType };
+          },
+          resizeAndSave: (buf, dir) => resizeAndSaveCover(buf, dir),
+          extractColors: (buf) => extractDominantColorsDefault(buf),
+        },
+        {
+          findWork: (id) => db.work.findUnique({ where: { id }, select: { editedFields: true } }),
+          updateWork: async (id, data) => { await db.work.update({ where: { id }, data }); },
+        },
+      );
+      // Create provenance
+      await db.externalLink.upsert({
+        where: {
+          workId_provider_externalId: {
+            workId,
+            provider: source.provider,
+            externalId: source.externalId,
+          },
+        },
+        create: {
+          workId,
+          provider: source.provider,
+          externalId: source.externalId,
+          appliedAt: new Date(),
+          appliedFields: ["coverPath"],
+        },
+        update: {
+          appliedAt: new Date(),
+          appliedFields: ["coverPath"],
+        },
+      });
+      void result;
+    },
+  };
+}
+/* c8 ignore stop */
+
 async function dispatch(
-  job: Job<EnrichmentJobPayload<EnrichmentJobName>, EnrichContributorResult, EnrichmentJobName>,
+  job: Job<EnrichmentJobPayload<EnrichmentJobName>, EnrichmentJobResult, EnrichmentJobName>,
   handlers: EnrichmentWorkerHandlers,
-): Promise<EnrichContributorResult> {
+): Promise<EnrichmentJobResult> {
   switch (job.name as string) {
     case ENRICHMENT_JOB_NAMES.ENRICH_CONTRIBUTOR: {
-      const payload = job.data;
+      const payload = job.data as EnrichmentJobPayload<typeof ENRICHMENT_JOB_NAMES.ENRICH_CONTRIBUTOR>;
       const hcKey = await getHardcoverApiKey();
       const deps: EnrichContributorDeps = {
         findContributor: (id) =>
@@ -111,6 +335,12 @@ async function dispatch(
       };
       return handlers.enrichContributor(payload.contributorId, deps);
     }
+    case ENRICHMENT_JOB_NAMES.BULK_ENRICH_METADATA: {
+      const payload = job.data as BulkEnrichMetadataJobPayload;
+      const [hcKey, gbKey] = await Promise.all([getHardcoverApiKey(), getGoogleBooksApiKey()]);
+      const bulkDeps = buildBulkEnrichDeps(hcKey, gbKey);
+      return handlers.processBulkEnrichWork(payload.workId, payload.sources, payload.strategy, bulkDeps);
+    }
     default:
       throw new Error(`Unsupported enrichment job: ${job.name}`);
   }
@@ -118,6 +348,7 @@ async function dispatch(
 
 const defaultHandlers: EnrichmentWorkerHandlers = {
   enrichContributor,
+  processBulkEnrichWork,
 };
 
 async function checkBatchCompletion(importJobId: string): Promise<void> {
@@ -134,11 +365,13 @@ async function checkBatchCompletion(importJobId: string): Promise<void> {
   }
 }
 
+const ENRICHMENT_ERROR_STATUSES = new Set(["no-results", "no-photo", "not-found", "no-editions"]);
+
 export function createEnrichmentWorkerProcessor(
   handlers: EnrichmentWorkerHandlers = defaultHandlers,
 ) {
   return async (
-    job: Job<EnrichmentJobPayload<EnrichmentJobName>, EnrichContributorResult, EnrichmentJobName>,
+    job: Job<EnrichmentJobPayload<EnrichmentJobName>, EnrichmentJobResult, EnrichmentJobName>,
   ) => {
     const importJobId = (job.data as BaseJobPayload).importJobId;
     logger.info({ jobId: job.id, jobName: job.name }, "Processing enrichment job");
@@ -147,7 +380,7 @@ export function createEnrichmentWorkerProcessor(
       const extra = "triedSources" in result ? { triedSources: result.triedSources } : {};
       logger.info({ jobId: job.id, jobName: job.name, status: result.status, ...extra }, "Enrichment job completed");
       if (importJobId) {
-        const isError = result.status === "no-results" || result.status === "no-photo";
+        const isError = ENRICHMENT_ERROR_STATUSES.has(result.status);
         await db.importJob.update({
           where: { id: importJobId },
           data: {

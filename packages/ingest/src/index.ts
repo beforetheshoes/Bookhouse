@@ -77,12 +77,16 @@ export type {
   SearchSourcesResult,
   SearchSourcesDeps,
 } from "./enrichment/search-sources";
-export { extractDominantColors } from "./cover-colors";
+export { extractDominantColors, extractDominantColorsDefault } from "./cover-colors";
 export { VALID_WORK_ID, MAX_FILE_SIZE, ALLOWED_MIME_TYPES, IMAGE_SIGNATURES, isValidImageData, isAllowedMimeType } from "./cover-validation";
 export { applyCoverFromUrl } from "./cover-from-url";
 export type { CoverFromUrlDeps, CoverFromUrlDbDeps, CoverFromUrlInput, CoverFromUrlResult } from "./cover-from-url";
 export { RateLimiter } from "./enrichment/rate-limiter";
 export type { RateLimitResult } from "./enrichment/rate-limiter";
+export { applyEnrichmentFields } from "./enrichment/apply-enrichment";
+export type { ApplyEnrichmentInput, ApplyEnrichmentDeps, ApplyEnrichmentResult, ApplyFieldValue } from "./enrichment/apply-enrichment";
+export { processBulkEnrichWork } from "./enrichment/bulk-enrich";
+export type { BulkEnrichDeps, BulkEnrichResult, BulkEnrichWorkData, BulkEnrichEditionData } from "./enrichment/bulk-enrich";
 export { enrichWork } from "./enrichment/enrich-work";
 export type { EnrichWorkDeps, EnrichWorkResult } from "./enrichment/enrich-work";
 export { enrichContributor } from "./enrichment/enrich-contributor";
