@@ -19,7 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
-import { bulkDeleteWorksServerFn, bulkDeleteEditionsByFormatForWorksServerFn } from "~/lib/server-fns/deletion";
+import { bulkDeleteWorksServerFn, bulkDeleteEditionsByFormatForWorksServerFn, deleteAllEditionsByFormatServerFn } from "~/lib/server-fns/deletion";
 import { bulkAddToShelfServerFn } from "~/lib/server-fns/shelves";
 import { BulkEnrichDialog } from "~/components/bulk-enrich-dialog";
 
@@ -77,7 +77,9 @@ export function LibrarySelectionToolbar({
   async function handleBulkDeleteByFormat(format: "EBOOK" | "AUDIOBOOK") {
     setDeletingByFormat(true);
     try {
-      const result = await bulkDeleteEditionsByFormatForWorksServerFn({ data: { workIds: selectedWorkIds, format } });
+      const result = selectedWorkIds.length > 100 || selectedCount >= totalCount
+        ? await deleteAllEditionsByFormatServerFn({ data: { format } })
+        : await bulkDeleteEditionsByFormatForWorksServerFn({ data: { workIds: selectedWorkIds, format } });
       const label = format === "EBOOK" ? "ebook" : "audiobook";
       const editionCount = result.deletedEditionIds.length;
       const workCount = result.deletedWorkIds.length;
