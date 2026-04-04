@@ -12,7 +12,10 @@ import {
   getLibraryHealthServerFn,
   getOrphanedFilesServerFn,
   deleteOrphanedFileServerFn,
+  getEmptyWorksServerFn,
+  deleteEmptyWorksServerFn,
   type OrphanedFile,
+  type EmptyWork,
 } from "~/lib/server-fns/library-health";
 import { runMutation } from "~/lib/mutation";
 import {
@@ -21,6 +24,7 @@ import {
   Hash,
   Copy,
   FileQuestion,
+  Ghost,
   Link2,
   RefreshCw,
   Trash2,
@@ -28,11 +32,12 @@ import {
 
 export const Route = createFileRoute("/_authenticated/health")({
   loader: async () => {
-    const [health, orphanedFiles] = await Promise.all([
+    const [health, orphanedFiles, emptyWorks] = await Promise.all([
       getLibraryHealthServerFn(),
       getOrphanedFilesServerFn(),
+      getEmptyWorksServerFn(),
     ]);
-    return { health, orphanedFiles };
+    return { health, orphanedFiles, emptyWorks };
   },
   pendingComponent: TablePageSkeleton,
   component: HealthPage,
@@ -97,8 +102,43 @@ function OrphanedFilesList({ files }: { files: OrphanedFile[] }) {
   );
 }
 
+function EmptyWorksList({ works }: { works: EmptyWork[] }) {
+  const router = useRouter();
+
+  async function handleDeleteAll() {
+    await runMutation(
+      () => deleteEmptyWorksServerFn(),
+      { success: "Empty works removed" },
+    );
+    await router.invalidate();
+  }
+
+  if (works.length === 0) {
+    return <p className="mt-2 text-sm text-muted-foreground">No empty works</p>;
+  }
+
+  return (
+    <div className="mt-3 space-y-2">
+      <Button
+        variant="destructive"
+        size="sm"
+        onClick={() => { void handleDeleteAll(); }}
+        data-testid="delete-empty-works-btn"
+      >
+        <Trash2 className="mr-1.5 size-3.5" />
+        {`Delete all ${String(works.length)} empty work${works.length === 1 ? "" : "s"}`}
+      </Button>
+      <ul className="space-y-1">
+        {works.map((work) => (
+          <li key={work.id} className="text-sm text-muted-foreground">{work.titleDisplay}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function HealthPage() {
-  const { health, orphanedFiles } = Route.useLoaderData();
+  const { health, orphanedFiles, emptyWorks } = Route.useLoaderData();
 
   if (health.totalWorks === 0) {
     return (
@@ -160,6 +200,13 @@ function HealthPage() {
       total: health.checks.staleEnrichment.total,
       icon: RefreshCw,
     },
+    {
+      key: "emptyWorks",
+      label: "Empty Works",
+      description: "Works with no file attached",
+      count: health.checks.emptyWorks.count,
+      icon: Ghost,
+    },
   ];
 
   const healthScore = computeHealthScore(checks);
@@ -215,6 +262,11 @@ function HealthPage() {
               {/* Inline orphaned files list */}
               {check.key === "orphanedFiles" && (
                 <OrphanedFilesList files={orphanedFiles} />
+              )}
+
+              {/* Inline empty works list */}
+              {check.key === "emptyWorks" && (
+                <EmptyWorksList works={emptyWorks} />
               )}
 
             </CardContent>

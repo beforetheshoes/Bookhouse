@@ -19,6 +19,8 @@ vi.mock("@tanstack/react-start", () => ({
 }));
 
 const workCountMock = vi.fn();
+const workFindManyMock = vi.fn();
+const workDeleteManyMock = vi.fn();
 const duplicateCandidateCountMock = vi.fn();
 const fileAssetCountMock = vi.fn();
 const fileAssetFindManyMock = vi.fn();
@@ -28,7 +30,7 @@ const matchSuggestionCountMock = vi.fn();
 
 vi.mock("@bookhouse/db", () => ({
   db: {
-    work: { count: workCountMock },
+    work: { count: workCountMock, findMany: workFindManyMock, deleteMany: workDeleteManyMock },
     duplicateCandidate: { count: duplicateCandidateCountMock },
     fileAsset: {
       count: fileAssetCountMock,
@@ -44,10 +46,14 @@ import {
   getLibraryHealthServerFn,
   getOrphanedFilesServerFn,
   deleteOrphanedFileServerFn,
+  getEmptyWorksServerFn,
+  deleteEmptyWorksServerFn,
 } from "./library-health";
 
 beforeEach(() => {
   workCountMock.mockReset();
+  workFindManyMock.mockReset();
+  workDeleteManyMock.mockReset();
   duplicateCandidateCountMock.mockReset();
   fileAssetCountMock.mockReset();
   fileAssetFindManyMock.mockReset();
@@ -67,6 +73,7 @@ describe("getLibraryHealthServerFn", () => {
     orphanedFiles?: number;
     pendingMatchSuggestions?: number;
     staleEnrichment?: number;
+    emptyWorks?: number;
   }) {
     const defaults = {
       totalWorks: 100,
@@ -76,6 +83,7 @@ describe("getLibraryHealthServerFn", () => {
       orphanedFiles: 2,
       pendingMatchSuggestions: 4,
       staleEnrichment: 8,
+      emptyWorks: 0,
     };
     const vals = { ...defaults, ...overrides };
 
@@ -83,17 +91,30 @@ describe("getLibraryHealthServerFn", () => {
       .mockResolvedValueOnce(vals.totalWorks)
       .mockResolvedValueOnce(vals.missingCover)
       .mockResolvedValueOnce(vals.noIsbn)
-      .mockResolvedValueOnce(vals.staleEnrichment);
+      .mockResolvedValueOnce(vals.staleEnrichment)
+      .mockResolvedValueOnce(vals.emptyWorks);
 
     duplicateCandidateCountMock.mockResolvedValueOnce(vals.pendingDuplicates);
     fileAssetCountMock.mockResolvedValueOnce(vals.orphanedFiles);
     matchSuggestionCountMock.mockResolvedValueOnce(vals.pendingMatchSuggestions);
   }
 
-  it("returns totalWorks count", async () => {
+  it("counts only works with at least one PRESENT file (totalWorks filter)", async () => {
     setupMocks({ totalWorks: 42 });
     const result = await getLibraryHealthServerFn();
     expect(result.totalWorks).toBe(42);
+    const call = workCountMock.mock.calls[0] as [{ where: object }];
+    expect(call[0]).toEqual({
+      where: {
+        editions: {
+          some: {
+            editionFiles: {
+              some: { fileAsset: { availabilityStatus: "PRESENT", mediaKind: { notIn: ["KEPUB", "COVER", "SIDECAR"] } } },
+            },
+          },
+        },
+      },
+    });
   });
 
   it("counts works with missing covers (coverPath is null)", async () => {
@@ -101,8 +122,15 @@ describe("getLibraryHealthServerFn", () => {
     const result = await getLibraryHealthServerFn();
     expect(result.checks.missingCover).toEqual({ count: 7, total: 100 });
 
-    const missingCoverCall = workCountMock.mock.calls[1] as [{ where: { coverPath: null } }];
-    expect(missingCoverCall[0]).toEqual({ where: { coverPath: null } });
+    const missingCoverCall = workCountMock.mock.calls[1] as [{ where: { AND: object[] } }];
+    expect(missingCoverCall[0]).toEqual({
+      where: {
+        AND: [
+          { editions: { some: { editionFiles: { some: { fileAsset: { availabilityStatus: "PRESENT", mediaKind: { notIn: ["KEPUB", "COVER", "SIDECAR"] } } } } } } },
+          { coverPath: null },
+        ],
+      },
+    });
   });
 
   it("counts works where every edition lacks ISBN", async () => {
@@ -110,12 +138,13 @@ describe("getLibraryHealthServerFn", () => {
     const result = await getLibraryHealthServerFn();
     expect(result.checks.noIsbn).toEqual({ count: 15, total: 100 });
 
-    const noIsbnCall = workCountMock.mock.calls[2] as [{ where: object }];
+    const noIsbnCall = workCountMock.mock.calls[2] as [{ where: { AND: object[] } }];
     expect(noIsbnCall[0]).toEqual({
       where: {
-        editions: {
-          every: { isbn13: null, isbn10: null },
-        },
+        AND: [
+          { editions: { some: { editionFiles: { some: { fileAsset: { availabilityStatus: "PRESENT", mediaKind: { notIn: ["KEPUB", "COVER", "SIDECAR"] } } } } } } },
+          { editions: { every: { isbn13: null, isbn10: null } } },
+        ],
       },
     });
   });
@@ -157,15 +186,39 @@ describe("getLibraryHealthServerFn", () => {
     const result = await getLibraryHealthServerFn();
     expect(result.checks.staleEnrichment).toEqual({ count: 12, total: 100 });
 
-    const staleCall = workCountMock.mock.calls[3] as [{ where: { enrichmentStatus: string; externalLinks: { some: object; every: { lastSyncedAt: { lt: Date } } } } }];
-    const where = staleCall[0].where;
-    expect(where.enrichmentStatus).toBe("ENRICHED");
-    expect(where.externalLinks.some).toEqual({});
-    const threshold = where.externalLinks.every.lastSyncedAt.lt;
+    const staleCall = workCountMock.mock.calls[3] as [{ where: { AND: [object, { enrichmentStatus: string; externalLinks: { some: object; every: { lastSyncedAt: { lt: Date } } } }] } }];
+    const andClause = staleCall[0].where.AND;
+    expect(andClause[0]).toEqual({
+      editions: { some: { editionFiles: { some: { fileAsset: { availabilityStatus: "PRESENT", mediaKind: { notIn: ["KEPUB", "COVER", "SIDECAR"] } } } } } },
+    });
+    const staleWhere = andClause[1];
+    expect(staleWhere.enrichmentStatus).toBe("ENRICHED");
+    expect(staleWhere.externalLinks.some).toEqual({});
+    const threshold = staleWhere.externalLinks.every.lastSyncedAt.lt;
     expect(threshold).toBeInstanceOf(Date);
     const daysDiff = (Date.now() - threshold.getTime()) / (1000 * 60 * 60 * 24);
     expect(daysDiff).toBeGreaterThanOrEqual(179);
     expect(daysDiff).toBeLessThanOrEqual(181);
+  });
+
+  it("counts empty works (works with no PRESENT files)", async () => {
+    setupMocks({ emptyWorks: 3 });
+    const result = await getLibraryHealthServerFn();
+    expect(result.checks.emptyWorks).toEqual({ count: 3 });
+    const call = workCountMock.mock.calls[4] as [{ where: { NOT: object } }];
+    expect(call[0]).toEqual({
+      where: {
+        NOT: {
+          editions: {
+            some: {
+              editionFiles: {
+                some: { fileAsset: { availabilityStatus: "PRESENT", mediaKind: { notIn: ["KEPUB", "COVER", "SIDECAR"] } } },
+              },
+            },
+          },
+        },
+      },
+    });
   });
 
   it("returns all zero counts when library is empty", async () => {
@@ -177,6 +230,7 @@ describe("getLibraryHealthServerFn", () => {
       orphanedFiles: 0,
       pendingMatchSuggestions: 0,
       staleEnrichment: 0,
+      emptyWorks: 0,
     });
     const result = await getLibraryHealthServerFn();
     expect(result.totalWorks).toBe(0);
@@ -186,12 +240,13 @@ describe("getLibraryHealthServerFn", () => {
     expect(result.checks.orphanedFiles.count).toBe(0);
     expect(result.checks.pendingMatchSuggestions.count).toBe(0);
     expect(result.checks.staleEnrichment.count).toBe(0);
+    expect(result.checks.emptyWorks.count).toBe(0);
   });
 
   it("runs all queries in parallel via Promise.all", async () => {
     setupMocks();
     await getLibraryHealthServerFn();
-    expect(workCountMock).toHaveBeenCalledTimes(4);
+    expect(workCountMock).toHaveBeenCalledTimes(5);
     expect(duplicateCandidateCountMock).toHaveBeenCalledTimes(1);
     expect(fileAssetCountMock).toHaveBeenCalledTimes(1);
     expect(matchSuggestionCountMock).toHaveBeenCalledTimes(1);
@@ -276,3 +331,63 @@ describe("deleteOrphanedFileServerFn", () => {
   });
 });
 
+// ─── getEmptyWorksServerFn ────────────────────────────────────────────────────
+
+describe("getEmptyWorksServerFn", () => {
+  it("queries work.findMany with NOT hasFilesWhere, selects id+titleDisplay, orders by titleDisplay", async () => {
+    workFindManyMock.mockResolvedValue([]);
+    await getEmptyWorksServerFn();
+    expect(workFindManyMock).toHaveBeenCalledWith({
+      where: {
+        NOT: {
+          editions: {
+            some: {
+              editionFiles: {
+                some: { fileAsset: { availabilityStatus: "PRESENT", mediaKind: { notIn: ["KEPUB", "COVER", "SIDECAR"] } } },
+              },
+            },
+          },
+        },
+      },
+      select: { id: true, titleDisplay: true },
+      orderBy: { titleDisplay: "asc" },
+    });
+  });
+
+  it("returns the list of empty works from findMany", async () => {
+    const fakeWorks = [
+      { id: "w1", titleDisplay: "Ghost Book" },
+      { id: "w2", titleDisplay: "Phantom Novel" },
+    ];
+    workFindManyMock.mockResolvedValue(fakeWorks);
+    const result = await getEmptyWorksServerFn();
+    expect(result).toEqual(fakeWorks);
+  });
+
+  it("returns empty array when no empty works exist", async () => {
+    workFindManyMock.mockResolvedValue([]);
+    const result = await getEmptyWorksServerFn();
+    expect(result).toEqual([]);
+  });
+});
+
+// ─── deleteEmptyWorksServerFn ─────────────────────────────────────────────────
+
+describe("deleteEmptyWorksServerFn", () => {
+  it("returns deletedCount: 0 and skips deleteMany when no empty works exist", async () => {
+    workFindManyMock.mockResolvedValue([]);
+    const result = await deleteEmptyWorksServerFn();
+    expect(workDeleteManyMock).not.toHaveBeenCalled();
+    expect(result).toEqual({ deletedCount: 0 });
+  });
+
+  it("deletes all empty works and returns deletedCount", async () => {
+    workFindManyMock.mockResolvedValue([{ id: "w1" }, { id: "w2" }]);
+    workDeleteManyMock.mockResolvedValue({ count: 2 });
+    const result = await deleteEmptyWorksServerFn();
+    expect(workDeleteManyMock).toHaveBeenCalledWith({
+      where: { id: { in: ["w1", "w2"] } },
+    });
+    expect(result).toEqual({ deletedCount: 2 });
+  });
+});
