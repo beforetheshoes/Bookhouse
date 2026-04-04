@@ -99,7 +99,7 @@ export function buildNavigationEntry(
   lines.push(`<content type="text">${escapeXml(item.title)}</content>`);
 
   const linkAttrs: Record<string, string> = {
-    href: item.href,
+    href: `${options.baseUrl}${item.href}`,
     type: "application/atom+xml;profile=opds-catalog;kind=acquisition",
     rel: "subsection",
   };

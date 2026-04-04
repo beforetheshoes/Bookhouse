@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import { createShelfListHandler } from "./index";
 import type { ShelfListHandlerDeps } from "./index";
 import type { H3Event } from "h3";
+
+vi.mock("h3", () => ({
+  getRequestHeader: (event: { _authorization?: string }, _name: string) =>
+    event._authorization,
+  defineEventHandler: vi.fn(),
+}));
+
+const { createShelfListHandler } = await import("./index");
 
 const mockCredential = {
   id: "cred-1",
@@ -13,13 +20,7 @@ const mockCredential = {
 
 function makeEvent(): H3Event {
   return {
-    node: {
-      req: {
-        headers: {
-          authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
-        },
-      },
-    },
+    _authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
   } as unknown as H3Event;
 }
 
@@ -57,8 +58,8 @@ describe("createShelfListHandler", () => {
     expect(xml).toContain("<title>My Shelves</title>");
     expect(xml).toContain("<title>Favorites</title>");
     expect(xml).toContain("<title>To Read</title>");
-    expect(xml).toContain('href="/opds/shelves/s1"');
-    expect(xml).toContain('href="/opds/shelves/s2"');
+    expect(xml).toContain('href="https://books.example.com/opds/shelves/s1"');
+    expect(xml).toContain('href="https://books.example.com/opds/shelves/s2"');
   });
 
   it("sets correct content type header", async () => {

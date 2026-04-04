@@ -53,7 +53,7 @@ export function mapEditionToOpds(edition: EditionQueryResult): OpdsEditionData {
     })),
     files: edition.editionFiles.map((ef) => ({
       editionFileId: ef.id,
-      mimeType: ef.fileAsset.mimeType,
+      mimeType: ef.fileAsset.mimeType ?? "application/epub+zip",
       sizeBytes: ef.fileAsset.sizeBytes,
       basename: ef.fileAsset.basename,
     })),

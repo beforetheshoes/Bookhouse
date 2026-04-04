@@ -82,7 +82,7 @@ export default defineEventHandler(async (event) => {
     editionFiles: {
       some: {
         role: { in: ["PRIMARY" as const, "ALTERNATE_FORMAT" as const] },
-        fileAsset: { availabilityStatus: "PRESENT" as const },
+        fileAsset: { availabilityStatus: "PRESENT" as const, mediaKind: "EPUB" as const },
       },
     },
   };
@@ -114,12 +114,12 @@ export default defineEventHandler(async (event) => {
           editionFiles: {
             where: {
               role: { in: ["PRIMARY", "ALTERNATE_FORMAT"] },
-              fileAsset: { availabilityStatus: "PRESENT" },
+              fileAsset: { availabilityStatus: "PRESENT", mediaKind: "EPUB" },
             },
             include: { fileAsset: true },
           },
         },
-        orderBy: { work: { sortTitle: "asc" } },
+        orderBy: { work: { titleDisplay: "asc" } },
         skip,
         take,
       });

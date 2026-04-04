@@ -57,7 +57,7 @@ export function createOpdsDownloadHandler(deps: OpdsDownloadHandlerDeps) {
       });
     }
 
-    deps.setResponseHeader(event, "Content-Type", record.mimeType ?? "application/octet-stream");
+    deps.setResponseHeader(event, "Content-Type", record.mimeType ?? "application/epub+zip");
     deps.setResponseHeader(event, "Content-Disposition", `attachment; filename="${record.basename}"`);
     deps.setResponseHeader(event, "Cache-Control", "private, no-cache");
 

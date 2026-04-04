@@ -27,7 +27,7 @@ export function createCatalogHandler(deps: CatalogHandlerDeps) {
       updatedAt: now,
       baseUrl,
       selfHref: "/opds/catalog",
-      searchHref: "/opds/opensearch.xml",
+      searchHref: "/opds/opensearch",
       items: [
         { title: "All Books", href: "/opds/all", updatedAt: now },
         { title: "Recently Added", href: "/opds/recent", updatedAt: now },

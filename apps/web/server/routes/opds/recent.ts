@@ -32,7 +32,7 @@ export function createRecentHandler(deps: RecentHandlerDeps) {
       baseUrl,
       selfHref: "/opds/recent",
       entries,
-      searchHref: "/opds/opensearch.xml",
+      searchHref: "/opds/opensearch",
     });
 
     deps.setResponseHeader(event, "Content-Type", CONTENT_TYPE);
@@ -59,7 +59,7 @@ export default defineEventHandler(async (event) => {
           editionFiles: {
             some: {
               role: { in: ["PRIMARY", "ALTERNATE_FORMAT"] },
-              fileAsset: { availabilityStatus: "PRESENT" },
+              fileAsset: { availabilityStatus: "PRESENT", mediaKind: "EPUB" },
             },
           },
         },
@@ -69,7 +69,7 @@ export default defineEventHandler(async (event) => {
           editionFiles: {
             where: {
               role: { in: ["PRIMARY", "ALTERNATE_FORMAT"] },
-              fileAsset: { availabilityStatus: "PRESENT" },
+              fileAsset: { availabilityStatus: "PRESENT", mediaKind: "EPUB" },
             },
             include: { fileAsset: true },
           },

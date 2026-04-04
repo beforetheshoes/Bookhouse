@@ -1,7 +1,22 @@
 import { describe, expect, it, vi } from "vitest";
-import { createOpdsAuth } from "./auth-helper";
 import type { OpdsAuthDeps } from "./auth-helper";
 import type { H3Event } from "h3";
+
+const mockSetResponseHeader = vi.fn();
+
+vi.mock("h3", () => ({
+  getRequestHeader: (event: { _authorization?: string }, _name: string) =>
+    event._authorization,
+  setResponseHeader: mockSetResponseHeader,
+  createError: (opts: { statusCode: number; statusMessage: string; message: string }) => {
+    const err = new Error(opts.message) as Error & { statusCode: number; statusMessage: string };
+    err.statusCode = opts.statusCode;
+    err.statusMessage = opts.statusMessage;
+    return err;
+  },
+}));
+
+const { createOpdsAuth } = await import("./auth-helper");
 
 const mockCredential = {
   id: "cred-1",
@@ -13,11 +28,7 @@ const mockCredential = {
 
 function makeEvent(authorization?: string): H3Event {
   return {
-    node: {
-      req: {
-        headers: authorization ? { authorization } : {},
-      },
-    },
+    _authorization: authorization,
   } as unknown as H3Event;
 }
 
@@ -49,6 +60,7 @@ describe("createOpdsAuth", () => {
   });
 
   it("throws 401 when Authorization header is missing", async () => {
+    mockSetResponseHeader.mockClear();
     const deps = makeDeps();
     const auth = createOpdsAuth(deps);
 
@@ -56,13 +68,18 @@ describe("createOpdsAuth", () => {
       await auth(makeEvent());
       expect.fail("Should have thrown");
     } catch (e) {
-      const err = e as Error & { statusCode: number; headers: Record<string, string> };
+      const err = e as Error & { statusCode: number };
       expect(err.statusCode).toBe(401);
-      expect(err.headers["WWW-Authenticate"]).toBe('Basic realm="Bookhouse OPDS"');
+      expect(mockSetResponseHeader).toHaveBeenCalledWith(
+        expect.anything(),
+        "WWW-Authenticate",
+        'Basic realm="Bookhouse OPDS"',
+      );
     }
   });
 
   it("throws 401 for non-Basic auth scheme", async () => {
+    mockSetResponseHeader.mockClear();
     const deps = makeDeps();
     const auth = createOpdsAuth(deps);
 
@@ -70,9 +87,13 @@ describe("createOpdsAuth", () => {
       await auth(makeEvent("Bearer some-token"));
       expect.fail("Should have thrown");
     } catch (e) {
-      const err = e as Error & { statusCode: number; headers: Record<string, string> };
+      const err = e as Error & { statusCode: number };
       expect(err.statusCode).toBe(401);
-      expect(err.headers["WWW-Authenticate"]).toBe('Basic realm="Bookhouse OPDS"');
+      expect(mockSetResponseHeader).toHaveBeenCalledWith(
+        expect.anything(),
+        "WWW-Authenticate",
+        'Basic realm="Bookhouse OPDS"',
+      );
     }
   });
 

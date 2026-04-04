@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
@@ -1049,6 +1049,7 @@ function OpdsCredentialsCard({ credentials }: { credentials: OpdsCredentialRow[]
   const [adding, setAdding] = useState(false);
   const [newUsername, setNewUsername] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [catalogUrl, setCatalogUrl] = useState("/opds/catalog");
 
   const handleAdd = async () => {
     setAdding(true);
@@ -1075,7 +1076,7 @@ function OpdsCredentialsCard({ credentials }: { credentials: OpdsCredentialRow[]
     void router.invalidate();
   };
 
-  const catalogUrl = `${window.location.origin}/opds/catalog`;
+  useEffect(() => { setCatalogUrl(`${window.location.origin}/opds/catalog`); }, []);
 
   return (
     <Card>

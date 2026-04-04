@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import { createAuthorListHandler } from "./index";
 import type { AuthorListHandlerDeps } from "./index";
 import type { H3Event } from "h3";
+
+vi.mock("h3", () => ({
+  getRequestHeader: (event: { _authorization?: string }, _name: string) =>
+    event._authorization,
+  defineEventHandler: vi.fn(),
+}));
+
+const { createAuthorListHandler } = await import("./index");
 
 const mockCredential = {
   id: "cred-1",
@@ -13,13 +20,7 @@ const mockCredential = {
 
 function makeEvent(): H3Event {
   return {
-    node: {
-      req: {
-        headers: {
-          authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
-        },
-      },
-    },
+    _authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
   } as unknown as H3Event;
 }
 
@@ -57,8 +58,8 @@ describe("createAuthorListHandler", () => {
     expect(xml).toContain("<title>Authors</title>");
     expect(xml).toContain("<title>Jane Austen</title>");
     expect(xml).toContain("<title>Charles Dickens</title>");
-    expect(xml).toContain('href="/opds/authors/a1"');
-    expect(xml).toContain('href="/opds/authors/a2"');
+    expect(xml).toContain('href="https://books.example.com/opds/authors/a1"');
+    expect(xml).toContain('href="https://books.example.com/opds/authors/a2"');
   });
 
   it("sets correct content type header", async () => {

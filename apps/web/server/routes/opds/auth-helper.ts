@@ -1,3 +1,4 @@
+import { createError, getRequestHeader, setResponseHeader } from "h3";
 import type { H3Event } from "h3";
 
 export interface OpdsAuthDeps {
@@ -17,27 +18,21 @@ export interface OpdsAuthResult {
   username: string;
 }
 
+function throw401(event: H3Event, message: string): never {
+  setResponseHeader(event, "WWW-Authenticate", 'Basic realm="Bookhouse OPDS"');
+  throw createError({ statusCode: 401, statusMessage: "Unauthorized", message });
+}
+
 export function createOpdsAuth(deps: OpdsAuthDeps) {
   return async (event: H3Event): Promise<OpdsAuthResult> => {
-    const authorization = (event.node?.req?.headers?.authorization ??
-      (event as unknown as { headers?: Record<string, string | undefined> }).headers?.authorization) as
-      | string
-      | undefined;
+    const authorization = getRequestHeader(event, "authorization");
 
     if (!authorization) {
-      throw Object.assign(new Error("Authentication required"), {
-        statusCode: 401,
-        statusMessage: "Unauthorized",
-        headers: { "WWW-Authenticate": 'Basic realm="Bookhouse OPDS"' },
-      });
+      throw401(event, "Authentication required");
     }
 
     if (!authorization.startsWith("Basic ")) {
-      throw Object.assign(new Error("Basic authentication required"), {
-        statusCode: 401,
-        statusMessage: "Unauthorized",
-        headers: { "WWW-Authenticate": 'Basic realm="Bookhouse OPDS"' },
-      });
+      throw401(event, "Basic authentication required");
     }
 
     const encoded = authorization.slice(6);
@@ -45,11 +40,7 @@ export function createOpdsAuth(deps: OpdsAuthDeps) {
 
     const colonIndex = decoded.indexOf(":");
     if (colonIndex === -1) {
-      throw Object.assign(new Error("Invalid credentials format"), {
-        statusCode: 401,
-        statusMessage: "Unauthorized",
-        headers: { "WWW-Authenticate": 'Basic realm="Bookhouse OPDS"' },
-      });
+      throw401(event, "Invalid credentials format");
     }
 
     const username = decoded.slice(0, colonIndex);
@@ -57,27 +48,16 @@ export function createOpdsAuth(deps: OpdsAuthDeps) {
 
     const credential = await deps.findCredentialByUsername(username);
     if (!credential) {
-      throw Object.assign(new Error("Invalid credentials"), {
-        statusCode: 401,
-        statusMessage: "Unauthorized",
-        headers: { "WWW-Authenticate": 'Basic realm="Bookhouse OPDS"' },
-      });
+      throw401(event, "Invalid credentials");
     }
 
     if (!credential.isEnabled) {
-      throw Object.assign(new Error("Credential is disabled"), {
-        statusCode: 403,
-        statusMessage: "Forbidden",
-      });
+      throw createError({ statusCode: 403, statusMessage: "Forbidden", message: "Credential is disabled" });
     }
 
     const valid = await deps.verifyPassword(password, credential.passwordHash);
     if (!valid) {
-      throw Object.assign(new Error("Invalid credentials"), {
-        statusCode: 401,
-        statusMessage: "Unauthorized",
-        headers: { "WWW-Authenticate": 'Basic realm="Bookhouse OPDS"' },
-      });
+      throw401(event, "Invalid credentials");
     }
 
     return {

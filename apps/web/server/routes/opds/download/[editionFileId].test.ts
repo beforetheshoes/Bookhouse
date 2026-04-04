@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import { createOpdsDownloadHandler } from "./[editionFileId]";
 import type { OpdsDownloadHandlerDeps } from "./[editionFileId]";
 import type { H3Event } from "h3";
+
+vi.mock("h3", () => ({
+  getRequestHeader: (event: { _authorization?: string }, _name: string) =>
+    event._authorization,
+  defineEventHandler: vi.fn(),
+}));
+
+const { createOpdsDownloadHandler } = await import("./[editionFileId]");
 
 const mockCredential = {
   id: "cred-1",
@@ -22,13 +29,7 @@ const mockStream = { pipe: vi.fn() } as unknown as NodeJS.ReadableStream;
 
 function makeEvent(editionFileId: string): H3Event {
   return {
-    node: {
-      req: {
-        headers: {
-          authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
-        },
-      },
-    },
+    _authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
     context: { params: { editionFileId } },
   } as unknown as H3Event;
 }
@@ -125,7 +126,7 @@ describe("createOpdsDownloadHandler", () => {
     }
   });
 
-  it("uses application/octet-stream for null mimeType", async () => {
+  it("uses application/epub+zip for null mimeType", async () => {
     const deps = makeDeps({
       findEditionFile: vi.fn().mockResolvedValue({ ...mockFile, mimeType: null }),
     });
@@ -135,7 +136,7 @@ describe("createOpdsDownloadHandler", () => {
     expect(deps.setResponseHeader).toHaveBeenCalledWith(
       expect.anything(),
       "Content-Type",
-      "application/octet-stream",
+      "application/epub+zip",
     );
   });
 

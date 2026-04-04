@@ -203,7 +203,7 @@ describe("buildNavigationEntry", () => {
     const xml = buildNavigationEntry(item, baseOptions);
     expect(xml).toContain("<title>Authors</title>");
     expect(xml).toContain("<updated>2024-06-01T12:00:00.000Z</updated>");
-    expect(xml).toContain('href="/opds/authors"');
+    expect(xml).toContain('href="https://books.example.com/opds/authors"');
     expect(xml).toContain('type="application/atom+xml;profile=opds-catalog;kind=acquisition"');
   });
 

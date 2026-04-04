@@ -88,7 +88,7 @@ describe("buildNavigationFeed", () => {
       items: [],
     });
     expect(xml).toContain('rel="start"');
-    expect(xml).toContain('href="/opds/catalog"');
+    expect(xml).toContain('href="https://books.example.com/opds/catalog"');
   });
 
   it("includes navigation entries", () => {
@@ -117,7 +117,7 @@ describe("buildNavigationFeed", () => {
       searchHref: "/opds/opensearch.xml",
     });
     expect(xml).toContain('rel="search"');
-    expect(xml).toContain('href="/opds/opensearch.xml"');
+    expect(xml).toContain('href="https://books.example.com/opds/opensearch.xml"');
     expect(xml).toContain('type="application/opensearchdescription+xml"');
   });
 

@@ -1,37 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
-import { createOpdsCoverHandler } from "./[size]";
 import type { OpdsCoverHandlerDeps } from "./[size]";
 import type { H3Event } from "h3";
 
-const mockCredential = {
-  id: "cred-1",
-  userId: "user-1",
-  username: "reader",
-  passwordHash: "salt:hash",
-  isEnabled: true,
-};
+vi.mock("h3", () => ({
+  defineEventHandler: vi.fn(),
+}));
+
+const { createOpdsCoverHandler } = await import("./[size]");
 
 const jpegBuffer = Buffer.from("jpeg-data");
 
 function makeEvent(workId: string, size: string): H3Event {
   return {
-    node: {
-      req: {
-        headers: {
-          authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
-        },
-      },
-    },
     context: { params: { workId, size } },
   } as unknown as H3Event;
 }
 
 function makeDeps(overrides: Partial<OpdsCoverHandlerDeps> = {}): OpdsCoverHandlerDeps {
   return {
-    auth: {
-      findCredentialByUsername: vi.fn().mockResolvedValue(mockCredential),
-      verifyPassword: vi.fn().mockResolvedValue(true),
-    },
     coverCacheDir: "/data/covers",
     existsSync: vi.fn().mockReturnValue(true),
     readFile: vi.fn().mockResolvedValue(Buffer.from("webp-data")),
@@ -106,13 +92,5 @@ describe("createOpdsCoverHandler", () => {
       const err = e as Error & { statusCode: number };
       expect(err.statusCode).toBe(400);
     }
-  });
-
-  it("authenticates the request", async () => {
-    const deps = makeDeps();
-    const handler = createOpdsCoverHandler(deps);
-    await handler(makeEvent("work-1", "thumb"));
-
-    expect(deps.auth.findCredentialByUsername).toHaveBeenCalledWith("reader");
   });
 });

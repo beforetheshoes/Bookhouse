@@ -62,7 +62,6 @@ export function feedHead(options: {
     el("title", options.title),
     el("updated", options.updatedAt.toISOString()),
     "<author><name>Bookhouse</name></author>",
-    selfClosingEl("link", { rel: "self", href: options.selfHref }),
     selfClosingEl("link", { rel: "start", href: options.startHref }),
   ].join("\n");
 }

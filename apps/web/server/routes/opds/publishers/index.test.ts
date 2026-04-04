@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import { createPublisherListHandler } from "./index";
 import type { PublisherListHandlerDeps } from "./index";
 import type { H3Event } from "h3";
+
+vi.mock("h3", () => ({
+  getRequestHeader: (event: { _authorization?: string }, _name: string) =>
+    event._authorization,
+  defineEventHandler: vi.fn(),
+}));
+
+const { createPublisherListHandler } = await import("./index");
 
 const mockCredential = {
   id: "cred-1",
@@ -13,13 +20,7 @@ const mockCredential = {
 
 function makeEvent(): H3Event {
   return {
-    node: {
-      req: {
-        headers: {
-          authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
-        },
-      },
-    },
+    _authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
   } as unknown as H3Event;
 }
 
@@ -56,8 +57,8 @@ describe("createPublisherListHandler", () => {
     expect(xml).toContain("<title>Publishers</title>");
     expect(xml).toContain("<title>Penguin Books</title>");
     expect(xml).toContain("<title>HarperCollins</title>");
-    expect(xml).toContain('href="/opds/publishers/Penguin%20Books"');
-    expect(xml).toContain('href="/opds/publishers/HarperCollins"');
+    expect(xml).toContain('href="https://books.example.com/opds/publishers/Penguin%20Books"');
+    expect(xml).toContain('href="https://books.example.com/opds/publishers/HarperCollins"');
   });
 
   it("sets correct content type header", async () => {

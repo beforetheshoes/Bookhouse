@@ -8,6 +8,8 @@ vi.mock("h3", () => ({
     const e = _event as { _params?: Record<string, string> };
     return e._params?.[name];
   },
+  getRequestHeader: (event: { _authorization?: string }, _name: string) =>
+    event._authorization,
   defineEventHandler: vi.fn(),
 }));
 
@@ -46,13 +48,7 @@ function makeEdition(id: string): OpdsEditionData {
 
 function makeEvent(seriesId: string): H3Event {
   return {
-    node: {
-      req: {
-        headers: {
-          authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
-        },
-      },
-    },
+    _authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
     _params: { seriesId },
   } as unknown as H3Event;
 }
@@ -139,7 +135,7 @@ describe("createSeriesBooksHandler", () => {
     const xml = (await handler(makeEvent("series-1"))) as string;
 
     expect(xml).toContain("<id>urn:bookhouse:series:series-1</id>");
-    expect(xml).toContain('href="/opds/series/series-1"');
+    expect(xml).toContain('href="https://books.example.com/opds/series/series-1"');
   });
 
   it("returns empty feed when series has no editions", async () => {
@@ -157,13 +153,7 @@ describe("createSeriesBooksHandler", () => {
     const deps = makeDeps();
     const handler = createSeriesBooksHandler(deps);
     const event = {
-      node: {
-        req: {
-          headers: {
-            authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
-          },
-        },
-      },
+      _authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
       _params: {},
     } as unknown as H3Event;
 

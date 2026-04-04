@@ -5,6 +5,8 @@ import type { OpdsEditionData } from "@bookhouse/opds";
 
 vi.mock("h3", () => ({
   getQuery: (event: { _query?: Record<string, string> }) => event._query ?? {},
+  getRequestHeader: (event: { _authorization?: string }, _name: string) =>
+    event._authorization,
   defineEventHandler: vi.fn(),
 }));
 
@@ -43,13 +45,7 @@ function makeEdition(id: string): OpdsEditionData {
 
 function makeEvent(page?: string): H3Event {
   return {
-    node: {
-      req: {
-        headers: {
-          authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
-        },
-      },
-    },
+    _authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
     _query: page ? { page } : {},
   } as unknown as H3Event;
 }

@@ -105,7 +105,6 @@ describe("feedHead", () => {
     expect(result).toContain("<id>urn:bookhouse:catalog</id>");
     expect(result).toContain("<title>Bookhouse</title>");
     expect(result).toContain("<updated>2024-06-15T12:00:00.000Z</updated>");
-    expect(result).toContain('rel="self"');
     expect(result).toContain('href="/opds/catalog"');
     expect(result).toContain('rel="start"');
   });

@@ -13,17 +13,18 @@ export function buildPaginationLinks(
   baseHref: string,
 ): string {
   const lines: string[] = [];
+  const separator = baseHref.includes("?") ? "&" : "?";
 
   lines.push(selfClosingEl("link", {
     rel: "first",
-    href: `${baseHref}?page=1`,
+    href: `${baseHref}${separator}page=1`,
     type: FEED_TYPE,
   }));
 
   if (pagination.hasPrevious) {
     lines.push(selfClosingEl("link", {
       rel: "previous",
-      href: `${baseHref}?page=${String(pagination.page - 1)}`,
+      href: `${baseHref}${separator}page=${String(pagination.page - 1)}`,
       type: FEED_TYPE,
     }));
   }
@@ -31,7 +32,7 @@ export function buildPaginationLinks(
   if (pagination.hasNext) {
     lines.push(selfClosingEl("link", {
       rel: "next",
-      href: `${baseHref}?page=${String(pagination.page + 1)}`,
+      href: `${baseHref}${separator}page=${String(pagination.page + 1)}`,
       type: FEED_TYPE,
     }));
   }

@@ -24,25 +24,20 @@ export function buildNavigationFeed(options: {
     id: options.id,
     title: options.title,
     updatedAt: options.updatedAt,
-    selfHref: options.selfHref,
-    startHref: "/opds/catalog",
+    selfHref: `${options.baseUrl}${options.selfHref}`,
+    startHref: `${options.baseUrl}/opds/catalog`,
   }));
-
-  // Override self link type to navigation
-  // feedHead already added a generic self link — replace with typed one
-  // Actually, feedHead adds a self link without type. For OPDS we need the type.
-  // We'll add the typed link separately. feedHead's self link is fine for the href.
 
   lines.push(selfClosingEl("link", {
     rel: "self",
-    href: options.selfHref,
+    href: `${options.baseUrl}${options.selfHref}`,
     type: NAV_TYPE,
   }));
 
   if (options.searchHref) {
     lines.push(selfClosingEl("link", {
       rel: "search",
-      href: options.searchHref,
+      href: `${options.baseUrl}${options.searchHref}`,
       type: "application/opensearchdescription+xml",
     }));
   }
@@ -75,26 +70,26 @@ export function buildAcquisitionFeed(options: {
     id: options.id,
     title: options.title,
     updatedAt: options.updatedAt,
-    selfHref: options.selfHref,
-    startHref: "/opds/catalog",
+    selfHref: `${options.baseUrl}${options.selfHref}`,
+    startHref: `${options.baseUrl}/opds/catalog`,
   }));
 
   lines.push(selfClosingEl("link", {
     rel: "self",
-    href: options.selfHref,
+    href: `${options.baseUrl}${options.selfHref}`,
     type: ACQ_TYPE,
   }));
 
   if (options.searchHref) {
     lines.push(selfClosingEl("link", {
       rel: "search",
-      href: options.searchHref,
+      href: `${options.baseUrl}${options.searchHref}`,
       type: "application/opensearchdescription+xml",
     }));
   }
 
   if (options.pagination) {
-    lines.push(buildPaginationLinks(options.pagination, options.selfHref));
+    lines.push(buildPaginationLinks(options.pagination, `${options.baseUrl}${options.selfHref}`));
   }
 
   const buildOptions = { baseUrl: options.baseUrl, selfHref: options.selfHref };

@@ -1,8 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
-import { createRecentHandler } from "./recent";
 import type { RecentHandlerDeps } from "./recent";
 import type { H3Event } from "h3";
 import type { OpdsEditionData } from "@bookhouse/opds";
+
+vi.mock("h3", () => ({
+  getRequestHeader: (event: { _authorization?: string }, _name: string) =>
+    event._authorization,
+  defineEventHandler: vi.fn(),
+}));
+
+const { createRecentHandler } = await import("./recent");
 
 const mockCredential = {
   id: "cred-1",
@@ -36,14 +43,7 @@ function makeEdition(id: string): OpdsEditionData {
 
 function makeEvent(): H3Event {
   return {
-    node: {
-      req: {
-        headers: {
-          authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
-        },
-        url: "/opds/recent",
-      },
-    },
+    _authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
     path: "/opds/recent",
   } as unknown as H3Event;
 }

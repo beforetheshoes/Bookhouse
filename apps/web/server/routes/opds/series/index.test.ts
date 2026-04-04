@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import { createSeriesListHandler } from "./index";
 import type { SeriesListHandlerDeps } from "./index";
 import type { H3Event } from "h3";
+
+vi.mock("h3", () => ({
+  getRequestHeader: (event: { _authorization?: string }, _name: string) =>
+    event._authorization,
+  defineEventHandler: vi.fn(),
+}));
+
+const { createSeriesListHandler } = await import("./index");
 
 const mockCredential = {
   id: "cred-1",
@@ -22,13 +29,7 @@ function makeSeries(id: string, name: string, workCount: number) {
 
 function makeEvent(): H3Event {
   return {
-    node: {
-      req: {
-        headers: {
-          authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
-        },
-      },
-    },
+    _authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
   } as unknown as H3Event;
 }
 
@@ -93,8 +94,8 @@ describe("createSeriesListHandler", () => {
     const handler = createSeriesListHandler(deps);
     const xml = (await handler(makeEvent())) as string;
 
-    expect(xml).toContain('href="/opds/series/series-1"');
-    expect(xml).toContain('href="/opds/series/series-2"');
+    expect(xml).toContain('href="https://books.example.com/opds/series/series-1"');
+    expect(xml).toContain('href="https://books.example.com/opds/series/series-2"');
   });
 
   it("returns empty feed when no series exist", async () => {
