@@ -27,10 +27,10 @@ test.describe("Bulk delete works from library", () => {
 
     // Action bar should appear
     await expect(page.getByText(/1 work selected/)).toBeVisible();
-    await expect(page.getByText("Delete Selected")).toBeVisible();
+    await expect(page.getByTestId("bulk-delete-works-btn")).toBeVisible();
 
-    // Click Delete Selected
-    await page.getByText("Delete Selected").click();
+    // Click Delete button
+    await page.getByTestId("bulk-delete-works-btn").click();
 
     // Confirmation dialog
     await expect(page.getByText(/will remove 1 work/)).toBeVisible();
