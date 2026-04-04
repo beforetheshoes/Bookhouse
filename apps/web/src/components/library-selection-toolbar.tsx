@@ -208,7 +208,7 @@ export function LibrarySelectionToolbar({
             <Button variant="outline" onClick={() => { setBulkDeleteOpen(false); }} disabled={bulkDeleting}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={() => { void handleBulkDelete(); }} disabled={bulkDeleting}>
+            <Button variant="destructive" onClick={() => { void handleBulkDelete(); }} disabled={bulkDeleting} data-testid="confirm-bulk-delete-works-btn">
               {bulkDeleting ? "Deleting..." : "Delete"}
             </Button>
           </DialogFooter>
