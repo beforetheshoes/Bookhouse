@@ -22,9 +22,10 @@ const makeEdition = (id: string): EligibleEdition => ({
   seriesName: null,
   seriesPosition: null,
   contributors: [],
-  primaryFilePath: `/books/${id}.epub`,
-  primaryFileSize: 1000,
-  primaryFileMimeType: "application/epub+zip",
+  deliveryFilePath: `/books/${id}.epub`,
+  deliveryFileSize: 1000,
+  deliveryFileMimeType: "application/epub+zip",
+  deliveryFileMediaKind: "EPUB",
 });
 
 describe("findEligibleEditions", () => {
@@ -47,6 +48,30 @@ describe("findEligibleEditions", () => {
 
     const result = await findEligibleEditions("device-1", deps);
     expect(result).toEqual([]);
+  });
+
+  it("filters out editions without an EPUB or KEPUB delivery file", async () => {
+    const deps: FindEligibleEditionsDeps = {
+      getDeviceCollectionEditions: vi.fn().mockResolvedValue([
+        makeEdition("epub"),
+        {
+          ...makeEdition("pdf"),
+          deliveryFilePath: "/books/pdf.pdf",
+          deliveryFileMimeType: "application/pdf",
+          deliveryFileMediaKind: "PDF",
+        },
+        {
+          ...makeEdition("missing"),
+          deliveryFilePath: null,
+          deliveryFileMimeType: null,
+          deliveryFileMediaKind: null,
+        },
+      ]),
+    };
+
+    const result = await findEligibleEditions("device-1", deps);
+
+    expect(result.map((edition) => edition.id)).toEqual(["epub"]);
   });
 });
 

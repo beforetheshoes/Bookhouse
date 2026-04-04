@@ -154,6 +154,17 @@ export function EditionTabPanel({
                         )}
                       </Button>
                     )}
+                  {ef.fileAsset.availabilityStatus === "PRESENT" && (
+                    <a
+                      href={`/api/edition-files/download/${ef.id}`}
+                      download
+                      aria-label={`Download ${ef.fileAsset.basename}`}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-0.5 text-xs text-foreground hover:bg-accent transition-colors w-fit"
+                    >
+                      <Download className="size-3.5" />
+                      Download {ef.fileAsset.basename}
+                    </a>
+                  )}
                 </div>
               )).concat(
                 multiplePresent ? [
@@ -167,18 +178,7 @@ export function EditionTabPanel({
                     <Download className="size-3.5" />
                     Download all ({presentFiles.length} files)
                   </a>,
-                ] : presentFiles.map((ef) => (
-                  <a
-                    key={`dl-${ef.id}`}
-                    href={`/api/edition-files/download/${ef.id}`}
-                    download
-                    aria-label={`Download ${ef.fileAsset.basename}`}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-0.5 text-xs text-foreground hover:bg-accent transition-colors w-fit"
-                  >
-                    <Download className="size-3.5" />
-                    Download
-                  </a>
-                )),
+                ] : [],
               );
             })()}
           </div>

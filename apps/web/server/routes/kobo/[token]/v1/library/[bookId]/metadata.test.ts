@@ -31,9 +31,10 @@ const mockEdition: EligibleEdition = {
   seriesName: null,
   seriesPosition: null,
   contributors: [{ name: "Author", role: "AUTHOR" }],
-  primaryFilePath: "/books/test.epub",
-  primaryFileSize: 1000,
-  primaryFileMimeType: "application/epub+zip",
+  deliveryFilePath: "/books/test.epub",
+  deliveryFileSize: 1000,
+  deliveryFileMimeType: "application/epub+zip",
+  deliveryFileMediaKind: "EPUB",
 };
 
 function makeEvent(bookId = "ed-1"): H3Event {

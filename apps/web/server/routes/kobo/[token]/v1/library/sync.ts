@@ -3,6 +3,7 @@ import type { H3Event } from "h3";
 import type { KoboAuthDeps } from "../../../auth-helper";
 import type { EligibleEdition, ReadingProgressRecord, LocatorData } from "@bookhouse/kobo";
 import type { SyncedBookRecord } from "@bookhouse/kobo";
+import { selectPreferredKoboDeliveryFile } from "@bookhouse/shared";
 
 const SYNC_ITEM_LIMIT = 100;
 
@@ -159,9 +160,7 @@ export default defineEventHandler(async (event) => {
                       work: { include: { series: true } },
                       contributors: { include: { contributor: true } },
                       editionFiles: {
-                        where: { role: "PRIMARY" },
                         include: { fileAsset: true },
-                        take: 1,
                       },
                     },
                   },
@@ -181,7 +180,21 @@ export default defineEventHandler(async (event) => {
           const ed = item.edition;
           if (editionMap.has(ed.id)) continue;
 
-          const primaryFile = ed.editionFiles[0]?.fileAsset ?? null;
+          const deliveryFile = selectPreferredKoboDeliveryFile(
+            ed.editionFiles
+              .filter((editionFile) => editionFile.fileAsset.availabilityStatus === "PRESENT")
+              .map((editionFile) => ({
+                id: editionFile.id,
+                role: editionFile.role,
+                fileAsset: {
+                  basename: editionFile.fileAsset.basename,
+                  mediaKind: editionFile.fileAsset.mediaKind,
+                },
+              })),
+          );
+          const selectedEditionFile = ed.editionFiles.find((editionFile) => editionFile.id === deliveryFile?.id) ?? null;
+          const deliveryFileAsset = selectedEditionFile?.fileAsset ?? null;
+
           editionMap.set(ed.id, {
             id: ed.id,
             workId: ed.workId,
@@ -199,9 +212,10 @@ export default defineEventHandler(async (event) => {
               name: c.contributor.nameDisplay,
               role: c.role,
             })),
-            primaryFilePath: primaryFile?.absolutePath ?? null,
-            primaryFileSize: primaryFile?.sizeBytes ? Number(primaryFile.sizeBytes) : null,
-            primaryFileMimeType: primaryFile?.mimeType ?? null,
+            deliveryFilePath: deliveryFileAsset?.absolutePath ?? null,
+            deliveryFileSize: deliveryFileAsset?.sizeBytes ? Number(deliveryFileAsset.sizeBytes) : null,
+            deliveryFileMimeType: deliveryFileAsset?.mimeType ?? null,
+            deliveryFileMediaKind: deliveryFileAsset?.mediaKind ?? null,
           });
         }
       }

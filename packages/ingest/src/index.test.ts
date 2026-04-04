@@ -4,6 +4,7 @@ import * as ingest from "./index";
 describe("ingest package barrel", () => {
   it("re-exports the primary runtime entry points", () => {
     expect(ingest.classifyMediaKind("/books/Book.kepub")).toBe("KEPUB");
+    expect(ingest.classifyMediaKind("/books/Book.kepub.epub")).toBe("KEPUB");
     expect(ingest.deriveFormatFamily("EPUB")).toBe("EBOOK");
     expect(typeof ingest.createIngestServices).toBe("function");
     expect(typeof ingest.extractEpubCover).toBe("function");

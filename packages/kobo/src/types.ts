@@ -148,7 +148,8 @@ export interface EligibleEdition {
   seriesName: string | null;
   seriesPosition: number | null;
   contributors: { name: string; role: string }[];
-  primaryFilePath: string | null;
-  primaryFileSize: number | null;
-  primaryFileMimeType: string | null;
+  deliveryFilePath: string | null;
+  deliveryFileSize: number | null;
+  deliveryFileMimeType: string | null;
+  deliveryFileMediaKind: string | null;
 }
