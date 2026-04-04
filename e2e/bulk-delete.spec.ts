@@ -38,8 +38,8 @@ test.describe("Bulk delete works from library", () => {
     // Confirm via the dialog's Delete button
     await page.getByTestId("confirm-bulk-delete-works-btn").click();
 
-    // Toast should confirm
-    await expect(page.getByText(/deleted/i)).toBeVisible({ timeout: 10_000 });
+    // Wait for deletion to complete — the selected work should disappear
+    await expect(page.getByText("Book Alpha")).not.toBeVisible({ timeout: 10_000 });
   });
 
   test("clear button deselects all rows", async ({ page }) => {

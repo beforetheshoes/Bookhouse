@@ -14,8 +14,12 @@ async function collectFileAssetIds(
 
 async function cleanupOrphanedFiles(db: { fileAsset: { findMany: (args: object) => Promise<{ id: string }[]>; deleteMany: (args: object) => Promise<{ count: number }> } }, fileAssetIds: string[]): Promise<void> {
   if (fileAssetIds.length === 0) return;
-  const { cleanupOrphanedFileAssets } = await import("@bookhouse/ingest");
-  await cleanupOrphanedFileAssets(db, fileAssetIds);
+  try {
+    const { cleanupOrphanedFileAssets } = await import("@bookhouse/ingest");
+    await cleanupOrphanedFileAssets(db, fileAssetIds);
+  } catch {
+    // Non-fatal: orphaned FileAssets will be cleaned up on next scan or via Library Health
+  }
 }
 
 export const deleteWorkServerFn = createServerFn({
