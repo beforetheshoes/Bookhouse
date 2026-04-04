@@ -123,6 +123,32 @@ describe("BulkEnrichDialog", () => {
     expect(startBtn.hasAttribute("disabled")).toBe(true);
   });
 
+  it("shows singular form for 1 work", async () => {
+    bulkEnrichMock.mockResolvedValueOnce({ importJobId: "ij-1", enqueuedCount: 1 });
+    const user = userEvent.setup();
+
+    render(<BulkEnrichDialog {...baseProps} selectedCount={1} selectedWorkIds={["w1"]} />);
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    const startBtn = screen.getByRole("button", { name: /Start Enrichment/i });
+    await user.click(startBtn);
+
+    expect(mockToast.success).toHaveBeenCalledWith("Enrichment started for 1 work");
+  });
+
+  it("shows generic error for non-Error rejection", async () => {
+    bulkEnrichMock.mockRejectedValueOnce("not an error");
+    const user = userEvent.setup();
+
+    render(<BulkEnrichDialog {...baseProps} />);
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    const startBtn = screen.getByRole("button", { name: /Start Enrichment/i });
+    await user.click(startBtn);
+
+    expect(mockToast.error).toHaveBeenCalledWith("Failed to start enrichment");
+  });
+
   it("shows error toast when server function fails", async () => {
     bulkEnrichMock.mockRejectedValueOnce(new Error("Server error"));
     const user = userEvent.setup();
@@ -172,6 +198,27 @@ describe("BulkEnrichDialog", () => {
     });
   });
 
+  it("allows toggling a source off and back on", async () => {
+    bulkEnrichMock.mockResolvedValueOnce({ importJobId: "ij-1", enqueuedCount: 5 });
+    const user = userEvent.setup();
+
+    render(<BulkEnrichDialog {...baseProps} />);
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    const gbCheckbox = screen.getByLabelText("Google Books");
+    await user.click(gbCheckbox); // uncheck
+    await user.click(gbCheckbox); // re-check (exercises add branch)
+
+    const startBtn = screen.getByRole("button", { name: /Start Enrichment/i });
+    await user.click(startBtn);
+
+    expect(bulkEnrichMock).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        sources: ["openlibrary", "googlebooks"],
+      }) as object,
+    });
+  });
+
   it("allows selecting priority strategy", async () => {
     bulkEnrichMock.mockResolvedValueOnce({ importJobId: "ij-1", enqueuedCount: 5 });
     const user = userEvent.setup();
@@ -188,6 +235,52 @@ describe("BulkEnrichDialog", () => {
     expect(bulkEnrichMock).toHaveBeenCalledWith({
       data: expect.objectContaining({ strategy: "priority" }) as object,
     });
+  });
+
+  it("falls back to openlibrary when no sources are configured", async () => {
+    integrationStatusMock.mockResolvedValue({
+      openlibrary: { configured: false, label: "Open Library" },
+      googlebooks: { configured: false, label: "Google Books" },
+      hardcover: { configured: false, label: "Hardcover" },
+    });
+    bulkEnrichMock.mockResolvedValueOnce({ importJobId: "ij-1", enqueuedCount: 5 });
+    const user = userEvent.setup();
+
+    render(<BulkEnrichDialog {...baseProps} />);
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    // Despite all being unconfigured, OL should still be in sources as fallback
+    // All checkboxes are disabled, but the start button works with the fallback
+    const startBtn = screen.getByRole("button", { name: /Start Enrichment/i });
+    await user.click(startBtn);
+
+    expect(bulkEnrichMock).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        sources: ["openlibrary"],
+      }) as object,
+    });
+  });
+
+  it("cancels pending fetch when dialog closes before load completes", async () => {
+    let resolveStatus: ((v: Record<string, { configured: boolean; label: string }>) => void) | undefined;
+    integrationStatusMock.mockImplementation(() => new Promise<Record<string, { configured: boolean; label: string }>>((r) => { resolveStatus = r; }));
+
+    const { rerender } = render(<BulkEnrichDialog {...baseProps} />);
+
+    // Close dialog before the fetch resolves
+    rerender(<BulkEnrichDialog {...baseProps} open={false} />);
+
+    // Now resolve — the cancelled flag should prevent state updates
+    if (resolveStatus) resolveStatus({
+      openlibrary: { configured: true, label: "Open Library" },
+      googlebooks: { configured: true, label: "Google Books" },
+      hardcover: { configured: true, label: "Hardcover" },
+    });
+
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    // No crash, no state update — dialog is closed
+    expect(screen.queryByText("Enrich 5 Works")).toBeFalsy();
   });
 
   it("does not render when open is false", () => {

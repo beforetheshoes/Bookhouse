@@ -1583,6 +1583,46 @@ describe("LibraryPage", () => {
     expect(screen.getByText(/2 works selected/)).toBeTruthy();
   });
 
+  it("shows select-all-across-pages banner and fetches all IDs when clicked", async () => {
+    getAllFilteredWorkIdsServerFnMock.mockResolvedValue(["w1", "w2", "w3", "w4", "w5"]);
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Book A"), makeWork("Book B")],
+        totalCount: 5,
+        facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
+      },
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    render(<LibraryPage />);
+
+    // Select all page rows
+    const selectAllCheckbox = screen.getAllByLabelText("Select all")[0];
+    if (!selectAllCheckbox) throw new Error("expected select-all checkbox");
+    fireEvent.click(selectAllCheckbox);
+
+    // Banner should appear (2 on page, 5 total)
+    expect(screen.getByText(/Select all 5 works/)).toBeTruthy();
+
+    // Click the banner
+    fireEvent.click(screen.getByTestId("select-all-btn"));
+
+    await waitFor(() => {
+      expect(getAllFilteredWorkIdsServerFnMock).toHaveBeenCalled();
+    });
+
+    // Should now show 5 selected
+    await waitFor(() => {
+      expect(screen.getByText(/5 works selected/)).toBeTruthy();
+    });
+  });
+
   it("shows error toast when bulk delete fails", async () => {
     bulkDeleteWorksServerFnMock.mockRejectedValue(new Error("Bulk delete failed"));
     mockView = "table";

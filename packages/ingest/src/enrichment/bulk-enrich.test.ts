@@ -524,10 +524,12 @@ describe("processBulkEnrichWork", () => {
           },
         ],
       }),
-      applyEnrichmentFields: vi.fn().mockResolvedValue({ success: true, appliedFields: ["publisher"] }),
+      applyEnrichmentFields: vi.fn()
+        .mockResolvedValueOnce({ success: true, appliedFields: ["publisher"] })
+        .mockResolvedValueOnce({ success: true, appliedFields: ["isbn13"] }),
     });
 
-    await processBulkEnrichWork("w1", ["openlibrary"], "fullest", deps);
+    const result = await processBulkEnrichWork("w1", ["openlibrary"], "fullest", deps);
 
     // Should be called twice: once for e1 (primary ebook), once for e2 (second ebook)
     // Audiobook e-audio should be skipped for edition fields
@@ -536,6 +538,44 @@ describe("processBulkEnrichWork", () => {
     const call2 = (deps.applyEnrichmentFields as ReturnType<typeof vi.fn>).mock.calls[1] as [{ editionId: string }];
     expect(call1[0].editionId).toBe("e1");
     expect(call2[0].editionId).toBe("e2");
+    // Both editions contributed fields — deduped
+    expect((result as { appliedFields: string[] }).appliedFields).toEqual(["publisher", "isbn13"]);
+  });
+
+  it("handles second edition returning no appliedFields", async () => {
+    deps = makeDeps({
+      loadWork: vi.fn().mockResolvedValue({
+        id: "w1",
+        titleDisplay: "Title",
+        description: null,
+        coverPath: null,
+        editedFields: [],
+        tags: [],
+        editions: [
+          {
+            id: "e1",
+            formatFamily: "EBOOK" as const,
+            publisher: null, publishedDate: null, isbn13: null, isbn10: null, language: null, pageCount: null,
+            editedFields: [],
+            authors: ["Author"],
+          },
+          {
+            id: "e2",
+            formatFamily: "EBOOK" as const,
+            publisher: null, publishedDate: null, isbn13: null, isbn10: null, language: null, pageCount: null,
+            editedFields: [],
+            authors: [],
+          },
+        ],
+      }),
+      applyEnrichmentFields: vi.fn()
+        .mockResolvedValueOnce({ success: true, appliedFields: ["publisher"] })
+        .mockResolvedValueOnce({ success: true }),
+    });
+
+    const result = await processBulkEnrichWork("w1", ["openlibrary"], "fullest", deps);
+
+    expect((result as { appliedFields: string[] }).appliedFields).toEqual(["publisher"]);
   });
 
   it("determines winning provider from the field with the most data", async () => {

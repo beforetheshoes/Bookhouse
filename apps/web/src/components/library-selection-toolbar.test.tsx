@@ -15,8 +15,8 @@ vi.mock("sonner", () => ({
 }));
 
 vi.mock("~/components/bulk-enrich-dialog", () => ({
-  BulkEnrichDialog: ({ open }: { open: boolean }) =>
-    open ? <div data-testid="bulk-enrich-dialog">BulkEnrichDialog</div> : null,
+  BulkEnrichDialog: ({ open, onStarted }: { open: boolean; onStarted: () => void }) =>
+    open ? <div data-testid="bulk-enrich-dialog"><button data-testid="mock-enrich-start" onClick={onStarted}>Start</button></div> : null,
 }));
 
 import { toast } from "sonner";
@@ -176,6 +176,14 @@ describe("LibrarySelectionToolbar", () => {
   it("shows loading state when selectingAll is true", () => {
     render(<LibrarySelectionToolbar {...defaultProps} allPageRowsSelected={true} selectedCount={1} totalCount={100} selectingAll={true} />);
     expect(screen.getByText(/Selecting/)).toBeTruthy();
+  });
+
+  it("calls onEnrichStarted when BulkEnrichDialog fires onStarted", () => {
+    const onEnrichStarted = vi.fn();
+    render(<LibrarySelectionToolbar {...defaultProps} onEnrichStarted={onEnrichStarted} />);
+    fireEvent.click(screen.getByTestId("bulk-enrich-btn"));
+    fireEvent.click(screen.getByTestId("mock-enrich-start"));
+    expect(onEnrichStarted).toHaveBeenCalled();
   });
 
   it("opens bulk enrich dialog when Enrich Metadata is clicked", () => {

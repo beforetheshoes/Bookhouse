@@ -60,27 +60,26 @@ const EDITION_FIELDS: FieldDef[] = [
   { key: "isbn10", level: "edition" },
 ];
 
-function getSourceWorkValue(work: SourceResult["work"], key: string): ApplyFieldValue {
-  if (key === "title") return work.title;
-  if (key === "authors") return work.authors;
-  if (key === "description") return work.description;
-  if (key === "subjects") return work.subjects;
-  return null;
-}
+const SOURCE_WORK_FIELDS: Record<string, (w: SourceResult["work"]) => ApplyFieldValue> = {
+  title: (w) => w.title,
+  authors: (w) => w.authors,
+  description: (w) => w.description,
+  subjects: (w) => w.subjects,
+};
 
-function getSourceEditionValue(edition: SourceResult["edition"], key: string): ApplyFieldValue {
-  if (key === "publisher") return edition.publisher;
-  if (key === "publishedDate") return edition.publishedDate;
-  if (key === "pageCount") return edition.pageCount;
-  if (key === "isbn13") return edition.isbn13;
-  if (key === "isbn10") return edition.isbn10;
-  return null;
-}
+const SOURCE_EDITION_FIELDS: Record<string, (e: SourceResult["edition"]) => ApplyFieldValue> = {
+  publisher: (e) => e.publisher,
+  publishedDate: (e) => e.publishedDate,
+  pageCount: (e) => e.pageCount,
+  isbn13: (e) => e.isbn13,
+  isbn10: (e) => e.isbn10,
+};
 
 function getSourceFieldValue(result: SourceResult, field: FieldDef): ApplyFieldValue {
-  return field.level === "work"
-    ? getSourceWorkValue(result.work, field.key)
-    : getSourceEditionValue(result.edition, field.key);
+  if (field.level === "work") {
+    return (SOURCE_WORK_FIELDS[field.key] as (w: SourceResult["work"]) => ApplyFieldValue)(result.work);
+  }
+  return (SOURCE_EDITION_FIELDS[field.key] as (e: SourceResult["edition"]) => ApplyFieldValue)(result.edition);
 }
 
 function getEditedFieldKey(fieldKey: string): string {
@@ -96,14 +95,16 @@ function getCurrentWorkValue(work: BulkEnrichWorkData, authors: string[], key: s
   return work.tags;
 }
 
+const CURRENT_EDITION_FIELDS: Record<string, (e: BulkEnrichEditionData) => ApplyFieldValue> = {
+  publisher: (e) => e.publisher,
+  publishedDate: (e) => e.publishedDate,
+  pageCount: (e) => e.pageCount,
+  isbn13: (e) => e.isbn13,
+  isbn10: (e) => e.isbn10,
+};
+
 function getCurrentEditionValue(edition: BulkEnrichEditionData, key: string): ApplyFieldValue {
-  if (key === "publisher") return edition.publisher;
-  if (key === "publishedDate") return edition.publishedDate;
-  if (key === "pageCount") return edition.pageCount;
-  if (key === "isbn13") return edition.isbn13;
-  if (key === "isbn10") return edition.isbn10;
-  if (key === "language") return edition.language;
-  return null;
+  return (CURRENT_EDITION_FIELDS[key] as (e: BulkEnrichEditionData) => ApplyFieldValue)(edition);
 }
 
 function isFieldEmpty(value: ApplyFieldValue): boolean {
