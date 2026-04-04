@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { FolderOpen, Loader2, Trash2, Wand2, X } from "lucide-react";
+import { BookOpen, ChevronDown, FolderOpen, Headphones, Loader2, Trash2, Wand2, X } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -10,7 +10,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
-import { bulkDeleteWorksServerFn } from "~/lib/server-fns/deletion";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
+import { bulkDeleteWorksServerFn, bulkDeleteEditionsByFormatForWorksServerFn } from "~/lib/server-fns/deletion";
 import { bulkAddToShelfServerFn } from "~/lib/server-fns/shelves";
 import { BulkEnrichDialog } from "~/components/bulk-enrich-dialog";
 
@@ -43,6 +52,8 @@ export function LibrarySelectionToolbar({
 }: LibrarySelectionToolbarProps) {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [deleteFormatMode, setDeleteFormatMode] = useState<"EBOOK" | "AUDIOBOOK" | null>(null);
+  const [deletingByFormat, setDeletingByFormat] = useState(false);
   const [addToShelfOpen, setAddToShelfOpen] = useState(false);
   const [addingToShelf, setAddingToShelf] = useState(false);
   const [bulkEnrichOpen, setBulkEnrichOpen] = useState(false);
@@ -63,6 +74,26 @@ export function LibrarySelectionToolbar({
     }
   }
 
+  async function handleBulkDeleteByFormat(format: "EBOOK" | "AUDIOBOOK") {
+    setDeletingByFormat(true);
+    try {
+      const result = await bulkDeleteEditionsByFormatForWorksServerFn({ data: { workIds: selectedWorkIds, format } });
+      const label = format === "EBOOK" ? "ebook" : "audiobook";
+      const editionCount = result.deletedEditionIds.length;
+      const workCount = result.deletedWorkIds.length;
+      toast.success(
+        `${String(editionCount)} ${label} edition${editionCount === 1 ? "" : "s"} deleted`
+        + (workCount > 0 ? ` (${String(workCount)} work${workCount === 1 ? "" : "s"} removed)` : ""),
+      );
+      setDeleteFormatMode(null);
+      onDeleted();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to delete editions");
+    } finally {
+      setDeletingByFormat(false);
+    }
+  }
+
   async function handleAddToShelf(shelfId: string) {
     setAddingToShelf(true);
     try {
@@ -76,6 +107,9 @@ export function LibrarySelectionToolbar({
       setAddingToShelf(false);
     }
   }
+
+  const otherFormat = deleteFormatMode === "EBOOK" ? "audiobook" : "ebook";
+  const thisFormat = deleteFormatMode === "EBOOK" ? "ebook" : "audiobook";
 
   return (
     <>
@@ -99,23 +133,63 @@ export function LibrarySelectionToolbar({
           </div>
         )}
         <div className="flex items-center gap-3">
-        <span className="text-sm font-medium">{selectedCount} work{selectedCount === 1 ? "" : "s"} selected</span>
-        <Button variant="outline" size="sm" onClick={() => { setAddToShelfOpen(true); }} data-testid="bulk-add-to-shelf-btn">
-          <FolderOpen className="mr-1.5 size-3.5" />
-          Add to Shelf
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => { setBulkEnrichOpen(true); }} data-testid="bulk-enrich-btn">
-          <Wand2 className="mr-1.5 size-3.5" />
-          Enrich Metadata
-        </Button>
-        <Button variant="destructive" size="sm" onClick={() => { setBulkDeleteOpen(true); }}>
-          <Trash2 className="mr-1.5 size-3.5" />
-          Delete Selected
-        </Button>
-        <Button variant="outline" size="sm" onClick={onClearSelection}>
-          <X className="mr-1.5 size-3.5" />
-          Clear
-        </Button>
+          <span className="text-sm font-medium">{selectedCount} work{selectedCount === 1 ? "" : "s"} selected</span>
+          <Button variant="outline" size="sm" onClick={() => { setAddToShelfOpen(true); }} data-testid="bulk-add-to-shelf-btn">
+            <FolderOpen className="mr-1.5 size-3.5" />
+            Add to Shelf
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => { setBulkEnrichOpen(true); }} data-testid="bulk-enrich-btn">
+            <Wand2 className="mr-1.5 size-3.5" />
+            Enrich Metadata
+          </Button>
+          <div className="flex items-center">
+            <Button
+              variant="destructive"
+              size="sm"
+              className="rounded-r-none border-r border-destructive-foreground/20 pr-2.5"
+              onClick={() => { setBulkDeleteOpen(true); }}
+              data-testid="bulk-delete-works-btn"
+            >
+              <Trash2 className="mr-1.5 size-3.5" />
+              Delete
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="rounded-l-none px-1.5"
+                  aria-label="More delete options"
+                  data-testid="bulk-delete-dropdown-trigger"
+                >
+                  <ChevronDown className="size-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Delete by format</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuGroup>
+                  <DropdownMenuItem onClick={() => { setDeleteFormatMode("EBOOK"); }}>
+                    <BookOpen className="mr-2 size-4" />
+                    Delete ebook editions only
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => { setDeleteFormatMode("AUDIOBOOK"); }}>
+                    <Headphones className="mr-2 size-4" />
+                    Delete audiobook editions only
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => { setBulkDeleteOpen(true); }}>
+                    <Trash2 className="mr-2 size-4" />
+                    Delete works (all editions)
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+          <Button variant="outline" size="sm" onClick={onClearSelection}>
+            <X className="mr-1.5 size-3.5" />
+            Clear
+          </Button>
         </div>
       </div>
 
@@ -134,6 +208,33 @@ export function LibrarySelectionToolbar({
             </Button>
             <Button variant="destructive" onClick={() => { void handleBulkDelete(); }} disabled={bulkDeleting}>
               {bulkDeleting ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteFormatMode !== null} onOpenChange={() => { setDeleteFormatMode(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete {deleteFormatMode === "EBOOK" ? "Ebook" : "Audiobook"} Editions</DialogTitle>
+            <DialogDescription>
+              This will delete the {thisFormat} editions from {selectedCount} work{selectedCount === 1 ? "" : "s"}.
+              Works that only have {thisFormat} editions will be removed entirely.
+              Works with {otherFormat} editions will keep them.
+              Files on disk will not be affected.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setDeleteFormatMode(null); }} disabled={deletingByFormat}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => { void handleBulkDeleteByFormat(deleteFormatMode as "EBOOK" | "AUDIOBOOK"); }}
+              disabled={deletingByFormat}
+              data-testid="confirm-delete-by-format-btn"
+            >
+              {deletingByFormat ? "Deleting..." : "Delete"}
             </Button>
           </DialogFooter>
         </DialogContent>

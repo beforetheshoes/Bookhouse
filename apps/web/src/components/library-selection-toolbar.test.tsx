@@ -1,9 +1,11 @@
 // @vitest-environment happy-dom
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("~/lib/server-fns/deletion", () => ({
   bulkDeleteWorksServerFn: vi.fn(),
+  bulkDeleteEditionsByFormatForWorksServerFn: vi.fn(),
 }));
 
 vi.mock("~/lib/server-fns/shelves", () => ({
@@ -20,11 +22,12 @@ vi.mock("~/components/bulk-enrich-dialog", () => ({
 }));
 
 import { toast } from "sonner";
-import { bulkDeleteWorksServerFn } from "~/lib/server-fns/deletion";
+import { bulkDeleteWorksServerFn, bulkDeleteEditionsByFormatForWorksServerFn } from "~/lib/server-fns/deletion";
 import { bulkAddToShelfServerFn } from "~/lib/server-fns/shelves";
 import { LibrarySelectionToolbar } from "./library-selection-toolbar";
 
 const bulkDeleteWorksServerFnMock = vi.mocked(bulkDeleteWorksServerFn);
+const bulkDeleteByFormatMock = vi.mocked(bulkDeleteEditionsByFormatForWorksServerFn);
 const bulkAddToShelfServerFnMock = vi.mocked(bulkAddToShelfServerFn);
 const mockToast = vi.mocked(toast);
 
@@ -74,7 +77,7 @@ describe("LibrarySelectionToolbar", () => {
     const onDeleted = vi.fn();
     render(<LibrarySelectionToolbar {...defaultProps} onDeleted={onDeleted} />);
 
-    fireEvent.click(screen.getByText("Delete Selected"));
+    fireEvent.click(screen.getByTestId("bulk-delete-works-btn"));
     expect(screen.getByText(/will remove 1 work/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
@@ -91,7 +94,7 @@ describe("LibrarySelectionToolbar", () => {
     bulkDeleteWorksServerFnMock.mockRejectedValue(new Error("fail"));
     render(<LibrarySelectionToolbar {...defaultProps} />);
 
-    fireEvent.click(screen.getByText("Delete Selected"));
+    fireEvent.click(screen.getByTestId("bulk-delete-works-btn"));
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
     await waitFor(() => {
@@ -103,7 +106,7 @@ describe("LibrarySelectionToolbar", () => {
     bulkDeleteWorksServerFnMock.mockRejectedValue("oops");
     render(<LibrarySelectionToolbar {...defaultProps} />);
 
-    fireEvent.click(screen.getByText("Delete Selected"));
+    fireEvent.click(screen.getByTestId("bulk-delete-works-btn"));
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
     await waitFor(() => {
@@ -113,9 +116,185 @@ describe("LibrarySelectionToolbar", () => {
 
   it("closes delete dialog on cancel", () => {
     render(<LibrarySelectionToolbar {...defaultProps} />);
-    fireEvent.click(screen.getByText("Delete Selected"));
+    fireEvent.click(screen.getByTestId("bulk-delete-works-btn"));
     expect(screen.getByText(/will remove 1 work/)).toBeTruthy();
     fireEvent.click(screen.getByText("Cancel"));
+  });
+
+  it("renders the dropdown trigger for format-specific delete options", () => {
+    render(<LibrarySelectionToolbar {...defaultProps} />);
+    expect(screen.getByTestId("bulk-delete-dropdown-trigger")).toBeTruthy();
+  });
+
+  it("shows format-specific options when dropdown trigger is clicked", async () => {
+    const user = userEvent.setup();
+    render(<LibrarySelectionToolbar {...defaultProps} />);
+    await user.click(screen.getByTestId("bulk-delete-dropdown-trigger"));
+    await waitFor(() => {
+      expect(screen.getByText("Delete ebook editions only")).toBeTruthy();
+      expect(screen.getByText("Delete audiobook editions only")).toBeTruthy();
+    });
+  });
+
+  it("opens ebook format confirmation dialog with correct copy", async () => {
+    const user = userEvent.setup();
+    render(<LibrarySelectionToolbar {...defaultProps} />);
+    await user.click(screen.getByTestId("bulk-delete-dropdown-trigger"));
+    await waitFor(() => screen.getByText("Delete ebook editions only"));
+    await user.click(screen.getByText("Delete ebook editions only"));
+    await waitFor(() => {
+      expect(screen.getByText(/Delete Ebook Editions/)).toBeTruthy();
+      expect(screen.getByText(/audiobook editions will keep them/)).toBeTruthy();
+    });
+  });
+
+  it("opens audiobook format confirmation dialog with correct copy", async () => {
+    const user = userEvent.setup();
+    render(<LibrarySelectionToolbar {...defaultProps} />);
+    await user.click(screen.getByTestId("bulk-delete-dropdown-trigger"));
+    await waitFor(() => screen.getByText("Delete audiobook editions only"));
+    await user.click(screen.getByText("Delete audiobook editions only"));
+    await waitFor(() => {
+      expect(screen.getByText(/Delete Audiobook Editions/)).toBeTruthy();
+      expect(screen.getByText(/ebook editions will keep them/)).toBeTruthy();
+    });
+  });
+
+  it("calls bulkDeleteEditionsByFormatForWorksServerFn with EBOOK on confirm", async () => {
+    const user = userEvent.setup();
+    bulkDeleteByFormatMock.mockResolvedValue({ deletedEditionIds: ["ed-1"], deletedWorkIds: [] });
+    const onDeleted = vi.fn();
+    render(<LibrarySelectionToolbar {...defaultProps} onDeleted={onDeleted} />);
+    await user.click(screen.getByTestId("bulk-delete-dropdown-trigger"));
+    await waitFor(() => screen.getByText("Delete ebook editions only"));
+    await user.click(screen.getByText("Delete ebook editions only"));
+    await waitFor(() => screen.getByTestId("confirm-delete-by-format-btn"));
+    fireEvent.click(screen.getByTestId("confirm-delete-by-format-btn"));
+    await waitFor(() => {
+      expect(bulkDeleteByFormatMock).toHaveBeenCalledWith({ data: { workIds: ["w1"], format: "EBOOK" } });
+    });
+    await waitFor(() => { expect(onDeleted).toHaveBeenCalled(); });
+  });
+
+  it("calls bulkDeleteEditionsByFormatForWorksServerFn with AUDIOBOOK on confirm", async () => {
+    const user = userEvent.setup();
+    bulkDeleteByFormatMock.mockResolvedValue({ deletedEditionIds: ["ed-1"], deletedWorkIds: [] });
+    const onDeleted = vi.fn();
+    render(<LibrarySelectionToolbar {...defaultProps} onDeleted={onDeleted} />);
+    await user.click(screen.getByTestId("bulk-delete-dropdown-trigger"));
+    await waitFor(() => screen.getByText("Delete audiobook editions only"));
+    await user.click(screen.getByText("Delete audiobook editions only"));
+    await waitFor(() => screen.getByTestId("confirm-delete-by-format-btn"));
+    fireEvent.click(screen.getByTestId("confirm-delete-by-format-btn"));
+    await waitFor(() => {
+      expect(bulkDeleteByFormatMock).toHaveBeenCalledWith({ data: { workIds: ["w1"], format: "AUDIOBOOK" } });
+    });
+    await waitFor(() => { expect(onDeleted).toHaveBeenCalled(); });
+  });
+
+  it("shows success toast with edition count after format delete", async () => {
+    const user = userEvent.setup();
+    bulkDeleteByFormatMock.mockResolvedValue({ deletedEditionIds: ["ed-1", "ed-2"], deletedWorkIds: [] });
+    render(<LibrarySelectionToolbar {...defaultProps} />);
+    await user.click(screen.getByTestId("bulk-delete-dropdown-trigger"));
+    await waitFor(() => screen.getByText("Delete ebook editions only"));
+    await user.click(screen.getByText("Delete ebook editions only"));
+    await waitFor(() => screen.getByTestId("confirm-delete-by-format-btn"));
+    fireEvent.click(screen.getByTestId("confirm-delete-by-format-btn"));
+    await waitFor(() => {
+      expect(mockToast.success).toHaveBeenCalledWith(expect.stringContaining("2 ebook editions deleted"));
+    });
+  });
+
+  it("includes removed work count in success toast when works were deleted (singular)", async () => {
+    const user = userEvent.setup();
+    bulkDeleteByFormatMock.mockResolvedValue({ deletedEditionIds: ["ed-1"], deletedWorkIds: ["w1"] });
+    render(<LibrarySelectionToolbar {...defaultProps} />);
+    await user.click(screen.getByTestId("bulk-delete-dropdown-trigger"));
+    await waitFor(() => screen.getByText("Delete ebook editions only"));
+    await user.click(screen.getByText("Delete ebook editions only"));
+    await waitFor(() => screen.getByTestId("confirm-delete-by-format-btn"));
+    fireEvent.click(screen.getByTestId("confirm-delete-by-format-btn"));
+    await waitFor(() => {
+      expect(mockToast.success).toHaveBeenCalledWith(expect.stringContaining("(1 work removed)"));
+    });
+  });
+
+  it("includes removed works count in success toast when multiple works were deleted (plural)", async () => {
+    const user = userEvent.setup();
+    bulkDeleteByFormatMock.mockResolvedValue({ deletedEditionIds: ["ed-1", "ed-2"], deletedWorkIds: ["w1", "w2"] });
+    render(<LibrarySelectionToolbar {...defaultProps} />);
+    await user.click(screen.getByTestId("bulk-delete-dropdown-trigger"));
+    await waitFor(() => screen.getByText("Delete ebook editions only"));
+    await user.click(screen.getByText("Delete ebook editions only"));
+    await waitFor(() => screen.getByTestId("confirm-delete-by-format-btn"));
+    fireEvent.click(screen.getByTestId("confirm-delete-by-format-btn"));
+    await waitFor(() => {
+      expect(mockToast.success).toHaveBeenCalledWith(expect.stringContaining("(2 works removed)"));
+    });
+  });
+
+  it("shows error toast when format delete fails with Error", async () => {
+    const user = userEvent.setup();
+    bulkDeleteByFormatMock.mockRejectedValue(new Error("db error"));
+    render(<LibrarySelectionToolbar {...defaultProps} />);
+    await user.click(screen.getByTestId("bulk-delete-dropdown-trigger"));
+    await waitFor(() => screen.getByText("Delete ebook editions only"));
+    await user.click(screen.getByText("Delete ebook editions only"));
+    await waitFor(() => screen.getByTestId("confirm-delete-by-format-btn"));
+    fireEvent.click(screen.getByTestId("confirm-delete-by-format-btn"));
+    await waitFor(() => {
+      expect(mockToast.error).toHaveBeenCalledWith("db error");
+    });
+  });
+
+  it("shows generic error toast when format delete fails with non-Error", async () => {
+    const user = userEvent.setup();
+    bulkDeleteByFormatMock.mockRejectedValue("oops");
+    render(<LibrarySelectionToolbar {...defaultProps} />);
+    await user.click(screen.getByTestId("bulk-delete-dropdown-trigger"));
+    await waitFor(() => screen.getByText("Delete ebook editions only"));
+    await user.click(screen.getByText("Delete ebook editions only"));
+    await waitFor(() => screen.getByTestId("confirm-delete-by-format-btn"));
+    fireEvent.click(screen.getByTestId("confirm-delete-by-format-btn"));
+    await waitFor(() => {
+      expect(mockToast.error).toHaveBeenCalledWith("Failed to delete editions");
+    });
+  });
+
+  it("cancels format delete dialog without calling server fn", async () => {
+    const user = userEvent.setup();
+    render(<LibrarySelectionToolbar {...defaultProps} />);
+    await user.click(screen.getByTestId("bulk-delete-dropdown-trigger"));
+    await waitFor(() => screen.getByText("Delete ebook editions only"));
+    await user.click(screen.getByText("Delete ebook editions only"));
+    await waitFor(() => screen.getByTestId("confirm-delete-by-format-btn"));
+    fireEvent.click(screen.getByText("Cancel"));
+    expect(bulkDeleteByFormatMock).not.toHaveBeenCalled();
+  });
+
+  it("opens delete works dialog from the dropdown 'Delete works (all editions)' item", async () => {
+    const user = userEvent.setup();
+    render(<LibrarySelectionToolbar {...defaultProps} />);
+    await user.click(screen.getByTestId("bulk-delete-dropdown-trigger"));
+    await waitFor(() => screen.getByText("Delete works (all editions)"));
+    await user.click(screen.getByText("Delete works (all editions)"));
+    await waitFor(() => {
+      expect(screen.getByText(/will remove 1 work/)).toBeTruthy();
+    });
+  });
+
+  it("closes format delete dialog via Escape key (onOpenChange)", async () => {
+    const user = userEvent.setup();
+    render(<LibrarySelectionToolbar {...defaultProps} />);
+    await user.click(screen.getByTestId("bulk-delete-dropdown-trigger"));
+    await waitFor(() => screen.getByText("Delete ebook editions only"));
+    await user.click(screen.getByText("Delete ebook editions only"));
+    await waitFor(() => screen.getByTestId("confirm-delete-by-format-btn"));
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByTestId("confirm-delete-by-format-btn")).toBeFalsy();
+    });
   });
 
   it("opens shelf picker and calls bulkAddToShelfServerFn", async () => {

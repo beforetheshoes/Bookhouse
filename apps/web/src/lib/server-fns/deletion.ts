@@ -82,6 +82,87 @@ export const bulkDeleteEditionsServerFn = createServerFn({
     return { deletedEditionIds: data.editionIds, deletedWorkIds: emptyWorkIds };
   });
 
+export const bulkDeleteEditionsByFormatForWorksServerFn = createServerFn({
+  method: "POST",
+})
+  .inputValidator(z.object({
+    workIds: z.array(z.string().min(1)).max(100),
+    format: z.enum(["EBOOK", "AUDIOBOOK"]),
+  }))
+  .handler(async ({ data }) => {
+    if (data.workIds.length === 0) {
+      return { deletedEditionIds: [] as string[], deletedWorkIds: [] as string[] };
+    }
+
+    const { db } = await import("@bookhouse/db");
+
+    const editions = await db.edition.findMany({
+      where: { workId: { in: data.workIds }, formatFamily: data.format },
+      select: { id: true, workId: true },
+    });
+
+    if (editions.length === 0) {
+      return { deletedEditionIds: [] as string[], deletedWorkIds: [] as string[] };
+    }
+
+    const affectedWorkIds = [...new Set(editions.map((e: { workId: string }) => e.workId))];
+    const deletedEditionIds = editions.map((e: { id: string }) => e.id);
+
+    await db.edition.deleteMany({ where: { id: { in: deletedEditionIds } } });
+
+    const emptyWorkIds: string[] = [];
+    for (const workId of affectedWorkIds) {
+      const remaining = await db.edition.count({ where: { workId } });
+      if (remaining === 0) {
+        emptyWorkIds.push(workId);
+      }
+    }
+
+    if (emptyWorkIds.length > 0) {
+      await db.work.deleteMany({ where: { id: { in: emptyWorkIds } } });
+    }
+
+    return { deletedEditionIds, deletedWorkIds: emptyWorkIds };
+  });
+
+export const deleteAllEditionsByFormatServerFn = createServerFn({
+  method: "POST",
+})
+  .inputValidator(z.object({
+    format: z.enum(["EBOOK", "AUDIOBOOK"]),
+  }))
+  .handler(async ({ data }) => {
+    const { db } = await import("@bookhouse/db");
+
+    const editions = await db.edition.findMany({
+      where: { formatFamily: data.format },
+      select: { id: true, workId: true },
+    });
+
+    if (editions.length === 0) {
+      return { deletedEditionIds: [] as string[], deletedWorkIds: [] as string[] };
+    }
+
+    const affectedWorkIds = [...new Set(editions.map((e: { workId: string }) => e.workId))];
+    const deletedEditionIds = editions.map((e: { id: string }) => e.id);
+
+    await db.edition.deleteMany({ where: { id: { in: deletedEditionIds } } });
+
+    const emptyWorkIds: string[] = [];
+    for (const workId of affectedWorkIds) {
+      const remaining = await db.edition.count({ where: { workId } });
+      if (remaining === 0) {
+        emptyWorkIds.push(workId);
+      }
+    }
+
+    if (emptyWorkIds.length > 0) {
+      await db.work.deleteMany({ where: { id: { in: emptyWorkIds } } });
+    }
+
+    return { deletedEditionIds, deletedWorkIds: emptyWorkIds };
+  });
+
 const missingFilesPaginationSchema = z.object({
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(1).max(100).default(20),
