@@ -2152,7 +2152,8 @@ export function createIngestServices(
     });
 
     if (fileAsset === null) {
-      throw new Error(`File asset "${input.fileAssetId}" was not found`);
+      logger.info({ fileAssetId: input.fileAssetId }, "Skipping hash for deleted file asset");
+      return { availabilityStatus: AvailabilityStatus.MISSING, fileAssetId: input.fileAssetId };
     }
 
     try {
@@ -2286,7 +2287,8 @@ export function createIngestServices(
     });
 
     if (fileAsset === null) {
-      throw new Error(`File asset "${input.fileAssetId}" was not found`);
+      logger.info({ fileAssetId: input.fileAssetId }, "Skipping parse for deleted file asset");
+      return { availabilityStatus: AvailabilityStatus.MISSING, fileAssetId: input.fileAssetId, skipped: true };
     }
 
     const isOpfSidecar = fileAsset.mediaKind === MediaKind.SIDECAR && getFileExtension(fileAsset.absolutePath) === "opf";

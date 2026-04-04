@@ -2981,9 +2981,11 @@ describe("ingest services", () => {
       enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
     });
 
-    await expect(
-      services.hashFileAsset({ fileAssetId: "missing-file" }),
-    ).rejects.toThrow('File asset "missing-file" was not found');
+    const skippedResult = await services.hashFileAsset({ fileAssetId: "missing-file" });
+    expect(skippedResult).toEqual({
+      availabilityStatus: AvailabilityStatus.MISSING,
+      fileAssetId: "missing-file",
+    });
 
     const existing: TestFileAsset = {
       absolutePath: "/tmp/root/book.epub",
@@ -6148,15 +6150,18 @@ describe("ingest services", () => {
     expect(state.works.get("work-1")?.titleDisplay).toBe("The Fifth Season");
   });
 
-  it("throws when metadata parsing is requested for an unknown file asset", async () => {
+  it("gracefully skips when metadata parsing is requested for a deleted file asset", async () => {
     const services = createIngestServices({
       db: createTestDb(createEmptyState("/tmp/root")),
       enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
     });
 
-    await expect(
-      services.parseFileAssetMetadata({ fileAssetId: "missing-file" }),
-    ).rejects.toThrow('File asset "missing-file" was not found');
+    const result = await services.parseFileAssetMetadata({ fileAssetId: "missing-file" });
+    expect(result).toEqual({
+      availabilityStatus: AvailabilityStatus.MISSING,
+      fileAssetId: "missing-file",
+      skipped: true,
+    });
   });
 
   it("enqueues metadata parsing after hashing an OPF sidecar", async () => {
