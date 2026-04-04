@@ -35,11 +35,11 @@ test.describe("Bulk delete works from library", () => {
     // Confirmation dialog
     await expect(page.getByText(/will remove 1 work/)).toBeVisible();
 
-    // Confirm
-    await page.getByRole("button", { name: "Delete" }).click();
+    // Confirm via the dialog's Delete button (inside the dialog, not the toolbar)
+    await page.locator("[role='dialog'] button", { hasText: /^Delete$/ }).click();
 
     // Toast should confirm
-    await expect(page.getByText(/deleted/)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/deleted/i)).toBeVisible({ timeout: 10_000 });
   });
 
   test("clear button deselects all rows", async ({ page }) => {
