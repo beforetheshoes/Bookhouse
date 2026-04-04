@@ -2,6 +2,7 @@ import type { EligibleEdition, ReadingProgressRecord, SyncResult } from "./types
 import { buildEntitlement } from "./metadata";
 import { formatReadingState } from "./reading-state";
 import type { MetadataOptions } from "./metadata";
+import { isKoboDeliveryMediaKind } from "@bookhouse/shared";
 
 export interface SyncedBookRecord {
   editionId: string;
@@ -16,7 +17,12 @@ export async function findEligibleEditions(
   deviceId: string,
   deps: FindEligibleEditionsDeps,
 ): Promise<EligibleEdition[]> {
-  return deps.getDeviceCollectionEditions(deviceId);
+  const editions = await deps.getDeviceCollectionEditions(deviceId);
+  return editions.filter((edition) =>
+    edition.deliveryFilePath !== null &&
+    edition.deliveryFileMediaKind !== null &&
+    isKoboDeliveryMediaKind(edition.deliveryFileMediaKind),
+  );
 }
 
 export function computeSyncDiff(

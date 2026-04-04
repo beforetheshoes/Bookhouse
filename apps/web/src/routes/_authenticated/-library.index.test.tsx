@@ -1491,7 +1491,7 @@ describe("LibraryPage", () => {
     fireEvent.click(rowCheckbox);
 
     expect(screen.getByText(/1 work selected/)).toBeTruthy();
-    expect(screen.getByText("Delete Selected")).toBeTruthy();
+    expect(screen.getByTestId("bulk-delete-works-btn")).toBeTruthy();
   });
 
   it("opens confirmation dialog and calls bulkDeleteWorksServerFn on confirm", async () => {
@@ -1514,8 +1514,8 @@ describe("LibraryPage", () => {
     if (!rowCheckbox) throw new Error("expected row checkbox");
     fireEvent.click(rowCheckbox);
 
-    // Click Delete Selected
-    fireEvent.click(screen.getByText("Delete Selected"));
+    // Click Delete
+    fireEvent.click(screen.getByTestId("bulk-delete-works-btn"));
 
     // Confirm dialog appears
     expect(screen.getByText(/will remove 1 work/)).toBeTruthy();
@@ -1550,8 +1550,8 @@ describe("LibraryPage", () => {
     if (!selectAllCheckbox) throw new Error("expected select-all checkbox");
     fireEvent.click(selectAllCheckbox);
 
-    // Click Delete Selected
-    fireEvent.click(screen.getByText("Delete Selected"));
+    // Click Delete
+    fireEvent.click(screen.getByTestId("bulk-delete-works-btn"));
 
     // Confirm
     const confirmBtn = screen.getByRole("button", { name: "Delete" });
@@ -1643,8 +1643,8 @@ describe("LibraryPage", () => {
     if (!rowCheckbox) throw new Error("expected row checkbox");
     fireEvent.click(rowCheckbox);
 
-    // Click Delete Selected
-    fireEvent.click(screen.getByText("Delete Selected"));
+    // Click Delete
+    fireEvent.click(screen.getByTestId("bulk-delete-works-btn"));
 
     // Click Delete in dialog
     const confirmBtn = screen.getByRole("button", { name: "Delete" });
@@ -1675,8 +1675,8 @@ describe("LibraryPage", () => {
     if (!rowCheckbox) throw new Error("expected row checkbox");
     fireEvent.click(rowCheckbox);
 
-    // Click Delete Selected
-    fireEvent.click(screen.getByText("Delete Selected"));
+    // Click Delete
+    fireEvent.click(screen.getByTestId("bulk-delete-works-btn"));
 
     // Click Delete in dialog
     const confirmBtn = screen.getByRole("button", { name: "Delete" });
@@ -1706,8 +1706,8 @@ describe("LibraryPage", () => {
     if (!rowCheckbox) throw new Error("expected row checkbox");
     fireEvent.click(rowCheckbox);
 
-    // Click Delete Selected to open dialog
-    fireEvent.click(screen.getByText("Delete Selected"));
+    // Click Delete to open dialog
+    fireEvent.click(screen.getByTestId("bulk-delete-works-btn"));
     expect(screen.getByText(/will remove 1 work/)).toBeTruthy();
 
     // Click Cancel

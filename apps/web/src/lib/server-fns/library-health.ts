@@ -3,11 +3,27 @@ import { z } from "zod";
 
 const IGNORED_LIBRARY_FILE_BASENAMES = [".DS_Store", "Thumbs.db", "desktop.ini"] as const;
 
+const KEPUB_EXCLUDED_MEDIA_KINDS = ["KEPUB", "COVER", "SIDECAR"] as const;
+
+const hasFilesWhere = {
+  editions: {
+    some: {
+      editionFiles: {
+        some: {
+          fileAsset: {
+            availabilityStatus: "PRESENT" as const,
+            mediaKind: { notIn: [...KEPUB_EXCLUDED_MEDIA_KINDS] },
+          },
+        },
+      },
+    },
+  },
+};
+
 export const getLibraryHealthServerFn = createServerFn({
   method: "GET",
 }).handler(async () => {
   const { db } = await import("@bookhouse/db");
-  const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000);
 
   const [
     totalWorks,
@@ -16,15 +32,16 @@ export const getLibraryHealthServerFn = createServerFn({
     pendingDuplicatesCount,
     orphanedFilesCount,
     pendingMatchSuggestionsCount,
-    staleEnrichmentCount,
+    emptyWorksCount,
   ] = await Promise.all([
-    db.work.count(),
-    db.work.count({ where: { coverPath: null } }),
+    db.work.count({ where: hasFilesWhere }),
+    db.work.count({ where: { AND: [hasFilesWhere, { coverPath: null }] } }),
     db.work.count({
       where: {
-        editions: {
-          every: { isbn13: null, isbn10: null },
-        },
+        AND: [
+          hasFilesWhere,
+          { editions: { every: { isbn13: null, isbn10: null } } },
+        ],
       },
     }),
     db.duplicateCandidate.count({ where: { status: "PENDING" } }),
@@ -37,15 +54,7 @@ export const getLibraryHealthServerFn = createServerFn({
       },
     }),
     db.matchSuggestion.count({ where: { reviewStatus: "PENDING" } }),
-    db.work.count({
-      where: {
-        enrichmentStatus: "ENRICHED",
-        externalLinks: {
-          some: {},
-          every: { lastSyncedAt: { lt: sixMonthsAgo } },
-        },
-      },
-    }),
+    db.work.count({ where: { NOT: hasFilesWhere } }),
   ]);
 
   return {
@@ -56,7 +65,7 @@ export const getLibraryHealthServerFn = createServerFn({
       pendingDuplicates: { count: pendingDuplicatesCount },
       orphanedFiles: { count: orphanedFilesCount },
       pendingMatchSuggestions: { count: pendingMatchSuggestionsCount },
-      staleEnrichment: { count: staleEnrichmentCount, total: totalWorks },
+      emptyWorks: { count: emptyWorksCount },
     },
   };
 });
@@ -107,3 +116,43 @@ export const deleteOrphanedFileServerFn = createServerFn({
     await db.fileAsset.delete({ where: { id: data.fileAssetId } });
     return { success: true };
   });
+
+// ─── Empty Works ──────────────────────────────────────────────────────────────
+
+export const getEmptyWorksServerFn = createServerFn({
+  method: "GET",
+}).handler(async () => {
+  const { db } = await import("@bookhouse/db");
+  return db.work.findMany({
+    where: { NOT: hasFilesWhere },
+    select: { id: true, titleDisplay: true },
+    orderBy: { titleDisplay: "asc" },
+  });
+});
+
+export type EmptyWork = Awaited<
+  ReturnType<typeof getEmptyWorksServerFn>
+>[number];
+
+export const deleteEmptyWorksServerFn = createServerFn({
+  method: "POST",
+}).handler(async () => {
+  const { db } = await import("@bookhouse/db");
+  const { cleanupOrphanedFileAssets } = await import("@bookhouse/ingest");
+  const emptyWorks = await db.work.findMany({
+    where: { NOT: hasFilesWhere },
+    select: { id: true },
+  });
+  if (emptyWorks.length === 0) {
+    return { deletedCount: 0 };
+  }
+  const workIds = emptyWorks.map((w: { id: string }) => w.id);
+  const fileAssetLinks = await db.editionFile.findMany({
+    where: { edition: { workId: { in: workIds } } },
+    select: { fileAssetId: true },
+  });
+  const fileAssetIds = [...new Set(fileAssetLinks.map((ef: { fileAssetId: string }) => ef.fileAssetId))];
+  await db.work.deleteMany({ where: { id: { in: workIds } } });
+  await cleanupOrphanedFileAssets(db, fileAssetIds);
+  return { deletedCount: emptyWorks.length };
+});

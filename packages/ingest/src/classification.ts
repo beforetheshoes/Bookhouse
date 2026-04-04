@@ -68,6 +68,10 @@ export function classifyMediaKind(filePath: string): MediaKind {
   const extension = getFileExtension(filePath);
   const basename = path.basename(filePath).toLowerCase();
 
+  if (basename.endsWith(".kepub.epub")) {
+    return MediaKind.KEPUB;
+  }
+
   switch (extension) {
     case "epub":
       return MediaKind.EPUB;

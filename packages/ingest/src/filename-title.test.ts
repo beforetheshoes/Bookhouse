@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { MediaKind } from "@bookhouse/domain";
-import { deriveTitleFromPath } from "./filename-title";
+import { deriveTitleFromPath, stripFilenameAuthorSuffix } from "./filename-title";
 
 describe("deriveTitleFromPath", () => {
   it("strips extension from epub filename", () => {
@@ -57,5 +57,51 @@ describe("deriveTitleFromPath", () => {
     const result = deriveTitleFromPath("....epub", MediaKind.EPUB);
     expect(result.title).toBe("...");
     expect(result.titleCanonical).toBe("...");
+  });
+});
+
+describe("stripFilenameAuthorSuffix", () => {
+  it("strips en-dash author suffix (Calibre convention)", () => {
+    expect(stripFilenameAuthorSuffix("Hacking the Xbox \u2013 Andrew Huang")).toBe("Hacking the Xbox");
+  });
+
+  it("strips em-dash author suffix", () => {
+    expect(stripFilenameAuthorSuffix("Sapiens \u2014 Yuval Noah Harari")).toBe("Sapiens");
+  });
+
+  it("strips hyphen-dash author suffix", () => {
+    expect(stripFilenameAuthorSuffix("The Name of the Wind - Patrick Rothfuss")).toBe("The Name of the Wind");
+  });
+
+  it("preserves hyphen-dash subtitle starting with 'The'", () => {
+    expect(stripFilenameAuthorSuffix("Working in Public - The Making of Open Source")).toBe("Working in Public - The Making of Open Source");
+  });
+
+  it("preserves hyphen-dash subtitle starting with 'A'", () => {
+    expect(stripFilenameAuthorSuffix("Sapiens - A Brief History of Humankind")).toBe("Sapiens - A Brief History of Humankind");
+  });
+
+  it("preserves hyphen-dash subtitle starting with 'An'", () => {
+    expect(stripFilenameAuthorSuffix("Collapse - An Inquiry into Systems")).toBe("Collapse - An Inquiry into Systems");
+  });
+
+  it("preserves hyphen-dash subtitle starting with 'How'", () => {
+    expect(stripFilenameAuthorSuffix("Thinking Fast - How We Decide")).toBe("Thinking Fast - How We Decide");
+  });
+
+  it("returns title unchanged when no dash separator exists", () => {
+    expect(stripFilenameAuthorSuffix("Title")).toBe("Title");
+  });
+
+  it("does not strip non-spaced hyphens", () => {
+    expect(stripFilenameAuthorSuffix("A-Hyphenated-Title")).toBe("A-Hyphenated-Title");
+  });
+
+  it("handles multiple en-dashes by stripping from the last one", () => {
+    expect(stripFilenameAuthorSuffix("Part One \u2013 Part Two \u2013 Author")).toBe("Part One \u2013 Part Two");
+  });
+
+  it("handles empty suffix after dash gracefully", () => {
+    expect(stripFilenameAuthorSuffix("Title \u2013 ")).toBe("Title");
   });
 });

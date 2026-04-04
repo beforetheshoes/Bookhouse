@@ -1,6 +1,7 @@
 import { defineEventHandler, setResponseHeader } from "h3";
 import type { H3Event } from "h3";
 import type { KoboAuthDeps } from "../../../../auth-helper";
+import { selectPreferredKoboDeliveryFile } from "@bookhouse/shared";
 
 export interface DownloadHandlerDeps {
   auth: KoboAuthDeps;
@@ -56,7 +57,16 @@ export function createDownloadHandler(deps: DownloadHandlerDeps) {
     let fileName = file.basename;
     let contentType = file.mimeType ?? "application/epub+zip";
 
-    if (file.mimeType === "application/epub+zip" || file.basename.endsWith(".epub")) {
+    const lowerBasename = file.basename.toLowerCase();
+    const isExistingKepub =
+      file.mimeType === "application/x-kobo-epub+zip" ||
+      lowerBasename.endsWith(".kepub.epub");
+    const isConvertibleEpub = !isExistingKepub && (
+      file.mimeType === "application/epub+zip" ||
+      lowerBasename.endsWith(".epub")
+    );
+
+    if (isConvertibleEpub) {
       try {
         filePath = await deps.convertToKepub(file.absolutePath);
         fileName = fileName.replace(/\.epub$/, ".kepub.epub");
@@ -104,14 +114,24 @@ export default defineEventHandler(async (event) => {
         where: { id: editionId },
         include: {
           editionFiles: {
-            where: { role: "PRIMARY" },
             include: { fileAsset: true },
-            take: 1,
           },
         },
       });
 
-      const fileAsset = edition?.editionFiles[0]?.fileAsset;
+      const deliveryFile = selectPreferredKoboDeliveryFile(
+        edition?.editionFiles
+          .filter((editionFile) => editionFile.fileAsset.availabilityStatus === "PRESENT")
+          .map((editionFile) => ({
+            id: editionFile.id,
+            role: editionFile.role,
+            fileAsset: {
+              basename: editionFile.fileAsset.basename,
+              mediaKind: editionFile.fileAsset.mediaKind,
+            },
+          })) ?? [],
+      );
+      const fileAsset = edition?.editionFiles.find((editionFile) => editionFile.id === deliveryFile?.id)?.fileAsset;
       if (!fileAsset) return null;
 
       return {

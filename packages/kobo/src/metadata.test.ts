@@ -20,9 +20,10 @@ const mockEdition: EligibleEdition = {
     { name: "Jane Author", role: "AUTHOR" },
     { name: "Bob Narrator", role: "NARRATOR" },
   ],
-  primaryFilePath: "/books/test.epub",
-  primaryFileSize: 1024000,
-  primaryFileMimeType: "application/epub+zip",
+  deliveryFilePath: "/books/test.epub",
+  deliveryFileSize: 1024000,
+  deliveryFileMimeType: "application/epub+zip",
+  deliveryFileMediaKind: "EPUB",
 };
 
 const options: MetadataOptions = {
@@ -189,7 +190,7 @@ describe("buildBookMetadata", () => {
   });
 
   it("returns empty download URLs when no file", () => {
-    const edition = { ...mockEdition, primaryFilePath: null };
+    const edition = { ...mockEdition, deliveryFilePath: null };
     const meta = buildBookMetadata(edition, options);
     expect(meta.DownloadUrls).toEqual([]);
   });
@@ -217,7 +218,7 @@ describe("buildBookMetadata", () => {
       language: null,
       publisher: null,
       publishedAt: null,
-      primaryFileSize: null,
+      deliveryFileSize: null,
     };
     const meta = buildBookMetadata(edition, options);
     expect(meta.Description).toBe("");

@@ -1,3 +1,35 @@
+// ─── Orphaned FileAsset Cleanup ──────────────────────────────────────────────
+
+interface OrphanCleanupDbClient {
+  fileAsset: {
+    findMany(args: { where: { id: { in: string[] }; editionFiles: { none: Record<string, never> } }; select: { id: true } }): Promise<{ id: string }[]>;
+    deleteMany(args: { where: { id: { in: string[] } } }): Promise<{ count: number }>;
+  };
+}
+
+export async function cleanupOrphanedFileAssets(
+  db: OrphanCleanupDbClient,
+  fileAssetIds: string[],
+): Promise<{ deletedFileAssetIds: string[] }> {
+  if (fileAssetIds.length === 0) {
+    return { deletedFileAssetIds: [] };
+  }
+
+  const orphaned = await db.fileAsset.findMany({
+    where: { id: { in: fileAssetIds }, editionFiles: { none: {} } },
+    select: { id: true },
+  });
+
+  const orphanedIds = orphaned.map((f) => f.id);
+  if (orphanedIds.length > 0) {
+    await db.fileAsset.deleteMany({ where: { id: { in: orphanedIds } } });
+  }
+
+  return { deletedFileAssetIds: orphanedIds };
+}
+
+// ─── Cascade Cleanup (starting from FileAsset IDs) ──────────────────────────
+
 export interface CascadeCleanupInput {
   fileAssetIds: string[];
 }

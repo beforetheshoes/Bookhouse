@@ -73,6 +73,7 @@ interface TestState {
   editionContributors: Map<string, TestEditionContributor>;
   editionFiles: Map<string, TestEditionFile>;
   editions: Map<string, TestEdition>;
+  externalLinks: TestExternalLink[];
   fileAssets: Map<string, TestFileAsset>;
   fileAssetsById: Map<string, TestFileAsset>;
   lastScannedAt: Date | null;
@@ -84,6 +85,7 @@ interface TestState {
 interface TestWork {
   coverPath: string | null;
   description: string | null;
+  editedFields: string[];
   enrichmentStatus: EnrichmentStatus;
   id: string;
   seriesId: string | null;
@@ -95,6 +97,7 @@ interface TestWork {
 
 interface TestEdition {
   asin: string | null;
+  editedFields: string[];
   formatFamily: FormatFamily;
   id: string;
   isbn10: string | null;
@@ -125,6 +128,12 @@ interface TestEditionContributor {
   role: ContributorRole;
 }
 
+interface TestExternalLink {
+  appliedFields: string[];
+  editionId: string | null;
+  workId: string | null;
+}
+
 function createEmptyState(rootPath = "/tmp/root", scanMode: "FULL" | "INCREMENTAL" = "INCREMENTAL"): TestState {
   return {
     matchSuggestions: new Map(),
@@ -134,6 +143,7 @@ function createEmptyState(rootPath = "/tmp/root", scanMode: "FULL" | "INCREMENTA
     editionContributors: new Map(),
     editionFiles: new Map(),
     editions: new Map(),
+    externalLinks: [],
     fileAssets: new Map(),
     fileAssetsById: new Map(),
     lastScannedAt: null,
@@ -277,6 +287,7 @@ function createTestDb(state: TestState): IngestDb {
         const created: TestWork = {
           coverPath: null,
           description: null,
+          editedFields: [],
           enrichmentStatus: "ENRICHED",
           id: `work-${String(workSequence)}`,
           seriesId: null,
@@ -339,6 +350,7 @@ function createTestDb(state: TestState): IngestDb {
         await Promise.resolve();
         editionSequence += 1;
         const created: TestEdition = {
+          editedFields: [],
           id: `edition-${String(editionSequence)}`,
           ...data,
         };
@@ -532,6 +544,20 @@ function createTestDb(state: TestState): IngestDb {
         ) ?? null;
       },
     },
+    externalLink: {
+      async findMany({ where }) {
+        await Promise.resolve();
+        return state.externalLinks.filter((link) => {
+          if (where.workId !== undefined && link.workId !== where.workId) {
+            return false;
+          }
+          if (where.editionId !== undefined && link.editionId !== where.editionId) {
+            return false;
+          }
+          return true;
+        });
+      },
+    },
   };
 }
 
@@ -563,6 +589,7 @@ function addWork(state: TestState, overrides: Partial<TestWork> = {}): TestWork 
   const work: TestWork = {
     coverPath: null,
     description: null,
+    editedFields: [],
     enrichmentStatus: "ENRICHED",
     id: "work-1",
     seriesId: null,
@@ -579,6 +606,7 @@ function addWork(state: TestState, overrides: Partial<TestWork> = {}): TestWork 
 function addEdition(state: TestState, overrides: Partial<TestEdition> = {}): TestEdition {
   const edition: TestEdition = {
     asin: null,
+    editedFields: [],
     formatFamily: FormatFamily.EBOOK,
     id: "edition-1",
     isbn10: null,
@@ -1307,6 +1335,7 @@ describe("ingest services", () => {
     state.fileAssetsById.set(existingFileAsset.id, existingFileAsset);
     state.editions.set("edition-1", {
       asin: null,
+      editedFields: [],
       formatFamily: FormatFamily.EBOOK,
       id: "edition-1",
       isbn10: null,
@@ -1619,9 +1648,9 @@ describe("ingest services", () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-stub-"));
     tempDirectories.push(directory);
 
-    await mkdir(path.join(directory, "author"));
-    await writeFile(path.join(directory, "author", "My Great Book.epub"), "epub-content");
-    await writeFile(path.join(directory, "author", "Another Book.pdf"), "pdf-content");
+    await mkdir(path.join(directory, "author", "My Great Book"), { recursive: true });
+    await writeFile(path.join(directory, "author", "My Great Book", "My Great Book.epub"), "epub-content");
+    await writeFile(path.join(directory, "author", "My Great Book", "My Great Book.pdf"), "pdf-content");
 
     const state = createEmptyState(directory);
     const enqueueMock = vi.fn(() => Promise.resolve(undefined));
@@ -1634,31 +1663,30 @@ describe("ingest services", () => {
       libraryRootId: "root-1",
     });
 
-    expect(result.createdStubWorkIds).toHaveLength(2);
+    expect(result.createdStubWorkIds).toHaveLength(1);
 
     // Check stub works were created
     const works = [...state.works.values()];
-    expect(works).toHaveLength(2);
+    expect(works).toHaveLength(1);
     const workTitles = works.map((w) => w.titleDisplay).sort();
-    expect(workTitles).toEqual(["Another Book", "My Great Book"]);
+    expect(workTitles).toEqual(["My Great Book"]);
     for (const work of works) {
       expect(work.enrichmentStatus).toBe("STUB");
     }
 
     // Check editions were created
     const editions = [...state.editions.values()];
-    expect(editions).toHaveLength(2);
+    expect(editions).toHaveLength(1);
     expect(editions[0]).toMatchObject({ formatFamily: FormatFamily.EBOOK });
-    expect(editions[1]).toMatchObject({ formatFamily: FormatFamily.EBOOK });
 
     // Check edition files were linked
     const editionFiles = [...state.editionFiles.values()];
     expect(editionFiles).toHaveLength(2);
 
-    // PROCESS_COVER should be enqueued immediately for each stub
+    // PROCESS_COVER should be enqueued immediately for the created stub
     const allCalls = enqueueMock.mock.calls as object as [string, { workId: string; fileAssetId: string }][];
     const coverCalls = allCalls.filter(([name]) => name === LIBRARY_JOB_NAMES.PROCESS_COVER);
-    expect(coverCalls).toHaveLength(2);
+    expect(coverCalls).toHaveLength(1);
     for (const work of works) {
       const fileAsset = [...state.fileAssetsById.values()].find((fa) =>
         [...state.editionFiles.values()].some(
@@ -1671,6 +1699,35 @@ describe("ingest services", () => {
         coverCalls.some(([, payload]) => payload.workId === work.id && payload.fileAssetId === fileAsset?.id),
       ).toBe(true);
     }
+  });
+
+  it("does not group same-folder CBZ files into one stub edition during scan", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-stub-cbz-"));
+    tempDirectories.push(directory);
+
+    await mkdir(path.join(directory, "author", "Graphic Novel"), { recursive: true });
+    await writeFile(path.join(directory, "author", "Graphic Novel", "Volume 1.cbz"), "cbz-one");
+    await writeFile(path.join(directory, "author", "Graphic Novel", "Volume 2.cbz"), "cbz-two");
+
+    const state = createEmptyState(directory);
+    const enqueuedJobs: Array<{ jobName: LibraryJobName; payload: LibraryJobPayloads[LibraryJobName] }> = [];
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: (jobName, payload) => {
+        enqueuedJobs.push({ jobName, payload });
+        return Promise.resolve(undefined);
+      },
+    });
+
+    const result = await services.scanLibraryRoot({
+      libraryRootId: "root-1",
+    });
+
+    expect(result.createdStubWorkIds).toHaveLength(2);
+    expect([...state.works.values()]).toHaveLength(2);
+    expect([...state.editions.values()]).toHaveLength(2);
+    expect([...state.editionFiles.values()]).toHaveLength(2);
+    expect(enqueuedJobs.filter(({ jobName }) => jobName === LIBRARY_JOB_NAMES.PROCESS_COVER)).toHaveLength(2);
   });
 
   it("creates one stub per audiobook directory during scan", async () => {
@@ -2215,9 +2272,13 @@ describe("ingest services", () => {
 
     const result = await services.scanLibraryRoot({ libraryRootId: "root-1" });
 
-    // PDFs are not parseable, so PARSE should not be enqueued
-    expect(result.enqueuedRecoveryJobs).toEqual([]);
-    expect(enqueuedJobs).toEqual([]);
+    expect(result.enqueuedRecoveryJobs).toEqual(["file-1"]);
+    expect(enqueuedJobs).toEqual([
+      {
+        jobName: LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA,
+        payload: { fileAssetId: "file-1" },
+      },
+    ]);
   });
 
   it("re-enqueues PARSE for existing unchanged AUDIO file with hashes but no metadata and no EditionFile link", async () => {
@@ -2260,6 +2321,43 @@ describe("ingest services", () => {
       jobName: LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA,
       payload: { fileAssetId: fileAsset.id },
     });
+  });
+
+  it("does not re-enqueue PARSE for existing unchanged CBZ with hashes but no metadata and no EditionFile link", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-recovery-cbz-"));
+    tempDirectories.push(directory);
+
+    await writeFile(path.join(directory, "comic.cbz"), "cbz");
+
+    const state = createEmptyState(directory);
+    const enqueuedJobs: Array<{ jobName: LibraryJobName; payload: LibraryJobPayloads[LibraryJobName] }> = [];
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: (jobName, payload) => {
+        enqueuedJobs.push({ jobName, payload });
+        return Promise.resolve(undefined);
+      },
+    });
+
+    await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    const fileAsset = state.fileAssets.get(path.join(directory, "comic.cbz"));
+    if (!fileAsset) throw new Error("expected fileAsset");
+    fileAsset.partialHash = "partial";
+    fileAsset.fullHash = "full";
+
+    for (const [key, ef] of state.editionFiles) {
+      if (ef.fileAssetId === fileAsset.id) {
+        state.editionFiles.delete(key);
+      }
+    }
+
+    enqueuedJobs.length = 0;
+
+    const result = await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    expect(result.enqueuedRecoveryJobs).toEqual([]);
+    expect(enqueuedJobs).toEqual([]);
   });
 
   it("re-enqueues PROCESS_COVER for EPUB with unparseable metadata but existing EditionFile link", async () => {
@@ -2883,9 +2981,11 @@ describe("ingest services", () => {
       enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
     });
 
-    await expect(
-      services.hashFileAsset({ fileAssetId: "missing-file" }),
-    ).rejects.toThrow('File asset "missing-file" was not found');
+    const skippedResult = await services.hashFileAsset({ fileAssetId: "missing-file" });
+    expect(skippedResult).toEqual({
+      availabilityStatus: AvailabilityStatus.MISSING,
+      fileAssetId: "missing-file",
+    });
 
     const existing: TestFileAsset = {
       absolutePath: "/tmp/root/book.epub",
@@ -3635,6 +3735,57 @@ describe("ingest services", () => {
     });
   });
 
+  it("parses PDF metadata from path-derived metadata without calling EPUB parser", async () => {
+    const state = createEmptyState("/tmp/root");
+    const existing: TestFileAsset = {
+      absolutePath: "/tmp/root/Patrick Rothfuss/The Name of the Wind/book.pdf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.pdf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "pdf",
+      fullHash: "full",
+      id: "file-1",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.PDF,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "partial",
+      relativePath: "Patrick Rothfuss/The Name of the Wind/book.pdf",
+      sizeBytes: 4n,
+    };
+    state.fileAssets.set(existing.absolutePath, existing);
+    state.fileAssetsById.set(existing.id, existing);
+    const enqueueLibraryJob = vi.fn(() => Promise.resolve(undefined));
+    const parseEpub = vi.fn();
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob,
+      parseEpub,
+    });
+
+    const result = await services.parseFileAssetMetadata({ fileAssetId: "file-1" });
+
+    expect(result).toMatchObject({
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      fileAssetId: "file-1",
+      skipped: false,
+    });
+    expect(parseEpub).not.toHaveBeenCalled();
+    expect(state.fileAssetsById.get("file-1")?.metadata).toMatchObject({
+      source: "filename",
+      status: "parsed",
+      normalized: {
+        authors: ["Patrick Rothfuss"],
+        title: "The Name of the Wind",
+      },
+    });
+    expect(enqueueLibraryJob).toHaveBeenCalledWith(
+      LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION,
+      { fileAssetId: "file-1" },
+    );
+  });
+
   it("parses Amazon ebook variants from a flat path without inferring an author", async () => {
     const state = createEmptyState("/tmp/root");
     const existing: TestFileAsset = {
@@ -4262,6 +4413,1064 @@ describe("ingest services", () => {
     ).toBe(EditionFileRole.PRIMARY);
   });
 
+  it("links a sibling EPUB into an existing PDF edition and promotes the EPUB to primary", async () => {
+    const state = createEmptyState("/tmp/root");
+    addWork(state, {
+      id: "work-1",
+      titleCanonical: canonicalizeBookTitle("Project Hail Mary") ?? "project hail mary",
+      titleDisplay: "Project Hail Mary",
+    });
+    addEdition(state, {
+      id: "edition-1",
+      workId: "work-1",
+      formatFamily: FormatFamily.EBOOK,
+    });
+    addContributor(state, {
+      id: "contributor-1",
+      nameCanonical: canonicalizeContributorNames(["Andy Weir"])[0] ?? "andy weir",
+      nameDisplay: "Andy Weir",
+    });
+    addEditionContributor(state, {
+      editionId: "edition-1",
+      contributorId: "contributor-1",
+    });
+    addFileAsset(state, {
+      id: "file-pdf",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary/book.pdf",
+      basename: "book.pdf",
+      extension: "pdf",
+      mediaKind: MediaKind.PDF,
+      relativePath: "Andy Weir/Project Hail Mary/book.pdf",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "filename",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+    addEditionFile(state, {
+      editionId: "edition-1",
+      fileAssetId: "file-pdf",
+      id: "edition-file-pdf",
+      role: EditionFileRole.PRIMARY,
+    });
+    addFileAsset(state, {
+      id: "file-epub",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary/book.epub",
+      basename: "book.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      relativePath: "Andy Weir/Project Hail Mary/book.epub",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          date: "2021-05-04",
+          identifiers: { isbn13: "9780593135204", unknown: [] },
+          language: "en",
+          publisher: "Ballantine Books",
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-epub" });
+
+    expect(result).toMatchObject({
+      createdEdition: false,
+      createdEditionFile: true,
+      editionId: "edition-1",
+      workId: "work-1",
+      skipped: false,
+    });
+    expect(state.editions.size).toBe(1);
+    expect(state.editions.get("edition-1")?.isbn13).toBe("9780593135204");
+    expect(state.editions.get("edition-1")?.language).toBe("en");
+    expect(state.editions.get("edition-1")?.publisher).toBe("Ballantine Books");
+    expect(state.editions.get("edition-1")?.publishedAt).toEqual(new Date("2021-05-04T00:00:00.000Z"));
+    expect(
+      [...state.editionFiles.values()].find((editionFile) => editionFile.fileAssetId === "file-epub")?.role,
+    ).toBe(EditionFileRole.PRIMARY);
+    expect(
+      [...state.editionFiles.values()].find((editionFile) => editionFile.fileAssetId === "file-pdf")?.role,
+    ).toBe(EditionFileRole.ALTERNATE_FORMAT);
+  });
+
+  it("updates work title and edition identifiers from the preferred EPUB metadata", async () => {
+    const state = createEmptyState("/tmp/root");
+    addWork(state, {
+      id: "work-1",
+      titleCanonical: canonicalizeBookTitle("Old Project Title") ?? "old project title",
+      titleDisplay: "Old Project Title",
+    });
+    addEdition(state, {
+      id: "edition-1",
+      workId: "work-1",
+      formatFamily: FormatFamily.EBOOK,
+    });
+    addFileAsset(state, {
+      id: "file-pdf",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary/book.pdf",
+      basename: "book.pdf",
+      extension: "pdf",
+      mediaKind: MediaKind.PDF,
+      relativePath: "Andy Weir/Project Hail Mary/book.pdf",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "filename",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+    addEditionFile(state, {
+      editionId: "edition-1",
+      fileAssetId: "file-pdf",
+      id: "edition-file-pdf",
+      role: EditionFileRole.PRIMARY,
+    });
+    addFileAsset(state, {
+      id: "file-epub",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary/book.epub",
+      basename: "book.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      relativePath: "Andy Weir/Project Hail Mary/book.epub",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: {
+            asin: "B08FHBV4ZX",
+            isbn10: "0593135202",
+            unknown: [],
+          },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    await services.matchFileAssetToEdition({ fileAssetId: "file-epub" });
+
+    expect(state.works.get("work-1")).toMatchObject({
+      titleCanonical: canonicalizeBookTitle("Project Hail Mary") ?? "project hail mary",
+      titleDisplay: "Project Hail Mary",
+    });
+    expect(state.editions.get("edition-1")).toMatchObject({
+      asin: "B08FHBV4ZX",
+      isbn10: "0593135202",
+    });
+  });
+
+  it("does not create a duplicate edition-file link when a sibling match targets an existing mapping", async () => {
+    const state = createEmptyState("/tmp/root");
+    addWork(state, {
+      id: "work-1",
+      titleCanonical: canonicalizeBookTitle("Project Hail Mary") ?? "project hail mary",
+      titleDisplay: "Project Hail Mary",
+    });
+    addEdition(state, {
+      id: "edition-1",
+      workId: "work-1",
+      formatFamily: FormatFamily.EBOOK,
+    });
+    addFileAsset(state, {
+      id: "file-pdf",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary/book.pdf",
+      basename: "book.pdf",
+      extension: "pdf",
+      mediaKind: MediaKind.PDF,
+      relativePath: "Andy Weir/Project Hail Mary/book.pdf",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "filename",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+    addEditionFile(state, {
+      editionId: "edition-1",
+      fileAssetId: "file-pdf",
+      id: "edition-file-pdf",
+      role: EditionFileRole.PRIMARY,
+    });
+    addFileAsset(state, {
+      id: "file-epub",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary/book.epub",
+      basename: "book.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      relativePath: "Andy Weir/Project Hail Mary/book.epub",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+    addEditionFile(state, {
+      editionId: "edition-1",
+      fileAssetId: "file-epub",
+      id: "edition-file-epub",
+      role: EditionFileRole.ALTERNATE_FORMAT,
+    });
+
+    const db = createTestDb(state);
+    const originalFindFirst = db.editionFile.findFirst.bind(db.editionFile);
+    let bypassExistingLookup = true;
+    db.editionFile.findFirst = vi.fn((args: Parameters<typeof originalFindFirst>[0]) => {
+      if (bypassExistingLookup && "fileAssetId" in args.where && !("editionId" in args.where)) {
+        bypassExistingLookup = false;
+        return Promise.resolve(null);
+      }
+
+      return originalFindFirst(args);
+    });
+
+    const services = createIngestServices({
+      db,
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-epub" });
+
+    expect(result).toMatchObject({
+      createdEdition: false,
+      createdEditionFile: false,
+      editionId: "edition-1",
+      skipped: false,
+      workId: "work-1",
+    });
+    expect([...state.editionFiles.values()].filter((editionFile) => editionFile.fileAssetId === "file-epub")).toHaveLength(1);
+  });
+
+  it("does not overwrite edited or Bookhouse-enriched metadata when EPUB becomes the preferred source", async () => {
+    const state = createEmptyState("/tmp/root");
+    addWork(state, {
+      id: "work-1",
+      titleCanonical: canonicalizeBookTitle("Manual Title") ?? "manual title",
+      titleDisplay: "Manual Title",
+    });
+    addEdition(state, {
+      id: "edition-1",
+      workId: "work-1",
+      formatFamily: FormatFamily.EBOOK,
+      language: "fr",
+      publisher: "Manual Publisher",
+      editedFields: ["publisher"],
+    });
+    state.externalLinks.push(
+      {
+        appliedFields: ["titleDisplay"],
+        editionId: null,
+        workId: "work-1",
+      },
+      {
+        appliedFields: ["language"],
+        editionId: "edition-1",
+        workId: null,
+      },
+    );
+    addFileAsset(state, {
+      id: "file-pdf",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary/book.pdf",
+      basename: "book.pdf",
+      extension: "pdf",
+      mediaKind: MediaKind.PDF,
+      relativePath: "Andy Weir/Project Hail Mary/book.pdf",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "filename",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+    addEditionFile(state, {
+      editionId: "edition-1",
+      fileAssetId: "file-pdf",
+      id: "edition-file-pdf",
+      role: EditionFileRole.PRIMARY,
+    });
+    addFileAsset(state, {
+      id: "file-epub",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary/book.epub",
+      basename: "book.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      relativePath: "Andy Weir/Project Hail Mary/book.epub",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { isbn13: "9780593135204", unknown: [] },
+          language: "en",
+          publisher: "Ballantine Books",
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    await services.matchFileAssetToEdition({ fileAssetId: "file-epub" });
+
+    expect(state.works.get("work-1")).toMatchObject({
+      titleCanonical: canonicalizeBookTitle("Manual Title") ?? "manual title",
+      titleDisplay: "Manual Title",
+    });
+    expect(state.editions.get("edition-1")).toMatchObject({
+      isbn13: "9780593135204",
+      language: "fr",
+      publisher: "Manual Publisher",
+    });
+  });
+
+  it("does not refresh contributors when work authors are protected", async () => {
+    const state = createEmptyState("/tmp/root");
+    addWork(state, {
+      id: "work-1",
+      editedFields: ["authors"],
+      titleCanonical: canonicalizeBookTitle("Project Hail Mary") ?? "project hail mary",
+      titleDisplay: "Project Hail Mary",
+    });
+    addEdition(state, {
+      id: "edition-1",
+      workId: "work-1",
+      formatFamily: FormatFamily.EBOOK,
+    });
+    addFileAsset(state, {
+      id: "file-pdf",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary/book.pdf",
+      basename: "book.pdf",
+      extension: "pdf",
+      mediaKind: MediaKind.PDF,
+      relativePath: "Andy Weir/Project Hail Mary/book.pdf",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "filename",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+    addEditionFile(state, {
+      editionId: "edition-1",
+      fileAssetId: "file-pdf",
+      id: "edition-file-pdf",
+      role: EditionFileRole.PRIMARY,
+    });
+    addFileAsset(state, {
+      id: "file-epub",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary/book.epub",
+      basename: "book.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      relativePath: "Andy Weir/Project Hail Mary/book.epub",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    await services.matchFileAssetToEdition({ fileAssetId: "file-epub" });
+
+    expect(state.editionContributors.size).toBe(0);
+  });
+
+  it("ignores invalid publication dates when EPUB metadata becomes the preferred source", async () => {
+    const state = createEmptyState("/tmp/root");
+    addWork(state, {
+      id: "work-1",
+      titleCanonical: canonicalizeBookTitle("Project Hail Mary") ?? "project hail mary",
+      titleDisplay: "Project Hail Mary",
+    });
+    addEdition(state, {
+      id: "edition-1",
+      workId: "work-1",
+      formatFamily: FormatFamily.EBOOK,
+    });
+    addFileAsset(state, {
+      id: "file-pdf",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary/book.pdf",
+      basename: "book.pdf",
+      extension: "pdf",
+      mediaKind: MediaKind.PDF,
+      relativePath: "Andy Weir/Project Hail Mary/book.pdf",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "filename",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+    addEditionFile(state, {
+      editionId: "edition-1",
+      fileAssetId: "file-pdf",
+      id: "edition-file-pdf",
+      role: EditionFileRole.PRIMARY,
+    });
+    addFileAsset(state, {
+      id: "file-epub",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary/book.epub",
+      basename: "book.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      relativePath: "Andy Weir/Project Hail Mary/book.epub",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          date: "not-a-date",
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    await services.matchFileAssetToEdition({ fileAssetId: "file-epub" });
+
+    expect(state.editions.get("edition-1")?.publishedAt).toBeNull();
+  });
+
+  it("skips metadata refresh when the sibling ebook work is no longer available", async () => {
+    const state = createEmptyState("/tmp/root");
+    addWork(state, {
+      id: "work-1",
+      titleCanonical: canonicalizeBookTitle("Project Hail Mary") ?? "project hail mary",
+      titleDisplay: "Project Hail Mary",
+    });
+    addEdition(state, {
+      id: "edition-1",
+      workId: "work-1",
+      formatFamily: FormatFamily.EBOOK,
+    });
+    addFileAsset(state, {
+      id: "file-pdf",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary/book.pdf",
+      basename: "book.pdf",
+      extension: "pdf",
+      mediaKind: MediaKind.PDF,
+      relativePath: "Andy Weir/Project Hail Mary/book.pdf",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "filename",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+    addEditionFile(state, {
+      editionId: "edition-1",
+      fileAssetId: "file-pdf",
+      id: "edition-file-pdf",
+      role: EditionFileRole.PRIMARY,
+    });
+    addFileAsset(state, {
+      id: "file-epub",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary/book.epub",
+      basename: "book.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      relativePath: "Andy Weir/Project Hail Mary/book.epub",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+
+    const db = createTestDb(state);
+    db.work.findUnique = vi.fn(() => Promise.resolve(null));
+
+    const services = createIngestServices({
+      db,
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-epub" });
+
+    expect(result).toMatchObject({
+      createdEdition: false,
+      createdEditionFile: true,
+      editionId: "edition-1",
+      skipped: false,
+      workId: "work-1",
+    });
+    expect(state.works.get("work-1")).toMatchObject({
+      titleCanonical: canonicalizeBookTitle("Project Hail Mary") ?? "project hail mary",
+      titleDisplay: "Project Hail Mary",
+    });
+  });
+
+  it("skips work metadata refresh when the preferred EPUB no longer has matchable metadata", async () => {
+    const state = createEmptyState("/tmp/root");
+    addWork(state, {
+      id: "work-1",
+      titleCanonical: canonicalizeBookTitle("Original Title") ?? "original title",
+      titleDisplay: "Original Title",
+    });
+    addEdition(state, {
+      id: "edition-1",
+      workId: "work-1",
+      formatFamily: FormatFamily.EBOOK,
+    });
+    addFileAsset(state, {
+      id: "file-pdf",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary/book.pdf",
+      basename: "book.pdf",
+      extension: "pdf",
+      mediaKind: MediaKind.PDF,
+      relativePath: "Andy Weir/Project Hail Mary/book.pdf",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "filename",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+    addEditionFile(state, {
+      editionId: "edition-1",
+      fileAssetId: "file-pdf",
+      id: "edition-file-pdf",
+      role: EditionFileRole.PRIMARY,
+    });
+    addFileAsset(state, {
+      id: "file-epub",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary/book.epub",
+      basename: "book.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      relativePath: "Andy Weir/Project Hail Mary/book.epub",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+
+    const db = createTestDb(state);
+    const originalCreate = db.editionFile.create.bind(db.editionFile);
+    db.editionFile.create = vi.fn((args: Parameters<typeof originalCreate>[0]) => {
+      const fileAsset = state.fileAssetsById.get("file-epub");
+      if (fileAsset !== undefined) {
+        fileAsset.metadata = {
+          normalized: {
+            authors: [],
+            identifiers: { unknown: [] },
+          },
+          parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+          parserVersion: 1,
+          source: "epub",
+          status: "parsed",
+          warnings: [],
+        } as FileAsset["metadata"];
+      }
+
+      return originalCreate(args);
+    });
+
+    const services = createIngestServices({
+      db,
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-epub" });
+
+    expect(result).toMatchObject({
+      createdEdition: false,
+      createdEditionFile: true,
+      editionId: "edition-1",
+      skipped: false,
+      workId: "work-1",
+    });
+    expect(state.works.get("work-1")).toMatchObject({
+      titleCanonical: canonicalizeBookTitle("Original Title") ?? "original title",
+      titleDisplay: "Original Title",
+    });
+    expect(state.editionContributors.size).toBe(0);
+  });
+
+  it("skips preferred metadata refresh when linked siblings include broken or non-ebook assets", async () => {
+    const state = createEmptyState("/tmp/root");
+    addWork(state, {
+      id: "work-1",
+      titleCanonical: canonicalizeBookTitle("Original Title") ?? "original title",
+      titleDisplay: "Original Title",
+    });
+    addEdition(state, {
+      id: "edition-1",
+      workId: "work-1",
+      formatFamily: FormatFamily.EBOOK,
+    });
+    addFileAsset(state, {
+      id: "file-pdf",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary/book.pdf",
+      basename: "book.pdf",
+      extension: "pdf",
+      mediaKind: MediaKind.PDF,
+      relativePath: "Andy Weir/Project Hail Mary/book.pdf",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "filename",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+    addEditionFile(state, {
+      editionId: "edition-1",
+      fileAssetId: "file-pdf",
+      id: "edition-file-pdf",
+      role: EditionFileRole.PRIMARY,
+    });
+    addFileAsset(state, {
+      id: "file-opf",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary/chapter01.m4b",
+      basename: "chapter01.m4b",
+      extension: "m4b",
+      mediaKind: MediaKind.AUDIO,
+      relativePath: "Andy Weir/Project Hail Mary/chapter01.m4b",
+    });
+    addEditionFile(state, {
+      editionId: "edition-1",
+      fileAssetId: "file-opf",
+      id: "edition-file-opf",
+      role: EditionFileRole.ALTERNATE_FORMAT,
+    });
+    addEditionFile(state, {
+      editionId: "edition-1",
+      fileAssetId: "file-missing",
+      id: "edition-file-missing",
+      role: EditionFileRole.ALTERNATE_FORMAT,
+    });
+    addFileAsset(state, {
+      id: "file-epub",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary/book.epub",
+      basename: "book.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      relativePath: "Andy Weir/Project Hail Mary/book.epub",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { unknown: [] },
+          language: "en",
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+
+    const db = createTestDb(state);
+    const originalCreate = db.editionFile.create.bind(db.editionFile);
+    db.editionFile.create = vi.fn((args: Parameters<typeof originalCreate>[0]) => {
+      const fileAsset = state.fileAssetsById.get("file-epub");
+      if (fileAsset !== undefined) {
+        fileAsset.metadata = null;
+      }
+
+      return originalCreate(args);
+    });
+
+    const services = createIngestServices({
+      db,
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-epub" });
+
+    expect(result).toMatchObject({
+      createdEdition: false,
+      createdEditionFile: true,
+      editionId: "edition-1",
+      skipped: false,
+      workId: "work-1",
+    });
+    expect(state.works.get("work-1")).toMatchObject({
+      titleCanonical: canonicalizeBookTitle("Original Title") ?? "original title",
+      titleDisplay: "Original Title",
+    });
+    expect(state.editions.get("edition-1")).toMatchObject({
+      language: null,
+    });
+  });
+
+  it("ignores unlinked same-folder ebook siblings when matching an ebook edition", async () => {
+    const state = createEmptyState("/tmp/root");
+    addFileAsset(state, {
+      id: "file-sibling",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary/book.pdf",
+      basename: "book.pdf",
+      extension: "pdf",
+      mediaKind: MediaKind.PDF,
+      relativePath: "Andy Weir/Project Hail Mary/book.pdf",
+    });
+    addFileAsset(state, {
+      id: "file-epub",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary/book.epub",
+      basename: "book.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      relativePath: "Andy Weir/Project Hail Mary/book.epub",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-epub" });
+
+    expect(result).toMatchObject({
+      createdEdition: true,
+      createdWork: true,
+      skipped: false,
+    });
+    expect(state.editions.size).toBe(1);
+  });
+
+  it("does not reuse a same-folder sibling edition when that sibling is an audiobook", async () => {
+    const state = createEmptyState("/tmp/root");
+    addWork(state, {
+      id: "work-audio",
+      titleCanonical: canonicalizeBookTitle("Project Hail Mary") ?? "project hail mary",
+      titleDisplay: "Project Hail Mary",
+    });
+    addEdition(state, {
+      id: "edition-audio",
+      workId: "work-audio",
+      formatFamily: FormatFamily.AUDIOBOOK,
+    });
+    addFileAsset(state, {
+      id: "file-audio",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary/book.m4b",
+      basename: "book.m4b",
+      extension: "m4b",
+      mediaKind: MediaKind.AUDIO,
+      relativePath: "Andy Weir/Project Hail Mary/book.m4b",
+    });
+    addEditionFile(state, {
+      editionId: "edition-audio",
+      fileAssetId: "file-audio",
+      id: "edition-file-audio",
+      role: EditionFileRole.AUDIO_TRACK,
+    });
+    addFileAsset(state, {
+      id: "file-epub",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary/book.epub",
+      basename: "book.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      relativePath: "Andy Weir/Project Hail Mary/book.epub",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-epub" });
+
+    expect(result).toMatchObject({
+      createdEdition: true,
+      skipped: false,
+    });
+    expect(result.editionId).not.toBe("edition-audio");
+    expect(state.editions.size).toBe(2);
+  });
+
+  it("does not reuse a same-folder sibling edition when the linked sibling belongs to a non-ebook edition", async () => {
+    const state = createEmptyState("/tmp/root");
+    addWork(state, {
+      id: "work-audio",
+      titleCanonical: canonicalizeBookTitle("Project Hail Mary") ?? "project hail mary",
+      titleDisplay: "Project Hail Mary",
+    });
+    addEdition(state, {
+      id: "edition-audio",
+      workId: "work-audio",
+      formatFamily: FormatFamily.AUDIOBOOK,
+    });
+    addFileAsset(state, {
+      id: "file-pdf",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary/book.pdf",
+      basename: "book.pdf",
+      extension: "pdf",
+      mediaKind: MediaKind.PDF,
+      relativePath: "Andy Weir/Project Hail Mary/book.pdf",
+    });
+    addEditionFile(state, {
+      editionId: "edition-audio",
+      fileAssetId: "file-pdf",
+      id: "edition-file-pdf",
+      role: EditionFileRole.PRIMARY,
+    });
+    addFileAsset(state, {
+      id: "file-epub",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary/book.epub",
+      basename: "book.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      relativePath: "Andy Weir/Project Hail Mary/book.epub",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-epub" });
+
+    expect(result).toMatchObject({
+      createdEdition: true,
+      skipped: false,
+    });
+    expect(result.editionId).not.toBe("edition-audio");
+    expect(state.editions.size).toBe(2);
+  });
+
+  it("creates a new edition for cross-folder ebook variants without identifier evidence", async () => {
+    const state = createEmptyState("/tmp/root");
+    addWork(state, {
+      id: "work-1",
+      titleCanonical: canonicalizeBookTitle("Project Hail Mary") ?? "project hail mary",
+      titleDisplay: "Project Hail Mary",
+    });
+    addEdition(state, {
+      id: "edition-1",
+      workId: "work-1",
+      formatFamily: FormatFamily.EBOOK,
+    });
+    addContributor(state, {
+      id: "contributor-1",
+      nameCanonical: canonicalizeContributorNames(["Andy Weir"])[0] ?? "andy weir",
+      nameDisplay: "Andy Weir",
+    });
+    addEditionContributor(state, {
+      editionId: "edition-1",
+      contributorId: "contributor-1",
+    });
+    addFileAsset(state, {
+      id: "file-existing",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary/book.epub",
+      basename: "book.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      relativePath: "Andy Weir/Project Hail Mary/book.epub",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+    addEditionFile(state, {
+      editionId: "edition-1",
+      fileAssetId: "file-existing",
+      id: "edition-file-existing",
+      role: EditionFileRole.PRIMARY,
+    });
+    addFileAsset(state, {
+      id: "file-variant",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary (Alt Folder)/book.azw3",
+      basename: "book.azw3",
+      extension: "azw3",
+      mediaKind: MediaKind.AZW3,
+      relativePath: "Andy Weir/Project Hail Mary (Alt Folder)/book.azw3",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "filename",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-variant" });
+
+    expect(result).toMatchObject({
+      createdEdition: true,
+      createdWork: false,
+      workId: "work-1",
+      skipped: false,
+    });
+    expect(result.editionId).not.toBe("edition-1");
+    expect(state.editions.size).toBe(2);
+  });
+
   it("creates a new work, edition, contributors, and file link when no match exists", async () => {
     const state = createEmptyState("/tmp/root");
     addFileAsset(state, {
@@ -4304,6 +5513,7 @@ describe("ingest services", () => {
     expect(state.works.get("work-1")).toEqual({
       coverPath: null,
       description: null,
+      editedFields: [],
       enrichmentStatus: "ENRICHED",
       id: "work-1",
       seriesId: null,
@@ -4940,15 +6150,18 @@ describe("ingest services", () => {
     expect(state.works.get("work-1")?.titleDisplay).toBe("The Fifth Season");
   });
 
-  it("throws when metadata parsing is requested for an unknown file asset", async () => {
+  it("gracefully skips when metadata parsing is requested for a deleted file asset", async () => {
     const services = createIngestServices({
       db: createTestDb(createEmptyState("/tmp/root")),
       enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
     });
 
-    await expect(
-      services.parseFileAssetMetadata({ fileAssetId: "missing-file" }),
-    ).rejects.toThrow('File asset "missing-file" was not found');
+    const result = await services.parseFileAssetMetadata({ fileAssetId: "missing-file" });
+    expect(result).toEqual({
+      availabilityStatus: AvailabilityStatus.MISSING,
+      fileAssetId: "missing-file",
+      skipped: true,
+    });
   });
 
   it("enqueues metadata parsing after hashing an OPF sidecar", async () => {
@@ -9475,6 +10688,244 @@ describe("ingest services", () => {
       warnings: ["Unknown audiobook metadata.json parsing error"],
     });
   });
+
+  it("matches existing work via filename-derived title when OPF title differs", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    // Existing work created from a prior scan (e.g., Kobo sync or audiobook)
+    addWork(state, {
+      id: "existing-work",
+      titleCanonical: "hacking the xbox",
+      titleDisplay: "Hacking the Xbox",
+    });
+    addEdition(state, {
+      id: "existing-edition",
+      workId: "existing-work",
+      formatFamily: FormatFamily.EBOOK,
+    });
+    const authorContributor = addContributor(state, {
+      id: "contrib-huang",
+      nameCanonical: "andrew huang",
+      nameDisplay: "Andrew Huang",
+    });
+    addEditionContributor(state, {
+      editionId: "existing-edition",
+      contributorId: authorContributor.id,
+      id: "ec-huang",
+      role: ContributorRole.AUTHOR,
+    });
+
+    // New EPUB with a garbled OPF title but a correct filename
+    addFileAsset(state, {
+      id: "file-epub",
+      absolutePath: "/tmp/root/Hacking the Xbox \u2013 Andrew Huang.epub",
+      basename: "Hacking the Xbox \u2013 Andrew Huang.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      relativePath: "Hacking the Xbox \u2013 Andrew Huang.epub",
+      metadata: {
+        normalized: {
+          authors: ["Andrew Huang"],
+          identifiers: { unknown: [] },
+          title: "HackingTheXbox Free",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-epub" });
+
+    // Should match existing work via filename fallback, NOT create a duplicate
+    expect(result.createdWork).toBe(false);
+    expect(result.workId).toBe("existing-work");
+    expect(result.skipped).toBe(false);
+  });
+
+  it("filename fallback does not match when authors differ", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    addWork(state, {
+      id: "existing-work",
+      titleCanonical: "hacking the xbox",
+      titleDisplay: "Hacking the Xbox",
+    });
+    addEdition(state, {
+      id: "existing-edition",
+      workId: "existing-work",
+      formatFamily: FormatFamily.EBOOK,
+    });
+    const authorContributor = addContributor(state, {
+      id: "contrib-huang",
+      nameCanonical: "andrew huang",
+      nameDisplay: "Andrew Huang",
+    });
+    addEditionContributor(state, {
+      editionId: "existing-edition",
+      contributorId: authorContributor.id,
+      id: "ec-huang",
+      role: ContributorRole.AUTHOR,
+    });
+
+    // EPUB with a DIFFERENT author — should NOT match via filename fallback
+    addFileAsset(state, {
+      id: "file-epub",
+      absolutePath: "/tmp/root/Hacking the Xbox \u2013 Someone Else.epub",
+      basename: "Hacking the Xbox \u2013 Someone Else.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      relativePath: "Hacking the Xbox \u2013 Someone Else.epub",
+      metadata: {
+        normalized: {
+          authors: ["Someone Else"],
+          identifiers: { unknown: [] },
+          title: "HackingTheXbox Free",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-epub" });
+
+    // Different author → should create a new work, not match
+    expect(result.createdWork).toBe(true);
+    expect(result.workId).not.toBe("existing-work");
+  });
+
+  it("filename fallback not attempted when OPF title already matches", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    addWork(state, {
+      id: "existing-work",
+      titleCanonical: "project hail mary",
+      titleDisplay: "Project Hail Mary",
+    });
+    addEdition(state, {
+      id: "existing-edition",
+      workId: "existing-work",
+      formatFamily: FormatFamily.EBOOK,
+    });
+    const authorContributor = addContributor(state, {
+      id: "contrib-weir",
+      nameCanonical: "andy weir",
+      nameDisplay: "Andy Weir",
+    });
+    addEditionContributor(state, {
+      editionId: "existing-edition",
+      contributorId: authorContributor.id,
+      id: "ec-weir",
+      role: ContributorRole.AUTHOR,
+    });
+
+    // EPUB with CORRECT OPF title — filename fallback should not be needed
+    addFileAsset(state, {
+      id: "file-epub",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary.epub",
+      basename: "Project Hail Mary.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      relativePath: "Andy Weir/Project Hail Mary.epub",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-epub" });
+
+    // Should match via OPF title directly
+    expect(result.createdWork).toBe(false);
+    expect(result.workId).toBe("existing-work");
+  });
+
+  it("filename fallback strips parentheticals via normalizeForTitleMatching", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    addWork(state, {
+      id: "existing-work",
+      titleCanonical: "some book",
+      titleDisplay: "Some Book",
+    });
+    addEdition(state, {
+      id: "existing-edition",
+      workId: "existing-work",
+      formatFamily: FormatFamily.EBOOK,
+    });
+    const authorContributor = addContributor(state, {
+      id: "contrib-smith",
+      nameCanonical: "john smith",
+      nameDisplay: "John Smith",
+    });
+    addEditionContributor(state, {
+      editionId: "existing-edition",
+      contributorId: authorContributor.id,
+      id: "ec-smith",
+      role: ContributorRole.AUTHOR,
+    });
+
+    // EPUB with bad OPF title AND parenthetical noise in filename
+    addFileAsset(state, {
+      id: "file-epub",
+      absolutePath: "/tmp/root/Some Book (Unabridged) \u2013 John Smith.epub",
+      basename: "Some Book (Unabridged) \u2013 John Smith.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      relativePath: "Some Book (Unabridged) \u2013 John Smith.epub",
+      metadata: {
+        normalized: {
+          authors: ["John Smith"],
+          identifiers: { unknown: [] },
+          title: "SomeBook Unabridged Edition",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-epub" });
+
+    // normalizeForTitleMatching strips "(Unabridged)" → "Some Book" → matches
+    expect(result.createdWork).toBe(false);
+    expect(result.workId).toBe("existing-work");
+  });
 });
 
 describe("matchFileAssetToEdition enqueues follow-up jobs", () => {
@@ -9676,6 +11127,7 @@ describe("detectDuplicates", () => {
   function addDetectEdition(state: TestState, id: string, workId: string, overrides: Partial<TestEdition> = {}) {
     const ed: TestEdition = {
       asin: null,
+      editedFields: [],
       formatFamily: FormatFamily.EBOOK,
       id,
       isbn10: null,
@@ -9694,6 +11146,7 @@ describe("detectDuplicates", () => {
     const w: TestWork = {
       coverPath: null,
       description: null,
+      editedFields: [],
       enrichmentStatus: "STUB" as EnrichmentStatus,
       id,
       seriesId: null,
@@ -10291,6 +11744,54 @@ describe("detectDuplicates", () => {
 
     expect(result.candidatesCreated).toBe(0);
   });
+
+  it("SIMILAR_TITLE_AUTHOR: skips normalized fallback when display title normalizes to undefined", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "hash-a", "/tmp/root/book.epub");
+    // Work 1 has a display title that normalizes to empty (all punctuation)
+    addDetectWork(state, "work-1", "x", "...");
+    addDetectWork(state, "work-2", "y", "The Great Gatsby");
+    addDetectEdition(state, "edition-1", "work-1");
+    addDetectEdition(state, "edition-2", "work-2");
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    addDetectFileAsset(state, "file-2", "hash-b", "/tmp/root/book2.epub");
+    addDetectEditionFile(state, "ef-2", "edition-2", "file-2");
+    addDetectContributor(state, "c-1", "Author");
+    addDetectEditionContributor(state, "ec-1", "edition-1", "c-1");
+    addDetectEditionContributor(state, "ec-2", "edition-2", "c-1");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    // "x" vs "y" raw similarity is 0, and "..." normalizes to undefined, so no candidate
+    expect(result.candidatesCreated).toBe(0);
+  });
+
+  it("SIMILAR_TITLE_AUTHOR: detects duplicates via normalized title when raw canonicals differ due to noise", async () => {
+    const state = createEmptyState();
+    // Work 1 has parenthetical noise that prevents raw canonical match
+    addDetectFileAsset(state, "file-1", "hash-a", "/tmp/root/book.epub");
+    addDetectWork(state, "work-1", "the great gatsby unabridged", "The Great Gatsby (Unabridged)");
+    addDetectWork(state, "work-2", "the great gatsby", "The Great Gatsby");
+    addDetectEdition(state, "edition-1", "work-1");
+    addDetectEdition(state, "edition-2", "work-2");
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    addDetectFileAsset(state, "file-2", "hash-b", "/tmp/root/book2.epub");
+    addDetectEditionFile(state, "ef-2", "edition-2", "file-2");
+    addDetectContributor(state, "c-1", "F Scott Fitzgerald");
+    addDetectEditionContributor(state, "ec-1", "edition-1", "c-1");
+    addDetectEditionContributor(state, "ec-2", "edition-2", "c-1");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    // Raw canonical similarity of "the great gatsby unabridged" vs "the great gatsby" is ~0.70, below 0.85.
+    // normalizeForTitleMatching strips "(Unabridged)" from the display title, so both normalize to
+    // "the great gatsby" → similarity 1.0
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    expect(result.candidatesCreated).toBe(1);
+    const candidate = [...state.duplicateCandidates.values()][0];
+    expect(candidate?.reason).toBe("SIMILAR_TITLE_AUTHOR");
+  });
 });
 
 describe("matchSuggestions", () => {
@@ -10329,6 +11830,7 @@ describe("matchSuggestions", () => {
     const w: TestWork = {
       coverPath: null,
       description: null,
+      editedFields: [],
       enrichmentStatus: "STUB" as EnrichmentStatus,
       id,
       seriesId: null,
@@ -10344,6 +11846,7 @@ describe("matchSuggestions", () => {
   function addAudioEdition(state: TestState, id: string, workId: string, overrides: Partial<TestEdition> = {}) {
     const ed: TestEdition = {
       asin: null,
+      editedFields: [],
       formatFamily: FormatFamily.EBOOK,
       id,
       isbn10: null,

@@ -16,6 +16,13 @@ export {
   type QueueProgressData,
 } from "./queue-client.js";
 export { createQueueEvents } from "./queue-events.js";
+export {
+  isKoboDeliveryMediaKind,
+  isMetadataSourceMediaKind,
+  selectPreferredKoboDeliveryFile,
+  selectPreferredMetadataSourceFile,
+  type SelectableEditionFile,
+} from "./edition-files.js";
 export { WaitingChildrenError } from "bullmq";
 
 export const __loaded = true;

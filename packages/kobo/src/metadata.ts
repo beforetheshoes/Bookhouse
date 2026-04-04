@@ -74,13 +74,13 @@ export function buildBookMetadata(
   edition: EligibleEdition,
   options: MetadataOptions,
 ): KoboBookMetadata {
-  const downloadUrls = edition.primaryFilePath
+  const downloadUrls = edition.deliveryFilePath
     ? [
         {
           DRMType: "None",
           Format: "KEPUB",
           Platform: "Generic",
-          Size: edition.primaryFileSize ?? 0,
+          Size: edition.deliveryFileSize ?? 0,
           Url: `${options.baseUrl}/kobo/${options.deviceToken}/v1/library/${edition.id}/download`,
         },
       ]

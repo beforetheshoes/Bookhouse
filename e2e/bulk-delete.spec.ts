@@ -27,19 +27,19 @@ test.describe("Bulk delete works from library", () => {
 
     // Action bar should appear
     await expect(page.getByText(/1 work selected/)).toBeVisible();
-    await expect(page.getByText("Delete Selected")).toBeVisible();
+    await expect(page.getByTestId("bulk-delete-works-btn")).toBeVisible();
 
-    // Click Delete Selected
-    await page.getByText("Delete Selected").click();
+    // Click Delete button
+    await page.getByTestId("bulk-delete-works-btn").click();
 
     // Confirmation dialog
     await expect(page.getByText(/will remove 1 work/)).toBeVisible();
 
-    // Confirm
-    await page.getByRole("button", { name: "Delete" }).click();
+    // Confirm via the dialog's Delete button
+    await page.getByTestId("confirm-bulk-delete-works-btn").click();
 
-    // Toast should confirm
-    await expect(page.getByText(/deleted/)).toBeVisible({ timeout: 10_000 });
+    // Wait for deletion to complete — the selected work should disappear
+    await expect(page.getByText("Book Alpha")).not.toBeVisible({ timeout: 10_000 });
   });
 
   test("clear button deselects all rows", async ({ page }) => {

@@ -26,6 +26,9 @@ const fileAssetCountMock = vi.fn();
 const transactionMock = vi.fn();
 
 const cascadeCleanupOrphansMock = vi.fn();
+const cleanupOrphanedFileAssetsMock = vi.fn();
+const editionFileFindManyMock = vi.fn();
+const fileAssetDeleteManyMock = vi.fn();
 
 vi.mock("@bookhouse/db", () => ({
   db: {
@@ -40,8 +43,12 @@ vi.mock("@bookhouse/db", () => ({
       deleteMany: editionDeleteManyMock,
       count: editionCountMock,
     },
+    editionFile: {
+      findMany: editionFileFindManyMock,
+    },
     fileAsset: {
       findMany: fileAssetFindManyMock,
+      deleteMany: fileAssetDeleteManyMock,
       count: fileAssetCountMock,
     },
     $transaction: transactionMock,
@@ -50,6 +57,7 @@ vi.mock("@bookhouse/db", () => ({
 
 vi.mock("@bookhouse/ingest", () => ({
   cascadeCleanupOrphans: cascadeCleanupOrphansMock,
+  cleanupOrphanedFileAssets: cleanupOrphanedFileAssetsMock,
 }));
 
 import {
@@ -57,6 +65,8 @@ import {
   deleteEditionServerFn,
   bulkDeleteWorksServerFn,
   bulkDeleteEditionsServerFn,
+  bulkDeleteEditionsByFormatForWorksServerFn,
+  deleteAllEditionsByFormatServerFn,
   getMissingFilesServerFn,
   cleanupMissingFilesServerFn,
 } from "./deletion";
@@ -74,34 +84,54 @@ beforeEach(() => {
   transactionMock.mockReset();
   cascadeCleanupOrphansMock.mockReset();
   cascadeCleanupOrphansMock.mockResolvedValue({ deletedEditionFileCount: 0, deletedEditionIds: [], deletedWorkIds: [] });
+  cleanupOrphanedFileAssetsMock.mockReset();
+  cleanupOrphanedFileAssetsMock.mockResolvedValue({ deletedFileAssetIds: [] });
+  editionFileFindManyMock.mockReset();
+  editionFileFindManyMock.mockResolvedValue([]);
+  fileAssetDeleteManyMock.mockReset();
 });
 
 describe("deleteWorkServerFn", () => {
-  it("deletes the Work by ID and returns the deleted ID", async () => {
+  it("deletes the Work by ID, cleans up orphaned FileAssets, and returns the deleted ID", async () => {
+    editionFileFindManyMock.mockResolvedValue([
+      { fileAssetId: "fa-1" },
+      { fileAssetId: "fa-2" },
+    ]);
     workDeleteMock.mockResolvedValue({ id: "w-1" });
 
     const result = await deleteWorkServerFn({ data: { workId: "w-1" } });
 
+    expect(editionFileFindManyMock).toHaveBeenCalledWith({
+      where: { edition: { workId: "w-1" } },
+      select: { fileAssetId: true },
+    });
     expect(workDeleteMock).toHaveBeenCalledWith({ where: { id: "w-1" } });
+    expect(cleanupOrphanedFileAssetsMock).toHaveBeenCalledWith(
+      expect.anything(),
+      ["fa-1", "fa-2"],
+    );
     expect(result).toEqual({ deletedWorkId: "w-1" });
   });
 });
 
 describe("deleteEditionServerFn", () => {
-  it("deletes the Edition and returns null deletedWorkId when parent Work still has editions", async () => {
+  it("deletes the Edition, cleans up FileAssets, and returns null deletedWorkId when parent Work still has editions", async () => {
     editionFindUniqueMock.mockResolvedValue({ id: "ed-1", workId: "w-1" });
+    editionFileFindManyMock.mockResolvedValue([{ fileAssetId: "fa-1" }]);
     editionDeleteMock.mockResolvedValue({ id: "ed-1" });
     editionCountMock.mockResolvedValue(2); // still has other editions
 
     const result = await deleteEditionServerFn({ data: { editionId: "ed-1" } });
 
     expect(editionDeleteMock).toHaveBeenCalledWith({ where: { id: "ed-1" } });
+    expect(cleanupOrphanedFileAssetsMock).toHaveBeenCalledWith(expect.anything(), ["fa-1"]);
     expect(workDeleteMock).not.toHaveBeenCalled();
     expect(result).toEqual({ deletedEditionId: "ed-1", deletedWorkId: null });
   });
 
-  it("deletes the Edition and the parent Work when no editions remain", async () => {
+  it("deletes the Edition, the parent Work, and cleans up FileAssets when no editions remain", async () => {
     editionFindUniqueMock.mockResolvedValue({ id: "ed-1", workId: "w-1" });
+    editionFileFindManyMock.mockResolvedValue([{ fileAssetId: "fa-1" }]);
     editionDeleteMock.mockResolvedValue({ id: "ed-1" });
     editionCountMock.mockResolvedValue(0); // no editions left
 
@@ -109,6 +139,7 @@ describe("deleteEditionServerFn", () => {
 
     expect(editionDeleteMock).toHaveBeenCalledWith({ where: { id: "ed-1" } });
     expect(workDeleteMock).toHaveBeenCalledWith({ where: { id: "w-1" } });
+    expect(cleanupOrphanedFileAssetsMock).toHaveBeenCalledWith(expect.anything(), ["fa-1"]);
     expect(result).toEqual({ deletedEditionId: "ed-1", deletedWorkId: "w-1" });
   });
 
@@ -122,12 +153,21 @@ describe("deleteEditionServerFn", () => {
 });
 
 describe("bulkDeleteWorksServerFn", () => {
-  it("deletes multiple Works and returns their IDs", async () => {
+  it("deletes multiple Works, cleans up FileAssets, and returns their IDs", async () => {
+    editionFileFindManyMock.mockResolvedValue([
+      { fileAssetId: "fa-1" },
+      { fileAssetId: "fa-2" },
+    ]);
     workDeleteManyMock.mockResolvedValue({ count: 3 });
 
     const result = await bulkDeleteWorksServerFn({ data: { workIds: ["w-1", "w-2", "w-3"] } });
 
+    expect(editionFileFindManyMock).toHaveBeenCalledWith({
+      where: { edition: { workId: { in: ["w-1", "w-2", "w-3"] } } },
+      select: { fileAssetId: true },
+    });
     expect(workDeleteManyMock).toHaveBeenCalledWith({ where: { id: { in: ["w-1", "w-2", "w-3"] } } });
+    expect(cleanupOrphanedFileAssetsMock).toHaveBeenCalledWith(expect.anything(), ["fa-1", "fa-2"]);
     expect(result).toEqual({ deletedWorkIds: ["w-1", "w-2", "w-3"] });
   });
 
@@ -140,11 +180,12 @@ describe("bulkDeleteWorksServerFn", () => {
 });
 
 describe("bulkDeleteEditionsServerFn", () => {
-  it("deletes Editions and cascade-deletes empty parent Works", async () => {
+  it("deletes Editions, cleans up FileAssets, and cascade-deletes empty parent Works", async () => {
     editionFindManyMock.mockResolvedValue([
       { id: "ed-1", workId: "w-1" },
       { id: "ed-2", workId: "w-2" },
     ]);
+    editionFileFindManyMock.mockResolvedValue([{ fileAssetId: "fa-1" }, { fileAssetId: "fa-2" }]);
     editionDeleteManyMock.mockResolvedValue({ count: 2 });
     // w-1 still has editions, w-2 is empty
     editionCountMock
@@ -156,6 +197,7 @@ describe("bulkDeleteEditionsServerFn", () => {
 
     expect(editionDeleteManyMock).toHaveBeenCalledWith({ where: { id: { in: ["ed-1", "ed-2"] } } });
     expect(workDeleteManyMock).toHaveBeenCalledWith({ where: { id: { in: ["w-2"] } } });
+    expect(cleanupOrphanedFileAssetsMock).toHaveBeenCalledWith(expect.anything(), ["fa-1", "fa-2"]);
     expect(result).toEqual({ deletedEditionIds: ["ed-1", "ed-2"], deletedWorkIds: ["w-2"] });
   });
 
@@ -177,6 +219,131 @@ describe("bulkDeleteEditionsServerFn", () => {
       .mockResolvedValueOnce(2);
 
     const result = await bulkDeleteEditionsServerFn({ data: { editionIds: ["ed-1", "ed-2"] } });
+
+    expect(workDeleteManyMock).not.toHaveBeenCalled();
+    expect(result).toEqual({ deletedEditionIds: ["ed-1", "ed-2"], deletedWorkIds: [] });
+  });
+});
+
+describe("bulkDeleteEditionsByFormatForWorksServerFn", () => {
+  it("returns empty arrays without DB calls when workIds is empty", async () => {
+    const result = await bulkDeleteEditionsByFormatForWorksServerFn({ data: { workIds: [], format: "EBOOK" } });
+
+    expect(editionFindManyMock).not.toHaveBeenCalled();
+    expect(result).toEqual({ deletedEditionIds: [], deletedWorkIds: [] });
+  });
+
+  it("returns empty arrays without DB writes when no editions of that format exist for those works", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+
+    const result = await bulkDeleteEditionsByFormatForWorksServerFn({ data: { workIds: ["w-1"], format: "EBOOK" } });
+
+    expect(editionDeleteManyMock).not.toHaveBeenCalled();
+    expect(result).toEqual({ deletedEditionIds: [], deletedWorkIds: [] });
+  });
+
+  it("deletes only ebook editions and preserves works that still have audiobook editions", async () => {
+    editionFindManyMock.mockResolvedValue([{ id: "ed-ebook-1", workId: "w-1" }]);
+    editionDeleteManyMock.mockResolvedValue({ count: 1 });
+    editionCountMock.mockResolvedValue(1); // audiobook edition still exists
+
+    const result = await bulkDeleteEditionsByFormatForWorksServerFn({ data: { workIds: ["w-1"], format: "EBOOK" } });
+
+    expect(editionFindManyMock).toHaveBeenCalledWith({
+      where: { workId: { in: ["w-1"] }, formatFamily: "EBOOK" },
+      select: { id: true, workId: true },
+    });
+    expect(editionDeleteManyMock).toHaveBeenCalledWith({ where: { id: { in: ["ed-ebook-1"] } } });
+    expect(workDeleteManyMock).not.toHaveBeenCalled();
+    expect(result).toEqual({ deletedEditionIds: ["ed-ebook-1"], deletedWorkIds: [] });
+  });
+
+  it("cascade-deletes works that have no editions remaining after format delete", async () => {
+    editionFindManyMock.mockResolvedValue([
+      { id: "ed-1", workId: "w-1" },
+      { id: "ed-2", workId: "w-2" },
+    ]);
+    editionDeleteManyMock.mockResolvedValue({ count: 2 });
+    editionCountMock.mockResolvedValue(0); // both works now empty
+    workDeleteManyMock.mockResolvedValue({ count: 2 });
+
+    const result = await bulkDeleteEditionsByFormatForWorksServerFn({ data: { workIds: ["w-1", "w-2"], format: "AUDIOBOOK" } });
+
+    expect(workDeleteManyMock).toHaveBeenCalledWith({ where: { id: { in: ["w-1", "w-2"] } } });
+    expect(result).toEqual({ deletedEditionIds: ["ed-1", "ed-2"], deletedWorkIds: ["w-1", "w-2"] });
+  });
+
+  it("only deletes orphaned works, not works that still have other editions", async () => {
+    editionFindManyMock.mockResolvedValue([
+      { id: "ed-1", workId: "w-1" },
+      { id: "ed-2", workId: "w-2" },
+    ]);
+    editionDeleteManyMock.mockResolvedValue({ count: 2 });
+    editionCountMock
+      .mockResolvedValueOnce(1) // w-1 still has an audiobook edition
+      .mockResolvedValueOnce(0); // w-2 is now empty
+    workDeleteManyMock.mockResolvedValue({ count: 1 });
+
+    const result = await bulkDeleteEditionsByFormatForWorksServerFn({ data: { workIds: ["w-1", "w-2"], format: "EBOOK" } });
+
+    expect(workDeleteManyMock).toHaveBeenCalledWith({ where: { id: { in: ["w-2"] } } });
+    expect(result).toEqual({ deletedEditionIds: ["ed-1", "ed-2"], deletedWorkIds: ["w-2"] });
+  });
+
+  it("returns edition IDs from the DB query, not from the workIds input", async () => {
+    // Only w-1 has an EBOOK edition; w-2 has none
+    editionFindManyMock.mockResolvedValue([{ id: "ed-1", workId: "w-1" }]);
+    editionDeleteManyMock.mockResolvedValue({ count: 1 });
+    editionCountMock.mockResolvedValue(0);
+    workDeleteManyMock.mockResolvedValue({ count: 1 });
+
+    const result = await bulkDeleteEditionsByFormatForWorksServerFn({ data: { workIds: ["w-1", "w-2"], format: "EBOOK" } });
+
+    expect(result).toEqual({ deletedEditionIds: ["ed-1"], deletedWorkIds: ["w-1"] });
+  });
+});
+
+describe("deleteAllEditionsByFormatServerFn", () => {
+  it("returns empty arrays without DB writes when no editions of that format exist", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+
+    const result = await deleteAllEditionsByFormatServerFn({ data: { format: "EBOOK" } });
+
+    expect(editionDeleteManyMock).not.toHaveBeenCalled();
+    expect(result).toEqual({ deletedEditionIds: [], deletedWorkIds: [] });
+  });
+
+  it("deletes all editions of the given format library-wide and orphan-cleans works", async () => {
+    editionFindManyMock.mockResolvedValue([
+      { id: "ed-1", workId: "w-1" },
+      { id: "ed-2", workId: "w-2" },
+      { id: "ed-3", workId: "w-3" },
+    ]);
+    editionDeleteManyMock.mockResolvedValue({ count: 3 });
+    editionCountMock.mockResolvedValue(0); // all works are now empty
+    workDeleteManyMock.mockResolvedValue({ count: 3 });
+
+    const result = await deleteAllEditionsByFormatServerFn({ data: { format: "EBOOK" } });
+
+    expect(editionFindManyMock).toHaveBeenCalledWith({
+      where: { formatFamily: "EBOOK" },
+      select: { id: true, workId: true },
+    });
+    expect(editionDeleteManyMock).toHaveBeenCalledWith({ where: { id: { in: ["ed-1", "ed-2", "ed-3"] } } });
+    expect(result).toEqual({ deletedEditionIds: ["ed-1", "ed-2", "ed-3"], deletedWorkIds: ["w-1", "w-2", "w-3"] });
+  });
+
+  it("does not delete works that still have editions in another format", async () => {
+    editionFindManyMock.mockResolvedValue([
+      { id: "ed-1", workId: "w-1" },
+      { id: "ed-2", workId: "w-2" },
+    ]);
+    editionDeleteManyMock.mockResolvedValue({ count: 2 });
+    editionCountMock
+      .mockResolvedValueOnce(1) // w-1 still has an audiobook edition
+      .mockResolvedValueOnce(1); // w-2 still has an audiobook edition
+
+    const result = await deleteAllEditionsByFormatServerFn({ data: { format: "EBOOK" } });
 
     expect(workDeleteManyMock).not.toHaveBeenCalled();
     expect(result).toEqual({ deletedEditionIds: ["ed-1", "ed-2"], deletedWorkIds: [] });

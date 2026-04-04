@@ -91,6 +91,33 @@ describe("createDownloadHandler", () => {
     expect(deps.convertToKepub).not.toHaveBeenCalled();
   });
 
+  it("serves an existing kepub file without conversion", async () => {
+    const deps = makeDeps({
+      findEditionFile: vi.fn().mockResolvedValue({
+        ...mockFile,
+        absolutePath: "/books/test.kepub.epub",
+        basename: "test.kepub.epub",
+        mimeType: "application/x-kobo-epub+zip",
+      }),
+    });
+    const handler = createDownloadHandler(deps);
+    const event = makeEvent();
+    const result = await handler(event);
+
+    expect(result).toBe("streamed");
+    expect(deps.convertToKepub).not.toHaveBeenCalled();
+    expect(deps.setResponseHeader).toHaveBeenCalledWith(
+      event,
+      "Content-Type",
+      "application/x-kobo-epub+zip",
+    );
+    expect(deps.setResponseHeader).toHaveBeenCalledWith(
+      event,
+      "Content-Disposition",
+      'attachment; filename="test.kepub.epub"',
+    );
+  });
+
   it("converts files with epub extension regardless of mimeType", async () => {
     const deps = makeDeps({
       findEditionFile: vi.fn().mockResolvedValue({

@@ -31,9 +31,10 @@ const makeEdition = (id: string): EligibleEdition => ({
   seriesName: null,
   seriesPosition: null,
   contributors: [],
-  primaryFilePath: `/books/${id}.epub`,
-  primaryFileSize: 1000,
-  primaryFileMimeType: "application/epub+zip",
+  deliveryFilePath: `/books/${id}.epub`,
+  deliveryFileSize: 1000,
+  deliveryFileMimeType: "application/epub+zip",
+  deliveryFileMediaKind: "EPUB",
 });
 
 function makeEvent(filter?: string): H3Event {

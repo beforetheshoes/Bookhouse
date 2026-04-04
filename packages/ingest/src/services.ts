@@ -15,7 +15,7 @@ import {
   ScanMode,
   type Work,
 } from "@bookhouse/domain";
-import { db, type EditionContributor } from "@bookhouse/db";
+import { db, type EditionContributor, type ExternalLink } from "@bookhouse/db";
 import {
   createLogger,
   LIBRARY_JOB_NAMES,
@@ -25,10 +25,11 @@ import {
   type MatchFileAssetToEditionJobPayload,
   type ParseFileAssetMetadataJobPayload,
   enqueueLibraryJob,
+  selectPreferredMetadataSourceFile,
 } from "@bookhouse/shared";
 import { classifyMediaKind, deriveFormatFamily, getFileExtension, IGNORED_BASENAMES, isIgnoredBasename, normalizeRelativePath, normalizeRootPath } from "./classification";
 import { normalizedSimilarity, normalizeForTitleMatching, stripSubtitleForMatching } from "./similarity";
-import { deriveTitleFromPath } from "./filename-title";
+import { deriveTitleFromPath, stripFilenameAuthorSuffix } from "./filename-title";
 import {
   parseAudiobookMetadataJson,
   parseAudioId3Tags,
@@ -74,14 +75,15 @@ type FileAssetRecord = Pick<
 >;
 
 type LibraryRootRecord = Pick<LibraryRoot, "id" | "lastScannedAt" | "path" | "scanMode">;
-type WorkRecord = Pick<Work, "coverPath" | "description" | "enrichmentStatus" | "id" | "seriesId" | "seriesPosition" | "sortTitle" | "titleCanonical" | "titleDisplay">;
+type WorkRecord = Pick<Work, "coverPath" | "description" | "editedFields" | "enrichmentStatus" | "id" | "seriesId" | "seriesPosition" | "sortTitle" | "titleCanonical" | "titleDisplay">;
 type EditionRecord = Pick<
   Edition,
-  "asin" | "formatFamily" | "id" | "isbn10" | "isbn13" | "language" | "publishedAt" | "publisher" | "workId"
+  "asin" | "editedFields" | "formatFamily" | "id" | "isbn10" | "isbn13" | "language" | "publishedAt" | "publisher" | "workId"
 >;
 type ContributorRecord = Pick<Contributor, "id" | "nameCanonical" | "nameDisplay">;
 type EditionFileRecord = Pick<EditionFile, "editionId" | "fileAssetId" | "id" | "role">;
 type EditionContributorRecord = Pick<EditionContributor, "contributorId" | "editionId" | "id" | "role">;
+type ExternalLinkRecord = Pick<ExternalLink, "appliedFields" | "editionId" | "workId">;
 type WorkMatchRecord = WorkRecord & {
   editions: Array<
     EditionRecord & {
@@ -250,7 +252,7 @@ interface EditionFileFindManyArgs {
 
 interface EditionFileUpdateArgs {
   where: { id: string };
-  data: { fileAssetId: string };
+  data: Partial<Pick<EditionFileRecord, "fileAssetId" | "role">>;
 }
 
 interface ContributorFindManyArgs {
@@ -328,6 +330,15 @@ export interface IngestDb {
   matchSuggestion: {
     create(args: MatchSuggestionCreateArgs): Promise<MatchSuggestionRecord>;
     findFirst(args: MatchSuggestionFindFirstArgs): Promise<MatchSuggestionRecord | null>;
+  };
+  externalLink: {
+    findMany(args: {
+      where: {
+        appliedAt?: { not: null };
+        editionId?: string;
+        workId?: string;
+      };
+    }): Promise<ExternalLinkRecord[]>;
   };
 }
 
@@ -596,6 +607,7 @@ function parseStoredMetadata(metadata: FileAsset["metadata"]): ParsedFileAssetMe
 }
 
 const EBOOK_VARIANT_MEDIA_KINDS = new Set<MediaKind>([
+  MediaKind.PDF,
   MediaKind.KEPUB,
   MediaKind.MOBI,
   MediaKind.AZW,
@@ -607,6 +619,7 @@ function isEbookVariant(mediaKind: MediaKind): boolean {
 }
 
 const PATH_DERIVED_EBOOK_MEDIA_KINDS = new Set<MediaKind>([
+  MediaKind.PDF,
   MediaKind.KEPUB,
   MediaKind.MOBI,
   MediaKind.AZW,
@@ -619,6 +632,7 @@ function usesPathDerivedEbookMetadata(mediaKind: MediaKind): boolean {
 
 const SCAN_GROUPED_EBOOK_MEDIA_KINDS = new Set<MediaKind>([
   MediaKind.EPUB,
+  MediaKind.PDF,
   MediaKind.KEPUB,
   MediaKind.MOBI,
   MediaKind.AZW,
@@ -715,6 +729,17 @@ async function ensureEditionFileLink(
   fileAssetId: string,
   role: EditionFileRole = EditionFileRole.PRIMARY,
 ): Promise<boolean> {
+  const existingLink = await ingestDb.editionFile.findFirst({
+    where: {
+      editionId,
+      fileAssetId,
+    },
+  });
+
+  if (existingLink !== null) {
+    return false;
+  }
+
   await ingestDb.editionFile.create({
     data: {
       editionId,
@@ -748,6 +773,248 @@ async function determineEditionFileRole(
   }
 
   return EditionFileRole.PRIMARY;
+}
+
+async function loadEditionFilesWithAssets(
+  ingestDb: IngestDb,
+  editionId: string,
+): Promise<Array<{ editionFile: EditionFileRecord; fileAsset: FileAssetRecord }>> {
+  const editionFiles = await ingestDb.editionFile.findMany({
+    where: { editionId },
+  });
+
+  const linkedFileAssets = await Promise.all(
+    editionFiles.map(async (editionFile) => {
+      const fileAsset = await ingestDb.fileAsset.findUnique({
+        where: { id: editionFile.fileAssetId },
+      });
+
+      if (fileAsset === null) {
+        return null;
+      }
+
+      return {
+        editionFile,
+        fileAsset,
+      };
+    }),
+  );
+
+  return linkedFileAssets.filter(
+    (entry): entry is { editionFile: EditionFileRecord; fileAsset: FileAssetRecord } =>
+      entry !== null,
+  );
+}
+
+async function reconcileEditionFileRoles(
+  ingestDb: IngestDb,
+  editionId: string,
+): Promise<void> {
+  const editionFilesWithAssets = await loadEditionFilesWithAssets(ingestDb, editionId);
+  const preferredEditionFile = selectPreferredMetadataSourceFile(
+    editionFilesWithAssets.map(({ editionFile, fileAsset }) => ({
+      id: editionFile.id,
+      role: editionFile.role,
+      fileAsset: {
+        basename: fileAsset.basename,
+        mediaKind: fileAsset.mediaKind,
+      },
+    })),
+  );
+
+  if (preferredEditionFile === null) {
+    return;
+  }
+
+  for (const { editionFile, fileAsset } of editionFilesWithAssets) {
+    if (!groupsWithSiblingEbookVariants(fileAsset.mediaKind)) {
+      continue;
+    }
+
+    const nextRole = editionFile.id === preferredEditionFile.id
+      ? EditionFileRole.PRIMARY
+      : EditionFileRole.ALTERNATE_FORMAT;
+
+    if (editionFile.role !== nextRole) {
+      await ingestDb.editionFile.update({
+        where: { id: editionFile.id },
+        data: { role: nextRole },
+      });
+    }
+  }
+}
+
+async function getProtectedWorkFields(
+  ingestDb: IngestDb,
+  work: WorkRecord,
+): Promise<Set<string>> {
+  const externalLinks = await ingestDb.externalLink.findMany({
+    where: {
+      appliedAt: { not: null },
+      workId: work.id,
+    },
+  });
+
+  return new Set([
+    ...work.editedFields,
+    ...externalLinks.flatMap((link) => link.appliedFields),
+  ]);
+}
+
+async function getProtectedEditionFields(
+  ingestDb: IngestDb,
+  edition: EditionRecord,
+): Promise<Set<string>> {
+  const externalLinks = await ingestDb.externalLink.findMany({
+    where: {
+      appliedAt: { not: null },
+      editionId: edition.id,
+    },
+  });
+
+  return new Set([
+    ...edition.editedFields,
+    ...externalLinks.flatMap((link) => link.appliedFields),
+  ]);
+}
+
+async function applyPreferredMetadataForEdition(
+  ingestDb: IngestDb,
+  editionId: string,
+  workId: string,
+  fileAsset: FileAssetRecord,
+): Promise<void> {
+  const editionFilesWithAssets = await loadEditionFilesWithAssets(ingestDb, editionId);
+  const preferredEditionFile = selectPreferredMetadataSourceFile(
+    editionFilesWithAssets.map(({ editionFile, fileAsset: linkedFileAsset }) => ({
+      id: editionFile.id,
+      role: editionFile.role,
+      fileAsset: {
+        basename: linkedFileAsset.basename,
+        mediaKind: linkedFileAsset.mediaKind,
+      },
+    })),
+  );
+
+  if (preferredEditionFile === null) {
+    return;
+  }
+
+  const preferredLinkedFile = editionFilesWithAssets.find(
+    ({ editionFile }) => editionFile.id === preferredEditionFile.id,
+  );
+  if (preferredLinkedFile?.fileAsset.id !== fileAsset.id) {
+    return;
+  }
+
+  const storedMetadata = parseStoredMetadata(fileAsset.metadata);
+  const matchableMetadata = extractNormalizedMetadataForMatching(fileAsset);
+  if (storedMetadata?.status !== "parsed") {
+    return;
+  }
+
+  const work = await ingestDb.work.findUnique({ where: { id: workId } });
+  const edition = await ingestDb.edition.findUnique({ where: { id: editionId } });
+  if (work === null || edition === null) {
+    return;
+  }
+
+  const protectedWorkFields = await getProtectedWorkFields(ingestDb, work);
+  const protectedEditionFields = await getProtectedEditionFields(ingestDb, edition);
+
+  if (matchableMetadata !== undefined) {
+    const workUpdate: Partial<Pick<Work, "titleCanonical" | "titleDisplay">> = {};
+
+    if (!protectedWorkFields.has("titleDisplay")) {
+      if (work.titleDisplay !== matchableMetadata.title) {
+        workUpdate.titleDisplay = matchableMetadata.title;
+      }
+      if (work.titleCanonical !== matchableMetadata.titleCanonical) {
+        workUpdate.titleCanonical = matchableMetadata.titleCanonical;
+      }
+    }
+
+    if (Object.keys(workUpdate).length > 0) {
+      await ingestDb.work.update({
+        where: { id: work.id },
+        data: workUpdate,
+      });
+    }
+
+    if (!protectedWorkFields.has("authors") && matchableMetadata.authors.length > 0) {
+      await ensureContributors(
+        ingestDb,
+        edition.id,
+        matchableMetadata.authors,
+        ContributorRole.AUTHOR,
+      );
+    }
+  }
+
+  const editionUpdate: Partial<Pick<Edition, "asin" | "isbn10" | "isbn13" | "language" | "publisher" | "publishedAt">> = {};
+  const identifiers = storedMetadata.normalized?.identifiers;
+
+  if (!protectedEditionFields.has("asin") && identifiers?.asin !== undefined && edition.asin !== identifiers.asin) {
+    editionUpdate.asin = identifiers.asin;
+  }
+  if (!protectedEditionFields.has("isbn10") && identifiers?.isbn10 !== undefined && edition.isbn10 !== identifiers.isbn10) {
+    editionUpdate.isbn10 = identifiers.isbn10;
+  }
+  if (!protectedEditionFields.has("isbn13") && identifiers?.isbn13 !== undefined && edition.isbn13 !== identifiers.isbn13) {
+    editionUpdate.isbn13 = identifiers.isbn13;
+  }
+  if (
+    !protectedEditionFields.has("language") &&
+    storedMetadata.normalized?.language !== undefined &&
+    edition.language !== storedMetadata.normalized.language
+  ) {
+    editionUpdate.language = storedMetadata.normalized.language;
+  }
+  if (
+    !protectedEditionFields.has("publisher") &&
+    storedMetadata.normalized?.publisher !== undefined &&
+    edition.publisher !== storedMetadata.normalized.publisher
+  ) {
+    editionUpdate.publisher = storedMetadata.normalized.publisher;
+  }
+  if (!protectedEditionFields.has("publishedAt") && storedMetadata.normalized?.date !== undefined) {
+    const publishedAt = new Date(storedMetadata.normalized.date);
+    if (!Number.isNaN(publishedAt.getTime())) {
+      editionUpdate.publishedAt = publishedAt;
+    }
+  }
+
+  if (Object.keys(editionUpdate).length > 0) {
+    await ingestDb.edition.update({
+      where: { id: edition.id },
+      data: editionUpdate,
+    });
+  }
+}
+
+async function linkFileToEdition(
+  ingestDb: IngestDb,
+  editionId: string,
+  workId: string,
+  fileAsset: FileAssetRecord,
+): Promise<boolean> {
+  const editionFileRole = await determineEditionFileRole(
+    ingestDb,
+    editionId,
+    fileAsset,
+  );
+
+  const createdEditionFile = await ensureEditionFileLink(
+    ingestDb,
+    editionId,
+    fileAsset.id,
+    editionFileRole,
+  );
+
+  await reconcileEditionFileRoles(ingestDb, editionId);
+  await applyPreferredMetadataForEdition(ingestDb, editionId, workId, fileAsset);
+
+  return createdEditionFile;
 }
 
 async function ensureContributors(
@@ -926,7 +1193,7 @@ function createDefaultIngestDb(): IngestDb {
           where: { id: { in: args.ids } },
         }) as object as Promise<EditionRecord[]>;
       },
-      async update(args: { where: { id: string }; data: Partial<Pick<Edition, "asin" | "isbn10" | "isbn13" | "publisher" | "publishedAt" | "workId">> }) {
+      async update(args: { where: { id: string }; data: Partial<Pick<Edition, "asin" | "isbn10" | "isbn13" | "language" | "publisher" | "publishedAt" | "workId">> }) {
         return prisma.edition.update(args) as object as Promise<EditionRecord>;
       },
     },
@@ -943,6 +1210,7 @@ function createDefaultIngestDb(): IngestDb {
     },
     duplicateCandidate: prisma.duplicateCandidate as object as IngestDb["duplicateCandidate"],
     matchSuggestion: prisma.matchSuggestion as object as IngestDb["matchSuggestion"],
+    externalLink: prisma.externalLink as object as IngestDb["externalLink"],
   };
 }
 
@@ -1265,8 +1533,16 @@ async function detectDuplicatesImpl(
         }
       }
 
-      const titleSim = normalizedSimilarity(work.titleCanonical, otherWork.titleCanonical);
-      if (titleSim < SIMILARITY_THRESHOLD) continue;
+      let titleSim = normalizedSimilarity(work.titleCanonical, otherWork.titleCanonical);
+      if (titleSim < SIMILARITY_THRESHOLD) {
+        // Fallback: try normalized display titles (strips parentheticals, edition markers, etc.)
+        const normA = normalizeForTitleMatching(work.titleDisplay);
+        const normB = normalizeForTitleMatching(otherWork.titleDisplay);
+        if (normA && normB) {
+          titleSim = normalizedSimilarity(normA, normB);
+        }
+        if (titleSim < SIMILARITY_THRESHOLD) continue;
+      }
 
       const otherAuthors = getAuthorCanonicalsForWork(otherWork);
       if (myAuthors.length === 0 && otherAuthors.length === 0) continue;
@@ -1581,7 +1857,7 @@ export function createIngestServices(
     const enqueuedRecoveryJobs: string[] = [];
     const createdStubWorkIds: string[] = [];
     const seenAudioDirs = new Map<string, { workId: string; editionId: string }>();
-    const seenEbookVariantTitles = new Map<string, { workId: string; editionId: string }>();
+    const seenEbookVariantDirectories = new Map<string, { workId: string; editionId: string }>();
     const unchangedSeenFileAssetIds: string[] = [];
 
     if (reportProgress) {
@@ -1759,8 +2035,9 @@ export function createIngestServices(
                 ?? deriveTitleFromPath(relativePath, upsertedFileAsset.mediaKind).title;
               const titleCanonical = canonicalizeBookTitle(title) ?? title.toLowerCase();
 
+              const ebookVariantDirectoryKey = path.dirname(relativePath);
               const existingEbookVariant = groupsWithSiblingEbookVariants(upsertedFileAsset.mediaKind)
-                ? seenEbookVariantTitles.get(titleCanonical)
+                ? seenEbookVariantDirectories.get(ebookVariantDirectoryKey)
                 : undefined;
 
               if (existingEbookVariant) {
@@ -1771,6 +2048,7 @@ export function createIngestServices(
                     role: EditionFileRole.ALTERNATE_FORMAT,
                   },
                 });
+                await reconcileEditionFileRoles(ingestDb, existingEbookVariant.editionId);
               } else {
                 // Ebook file — create stub per file
                 const stubWork = await ingestDb.work.create({
@@ -1801,7 +2079,7 @@ export function createIngestServices(
                   },
                 });
                 if (groupsWithSiblingEbookVariants(upsertedFileAsset.mediaKind)) {
-                  seenEbookVariantTitles.set(titleCanonical, { workId: stubWork.id, editionId: stubEdition.id });
+                  seenEbookVariantDirectories.set(ebookVariantDirectoryKey, { workId: stubWork.id, editionId: stubEdition.id });
                 }
                 createdStubWorkIds.push(stubWork.id);
                 await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
@@ -1874,7 +2152,8 @@ export function createIngestServices(
     });
 
     if (fileAsset === null) {
-      throw new Error(`File asset "${input.fileAssetId}" was not found`);
+      logger.info({ fileAssetId: input.fileAssetId }, "Skipping hash for deleted file asset");
+      return { availabilityStatus: AvailabilityStatus.MISSING, fileAssetId: input.fileAssetId };
     }
 
     try {
@@ -2008,7 +2287,8 @@ export function createIngestServices(
     });
 
     if (fileAsset === null) {
-      throw new Error(`File asset "${input.fileAssetId}" was not found`);
+      logger.info({ fileAssetId: input.fileAssetId }, "Skipping parse for deleted file asset");
+      return { availabilityStatus: AvailabilityStatus.MISSING, fileAssetId: input.fileAssetId, skipped: true };
     }
 
     const isOpfSidecar = fileAsset.mediaKind === MediaKind.SIDECAR && getFileExtension(fileAsset.absolutePath) === "opf";
@@ -2844,6 +3124,68 @@ export function createIngestServices(
     return null;
   }
 
+  async function matchEbookToSiblingEdition(
+    ctx: MatchContext,
+  ): Promise<MatchFileAssetToEditionResult | null> {
+    if (ctx.isAudiobook || !groupsWithSiblingEbookVariants(ctx.fileAsset.mediaKind)) {
+      return null;
+    }
+
+    const siblingDirectory = path.dirname(ctx.fileAsset.absolutePath);
+    const siblingFiles = await ingestDb.fileAsset.findByDirectory({
+      directoryPath: siblingDirectory,
+      mediaKinds: [...SCAN_GROUPED_EBOOK_MEDIA_KINDS],
+    });
+    const siblingIds = siblingFiles
+      .map((fileAsset) => fileAsset.id)
+      .filter((fileAssetId) => fileAssetId !== ctx.fileAsset.id);
+
+    if (siblingIds.length === 0) {
+      return null;
+    }
+
+    const siblingLinks = await ingestDb.editionFile.findMany({
+      where: { fileAssetId: { in: siblingIds } },
+    });
+
+    if (siblingLinks.length === 0) {
+      return null;
+    }
+
+    const siblingEditionIds = [...new Set(siblingLinks.map((link) => link.editionId))];
+    const siblingEditions = await ingestDb.edition.findManyByIds({ ids: siblingEditionIds });
+    const siblingEdition = siblingEditions.find((edition) => edition.formatFamily === FormatFamily.EBOOK);
+
+    if (siblingEdition === undefined) {
+      return null;
+    }
+
+    const createdEditionFile = await linkFileToEdition(
+      ingestDb,
+      siblingEdition.id,
+      siblingEdition.workId,
+      ctx.fileAsset,
+    );
+
+    await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
+      workId: siblingEdition.workId,
+      fileAssetId: ctx.fileAsset.id,
+    });
+
+    return {
+      createdEdition: false,
+      createdEditionFile,
+      createdWork: false,
+      editionId: siblingEdition.id,
+      enrichedExistingWork: false,
+      enqueuedCoverJob: true,
+      fileAssetId: ctx.fileAsset.id,
+      mediaKind: ctx.fileAsset.mediaKind,
+      skipped: false,
+      workId: siblingEdition.workId,
+    };
+  }
+
   async function matchByIdentifiers(
     ctx: MatchContext,
   ): Promise<MatchFileAssetToEditionResult | null> {
@@ -2853,12 +3195,11 @@ export function createIngestServices(
       return null;
     }
 
-    const editionFileRole = await determineEditionFileRole(ingestDb, editionMatch.id, ctx.fileAsset);
-    const createdEditionFile = await ensureEditionFileLink(
+    const createdEditionFile = await linkFileToEdition(
       ingestDb,
       editionMatch.id,
-      ctx.fileAsset.id,
-      editionFileRole,
+      editionMatch.workId,
+      ctx.fileAsset,
     );
 
     await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
@@ -2913,6 +3254,57 @@ export function createIngestServices(
       );
     }
 
+    // Fallback: try filename-derived title when OPF/ID3 metadata title didn't match
+    if (matchingWork === undefined) {
+      const filenameDerived = deriveTitleFromPath(ctx.fileAsset.relativePath, ctx.fileAsset.mediaKind);
+      const stripped = stripFilenameAuthorSuffix(filenameDerived.title);
+      const filenameCanonical = canonicalizeBookTitle(stripped);
+      const filenameNormalized = normalizeForTitleMatching(stripped);
+
+      const candidateCanonicals = [...new Set(
+        [filenameCanonical, filenameNormalized].filter(
+          (c): c is string => c !== undefined && c !== ctx.matchableMetadata.titleCanonical,
+        ),
+      )];
+
+      for (const candidate of candidateCanonicals) {
+        const filenameMatches = await ingestDb.work.findMany({
+          include: {
+            editions: {
+              include: {
+                contributors: {
+                  include: {
+                    contributor: true,
+                  },
+                },
+              },
+            },
+          },
+          where: { titleCanonical: candidate },
+        });
+
+        matchingWork = filenameMatches.find((work) => {
+          const existingAuthors = getAuthorCanonicalsForWork(work);
+          return existingAuthors.length > 0 &&
+            existingAuthors.length === authorCanonicalsExpected.length &&
+            existingAuthors.every((author, index) => author === authorCanonicalsExpected[index]);
+        });
+
+        if (matchingWork !== undefined) {
+          logger.info(
+            {
+              fileAssetId: ctx.fileAsset.id,
+              filenameCanonical: candidate,
+              matchedWorkId: matchingWork.id,
+              metadataCanonical: ctx.matchableMetadata.titleCanonical,
+            },
+            "Matched work via filename-derived title fallback",
+          );
+          break;
+        }
+      }
+    }
+
     if (matchingWork === undefined) {
       const createdWorkRecord = await ingestDb.work.create({
         data: {
@@ -2954,64 +3346,6 @@ export function createIngestServices(
     }
 
     const workId = matchingWork.id;
-
-    if (!ctx.isAudiobook && isEbookVariant(ctx.fileAsset.mediaKind)) {
-      const existingEbookEdition = matchingWork.editions.find(
-        (edition) => edition.formatFamily === FormatFamily.EBOOK,
-      );
-
-      if (existingEbookEdition) {
-        await ingestDb.edition.update({
-          where: { id: existingEbookEdition.id },
-          data: {
-            asin: ctx.identifiers?.asin ?? existingEbookEdition.asin,
-            isbn10: ctx.identifiers?.isbn10 ?? existingEbookEdition.isbn10,
-            isbn13: ctx.identifiers?.isbn13 ?? existingEbookEdition.isbn13,
-            language: ctx.storedMetadata.normalized?.language ?? existingEbookEdition.language,
-          },
-        });
-
-        await ensureContributors(
-          ingestDb,
-          existingEbookEdition.id,
-          ctx.matchableMetadata.authors,
-          ContributorRole.AUTHOR,
-        );
-
-        const editionFileRole = await determineEditionFileRole(
-          ingestDb,
-          existingEbookEdition.id,
-          ctx.fileAsset,
-        );
-        const createdEditionFile = await ensureEditionFileLink(
-          ingestDb,
-          existingEbookEdition.id,
-          ctx.fileAsset.id,
-          editionFileRole,
-        );
-
-        await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
-          workId,
-          fileAssetId: ctx.fileAsset.id,
-        });
-
-        return {
-          kind: "earlyReturn",
-          result: {
-            createdEdition: false,
-            createdEditionFile,
-            createdWork: false,
-            editionId: existingEbookEdition.id,
-            enrichedExistingWork: matchingWork.enrichmentStatus === "STUB",
-            enqueuedCoverJob: true,
-            fileAssetId: ctx.fileAsset.id,
-            mediaKind: ctx.fileAsset.mediaKind,
-            skipped: false,
-            workId,
-          },
-        };
-      }
-    }
 
     // Enrich stub work with sidecar metadata
     if (matchingWork.enrichmentStatus === "STUB") {
@@ -3107,7 +3441,12 @@ export function createIngestServices(
       await ensureContributors(ingestDb, createdEdition.id, ctx.storedMetadata.normalized.narrators, ContributorRole.NARRATOR);
     }
 
-    const createdEditionFile = await ensureEditionFileLink(ingestDb, createdEdition.id, ctx.fileAsset.id);
+    const createdEditionFile = await linkFileToEdition(
+      ingestDb,
+      createdEdition.id,
+      workId,
+      ctx.fileAsset,
+    );
 
     // Link sibling audio files as AUDIO_TRACK for audiobook editions
     if (ctx.isAudiobook) {
@@ -3193,6 +3532,7 @@ export function createIngestServices(
 
     const matchableMediaKinds: Set<MediaKind> = new Set([
       MediaKind.EPUB,
+      MediaKind.PDF,
       MediaKind.KEPUB,
       MediaKind.MOBI,
       MediaKind.AZW,
@@ -3234,6 +3574,9 @@ export function createIngestServices(
 
     const sidecarResult = await matchAudiobookSidecarToSibling(ctx);
     if (sidecarResult !== null) return sidecarResult;
+
+    const siblingEbookResult = await matchEbookToSiblingEdition(ctx);
+    if (siblingEbookResult !== null) return siblingEbookResult;
 
     const identifierResult = await matchByIdentifiers(ctx);
     if (identifierResult !== null) return identifierResult;

@@ -753,7 +753,43 @@ describe("EditionTabPanel", () => {
     expect(link.getAttribute("href")).toBe("/api/editions/download-all/e1");
   });
 
-  it("does not render individual download links when Download All is shown", () => {
+  it("keeps individual download links visible when Download All is shown", () => {
+    const edition = {
+      ...baseEdition,
+      editionFiles: [
+        baseEdition.editionFiles[0],
+        {
+          id: "ef2",
+          editionId: "e1",
+          fileAssetId: "fa2",
+          role: "ALTERNATE_FORMAT",
+          fileAsset: {
+            ...(baseEdition.editionFiles[0] as (typeof baseEdition.editionFiles)[number]).fileAsset,
+            id: "fa2",
+            basename: "wind.pdf",
+            mediaKind: "PDF",
+            availabilityStatus: "PRESENT",
+          },
+        },
+      ],
+    } as EditionType;
+    render(
+      <EditionTabPanel
+        edition={edition}
+        isLastEdition={false}
+        onEditionFieldSaved={vi.fn()}
+        onDeleteEdition={vi.fn()}
+        smtpConfigured={false}
+        kindleConfigured={false}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: /download wind\.epub/i })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /download wind\.pdf/i })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /download all \(2 files\)/i })).toBeTruthy();
+  });
+
+  it("keeps individual download links visible for audiobook files when Download All is shown", () => {
     const edition = {
       ...baseEdition,
       editionFiles: [
@@ -783,8 +819,9 @@ describe("EditionTabPanel", () => {
       />,
     );
 
-    expect(screen.queryByRole("link", { name: /download wind\.epub/i })).toBeNull();
-    expect(screen.queryByRole("link", { name: /download track02\.mp3/i })).toBeNull();
+    expect(screen.getByRole("link", { name: /download wind\.epub/i })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /download track02\.mp3/i })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /download all \(2 files\)/i })).toBeTruthy();
   });
 
   it("counts only PRESENT files toward Download All threshold", () => {

@@ -4,6 +4,8 @@ import type { Prisma } from "@bookhouse/db";
 
 const FORMAT_FAMILIES = ["EBOOK", "AUDIOBOOK"] as const;
 
+const KEPUB_EXCLUDED_MEDIA_KINDS = ["KEPUB", "COVER", "SIDECAR"] as const;
+
 type FormatCount = { formatFamily: string; _count: { _all: number } };
 
 function normalizeFormatCounts(
@@ -37,7 +39,7 @@ export const getLibraryWorksServerFn = createServerFn({
         some: {
           editionFiles: {
             some: {
-              fileAsset: { availabilityStatus: "PRESENT" },
+              fileAsset: { availabilityStatus: "PRESENT", mediaKind: { notIn: [...KEPUB_EXCLUDED_MEDIA_KINDS] } },
             },
           },
         },
@@ -146,7 +148,7 @@ function buildWhere(data: z.infer<typeof filterSchema>): Prisma.WorkWhereInput {
         some: {
           editionFiles: {
             some: {
-              fileAsset: { availabilityStatus: "PRESENT" },
+              fileAsset: { availabilityStatus: "PRESENT", mediaKind: { notIn: [...KEPUB_EXCLUDED_MEDIA_KINDS] } },
             },
           },
         },

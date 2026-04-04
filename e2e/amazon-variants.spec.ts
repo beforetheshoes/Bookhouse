@@ -61,8 +61,8 @@ test.describe("Amazon ebook variants", () => {
     expect(work?.editions[0]?.editionFiles).toHaveLength(2);
 
     await page.goto(`/library/${work?.id}`);
-    await expect(page.getByText("book.mobi")).toBeVisible();
-    await expect(page.getByText("book.azw")).toBeVisible();
+    await expect(page.getByText("book.mobi", { exact: true })).toBeVisible();
+    await expect(page.getByText("book.azw", { exact: true })).toBeVisible();
 
     await page.goto("/duplicates");
     await expect(page.getByText("No duplicates found")).toBeVisible();

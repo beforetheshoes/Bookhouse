@@ -66,6 +66,7 @@ describe("classification helpers", () => {
   it("classifies supported media kinds", () => {
     expect(classifyMediaKind("book.epub")).toBe(MediaKind.EPUB);
     expect(classifyMediaKind("book.kepub")).toBe(MediaKind.KEPUB);
+    expect(classifyMediaKind("book.kepub.epub")).toBe(MediaKind.KEPUB);
     expect(classifyMediaKind("book.mobi")).toBe("MOBI");
     expect(classifyMediaKind("book.azw")).toBe("AZW");
     expect(classifyMediaKind("book.azw3")).toBe("AZW3");

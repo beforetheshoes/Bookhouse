@@ -45,7 +45,7 @@ describe("getLibraryWorksServerFn", () => {
           some: {
             editionFiles: {
               some: {
-                fileAsset: { availabilityStatus: "PRESENT" },
+                fileAsset: { availabilityStatus: "PRESENT", mediaKind: { notIn: ["KEPUB", "COVER", "SIDECAR"] } },
               },
             },
           },
@@ -867,7 +867,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
               some: {
                 editionFiles: {
                   some: {
-                    fileAsset: { availabilityStatus: "PRESENT" },
+                    fileAsset: { availabilityStatus: "PRESENT", mediaKind: { notIn: ["KEPUB", "COVER", "SIDECAR"] } },
                   },
                 },
               },
@@ -1132,7 +1132,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
             some: {
               editionFiles: {
                 some: {
-                  fileAsset: { availabilityStatus: "PRESENT" },
+                  fileAsset: { availabilityStatus: "PRESENT", mediaKind: { notIn: ["KEPUB", "COVER", "SIDECAR"] } },
                 },
               },
             },
