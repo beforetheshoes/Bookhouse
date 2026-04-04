@@ -12,7 +12,7 @@ async function collectFileAssetIds(
   return [...new Set(links.map((ef: { fileAssetId: string }) => ef.fileAssetId))];
 }
 
-async function cleanupOrphanedFiles(db: Parameters<typeof import("@bookhouse/ingest").cleanupOrphanedFileAssets>[0], fileAssetIds: string[]): Promise<void> {
+async function cleanupOrphanedFiles(db: { fileAsset: { findMany: (args: object) => Promise<{ id: string }[]>; deleteMany: (args: object) => Promise<{ count: number }> } }, fileAssetIds: string[]): Promise<void> {
   if (fileAssetIds.length === 0) return;
   const { cleanupOrphanedFileAssets } = await import("@bookhouse/ingest");
   await cleanupOrphanedFileAssets(db, fileAssetIds);

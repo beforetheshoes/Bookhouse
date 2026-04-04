@@ -81,7 +81,6 @@ describe("getLibraryHealthServerFn", () => {
     pendingDuplicates?: number;
     orphanedFiles?: number;
     pendingMatchSuggestions?: number;
-    staleEnrichment?: number;
     emptyWorks?: number;
   }) {
     const defaults = {
@@ -91,7 +90,6 @@ describe("getLibraryHealthServerFn", () => {
       pendingDuplicates: 3,
       orphanedFiles: 2,
       pendingMatchSuggestions: 4,
-      staleEnrichment: 8,
       emptyWorks: 0,
     };
     const vals = { ...defaults, ...overrides };
@@ -100,7 +98,6 @@ describe("getLibraryHealthServerFn", () => {
       .mockResolvedValueOnce(vals.totalWorks)
       .mockResolvedValueOnce(vals.missingCover)
       .mockResolvedValueOnce(vals.noIsbn)
-      .mockResolvedValueOnce(vals.staleEnrichment)
       .mockResolvedValueOnce(vals.emptyWorks);
 
     duplicateCandidateCountMock.mockResolvedValueOnce(vals.pendingDuplicates);
@@ -190,31 +187,11 @@ describe("getLibraryHealthServerFn", () => {
     });
   });
 
-  it("counts stale enrichment with 6-month threshold and some+every guard", async () => {
-    setupMocks({ staleEnrichment: 12 });
-    const result = await getLibraryHealthServerFn();
-    expect(result.checks.staleEnrichment).toEqual({ count: 12, total: 100 });
-
-    const staleCall = workCountMock.mock.calls[3] as [{ where: { AND: [object, { enrichmentStatus: string; externalLinks: { some: object; every: { lastSyncedAt: { lt: Date } } } }] } }];
-    const andClause = staleCall[0].where.AND;
-    expect(andClause[0]).toEqual({
-      editions: { some: { editionFiles: { some: { fileAsset: { availabilityStatus: "PRESENT", mediaKind: { notIn: ["KEPUB", "COVER", "SIDECAR"] } } } } } },
-    });
-    const staleWhere = andClause[1];
-    expect(staleWhere.enrichmentStatus).toBe("ENRICHED");
-    expect(staleWhere.externalLinks.some).toEqual({});
-    const threshold = staleWhere.externalLinks.every.lastSyncedAt.lt;
-    expect(threshold).toBeInstanceOf(Date);
-    const daysDiff = (Date.now() - threshold.getTime()) / (1000 * 60 * 60 * 24);
-    expect(daysDiff).toBeGreaterThanOrEqual(179);
-    expect(daysDiff).toBeLessThanOrEqual(181);
-  });
-
   it("counts empty works (works with no PRESENT files)", async () => {
     setupMocks({ emptyWorks: 3 });
     const result = await getLibraryHealthServerFn();
     expect(result.checks.emptyWorks).toEqual({ count: 3 });
-    const call = workCountMock.mock.calls[4] as [{ where: { NOT: object } }];
+    const call = workCountMock.mock.calls[3] as [{ where: { NOT: object } }];
     expect(call[0]).toEqual({
       where: {
         NOT: {
@@ -238,7 +215,7 @@ describe("getLibraryHealthServerFn", () => {
       pendingDuplicates: 0,
       orphanedFiles: 0,
       pendingMatchSuggestions: 0,
-      staleEnrichment: 0,
+
       emptyWorks: 0,
     });
     const result = await getLibraryHealthServerFn();
@@ -248,14 +225,14 @@ describe("getLibraryHealthServerFn", () => {
     expect(result.checks.pendingDuplicates.count).toBe(0);
     expect(result.checks.orphanedFiles.count).toBe(0);
     expect(result.checks.pendingMatchSuggestions.count).toBe(0);
-    expect(result.checks.staleEnrichment.count).toBe(0);
+
     expect(result.checks.emptyWorks.count).toBe(0);
   });
 
   it("runs all queries in parallel via Promise.all", async () => {
     setupMocks();
     await getLibraryHealthServerFn();
-    expect(workCountMock).toHaveBeenCalledTimes(5);
+    expect(workCountMock).toHaveBeenCalledTimes(4);
     expect(duplicateCandidateCountMock).toHaveBeenCalledTimes(1);
     expect(fileAssetCountMock).toHaveBeenCalledTimes(1);
     expect(matchSuggestionCountMock).toHaveBeenCalledTimes(1);

@@ -26,7 +26,6 @@ import {
   FileQuestion,
   Ghost,
   Link2,
-  RefreshCw,
   Trash2,
 } from "lucide-react";
 
@@ -192,15 +191,7 @@ function HealthPage() {
       icon: Link2,
       href: "/match-suggestions",
     },
-    {
-      key: "staleEnrichment",
-      label: "Stale Enrichment",
-      description: "Books not re-enriched in 6+ months",
-      count: health.checks.staleEnrichment.count,
-      total: health.checks.staleEnrichment.total,
-      icon: RefreshCw,
-    },
-    {
+{
       key: "emptyWorks",
       label: "Empty Works",
       description: "Works with no file attached",

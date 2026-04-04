@@ -24,7 +24,6 @@ export const getLibraryHealthServerFn = createServerFn({
   method: "GET",
 }).handler(async () => {
   const { db } = await import("@bookhouse/db");
-  const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000);
 
   const [
     totalWorks,
@@ -33,7 +32,6 @@ export const getLibraryHealthServerFn = createServerFn({
     pendingDuplicatesCount,
     orphanedFilesCount,
     pendingMatchSuggestionsCount,
-    staleEnrichmentCount,
     emptyWorksCount,
   ] = await Promise.all([
     db.work.count({ where: hasFilesWhere }),
@@ -56,20 +54,6 @@ export const getLibraryHealthServerFn = createServerFn({
       },
     }),
     db.matchSuggestion.count({ where: { reviewStatus: "PENDING" } }),
-    db.work.count({
-      where: {
-        AND: [
-          hasFilesWhere,
-          {
-            enrichmentStatus: "ENRICHED",
-            externalLinks: {
-              some: {},
-              every: { lastSyncedAt: { lt: sixMonthsAgo } },
-            },
-          },
-        ],
-      },
-    }),
     db.work.count({ where: { NOT: hasFilesWhere } }),
   ]);
 
@@ -81,7 +65,6 @@ export const getLibraryHealthServerFn = createServerFn({
       pendingDuplicates: { count: pendingDuplicatesCount },
       orphanedFiles: { count: orphanedFilesCount },
       pendingMatchSuggestions: { count: pendingMatchSuggestionsCount },
-      staleEnrichment: { count: staleEnrichmentCount, total: totalWorks },
       emptyWorks: { count: emptyWorksCount },
     },
   };

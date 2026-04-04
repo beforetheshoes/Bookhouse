@@ -14,7 +14,7 @@ let mockLoaderData: {
       pendingDuplicates: { count: number };
       orphanedFiles: { count: number };
       pendingMatchSuggestions: { count: number };
-      staleEnrichment: { count: number; total: number };
+
       emptyWorks: { count: number };
     };
   };
@@ -29,7 +29,7 @@ let mockLoaderData: {
       pendingDuplicates: { count: 3 },
       orphanedFiles: { count: 2 },
       pendingMatchSuggestions: { count: 4 },
-      staleEnrichment: { count: 8, total: 100 },
+
       emptyWorks: { count: 2 },
     },
   },
@@ -98,7 +98,7 @@ const Page = (Route.options.component as React.ComponentType);
 
 describe("health route", () => {
   it("loader calls both server functions in parallel and returns combined data", async () => {
-    const mockHealth = { totalWorks: 50, checks: { missingCover: { count: 0, total: 50 }, noIsbn: { count: 0, total: 50 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 0 }, pendingMatchSuggestions: { count: 0 }, staleEnrichment: { count: 0, total: 50 }, emptyWorks: { count: 0 } } };
+    const mockHealth = { totalWorks: 50, checks: { missingCover: { count: 0, total: 50 }, noIsbn: { count: 0, total: 50 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 0 }, pendingMatchSuggestions: { count: 0 }, emptyWorks: { count: 0 } } };
     const mockOrphans = [{ id: "f1", relativePath: "a.epub", mediaKind: "EPUB" as const, sizeBytes: null }];
     const mockEmptyWorks = [{ id: "w1", titleDisplay: "Ghost" }];
     getHealthMock.mockResolvedValue(mockHealth);
@@ -123,14 +123,13 @@ describe("health route", () => {
       expect(screen.getByText(/experimental/i)).toBeTruthy();
     });
 
-    it("renders all 7 health check category labels", () => {
+    it("renders all 6 health check category labels", () => {
       render(<Page />);
       expect(screen.getByText("Missing Covers")).toBeTruthy();
       expect(screen.getByText("Missing ISBN")).toBeTruthy();
       expect(screen.getByText("Pending Duplicates")).toBeTruthy();
       expect(screen.getByText("Orphaned Files")).toBeTruthy();
       expect(screen.getByText("Pending Matches")).toBeTruthy();
-      expect(screen.getByText("Stale Enrichment")).toBeTruthy();
       expect(screen.getByText("Empty Works")).toBeTruthy();
     });
 
@@ -143,7 +142,7 @@ describe("health route", () => {
 
     it("does NOT render a Review link for Missing Covers", () => {
       mockLoaderData = {
-        health: { totalWorks: 100, checks: { missingCover: { count: 5, total: 100 }, noIsbn: { count: 0, total: 100 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 0 }, pendingMatchSuggestions: { count: 0 }, staleEnrichment: { count: 0, total: 100 }, emptyWorks: { count: 0 } } },
+        health: { totalWorks: 100, checks: { missingCover: { count: 5, total: 100 }, noIsbn: { count: 0, total: 100 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 0 }, pendingMatchSuggestions: { count: 0 }, emptyWorks: { count: 0 } } },
         orphanedFiles: [],
         emptyWorks: [],
       };
@@ -156,7 +155,7 @@ describe("health route", () => {
 
     it("does NOT render a Review link for Missing ISBN", () => {
       mockLoaderData = {
-        health: { totalWorks: 100, checks: { missingCover: { count: 0, total: 100 }, noIsbn: { count: 10, total: 100 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 0 }, pendingMatchSuggestions: { count: 0 }, staleEnrichment: { count: 0, total: 100 }, emptyWorks: { count: 0 } } },
+        health: { totalWorks: 100, checks: { missingCover: { count: 0, total: 100 }, noIsbn: { count: 10, total: 100 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 0 }, pendingMatchSuggestions: { count: 0 }, emptyWorks: { count: 0 } } },
         orphanedFiles: [],
         emptyWorks: [],
       };
@@ -170,7 +169,7 @@ describe("health route", () => {
 
     it("renders a link to /duplicates when there are pending duplicates", () => {
       mockLoaderData = {
-        health: { totalWorks: 100, checks: { missingCover: { count: 0, total: 100 }, noIsbn: { count: 0, total: 100 }, pendingDuplicates: { count: 3 }, orphanedFiles: { count: 0 }, pendingMatchSuggestions: { count: 0 }, staleEnrichment: { count: 0, total: 100 }, emptyWorks: { count: 0 } } },
+        health: { totalWorks: 100, checks: { missingCover: { count: 0, total: 100 }, noIsbn: { count: 0, total: 100 }, pendingDuplicates: { count: 3 }, orphanedFiles: { count: 0 }, pendingMatchSuggestions: { count: 0 }, emptyWorks: { count: 0 } } },
         orphanedFiles: [],
         emptyWorks: [],
       };
@@ -181,7 +180,7 @@ describe("health route", () => {
 
     it("renders a link to /match-suggestions when there are pending matches", () => {
       mockLoaderData = {
-        health: { totalWorks: 100, checks: { missingCover: { count: 0, total: 100 }, noIsbn: { count: 0, total: 100 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 0 }, pendingMatchSuggestions: { count: 4 }, staleEnrichment: { count: 0, total: 100 }, emptyWorks: { count: 0 } } },
+        health: { totalWorks: 100, checks: { missingCover: { count: 0, total: 100 }, noIsbn: { count: 0, total: 100 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 0 }, pendingMatchSuggestions: { count: 4 }, emptyWorks: { count: 0 } } },
         orphanedFiles: [],
         emptyWorks: [],
       };
@@ -194,7 +193,7 @@ describe("health route", () => {
 
     it("renders orphaned file paths in the list", () => {
       mockLoaderData = {
-        health: { totalWorks: 100, checks: { missingCover: { count: 0, total: 100 }, noIsbn: { count: 0, total: 100 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 2 }, pendingMatchSuggestions: { count: 0 }, staleEnrichment: { count: 0, total: 100 }, emptyWorks: { count: 0 } } },
+        health: { totalWorks: 100, checks: { missingCover: { count: 0, total: 100 }, noIsbn: { count: 0, total: 100 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 2 }, pendingMatchSuggestions: { count: 0 }, emptyWorks: { count: 0 } } },
         orphanedFiles: [
           { id: "f1", relativePath: "books/orphan1.epub", mediaKind: "EPUB" as MediaKind, sizeBytes: 1024n },
           { id: "f2", relativePath: "books/orphan2.epub", mediaKind: "EPUB" as MediaKind, sizeBytes: 2048n },
@@ -208,7 +207,7 @@ describe("health route", () => {
 
     it("calls deleteOrphanedFileServerFn and invalidates on delete click", async () => {
       mockLoaderData = {
-        health: { totalWorks: 100, checks: { missingCover: { count: 0, total: 100 }, noIsbn: { count: 0, total: 100 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 1 }, pendingMatchSuggestions: { count: 0 }, staleEnrichment: { count: 0, total: 100 }, emptyWorks: { count: 0 } } },
+        health: { totalWorks: 100, checks: { missingCover: { count: 0, total: 100 }, noIsbn: { count: 0, total: 100 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 1 }, pendingMatchSuggestions: { count: 0 }, emptyWorks: { count: 0 } } },
         orphanedFiles: [
           { id: "f1", relativePath: "books/orphan1.epub", mediaKind: "EPUB" as MediaKind, sizeBytes: null },
         ],
@@ -228,7 +227,7 @@ describe("health route", () => {
 
     it("shows no orphaned files message when list is empty", () => {
       mockLoaderData = {
-        health: { totalWorks: 100, checks: { missingCover: { count: 0, total: 100 }, noIsbn: { count: 0, total: 100 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 0 }, pendingMatchSuggestions: { count: 0 }, staleEnrichment: { count: 0, total: 100 }, emptyWorks: { count: 0 } } },
+        health: { totalWorks: 100, checks: { missingCover: { count: 0, total: 100 }, noIsbn: { count: 0, total: 100 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 0 }, pendingMatchSuggestions: { count: 0 }, emptyWorks: { count: 0 } } },
         orphanedFiles: [],
         emptyWorks: [],
       };
@@ -240,7 +239,7 @@ describe("health route", () => {
 
     it("renders empty works titles in the list", () => {
       mockLoaderData = {
-        health: { totalWorks: 100, checks: { missingCover: { count: 0, total: 100 }, noIsbn: { count: 0, total: 100 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 0 }, pendingMatchSuggestions: { count: 0 }, staleEnrichment: { count: 0, total: 100 }, emptyWorks: { count: 2 } } },
+        health: { totalWorks: 100, checks: { missingCover: { count: 0, total: 100 }, noIsbn: { count: 0, total: 100 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 0 }, pendingMatchSuggestions: { count: 0 }, emptyWorks: { count: 2 } } },
         orphanedFiles: [],
         emptyWorks: [
           { id: "w1", titleDisplay: "Ghost Book" },
@@ -254,7 +253,7 @@ describe("health route", () => {
 
     it("calls deleteEmptyWorksServerFn and invalidates on delete all click", async () => {
       mockLoaderData = {
-        health: { totalWorks: 100, checks: { missingCover: { count: 0, total: 100 }, noIsbn: { count: 0, total: 100 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 0 }, pendingMatchSuggestions: { count: 0 }, staleEnrichment: { count: 0, total: 100 }, emptyWorks: { count: 1 } } },
+        health: { totalWorks: 100, checks: { missingCover: { count: 0, total: 100 }, noIsbn: { count: 0, total: 100 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 0 }, pendingMatchSuggestions: { count: 0 }, emptyWorks: { count: 1 } } },
         orphanedFiles: [],
         emptyWorks: [{ id: "w1", titleDisplay: "Ghost Book" }],
       };
@@ -272,7 +271,7 @@ describe("health route", () => {
 
     it("shows no empty works message when list is empty", () => {
       mockLoaderData = {
-        health: { totalWorks: 100, checks: { missingCover: { count: 0, total: 100 }, noIsbn: { count: 0, total: 100 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 0 }, pendingMatchSuggestions: { count: 0 }, staleEnrichment: { count: 0, total: 100 }, emptyWorks: { count: 0 } } },
+        health: { totalWorks: 100, checks: { missingCover: { count: 0, total: 100 }, noIsbn: { count: 0, total: 100 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 0 }, pendingMatchSuggestions: { count: 0 }, emptyWorks: { count: 0 } } },
         orphanedFiles: [],
         emptyWorks: [],
       };
@@ -284,7 +283,7 @@ describe("health route", () => {
 
     it("shows empty state when library has no works", () => {
       mockLoaderData = {
-        health: { totalWorks: 0, checks: { missingCover: { count: 0, total: 0 }, noIsbn: { count: 0, total: 0 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 0 }, pendingMatchSuggestions: { count: 0 }, staleEnrichment: { count: 0, total: 0 }, emptyWorks: { count: 0 } } },
+        health: { totalWorks: 0, checks: { missingCover: { count: 0, total: 0 }, noIsbn: { count: 0, total: 0 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 0 }, pendingMatchSuggestions: { count: 0 }, emptyWorks: { count: 0 } } },
         orphanedFiles: [],
         emptyWorks: [],
       };
@@ -294,7 +293,7 @@ describe("health route", () => {
 
     it("shows singular 'issue' when exactly 1 issue found", () => {
       mockLoaderData = {
-        health: { totalWorks: 100, checks: { missingCover: { count: 1, total: 100 }, noIsbn: { count: 0, total: 100 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 0 }, pendingMatchSuggestions: { count: 0 }, staleEnrichment: { count: 0, total: 100 }, emptyWorks: { count: 0 } } },
+        health: { totalWorks: 100, checks: { missingCover: { count: 1, total: 100 }, noIsbn: { count: 0, total: 100 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 0 }, pendingMatchSuggestions: { count: 0 }, emptyWorks: { count: 0 } } },
         orphanedFiles: [],
         emptyWorks: [],
       };
@@ -304,7 +303,7 @@ describe("health route", () => {
 
     it("does not render review links for zero-count categories", () => {
       mockLoaderData = {
-        health: { totalWorks: 100, checks: { missingCover: { count: 0, total: 100 }, noIsbn: { count: 0, total: 100 }, pendingDuplicates: { count: 1 }, orphanedFiles: { count: 0 }, pendingMatchSuggestions: { count: 0 }, staleEnrichment: { count: 0, total: 100 }, emptyWorks: { count: 0 } } },
+        health: { totalWorks: 100, checks: { missingCover: { count: 0, total: 100 }, noIsbn: { count: 0, total: 100 }, pendingDuplicates: { count: 1 }, orphanedFiles: { count: 0 }, pendingMatchSuggestions: { count: 0 }, emptyWorks: { count: 0 } } },
         orphanedFiles: [],
         emptyWorks: [],
       };
@@ -315,7 +314,7 @@ describe("health route", () => {
 
     it("calculates health score and renders it in data-testid element", () => {
       mockLoaderData = {
-        health: { totalWorks: 100, checks: { missingCover: { count: 10, total: 100 }, noIsbn: { count: 20, total: 100 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 5 }, pendingMatchSuggestions: { count: 0 }, staleEnrichment: { count: 0, total: 100 }, emptyWorks: { count: 0 } } },
+        health: { totalWorks: 100, checks: { missingCover: { count: 10, total: 100 }, noIsbn: { count: 20, total: 100 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 5 }, pendingMatchSuggestions: { count: 0 }, emptyWorks: { count: 0 } } },
         orphanedFiles: [],
         emptyWorks: [],
       };
@@ -326,7 +325,7 @@ describe("health route", () => {
 
     it("shows singular label when 1 empty work", () => {
       mockLoaderData = {
-        health: { totalWorks: 100, checks: { missingCover: { count: 0, total: 100 }, noIsbn: { count: 0, total: 100 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 0 }, pendingMatchSuggestions: { count: 0 }, staleEnrichment: { count: 0, total: 100 }, emptyWorks: { count: 1 } } },
+        health: { totalWorks: 100, checks: { missingCover: { count: 0, total: 100 }, noIsbn: { count: 0, total: 100 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 0 }, pendingMatchSuggestions: { count: 0 }, emptyWorks: { count: 1 } } },
         orphanedFiles: [],
         emptyWorks: [{ id: "w1", titleDisplay: "Ghost Book" }],
       };
