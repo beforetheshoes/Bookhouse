@@ -87,6 +87,17 @@ describe("mapEditionToOpds", () => {
     expect(result.seriesPosition).toBeNull();
   });
 
+  it("falls back to application/epub+zip when mimeType is null", () => {
+    const result = mapEditionToOpds(
+      makeEditionResult({
+        editionFiles: [
+          { id: "ef-1", fileAsset: { mimeType: null, sizeBytes: 1000n, basename: "test.epub" } },
+        ],
+      }),
+    );
+    expect(result.files[0]?.mimeType).toBe("application/epub+zip");
+  });
+
   it("handles multiple files", () => {
     const result = mapEditionToOpds(
       makeEditionResult({
