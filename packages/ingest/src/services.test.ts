@@ -10683,6 +10683,244 @@ describe("ingest services", () => {
       warnings: ["Unknown audiobook metadata.json parsing error"],
     });
   });
+
+  it("matches existing work via filename-derived title when OPF title differs", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    // Existing work created from a prior scan (e.g., Kobo sync or audiobook)
+    addWork(state, {
+      id: "existing-work",
+      titleCanonical: "hacking the xbox",
+      titleDisplay: "Hacking the Xbox",
+    });
+    addEdition(state, {
+      id: "existing-edition",
+      workId: "existing-work",
+      formatFamily: FormatFamily.EBOOK,
+    });
+    const authorContributor = addContributor(state, {
+      id: "contrib-huang",
+      nameCanonical: "andrew huang",
+      nameDisplay: "Andrew Huang",
+    });
+    addEditionContributor(state, {
+      editionId: "existing-edition",
+      contributorId: authorContributor.id,
+      id: "ec-huang",
+      role: ContributorRole.AUTHOR,
+    });
+
+    // New EPUB with a garbled OPF title but a correct filename
+    addFileAsset(state, {
+      id: "file-epub",
+      absolutePath: "/tmp/root/Hacking the Xbox \u2013 Andrew Huang.epub",
+      basename: "Hacking the Xbox \u2013 Andrew Huang.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      relativePath: "Hacking the Xbox \u2013 Andrew Huang.epub",
+      metadata: {
+        normalized: {
+          authors: ["Andrew Huang"],
+          identifiers: { unknown: [] },
+          title: "HackingTheXbox Free",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-epub" });
+
+    // Should match existing work via filename fallback, NOT create a duplicate
+    expect(result.createdWork).toBe(false);
+    expect(result.workId).toBe("existing-work");
+    expect(result.skipped).toBe(false);
+  });
+
+  it("filename fallback does not match when authors differ", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    addWork(state, {
+      id: "existing-work",
+      titleCanonical: "hacking the xbox",
+      titleDisplay: "Hacking the Xbox",
+    });
+    addEdition(state, {
+      id: "existing-edition",
+      workId: "existing-work",
+      formatFamily: FormatFamily.EBOOK,
+    });
+    const authorContributor = addContributor(state, {
+      id: "contrib-huang",
+      nameCanonical: "andrew huang",
+      nameDisplay: "Andrew Huang",
+    });
+    addEditionContributor(state, {
+      editionId: "existing-edition",
+      contributorId: authorContributor.id,
+      id: "ec-huang",
+      role: ContributorRole.AUTHOR,
+    });
+
+    // EPUB with a DIFFERENT author — should NOT match via filename fallback
+    addFileAsset(state, {
+      id: "file-epub",
+      absolutePath: "/tmp/root/Hacking the Xbox \u2013 Someone Else.epub",
+      basename: "Hacking the Xbox \u2013 Someone Else.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      relativePath: "Hacking the Xbox \u2013 Someone Else.epub",
+      metadata: {
+        normalized: {
+          authors: ["Someone Else"],
+          identifiers: { unknown: [] },
+          title: "HackingTheXbox Free",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-epub" });
+
+    // Different author → should create a new work, not match
+    expect(result.createdWork).toBe(true);
+    expect(result.workId).not.toBe("existing-work");
+  });
+
+  it("filename fallback not attempted when OPF title already matches", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    addWork(state, {
+      id: "existing-work",
+      titleCanonical: "project hail mary",
+      titleDisplay: "Project Hail Mary",
+    });
+    addEdition(state, {
+      id: "existing-edition",
+      workId: "existing-work",
+      formatFamily: FormatFamily.EBOOK,
+    });
+    const authorContributor = addContributor(state, {
+      id: "contrib-weir",
+      nameCanonical: "andy weir",
+      nameDisplay: "Andy Weir",
+    });
+    addEditionContributor(state, {
+      editionId: "existing-edition",
+      contributorId: authorContributor.id,
+      id: "ec-weir",
+      role: ContributorRole.AUTHOR,
+    });
+
+    // EPUB with CORRECT OPF title — filename fallback should not be needed
+    addFileAsset(state, {
+      id: "file-epub",
+      absolutePath: "/tmp/root/Andy Weir/Project Hail Mary.epub",
+      basename: "Project Hail Mary.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      relativePath: "Andy Weir/Project Hail Mary.epub",
+      metadata: {
+        normalized: {
+          authors: ["Andy Weir"],
+          identifiers: { unknown: [] },
+          title: "Project Hail Mary",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-epub" });
+
+    // Should match via OPF title directly
+    expect(result.createdWork).toBe(false);
+    expect(result.workId).toBe("existing-work");
+  });
+
+  it("filename fallback strips parentheticals via normalizeForTitleMatching", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    addWork(state, {
+      id: "existing-work",
+      titleCanonical: "some book",
+      titleDisplay: "Some Book",
+    });
+    addEdition(state, {
+      id: "existing-edition",
+      workId: "existing-work",
+      formatFamily: FormatFamily.EBOOK,
+    });
+    const authorContributor = addContributor(state, {
+      id: "contrib-smith",
+      nameCanonical: "john smith",
+      nameDisplay: "John Smith",
+    });
+    addEditionContributor(state, {
+      editionId: "existing-edition",
+      contributorId: authorContributor.id,
+      id: "ec-smith",
+      role: ContributorRole.AUTHOR,
+    });
+
+    // EPUB with bad OPF title AND parenthetical noise in filename
+    addFileAsset(state, {
+      id: "file-epub",
+      absolutePath: "/tmp/root/Some Book (Unabridged) \u2013 John Smith.epub",
+      basename: "Some Book (Unabridged) \u2013 John Smith.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      relativePath: "Some Book (Unabridged) \u2013 John Smith.epub",
+      metadata: {
+        normalized: {
+          authors: ["John Smith"],
+          identifiers: { unknown: [] },
+          title: "SomeBook Unabridged Edition",
+        },
+        parsedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
+        parserVersion: 1,
+        source: "epub",
+        status: "parsed",
+        warnings: [],
+      } as FileAsset["metadata"],
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-epub" });
+
+    // normalizeForTitleMatching strips "(Unabridged)" → "Some Book" → matches
+    expect(result.createdWork).toBe(false);
+    expect(result.workId).toBe("existing-work");
+  });
 });
 
 describe("matchFileAssetToEdition enqueues follow-up jobs", () => {
@@ -11500,6 +11738,54 @@ describe("detectDuplicates", () => {
     const result = await services.detectDuplicates({ fileAssetId: "file-1" });
 
     expect(result.candidatesCreated).toBe(0);
+  });
+
+  it("SIMILAR_TITLE_AUTHOR: skips normalized fallback when display title normalizes to undefined", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "hash-a", "/tmp/root/book.epub");
+    // Work 1 has a display title that normalizes to empty (all punctuation)
+    addDetectWork(state, "work-1", "x", "...");
+    addDetectWork(state, "work-2", "y", "The Great Gatsby");
+    addDetectEdition(state, "edition-1", "work-1");
+    addDetectEdition(state, "edition-2", "work-2");
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    addDetectFileAsset(state, "file-2", "hash-b", "/tmp/root/book2.epub");
+    addDetectEditionFile(state, "ef-2", "edition-2", "file-2");
+    addDetectContributor(state, "c-1", "Author");
+    addDetectEditionContributor(state, "ec-1", "edition-1", "c-1");
+    addDetectEditionContributor(state, "ec-2", "edition-2", "c-1");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    // "x" vs "y" raw similarity is 0, and "..." normalizes to undefined, so no candidate
+    expect(result.candidatesCreated).toBe(0);
+  });
+
+  it("SIMILAR_TITLE_AUTHOR: detects duplicates via normalized title when raw canonicals differ due to noise", async () => {
+    const state = createEmptyState();
+    // Work 1 has parenthetical noise that prevents raw canonical match
+    addDetectFileAsset(state, "file-1", "hash-a", "/tmp/root/book.epub");
+    addDetectWork(state, "work-1", "the great gatsby unabridged", "The Great Gatsby (Unabridged)");
+    addDetectWork(state, "work-2", "the great gatsby", "The Great Gatsby");
+    addDetectEdition(state, "edition-1", "work-1");
+    addDetectEdition(state, "edition-2", "work-2");
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    addDetectFileAsset(state, "file-2", "hash-b", "/tmp/root/book2.epub");
+    addDetectEditionFile(state, "ef-2", "edition-2", "file-2");
+    addDetectContributor(state, "c-1", "F Scott Fitzgerald");
+    addDetectEditionContributor(state, "ec-1", "edition-1", "c-1");
+    addDetectEditionContributor(state, "ec-2", "edition-2", "c-1");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    // Raw canonical similarity of "the great gatsby unabridged" vs "the great gatsby" is ~0.70, below 0.85.
+    // normalizeForTitleMatching strips "(Unabridged)" from the display title, so both normalize to
+    // "the great gatsby" → similarity 1.0
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    expect(result.candidatesCreated).toBe(1);
+    const candidate = [...state.duplicateCandidates.values()][0];
+    expect(candidate?.reason).toBe("SIMILAR_TITLE_AUTHOR");
   });
 });
 

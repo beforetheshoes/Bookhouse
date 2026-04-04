@@ -29,7 +29,7 @@ import {
 } from "@bookhouse/shared";
 import { classifyMediaKind, deriveFormatFamily, getFileExtension, IGNORED_BASENAMES, isIgnoredBasename, normalizeRelativePath, normalizeRootPath } from "./classification";
 import { normalizedSimilarity, normalizeForTitleMatching, stripSubtitleForMatching } from "./similarity";
-import { deriveTitleFromPath } from "./filename-title";
+import { deriveTitleFromPath, stripFilenameAuthorSuffix } from "./filename-title";
 import {
   parseAudiobookMetadataJson,
   parseAudioId3Tags,
@@ -1533,8 +1533,16 @@ async function detectDuplicatesImpl(
         }
       }
 
-      const titleSim = normalizedSimilarity(work.titleCanonical, otherWork.titleCanonical);
-      if (titleSim < SIMILARITY_THRESHOLD) continue;
+      let titleSim = normalizedSimilarity(work.titleCanonical, otherWork.titleCanonical);
+      if (titleSim < SIMILARITY_THRESHOLD) {
+        // Fallback: try normalized display titles (strips parentheticals, edition markers, etc.)
+        const normA = normalizeForTitleMatching(work.titleDisplay);
+        const normB = normalizeForTitleMatching(otherWork.titleDisplay);
+        if (normA && normB) {
+          titleSim = normalizedSimilarity(normA, normB);
+        }
+        if (titleSim < SIMILARITY_THRESHOLD) continue;
+      }
 
       const otherAuthors = getAuthorCanonicalsForWork(otherWork);
       if (myAuthors.length === 0 && otherAuthors.length === 0) continue;
@@ -3242,6 +3250,57 @@ export function createIngestServices(
         work.enrichmentStatus === "STUB" &&
         getAuthorCanonicalsForWork(work).length === 0,
       );
+    }
+
+    // Fallback: try filename-derived title when OPF/ID3 metadata title didn't match
+    if (matchingWork === undefined) {
+      const filenameDerived = deriveTitleFromPath(ctx.fileAsset.relativePath, ctx.fileAsset.mediaKind);
+      const stripped = stripFilenameAuthorSuffix(filenameDerived.title);
+      const filenameCanonical = canonicalizeBookTitle(stripped);
+      const filenameNormalized = normalizeForTitleMatching(stripped);
+
+      const candidateCanonicals = [...new Set(
+        [filenameCanonical, filenameNormalized].filter(
+          (c): c is string => c !== undefined && c !== ctx.matchableMetadata.titleCanonical,
+        ),
+      )];
+
+      for (const candidate of candidateCanonicals) {
+        const filenameMatches = await ingestDb.work.findMany({
+          include: {
+            editions: {
+              include: {
+                contributors: {
+                  include: {
+                    contributor: true,
+                  },
+                },
+              },
+            },
+          },
+          where: { titleCanonical: candidate },
+        });
+
+        matchingWork = filenameMatches.find((work) => {
+          const existingAuthors = getAuthorCanonicalsForWork(work);
+          return existingAuthors.length > 0 &&
+            existingAuthors.length === authorCanonicalsExpected.length &&
+            existingAuthors.every((author, index) => author === authorCanonicalsExpected[index]);
+        });
+
+        if (matchingWork !== undefined) {
+          logger.info(
+            {
+              fileAssetId: ctx.fileAsset.id,
+              filenameCanonical: candidate,
+              matchedWorkId: matchingWork.id,
+              metadataCanonical: ctx.matchableMetadata.titleCanonical,
+            },
+            "Matched work via filename-derived title fallback",
+          );
+          break;
+        }
+      }
     }
 
     if (matchingWork === undefined) {
