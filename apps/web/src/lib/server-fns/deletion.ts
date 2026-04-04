@@ -1,13 +1,32 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+async function collectFileAssetIds(
+  db: { editionFile: { findMany: (args: { where: object; select: { fileAssetId: true } }) => Promise<{ fileAssetId: string }[]> } },
+  editionFilter: object,
+): Promise<string[]> {
+  const links = await db.editionFile.findMany({
+    where: editionFilter,
+    select: { fileAssetId: true },
+  });
+  return [...new Set(links.map((ef: { fileAssetId: string }) => ef.fileAssetId))];
+}
+
+async function cleanupOrphanedFiles(db: Parameters<typeof import("@bookhouse/ingest").cleanupOrphanedFileAssets>[0], fileAssetIds: string[]): Promise<void> {
+  if (fileAssetIds.length === 0) return;
+  const { cleanupOrphanedFileAssets } = await import("@bookhouse/ingest");
+  await cleanupOrphanedFileAssets(db, fileAssetIds);
+}
+
 export const deleteWorkServerFn = createServerFn({
   method: "POST",
 })
   .inputValidator(z.object({ workId: z.string().min(1) }))
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
+    const fileAssetIds = await collectFileAssetIds(db, { edition: { workId: data.workId } });
     await db.work.delete({ where: { id: data.workId } });
+    await cleanupOrphanedFiles(db, fileAssetIds);
     return { deletedWorkId: data.workId };
   });
 
@@ -23,7 +42,9 @@ export const deleteEditionServerFn = createServerFn({
       throw new Error("Edition not found");
     }
 
+    const fileAssetIds = await collectFileAssetIds(db, { editionId: data.editionId });
     await db.edition.delete({ where: { id: data.editionId } });
+    await cleanupOrphanedFiles(db, fileAssetIds);
 
     const remainingEditions = await db.edition.count({ where: { workId: edition.workId } });
     if (remainingEditions === 0) {
@@ -44,7 +65,9 @@ export const bulkDeleteWorksServerFn = createServerFn({
     }
 
     const { db } = await import("@bookhouse/db");
+    const fileAssetIds = await collectFileAssetIds(db, { edition: { workId: { in: data.workIds } } });
     await db.work.deleteMany({ where: { id: { in: data.workIds } } });
+    await cleanupOrphanedFiles(db, fileAssetIds);
     return { deletedWorkIds: data.workIds };
   });
 
@@ -64,8 +87,10 @@ export const bulkDeleteEditionsServerFn = createServerFn({
       select: { id: true, workId: true },
     });
     const affectedWorkIds = [...new Set(editions.map((e: { workId: string }) => e.workId))];
+    const fileAssetIds = await collectFileAssetIds(db, { editionId: { in: data.editionIds } });
 
     await db.edition.deleteMany({ where: { id: { in: data.editionIds } } });
+    await cleanupOrphanedFiles(db, fileAssetIds);
 
     const emptyWorkIds: string[] = [];
     for (const workId of affectedWorkIds) {
@@ -107,8 +132,10 @@ export const bulkDeleteEditionsByFormatForWorksServerFn = createServerFn({
 
     const affectedWorkIds = [...new Set(editions.map((e: { workId: string }) => e.workId))];
     const deletedEditionIds = editions.map((e: { id: string }) => e.id);
+    const fileAssetIds = await collectFileAssetIds(db, { editionId: { in: deletedEditionIds } });
 
     await db.edition.deleteMany({ where: { id: { in: deletedEditionIds } } });
+    await cleanupOrphanedFiles(db, fileAssetIds);
 
     const emptyWorkIds: string[] = [];
     for (const workId of affectedWorkIds) {
@@ -145,8 +172,10 @@ export const deleteAllEditionsByFormatServerFn = createServerFn({
 
     const affectedWorkIds = [...new Set(editions.map((e: { workId: string }) => e.workId))];
     const deletedEditionIds = editions.map((e: { id: string }) => e.id);
+    const fileAssetIds = await collectFileAssetIds(db, { editionId: { in: deletedEditionIds } });
 
     await db.edition.deleteMany({ where: { id: { in: deletedEditionIds } } });
+    await cleanupOrphanedFiles(db, fileAssetIds);
 
     const emptyWorkIds: string[] = [];
     for (const workId of affectedWorkIds) {

@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+const cleanupOrphanedFileAssetsMock = vi.fn();
+
 vi.mock("@bookhouse/ingest", () => ({
   IGNORED_BASENAMES: [".DS_Store", "Thumbs.db", "desktop.ini"],
+  cleanupOrphanedFileAssets: cleanupOrphanedFileAssetsMock,
 }));
 
 vi.mock("@tanstack/react-start", () => ({
@@ -27,11 +30,13 @@ const fileAssetFindManyMock = vi.fn();
 const fileAssetFindUniqueMock = vi.fn();
 const fileAssetDeleteMock = vi.fn();
 const matchSuggestionCountMock = vi.fn();
+const editionFileFindManyMock = vi.fn();
 
 vi.mock("@bookhouse/db", () => ({
   db: {
     work: { count: workCountMock, findMany: workFindManyMock, deleteMany: workDeleteManyMock },
     duplicateCandidate: { count: duplicateCandidateCountMock },
+    editionFile: { findMany: editionFileFindManyMock },
     fileAsset: {
       count: fileAssetCountMock,
       findMany: fileAssetFindManyMock,
@@ -60,6 +65,10 @@ beforeEach(() => {
   fileAssetFindUniqueMock.mockReset();
   fileAssetDeleteMock.mockReset();
   matchSuggestionCountMock.mockReset();
+  editionFileFindManyMock.mockReset();
+  editionFileFindManyMock.mockResolvedValue([]);
+  cleanupOrphanedFileAssetsMock.mockReset();
+  cleanupOrphanedFileAssetsMock.mockResolvedValue({ deletedFileAssetIds: [] });
 });
 
 // ─── getLibraryHealthServerFn ─────────────────────────────────────────────────
@@ -381,13 +390,19 @@ describe("deleteEmptyWorksServerFn", () => {
     expect(result).toEqual({ deletedCount: 0 });
   });
 
-  it("deletes all empty works and returns deletedCount", async () => {
+  it("deletes all empty works, cleans up orphaned FileAssets, and returns deletedCount", async () => {
     workFindManyMock.mockResolvedValue([{ id: "w1" }, { id: "w2" }]);
+    editionFileFindManyMock.mockResolvedValue([{ fileAssetId: "fa-1" }]);
     workDeleteManyMock.mockResolvedValue({ count: 2 });
     const result = await deleteEmptyWorksServerFn();
+    expect(editionFileFindManyMock).toHaveBeenCalledWith({
+      where: { edition: { workId: { in: ["w1", "w2"] } } },
+      select: { fileAssetId: true },
+    });
     expect(workDeleteManyMock).toHaveBeenCalledWith({
       where: { id: { in: ["w1", "w2"] } },
     });
+    expect(cleanupOrphanedFileAssetsMock).toHaveBeenCalledWith(expect.anything(), ["fa-1"]);
     expect(result).toEqual({ deletedCount: 2 });
   });
 });

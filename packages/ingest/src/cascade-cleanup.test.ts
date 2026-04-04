@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { cascadeCleanupOrphans } from "./cascade-cleanup";
+import { cascadeCleanupOrphans, cleanupOrphanedFileAssets } from "./cascade-cleanup";
 
 const editionFileFindManyMock = vi.fn();
 const editionFileDeleteManyMock = vi.fn();
@@ -228,5 +228,56 @@ describe("cascadeCleanupOrphans", () => {
 
     expect(result.deletedEditionIds).toEqual(["ed-1", "ed-3"]);
     expect(result.deletedWorkIds).toEqual(["w-2"]);
+  });
+});
+
+describe("cleanupOrphanedFileAssets", () => {
+  const fileAssetFindManyMock = vi.fn();
+  const fileAssetDeleteManyMock2 = vi.fn();
+
+  function createOrphanDb() {
+    return {
+      fileAsset: {
+        findMany: fileAssetFindManyMock,
+        deleteMany: fileAssetDeleteManyMock2,
+      },
+    };
+  }
+
+  beforeEach(() => {
+    fileAssetFindManyMock.mockReset();
+    fileAssetDeleteManyMock2.mockReset();
+    fileAssetDeleteManyMock2.mockResolvedValue({ count: 0 });
+  });
+
+  it("returns empty array for empty input", async () => {
+    const result = await cleanupOrphanedFileAssets(createOrphanDb() as never, []);
+    expect(result).toEqual({ deletedFileAssetIds: [] });
+    expect(fileAssetFindManyMock).not.toHaveBeenCalled();
+  });
+
+  it("deletes FileAssets with zero EditionFile links", async () => {
+    fileAssetFindManyMock.mockResolvedValue([{ id: "fa-1" }, { id: "fa-2" }]);
+    fileAssetDeleteManyMock2.mockResolvedValue({ count: 2 });
+
+    const result = await cleanupOrphanedFileAssets(createOrphanDb() as never, ["fa-1", "fa-2", "fa-3"]);
+
+    expect(fileAssetFindManyMock).toHaveBeenCalledWith({
+      where: { id: { in: ["fa-1", "fa-2", "fa-3"] }, editionFiles: { none: {} } },
+      select: { id: true },
+    });
+    expect(fileAssetDeleteManyMock2).toHaveBeenCalledWith({
+      where: { id: { in: ["fa-1", "fa-2"] } },
+    });
+    expect(result).toEqual({ deletedFileAssetIds: ["fa-1", "fa-2"] });
+  });
+
+  it("preserves FileAssets that still have EditionFile links", async () => {
+    fileAssetFindManyMock.mockResolvedValue([]); // none are orphaned
+
+    const result = await cleanupOrphanedFileAssets(createOrphanDb() as never, ["fa-1"]);
+
+    expect(fileAssetDeleteManyMock2).not.toHaveBeenCalled();
+    expect(result).toEqual({ deletedFileAssetIds: [] });
   });
 });

@@ -155,6 +155,7 @@ export const deleteEmptyWorksServerFn = createServerFn({
   method: "POST",
 }).handler(async () => {
   const { db } = await import("@bookhouse/db");
+  const { cleanupOrphanedFileAssets } = await import("@bookhouse/ingest");
   const emptyWorks = await db.work.findMany({
     where: { NOT: hasFilesWhere },
     select: { id: true },
@@ -162,8 +163,13 @@ export const deleteEmptyWorksServerFn = createServerFn({
   if (emptyWorks.length === 0) {
     return { deletedCount: 0 };
   }
-  await db.work.deleteMany({
-    where: { id: { in: emptyWorks.map((w: { id: string }) => w.id) } },
+  const workIds = emptyWorks.map((w: { id: string }) => w.id);
+  const fileAssetLinks = await db.editionFile.findMany({
+    where: { edition: { workId: { in: workIds } } },
+    select: { fileAssetId: true },
   });
+  const fileAssetIds = [...new Set(fileAssetLinks.map((ef: { fileAssetId: string }) => ef.fileAssetId))];
+  await db.work.deleteMany({ where: { id: { in: workIds } } });
+  await cleanupOrphanedFileAssets(db, fileAssetIds);
   return { deletedCount: emptyWorks.length };
 });

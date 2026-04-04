@@ -26,6 +26,9 @@ const fileAssetCountMock = vi.fn();
 const transactionMock = vi.fn();
 
 const cascadeCleanupOrphansMock = vi.fn();
+const cleanupOrphanedFileAssetsMock = vi.fn();
+const editionFileFindManyMock = vi.fn();
+const fileAssetDeleteManyMock = vi.fn();
 
 vi.mock("@bookhouse/db", () => ({
   db: {
@@ -40,8 +43,12 @@ vi.mock("@bookhouse/db", () => ({
       deleteMany: editionDeleteManyMock,
       count: editionCountMock,
     },
+    editionFile: {
+      findMany: editionFileFindManyMock,
+    },
     fileAsset: {
       findMany: fileAssetFindManyMock,
+      deleteMany: fileAssetDeleteManyMock,
       count: fileAssetCountMock,
     },
     $transaction: transactionMock,
@@ -50,6 +57,7 @@ vi.mock("@bookhouse/db", () => ({
 
 vi.mock("@bookhouse/ingest", () => ({
   cascadeCleanupOrphans: cascadeCleanupOrphansMock,
+  cleanupOrphanedFileAssets: cleanupOrphanedFileAssetsMock,
 }));
 
 import {
@@ -76,34 +84,54 @@ beforeEach(() => {
   transactionMock.mockReset();
   cascadeCleanupOrphansMock.mockReset();
   cascadeCleanupOrphansMock.mockResolvedValue({ deletedEditionFileCount: 0, deletedEditionIds: [], deletedWorkIds: [] });
+  cleanupOrphanedFileAssetsMock.mockReset();
+  cleanupOrphanedFileAssetsMock.mockResolvedValue({ deletedFileAssetIds: [] });
+  editionFileFindManyMock.mockReset();
+  editionFileFindManyMock.mockResolvedValue([]);
+  fileAssetDeleteManyMock.mockReset();
 });
 
 describe("deleteWorkServerFn", () => {
-  it("deletes the Work by ID and returns the deleted ID", async () => {
+  it("deletes the Work by ID, cleans up orphaned FileAssets, and returns the deleted ID", async () => {
+    editionFileFindManyMock.mockResolvedValue([
+      { fileAssetId: "fa-1" },
+      { fileAssetId: "fa-2" },
+    ]);
     workDeleteMock.mockResolvedValue({ id: "w-1" });
 
     const result = await deleteWorkServerFn({ data: { workId: "w-1" } });
 
+    expect(editionFileFindManyMock).toHaveBeenCalledWith({
+      where: { edition: { workId: "w-1" } },
+      select: { fileAssetId: true },
+    });
     expect(workDeleteMock).toHaveBeenCalledWith({ where: { id: "w-1" } });
+    expect(cleanupOrphanedFileAssetsMock).toHaveBeenCalledWith(
+      expect.anything(),
+      ["fa-1", "fa-2"],
+    );
     expect(result).toEqual({ deletedWorkId: "w-1" });
   });
 });
 
 describe("deleteEditionServerFn", () => {
-  it("deletes the Edition and returns null deletedWorkId when parent Work still has editions", async () => {
+  it("deletes the Edition, cleans up FileAssets, and returns null deletedWorkId when parent Work still has editions", async () => {
     editionFindUniqueMock.mockResolvedValue({ id: "ed-1", workId: "w-1" });
+    editionFileFindManyMock.mockResolvedValue([{ fileAssetId: "fa-1" }]);
     editionDeleteMock.mockResolvedValue({ id: "ed-1" });
     editionCountMock.mockResolvedValue(2); // still has other editions
 
     const result = await deleteEditionServerFn({ data: { editionId: "ed-1" } });
 
     expect(editionDeleteMock).toHaveBeenCalledWith({ where: { id: "ed-1" } });
+    expect(cleanupOrphanedFileAssetsMock).toHaveBeenCalledWith(expect.anything(), ["fa-1"]);
     expect(workDeleteMock).not.toHaveBeenCalled();
     expect(result).toEqual({ deletedEditionId: "ed-1", deletedWorkId: null });
   });
 
-  it("deletes the Edition and the parent Work when no editions remain", async () => {
+  it("deletes the Edition, the parent Work, and cleans up FileAssets when no editions remain", async () => {
     editionFindUniqueMock.mockResolvedValue({ id: "ed-1", workId: "w-1" });
+    editionFileFindManyMock.mockResolvedValue([{ fileAssetId: "fa-1" }]);
     editionDeleteMock.mockResolvedValue({ id: "ed-1" });
     editionCountMock.mockResolvedValue(0); // no editions left
 
@@ -111,6 +139,7 @@ describe("deleteEditionServerFn", () => {
 
     expect(editionDeleteMock).toHaveBeenCalledWith({ where: { id: "ed-1" } });
     expect(workDeleteMock).toHaveBeenCalledWith({ where: { id: "w-1" } });
+    expect(cleanupOrphanedFileAssetsMock).toHaveBeenCalledWith(expect.anything(), ["fa-1"]);
     expect(result).toEqual({ deletedEditionId: "ed-1", deletedWorkId: "w-1" });
   });
 
@@ -124,12 +153,21 @@ describe("deleteEditionServerFn", () => {
 });
 
 describe("bulkDeleteWorksServerFn", () => {
-  it("deletes multiple Works and returns their IDs", async () => {
+  it("deletes multiple Works, cleans up FileAssets, and returns their IDs", async () => {
+    editionFileFindManyMock.mockResolvedValue([
+      { fileAssetId: "fa-1" },
+      { fileAssetId: "fa-2" },
+    ]);
     workDeleteManyMock.mockResolvedValue({ count: 3 });
 
     const result = await bulkDeleteWorksServerFn({ data: { workIds: ["w-1", "w-2", "w-3"] } });
 
+    expect(editionFileFindManyMock).toHaveBeenCalledWith({
+      where: { edition: { workId: { in: ["w-1", "w-2", "w-3"] } } },
+      select: { fileAssetId: true },
+    });
     expect(workDeleteManyMock).toHaveBeenCalledWith({ where: { id: { in: ["w-1", "w-2", "w-3"] } } });
+    expect(cleanupOrphanedFileAssetsMock).toHaveBeenCalledWith(expect.anything(), ["fa-1", "fa-2"]);
     expect(result).toEqual({ deletedWorkIds: ["w-1", "w-2", "w-3"] });
   });
 
@@ -142,11 +180,12 @@ describe("bulkDeleteWorksServerFn", () => {
 });
 
 describe("bulkDeleteEditionsServerFn", () => {
-  it("deletes Editions and cascade-deletes empty parent Works", async () => {
+  it("deletes Editions, cleans up FileAssets, and cascade-deletes empty parent Works", async () => {
     editionFindManyMock.mockResolvedValue([
       { id: "ed-1", workId: "w-1" },
       { id: "ed-2", workId: "w-2" },
     ]);
+    editionFileFindManyMock.mockResolvedValue([{ fileAssetId: "fa-1" }, { fileAssetId: "fa-2" }]);
     editionDeleteManyMock.mockResolvedValue({ count: 2 });
     // w-1 still has editions, w-2 is empty
     editionCountMock
@@ -158,6 +197,7 @@ describe("bulkDeleteEditionsServerFn", () => {
 
     expect(editionDeleteManyMock).toHaveBeenCalledWith({ where: { id: { in: ["ed-1", "ed-2"] } } });
     expect(workDeleteManyMock).toHaveBeenCalledWith({ where: { id: { in: ["w-2"] } } });
+    expect(cleanupOrphanedFileAssetsMock).toHaveBeenCalledWith(expect.anything(), ["fa-1", "fa-2"]);
     expect(result).toEqual({ deletedEditionIds: ["ed-1", "ed-2"], deletedWorkIds: ["w-2"] });
   });
 
