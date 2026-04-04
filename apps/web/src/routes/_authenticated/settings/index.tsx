@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
@@ -80,6 +80,13 @@ import {
   updateDeviceCollectionsServerFn,
   type KoboDeviceRow,
 } from "~/lib/server-fns/kobo-devices";
+import {
+  getOpdsCredentialsServerFn,
+  createOpdsCredentialServerFn,
+  toggleOpdsCredentialServerFn,
+  deleteOpdsCredentialServerFn,
+  type OpdsCredentialRow,
+} from "~/lib/server-fns/opds-credentials";
 import { getShelvesServerFn, type ShelfRow } from "~/lib/server-fns/shelves";
 import {
   getImportJobsServerFn,
@@ -99,7 +106,7 @@ export interface LibraryRootWithExtras extends LibraryRootRow {
 
 export const Route = createFileRoute("/_authenticated/settings/")({
   loader: async () => {
-    const [roots, missingFileBehavior, jobsResult, concurrencies, integrations, backupHistory, smtpStatus, kindleStatus, koboDevices, shelves] = await Promise.all([
+    const [roots, missingFileBehavior, jobsResult, concurrencies, integrations, backupHistory, smtpStatus, kindleStatus, koboDevices, shelves, opdsCredentials] = await Promise.all([
       getLibraryRootsServerFn(),
       getMissingFileBehaviorServerFn(),
       getImportJobsServerFn({ data: { page: 1, pageSize: 100 } }),
@@ -110,6 +117,7 @@ export const Route = createFileRoute("/_authenticated/settings/")({
       getKindleStatusServerFn(),
       getKoboDevicesServerFn(),
       getShelvesServerFn(),
+      getOpdsCredentialsServerFn(),
     ]);
     const rootsWithExtras: LibraryRootWithExtras[] = await Promise.all(
       roots.map(async (root) => {
@@ -132,6 +140,7 @@ export const Route = createFileRoute("/_authenticated/settings/")({
       kindleStatus,
       koboDevices,
       shelves,
+      opdsCredentials,
     };
   },
   pendingComponent: SettingsSkeleton,
@@ -151,7 +160,7 @@ function SettingsSkeleton() {
 }
 
 function SettingsPage() {
-  const { roots, missingFileBehavior, jobs, totalCount, concurrencies, integrations, backupHistory: initialBackupHistory, smtpStatus, kindleStatus, koboDevices, shelves } = Route.useLoaderData();
+  const { roots, missingFileBehavior, jobs, totalCount, concurrencies, integrations, backupHistory: initialBackupHistory, smtpStatus, kindleStatus, koboDevices, shelves, opdsCredentials } = Route.useLoaderData();
   const [backupHistory, setBackupHistory] = useState(initialBackupHistory);
 
   const handleBackupComplete = async (manifest: BackupManifest) => {
@@ -205,6 +214,7 @@ function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="devices" forceMount className="space-y-6 data-[state=inactive]:hidden">
+          <OpdsCredentialsCard credentials={opdsCredentials} />
           <KoboDevicesTab devices={koboDevices} shelves={shelves} />
         </TabsContent>
       </Tabs>
@@ -1033,6 +1043,123 @@ function IntegrationCard({ provider, status }: { provider: string; status: Integ
 // ---------------------------------------------------------------------------
 // Kobo Devices Tab
 // ---------------------------------------------------------------------------
+
+function OpdsCredentialsCard({ credentials }: { credentials: OpdsCredentialRow[] }) {
+  const router = useRouter();
+  const [adding, setAdding] = useState(false);
+  const [newUsername, setNewUsername] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [catalogUrl, setCatalogUrl] = useState("/opds/catalog");
+
+  const handleAdd = async () => {
+    setAdding(true);
+    try {
+      await createOpdsCredentialServerFn({ data: { username: newUsername.trim(), password: newPassword } });
+      setNewUsername("");
+      setNewPassword("");
+      toast.success("OPDS credential created");
+      void router.invalidate();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to create credential");
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleToggle = async (credentialId: string, isEnabled: boolean) => {
+    await toggleOpdsCredentialServerFn({ data: { credentialId, isEnabled } });
+    void router.invalidate();
+  };
+
+  const handleDelete = async (credentialId: string) => {
+    await deleteOpdsCredentialServerFn({ data: { credentialId } });
+    void router.invalidate();
+  };
+
+  useEffect(() => { setCatalogUrl(`${window.location.origin}/opds/catalog`); }, []);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>OPDS Catalog</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="rounded-md border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-950">
+          <p className="text-sm font-medium">Catalog URL</p>
+          <code className="mt-1 block break-all rounded bg-white p-2 text-xs dark:bg-gray-900" data-testid="opds-catalog-url">
+            {catalogUrl}
+          </code>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Add this URL to KOReader or any OPDS reader. Use the credentials below to authenticate.
+          </p>
+        </div>
+
+        {credentials.length === 0 && (
+          <p className="text-sm text-muted-foreground">No OPDS credentials created yet.</p>
+        )}
+
+        {credentials.map((cred) => (
+          <div key={cred.id} className="rounded-md border p-3" data-testid="opds-credential">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">{cred.username}</p>
+                <p className="text-sm text-muted-foreground">
+                  <Badge variant={cred.isEnabled ? "default" : "secondary"}>
+                    {cred.isEnabled ? "Enabled" : "Disabled"}
+                  </Badge>
+                  <span className="ml-2">Created {formatDistanceToNow(new Date(cred.createdAt))} ago</span>
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { void handleToggle(cred.id, !cred.isEnabled); }}
+                  data-testid="toggle-opds-credential-btn"
+                >
+                  {cred.isEnabled ? "Disable" : "Enable"}
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => { void handleDelete(cred.id); }}
+                  data-testid="delete-opds-credential-btn"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        ))}
+
+        <div className="flex gap-2">
+          <Input
+            placeholder="Username"
+            value={newUsername}
+            onChange={(e) => { setNewUsername(e.target.value); }}
+            className="max-w-xs"
+            data-testid="opds-username-input"
+          />
+          <Input
+            type="password"
+            placeholder="Password (min 8 chars)"
+            value={newPassword}
+            onChange={(e) => { setNewPassword(e.target.value); }}
+            className="max-w-xs"
+            data-testid="opds-password-input"
+          />
+          <Button
+            onClick={() => { void handleAdd(); }}
+            disabled={adding || !newUsername.trim() || newPassword.length < 8}
+            data-testid="add-opds-credential-btn"
+          >
+            {adding ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add Credential"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 function KoboDevicesTab({ devices, shelves }: { devices: KoboDeviceRow[]; shelves: ShelfRow[] }) {
   const router = useRouter();

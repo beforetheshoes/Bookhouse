@@ -34,7 +34,8 @@ let mockLoaderData: {
   kindleStatus: { configured: boolean };
   koboDevices: { id: string; deviceId: string; status: string; lastSyncAt: string | null; createdAt: string; authToken: string; collections: { collection: { id: string; name: string } }[] }[];
   shelves: { id: string; name: string; kind: string; formatFilter: string; ownerUserId: string | null; _count: { items: number } }[];
-} = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false }, koboDevices: [], shelves: [] };
+  opdsCredentials: { id: string; username: string; isEnabled: boolean; createdAt: string }[];
+} = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false }, koboDevices: [], shelves: [], opdsCredentials: [] };
 
 const getLibraryRootsServerFnMock = vi.fn();
 const scanLibraryRootServerFnMock = vi.fn();
@@ -112,6 +113,13 @@ vi.mock("~/lib/server-fns/kobo-devices", () => ({
 
 vi.mock("~/lib/server-fns/shelves", () => ({
   getShelvesServerFn: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock("~/lib/server-fns/opds-credentials", () => ({
+  getOpdsCredentialsServerFn: vi.fn().mockResolvedValue([]),
+  createOpdsCredentialServerFn: vi.fn().mockResolvedValue({ id: "c1", username: "reader", isEnabled: true, createdAt: new Date().toISOString() }),
+  toggleOpdsCredentialServerFn: vi.fn().mockResolvedValue({}),
+  deleteOpdsCredentialServerFn: vi.fn().mockResolvedValue({}),
 }));
 
 vi.mock("~/lib/mutation", () => ({
@@ -235,7 +243,7 @@ const makeJob = (overrides: Partial<{
 describe("SettingsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false }, koboDevices: [], shelves: [] };
+    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false }, koboDevices: [], shelves: [], opdsCredentials: [] };
     mockTheme = "system";
     mockColorMode = "book";
     mockAccentColor = null;
@@ -554,6 +562,7 @@ describe("SettingsPage", () => {
       kindleStatus: { configured: false },
       koboDevices: [],
       shelves: [],
+      opdsCredentials: [],
     });
   });
 
@@ -807,7 +816,7 @@ describe("SettingsPage", () => {
 describe("AppearanceCard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false }, koboDevices: [], shelves: [] };
+    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false }, koboDevices: [], shelves: [], opdsCredentials: [] };
     mockTheme = "system";
     mockColorMode = "book";
     mockAccentColor = null;
@@ -876,7 +885,7 @@ describe("AppearanceCard", () => {
 describe("ColorCard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false }, koboDevices: [], shelves: [] };
+    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false }, koboDevices: [], shelves: [], opdsCredentials: [] };
     mockTheme = "system";
     mockColorMode = "book";
     mockAccentColor = null;
@@ -1053,7 +1062,7 @@ describe("ColorCard", () => {
 describe("JobsTab", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false }, koboDevices: [], shelves: [] };
+    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false }, koboDevices: [], shelves: [], opdsCredentials: [] };
     mockTheme = "system";
     mockColorMode = "book";
     mockAccentColor = null;
@@ -2082,6 +2091,164 @@ describe("Kobo Devices Tab", () => {
 
     await waitFor(() => {
       expect(updateMock).toHaveBeenCalledWith({ data: { deviceId: "d1", collectionIds: [] } });
+    });
+  });
+
+  it("renders OPDS catalog URL on devices tab", async () => {
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+
+    expect(screen.getByTestId("opds-catalog-url").textContent).toContain("/opds/catalog");
+  });
+
+  it("shows empty state when no OPDS credentials exist", async () => {
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+
+    expect(screen.getByText("No OPDS credentials created yet.")).toBeTruthy();
+  });
+
+  it("renders existing OPDS credentials", async () => {
+    mockLoaderData.opdsCredentials = [
+      { id: "c1", username: "reader", isEnabled: true, createdAt: new Date().toISOString() },
+    ];
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+
+    expect(screen.getByText("reader")).toBeTruthy();
+    expect(screen.getByText("Enabled")).toBeTruthy();
+  });
+
+  it("renders disabled badge for disabled credentials", async () => {
+    mockLoaderData.opdsCredentials = [
+      { id: "c1", username: "reader", isEnabled: false, createdAt: new Date().toISOString() },
+    ];
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+
+    expect(screen.getByText("Disabled")).toBeTruthy();
+    expect(screen.getByText("Enable")).toBeTruthy();
+  });
+
+  it("creates a new OPDS credential", async () => {
+    const { createOpdsCredentialServerFn } = await import("~/lib/server-fns/opds-credentials");
+    const createMock = vi.mocked(createOpdsCredentialServerFn);
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+    fireEvent.change(screen.getByTestId("opds-username-input"), { target: { value: "newuser" } });
+    fireEvent.change(screen.getByTestId("opds-password-input"), { target: { value: "password123" } });
+    fireEvent.click(screen.getByTestId("add-opds-credential-btn"));
+
+    await waitFor(() => {
+      expect(createMock).toHaveBeenCalledWith({ data: { username: "newuser", password: "password123" } });
+    });
+  });
+
+  it("toggles an OPDS credential", async () => {
+    mockLoaderData.opdsCredentials = [
+      { id: "c1", username: "reader", isEnabled: true, createdAt: new Date().toISOString() },
+    ];
+
+    const { toggleOpdsCredentialServerFn } = await import("~/lib/server-fns/opds-credentials");
+    const toggleMock = vi.mocked(toggleOpdsCredentialServerFn);
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+    fireEvent.click(screen.getByTestId("toggle-opds-credential-btn"));
+
+    await waitFor(() => {
+      expect(toggleMock).toHaveBeenCalledWith({ data: { credentialId: "c1", isEnabled: false } });
+    });
+  });
+
+  it("deletes an OPDS credential", async () => {
+    mockLoaderData.opdsCredentials = [
+      { id: "c1", username: "reader", isEnabled: true, createdAt: new Date().toISOString() },
+    ];
+
+    const { deleteOpdsCredentialServerFn } = await import("~/lib/server-fns/opds-credentials");
+    const deleteMock = vi.mocked(deleteOpdsCredentialServerFn);
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+    fireEvent.click(screen.getByTestId("delete-opds-credential-btn"));
+
+    await waitFor(() => {
+      expect(deleteMock).toHaveBeenCalledWith({ data: { credentialId: "c1" } });
+    });
+  });
+
+  it("disables add button when password is too short", async () => {
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+    fireEvent.change(screen.getByTestId("opds-username-input"), { target: { value: "user" } });
+    fireEvent.change(screen.getByTestId("opds-password-input"), { target: { value: "short" } });
+
+    expect(screen.getByTestId("add-opds-credential-btn").getAttribute("disabled")).not.toBeNull();
+  });
+
+  it("handles create credential Error with toast", async () => {
+    const { createOpdsCredentialServerFn } = await import("~/lib/server-fns/opds-credentials");
+    const createMock = vi.mocked(createOpdsCredentialServerFn);
+    createMock.mockRejectedValue(new Error("Username already taken"));
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+    fireEvent.change(screen.getByTestId("opds-username-input"), { target: { value: "existing" } });
+    fireEvent.change(screen.getByTestId("opds-password-input"), { target: { value: "password123" } });
+    fireEvent.click(screen.getByTestId("add-opds-credential-btn"));
+
+    await waitFor(() => {
+      expect(createMock).toHaveBeenCalled();
+    });
+  });
+
+  it("handles create credential non-Error rejection with fallback toast", async () => {
+    const { createOpdsCredentialServerFn } = await import("~/lib/server-fns/opds-credentials");
+    const createMock = vi.mocked(createOpdsCredentialServerFn);
+    createMock.mockRejectedValue("string rejection");
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+    fireEvent.change(screen.getByTestId("opds-username-input"), { target: { value: "user" } });
+    fireEvent.change(screen.getByTestId("opds-password-input"), { target: { value: "password123" } });
+    fireEvent.click(screen.getByTestId("add-opds-credential-btn"));
+
+    await waitFor(() => {
+      expect(createMock).toHaveBeenCalled();
     });
   });
 });
