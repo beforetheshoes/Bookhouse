@@ -61,6 +61,8 @@ const updateEditionSchema = z.object({
     publishedAt: z.string().nullable().optional(),
     asin: z.string().nullable().optional(),
     language: z.string().nullable().optional(),
+    pageCount: z.string().nullable().optional(),
+    duration: z.string().nullable().optional(),
   }),
 });
 
@@ -80,7 +82,7 @@ export const updateEditionServerFn = createServerFn({
     const newFieldKeys = Object.keys(data.fields);
     const mergedEdited = [...new Set([...existingEdited, ...newFieldKeys])];
 
-    const { publishedAt: publishedAtStr, ...otherFields } = data.fields;
+    const { publishedAt: publishedAtStr, pageCount: pageCountStr, duration: durationStr, ...otherFields } = data.fields;
     const updateData: Prisma.EditionUpdateInput = {
       ...otherFields,
       editedFields: mergedEdited,
@@ -88,6 +90,14 @@ export const updateEditionServerFn = createServerFn({
 
     if (publishedAtStr !== undefined) {
       updateData.publishedAt = publishedAtStr !== null ? new Date(publishedAtStr) : null;
+    }
+
+    if (pageCountStr !== undefined) {
+      updateData.pageCount = pageCountStr !== null ? parseInt(pageCountStr, 10) : null;
+    }
+
+    if (durationStr !== undefined) {
+      updateData.duration = durationStr !== null ? parseInt(durationStr, 10) : null;
     }
 
     await db.edition.update({
@@ -178,6 +188,72 @@ export const updateWorkAuthorsServerFn = createServerFn({
 
     await db.work.update({
       where: { id: data.workId },
+      data: { editedFields: mergedEdited },
+    });
+
+    return { success: true };
+  });
+
+const updateEditionNarratorsSchema = z.object({
+  editionId: z.string().min(1),
+  narrators: z.array(z.string().min(1)),
+});
+
+export const updateEditionNarratorsServerFn = createServerFn({
+  method: "POST",
+})
+  .inputValidator(updateEditionNarratorsSchema)
+  .handler(async ({ data }) => {
+    const { db } = await import("@bookhouse/db");
+    const { canonicalizeContributorName } = await import("@bookhouse/ingest");
+
+    // Resolve or create contributors
+    const contributorIds: string[] = [];
+    for (const narratorName of data.narrators) {
+      const canonical = canonicalizeContributorName(narratorName) ?? narratorName.toLowerCase();
+      const existing = await db.contributor.findFirst({
+        where: { nameCanonical: canonical },
+      });
+
+      if (existing) {
+        contributorIds.push(existing.id);
+      } else {
+        const created = await db.contributor.create({
+          data: {
+            nameDisplay: narratorName,
+            nameCanonical: canonical,
+          },
+        });
+        contributorIds.push(created.id);
+      }
+    }
+
+    // Replace NARRATOR contributors on this edition only
+    await db.editionContributor.deleteMany({
+      where: { editionId: data.editionId, role: "NARRATOR" },
+    });
+
+    if (contributorIds.length > 0) {
+      const createData = contributorIds.map((contributorId) => ({
+        editionId: data.editionId,
+        contributorId,
+        role: "NARRATOR" as const,
+      }));
+      await db.editionContributor.createMany({
+        data: createData,
+        skipDuplicates: true,
+      });
+    }
+
+    // Track narrators as manually edited on the edition
+    const edition = await db.edition.findUnique({
+      where: { id: data.editionId },
+      select: { editedFields: true },
+    });
+    const existingEdited = edition?.editedFields ?? [];
+    const mergedEdited = [...new Set([...existingEdited, "narrators"])];
+    await db.edition.update({
+      where: { id: data.editionId },
       data: { editedFields: mergedEdited },
     });
 

@@ -86,6 +86,7 @@ vi.mock("@bookhouse/ingest", () => {
     getOpenLibraryEdition: vi.fn(),
     searchGoogleBooks: vi.fn(),
     searchHardcover: vi.fn(),
+    searchAudible: vi.fn(),
     RateLimiter: MockRateLimiter,
     applyCoverFromUrl: applyCoverFromUrlMock,
     resizeCoverImage: vi.fn(),
@@ -120,6 +121,7 @@ describe("buildSearchDeps", () => {
     getOpenLibraryEdition: vi.fn().mockResolvedValue(null),
     searchGoogleBooks: vi.fn().mockResolvedValue([]),
     searchHardcover: vi.fn().mockResolvedValue([]),
+    searchAudible: vi.fn().mockResolvedValue([]),
   };
   const rateLimiter = { check: () => ({ allowed: true }) };
 
@@ -173,6 +175,14 @@ describe("buildSearchDeps", () => {
     await deps.searchHC("Dune", "Herbert");
 
     expect(fns.searchHardcover).toHaveBeenCalledWith("Dune", "Herbert", "hc-key", fakeFetcher);
+  });
+
+  it("wires Audible function through to deps", async () => {
+    const deps = buildSearchDeps(null, null, rateLimiter, fakeFetcher, fns);
+
+    await deps.searchAudible("Dune", "Herbert");
+
+    expect(fns.searchAudible).toHaveBeenCalledWith("Dune", "Herbert", fakeFetcher);
   });
 
   it("delegates checkRateLimit to rateLimiter", () => {
@@ -741,6 +751,126 @@ describe("applyEnrichmentServerFn", () => {
         externalId: "OL123W",
       });
     }
+  });
+
+  it("applies narrators as per-edition contributors", async () => {
+    workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: [] });
+    editionFindUniqueMock.mockResolvedValue({ id: "e1", editedFields: [] });
+    contributorFindFirstMock.mockResolvedValueOnce({ id: "c1", nameDisplay: "Scott Brick" });
+    contributorFindFirstMock.mockResolvedValueOnce(null);
+    contributorCreateMock.mockResolvedValueOnce({ id: "c2", nameDisplay: "Julia Whelan" });
+    editionContributorDeleteManyMock.mockResolvedValue({});
+    editionContributorCreateManyMock.mockResolvedValue({});
+    externalLinkUpsertMock.mockResolvedValue({});
+
+    const result = await applyEnrichmentServerFn({
+      data: {
+        workId: "w1",
+        editionId: "e1",
+        editionFields: { narrators: ["Scott Brick", "Julia Whelan"] },
+        source: { provider: "audible", externalId: "B08G9PRS1K" },
+      },
+    });
+
+    expect(contributorFindFirstMock).toHaveBeenCalledWith({ where: { nameCanonical: "scott brick" } });
+    expect(contributorFindFirstMock).toHaveBeenCalledWith({ where: { nameCanonical: "julia whelan" } });
+    expect(contributorCreateMock).toHaveBeenCalledTimes(1);
+    expect(editionContributorDeleteManyMock).toHaveBeenCalledWith({
+      where: { editionId: "e1", role: "NARRATOR" },
+    });
+    expect(editionContributorCreateManyMock).toHaveBeenCalledWith({
+      data: [
+        { editionId: "e1", contributorId: "c1", role: "NARRATOR" },
+        { editionId: "e1", contributorId: "c2", role: "NARRATOR" },
+      ],
+      skipDuplicates: true,
+    });
+    expect(result).toEqual({ success: true });
+  });
+
+  it("strips narrators from edition column update", async () => {
+    workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: [] });
+    editionFindUniqueMock.mockResolvedValue({ id: "e1", editedFields: [] });
+    editionUpdateMock.mockResolvedValue({ id: "e1" });
+    contributorFindFirstMock.mockResolvedValueOnce({ id: "c1" });
+    editionContributorDeleteManyMock.mockResolvedValue({});
+    editionContributorCreateManyMock.mockResolvedValue({});
+    externalLinkUpsertMock.mockResolvedValue({});
+
+    await applyEnrichmentServerFn({
+      data: {
+        workId: "w1",
+        editionId: "e1",
+        editionFields: { publisher: "Macmillan Audio", narrators: ["Scott Brick"] },
+        source: { provider: "audible", externalId: "B08G9PRS1K" },
+      },
+    });
+
+    // Edition update should only have publisher, not narrators
+    const callArgs = editionUpdateMock.mock.calls[0]?.[0] as { data: Record<string, string | number | boolean | null | object> };
+    expect(callArgs.data.publisher).toBe("Macmillan Audio");
+    expect(callArgs.data.narrators).toBeUndefined();
+  });
+
+  it("skips narrators when in editedFields", async () => {
+    workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: [] });
+    editionFindUniqueMock.mockResolvedValue({ id: "e1", editedFields: ["narrators"] });
+    externalLinkUpsertMock.mockResolvedValue({});
+
+    await applyEnrichmentServerFn({
+      data: {
+        workId: "w1",
+        editionId: "e1",
+        editionFields: { narrators: ["Scott Brick"] },
+        source: { provider: "audible", externalId: "B08G9PRS1K" },
+      },
+    });
+
+    expect(editionContributorDeleteManyMock).not.toHaveBeenCalled();
+    expect(editionContributorCreateManyMock).not.toHaveBeenCalled();
+  });
+
+  it("skips empty narrator names", async () => {
+    workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: [] });
+    editionFindUniqueMock.mockResolvedValue({ id: "e1", editedFields: [] });
+    contributorFindFirstMock.mockResolvedValueOnce({ id: "c1", nameDisplay: "Scott Brick" });
+    editionContributorDeleteManyMock.mockResolvedValue({});
+    editionContributorCreateManyMock.mockResolvedValue({});
+    externalLinkUpsertMock.mockResolvedValue({});
+
+    await applyEnrichmentServerFn({
+      data: {
+        workId: "w1",
+        editionId: "e1",
+        editionFields: { narrators: ["Scott Brick", "", "  "] },
+        source: { provider: "audible", externalId: "B08G9PRS1K" },
+      },
+    });
+
+    // Only "Scott Brick" processed, empty strings skipped
+    expect(contributorFindFirstMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to lowercase for narrator when canonicalize returns null", async () => {
+    workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: [] });
+    editionFindUniqueMock.mockResolvedValue({ id: "e1", editedFields: [] });
+    contributorFindFirstMock.mockResolvedValueOnce(null);
+    contributorCreateMock.mockResolvedValueOnce({ id: "c1", nameDisplay: "UNKNOWN" });
+    editionContributorDeleteManyMock.mockResolvedValue({});
+    editionContributorCreateManyMock.mockResolvedValue({});
+    externalLinkUpsertMock.mockResolvedValue({});
+
+    await applyEnrichmentServerFn({
+      data: {
+        workId: "w1",
+        editionId: "e1",
+        editionFields: { narrators: ["UNKNOWN"] },
+        source: { provider: "audible", externalId: "B08G9PRS1K" },
+      },
+    });
+
+    // canonicalizeContributorName("UNKNOWN") returns null (from mock), fallback to "unknown"
+    expect(contributorFindFirstMock).toHaveBeenCalledWith({ where: { nameCanonical: "unknown" } });
   });
 
   it("applying same subjects twice uses workTag upsert to avoid duplicates", async () => {

@@ -37,12 +37,10 @@ export function useLibraryFilters({ search, navigate }: UseLibraryFiltersOptions
         format: filters.format as LibrarySearchParams["format"],
         authorId: filters.authorId,
         seriesId: filters.seriesId,
-        publisher: filters.publisher,
         hasCover: filters.hasCover,
         enriched: filters.enriched,
         hasDescription: filters.hasDescription,
         inSeries: filters.inSeries,
-        hasIsbn: filters.hasIsbn,
       });
     },
     [updateSearch],
@@ -93,12 +91,10 @@ export function useLibraryFilters({ search, navigate }: UseLibraryFiltersOptions
     format: search.format,
     authorId: search.authorId,
     seriesId: search.seriesId,
-    publisher: search.publisher,
     hasCover: search.hasCover,
     enriched: search.enriched,
     hasDescription: search.hasDescription,
     inSeries: search.inSeries,
-    hasIsbn: search.hasIsbn,
   };
 
   return {

@@ -3,7 +3,7 @@ import { z } from "zod";
 
 const bulkEnrichSchema = z.object({
   workIds: z.array(z.string()).min(1),
-  sources: z.array(z.enum(["openlibrary", "googlebooks", "hardcover"])).min(1),
+  sources: z.array(z.enum(["openlibrary", "googlebooks", "hardcover", "audible"])).min(1),
   strategy: z.enum(["fullest", "priority"]),
 });
 

@@ -68,7 +68,7 @@ export interface EnrichContributorJobPayload extends BaseJobPayload {
 
 export type BulkEnrichStrategy = "fullest" | "priority";
 
-export type BulkEnrichProvider = "openlibrary" | "googlebooks" | "hardcover";
+export type BulkEnrichProvider = "openlibrary" | "googlebooks" | "hardcover" | "audible";
 
 export interface BulkEnrichMetadataJobPayload extends BaseJobPayload {
   workId: string;

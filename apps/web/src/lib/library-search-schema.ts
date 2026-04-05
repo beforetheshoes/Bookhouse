@@ -18,17 +18,15 @@ export const librarySearchSchema = z
   .object({
     page: z.coerce.number().int().min(1).default(1),
     pageSize: z.coerce.number().int().min(1).max(100).default(50),
-    sort: z.enum(["title-asc", "title-desc", "author-asc", "author-desc", "publisher-asc", "publisher-desc", "format-asc", "format-desc", "isbn-asc", "isbn-desc", "recent"]).default("title-asc"),
+    sort: z.enum(["title-asc", "title-desc", "author-asc", "author-desc", "format-asc", "format-desc", "recent"]).default("title-asc"),
     q: z.string().optional(),
     format: coerceToArray(z.enum(["EBOOK", "AUDIOBOOK"])),
     authorId: coerceToArray(z.string()),
     seriesId: coerceToArray(z.string()),
-    publisher: coerceToArray(z.string()),
     hasCover: coerceBool,
     enriched: coerceBool,
     hasDescription: coerceBool,
     inSeries: coerceBool,
-    hasIsbn: coerceBool,
   })
   .strip();
 

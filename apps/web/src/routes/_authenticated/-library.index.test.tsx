@@ -9,11 +9,6 @@ function asLoader<TArgs, TResult>(fn: ((args: TArgs) => Promise<TResult>) | obje
   return fn as ((args: TArgs) => Promise<TResult>) & typeof fn;
 }
 
-/** Force-cast for testing type-mismatch scenarios */
-function forceCast<T>(value: T | string | number | boolean | object | null): T {
-  return value as T & typeof value;
-}
-
 const defaultFacetCounts = {
   format: [
     { formatFamily: "EBOOK", _count: { _all: 1 } },
@@ -22,7 +17,6 @@ const defaultFacetCounts = {
   enrichment: { enriched: 0, unenriched: 0 },
   description: { withDescription: 0, withoutDescription: 0 },
   series: { inSeries: 0, standalone: 0 },
-  isbn: { withIsbn: 0, withoutIsbn: 0 },
 };
 
 let mockLoaderData: {
@@ -244,10 +238,9 @@ vi.mock("~/lib/server-fns/editing", () => ({
   updateWorkAuthorsServerFn: vi.fn(),
 }));
 
-import { updateWorkServerFn, updateEditionServerFn, updateWorkAuthorsServerFn } from "~/lib/server-fns/editing";
+import { updateWorkServerFn, updateWorkAuthorsServerFn } from "~/lib/server-fns/editing";
 
 const updateWorkServerFnMock = vi.mocked(updateWorkServerFn);
-const updateEditionServerFnMock = vi.mocked(updateEditionServerFn);
 const updateWorkAuthorsServerFnMock = vi.mocked(updateWorkAuthorsServerFn);
 
 vi.mock("~/components/skeletons/grid-page-skeleton", () => ({
@@ -459,36 +452,6 @@ describe("LibraryPage", () => {
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });
 
-  it("renders work with no editions showing dash for publisher/isbn in table view", async () => {
-    mockView = "table";
-    mockLoaderData = {
-      libraryResult: {
-        works: [{
-          id: "work-no-editions",
-          titleDisplay: "No Editions",
-          titleCanonical: "no editions",
-          sortTitle: "no editions",
-          coverPath: null,
-          createdAt: new Date("2025-01-01"),
-          enrichmentStatus: "ENRICHED",
-          series: null,
-          seriesPosition: null,
-          editions: [],
-        }],
-        totalCount: 1,
-        facetCounts: defaultFacetCounts,
-        totalFacetCounts: defaultFacetCounts,
-      },
-      activeJobCount: 0,
-      progressMap: {},
-      shelves: [],
-    };
-    const { Route } = await import("./library.index");
-    const LibraryPage = Route.options.component as React.ComponentType;
-    render(<LibraryPage />);
-    expect(screen.getByText("No Editions")).toBeTruthy();
-  });
-
   it("renders format badges in table view", async () => {
     mockView = "table";
     mockLoaderData = {
@@ -528,26 +491,6 @@ describe("LibraryPage", () => {
     expect(formatButton).toBeTruthy();
   });
 
-  it("renders ISBN column header as sortable button in table view", async () => {
-    mockView = "table";
-    mockLoaderData = {
-      libraryResult: {
-        works: [makeWork("Test Book", ["Author"], ["EBOOK"])],
-        totalCount: 1,
-        facetCounts: defaultFacetCounts,
-        totalFacetCounts: defaultFacetCounts,
-      },
-      activeJobCount: 0,
-      progressMap: {},
-      shelves: [],
-    };
-    const { Route } = await import("./library.index");
-    const LibraryPage = Route.options.component as React.ComponentType;
-    render(<LibraryPage />);
-    const isbnButton = screen.getByRole("button", { name: /ISBN/i });
-    expect(isbnButton).toBeTruthy();
-  });
-
   it("renders Author(s) column header as sortable button in table view", async () => {
     mockView = "table";
     mockLoaderData = {
@@ -566,26 +509,6 @@ describe("LibraryPage", () => {
     render(<LibraryPage />);
     const authorsButton = screen.getByRole("button", { name: /Author/i });
     expect(authorsButton).toBeTruthy();
-  });
-
-  it("renders Publisher column header as sortable button in table view", async () => {
-    mockView = "table";
-    mockLoaderData = {
-      libraryResult: {
-        works: [makeWork("Test Book", ["Author"], ["EBOOK"])],
-        totalCount: 1,
-        facetCounts: defaultFacetCounts,
-        totalFacetCounts: defaultFacetCounts,
-      },
-      activeJobCount: 0,
-      progressMap: {},
-      shelves: [],
-    };
-    const { Route } = await import("./library.index");
-    const LibraryPage = Route.options.component as React.ComponentType;
-    render(<LibraryPage />);
-    const publisherButton = screen.getByRole("button", { name: /Publisher/i });
-    expect(publisherButton).toBeTruthy();
   });
 
   it("passes showSort=false to LibraryToolbar in table view", async () => {
@@ -664,127 +587,6 @@ describe("LibraryPage", () => {
     const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
     expect(screen.getByText("Ebook")).toBeTruthy();
-  });
-
-  it("exercises publisher accessor when sort=publisher-asc in table view", async () => {
-    mockView = "table";
-    mockSearch = { page: 1, pageSize: 50, sort: "publisher-asc" as const };
-    mockLoaderData = {
-      libraryResult: {
-        works: [makeWork("Book A"), makeWork("Book B")],
-        totalCount: 2,
-        facetCounts: defaultFacetCounts,
-        totalFacetCounts: defaultFacetCounts,
-      },
-      activeJobCount: 0,
-      progressMap: {},
-      shelves: [],
-    };
-    const { Route } = await import("./library.index");
-    const LibraryPage = Route.options.component as React.ComponentType;
-    render(<LibraryPage />);
-    expect(screen.getByText("Book A")).toBeTruthy();
-  });
-
-  it("exercises publisher accessor both branches (defined + null) in same render", async () => {
-    mockView = "table";
-    mockSearch = { page: 1, pageSize: 50, sort: "publisher-asc" as const };
-    mockLoaderData = {
-      libraryResult: {
-        works: [
-          makeWork("Has Publisher"),
-          {
-            ...makeWork("No Publisher"),
-            editions: [{
-              id: "ed-no-pub",
-              formatFamily: "EBOOK",
-              publisher: null,
-              isbn13: null,
-              isbn10: null,
-              contributors: [],
-            }],
-          },
-        ],
-        totalCount: 2,
-        facetCounts: defaultFacetCounts,
-        totalFacetCounts: defaultFacetCounts,
-      },
-      activeJobCount: 0,
-      progressMap: {},
-      shelves: [],
-    };
-    const { Route } = await import("./library.index");
-    const LibraryPage = Route.options.component as React.ComponentType;
-    render(<LibraryPage />);
-    expect(screen.getByText("Has Publisher")).toBeTruthy();
-    expect(screen.getByText("No Publisher")).toBeTruthy();
-  });
-
-  it("exercises isbn accessor all branches (isbn13, isbn10 fallback, no editions) in same render", async () => {
-    mockView = "table";
-    mockSearch = { page: 1, pageSize: 50, sort: "isbn-asc" as const };
-    mockLoaderData = {
-      libraryResult: {
-        works: [
-          makeWork("Has ISBN13"),
-          {
-            ...makeWork("ISBN10 Only"),
-            editions: [{
-              id: "ed-isbn10",
-              formatFamily: "EBOOK",
-              publisher: null,
-              isbn13: null,
-              isbn10: "1234567890",
-              contributors: [],
-            }],
-          },
-          {
-            id: "work-no-ed",
-            titleDisplay: "No Editions",
-            titleCanonical: "no editions",
-            sortTitle: "no editions",
-            coverPath: null,
-            createdAt: new Date("2025-01-01"),
-            enrichmentStatus: "ENRICHED",
-            series: null,
-            seriesPosition: null,
-            editions: [],
-          },
-        ],
-        totalCount: 3,
-        facetCounts: defaultFacetCounts,
-        totalFacetCounts: defaultFacetCounts,
-      },
-      activeJobCount: 0,
-      progressMap: {},
-      shelves: [],
-    };
-    const { Route } = await import("./library.index");
-    const LibraryPage = Route.options.component as React.ComponentType;
-    render(<LibraryPage />);
-    expect(screen.getByText("Has ISBN13")).toBeTruthy();
-    expect(screen.getByText("ISBN10 Only")).toBeTruthy();
-    expect(screen.getByText("No Editions")).toBeTruthy();
-  });
-
-  it("exercises isbn accessor when sort=isbn-asc in table view", async () => {
-    mockView = "table";
-    mockSearch = { page: 1, pageSize: 50, sort: "isbn-asc" as const };
-    mockLoaderData = {
-      libraryResult: {
-        works: [makeWork("Book A"), makeWork("Book B")],
-        totalCount: 2,
-        facetCounts: defaultFacetCounts,
-        totalFacetCounts: defaultFacetCounts,
-      },
-      activeJobCount: 0,
-      progressMap: {},
-      shelves: [],
-    };
-    const { Route } = await import("./library.index");
-    const LibraryPage = Route.options.component as React.ComponentType;
-    render(<LibraryPage />);
-    expect(screen.getByText("Book A")).toBeTruthy();
   });
 
   it("renders table with sort=recent (no column sort indicator)", async () => {
@@ -1290,20 +1092,6 @@ describe("LibraryPage", () => {
     expect(screen.queryByText("No works yet")).toBeNull();
   });
 
-  it("does not show empty state when publisher filter is active", async () => {
-    mockSearch = { ...mockSearch, publisher: ["Penguin"] } as typeof mockSearch;
-    mockLoaderData = {
-      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
-      activeJobCount: 0,
-      progressMap: {},
-      shelves: [],
-    };
-    const { Route } = await import("./library.index");
-    const LibraryPage = Route.options.component as React.ComponentType;
-    render(<LibraryPage />);
-    expect(screen.queryByText("No works yet")).toBeNull();
-  });
-
   it("does not show empty state when hasCover filter is active", async () => {
     mockSearch = { ...mockSearch, hasCover: true } as typeof mockSearch;
     mockLoaderData = {
@@ -1381,7 +1169,7 @@ describe("LibraryPage", () => {
 
   it("passes columnVisibility from preferences to column picker", async () => {
     mockView = "table";
-    mockTablePrefs = { columnVisibility: { isbn: false }, textOverflow: "truncate" };
+    mockTablePrefs = { columnVisibility: { authors: false }, textOverflow: "truncate" };
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
@@ -1391,7 +1179,7 @@ describe("LibraryPage", () => {
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
-    expect(capturedColumnPickerProps.columnVisibility).toEqual({ isbn: false });
+    expect(capturedColumnPickerProps.columnVisibility).toEqual({ authors: false });
   });
 
   it("calls setTablePrefs when column is toggled", async () => {
@@ -1407,9 +1195,9 @@ describe("LibraryPage", () => {
     const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
     const onToggle = capturedColumnPickerProps.onToggle as (id: string) => void;
-    onToggle("isbn");
+    onToggle("authors");
     expect(mockSetTablePrefs).toHaveBeenCalledWith({
-      columnVisibility: { isbn: false },
+      columnVisibility: { authors: false },
       textOverflow: "truncate",
     });
   });
@@ -1859,59 +1647,6 @@ describe("LibraryPage", () => {
     expect(screen.getByDisplayValue("")).toBeTruthy();
   });
 
-  it("shows empty input for works with no publisher in edit mode", async () => {
-    mockView = "table";
-    const work = makeWork("Test Book", ["Author"]);
-    if (work.editions[0]) work.editions[0].publisher = forceCast<string>(null);
-    mockLoaderData.libraryResult.works = [work];
-    mockLoaderData.libraryResult.totalCount = 1;
-
-    const { Route } = await import("./library.index");
-    const Page = Route.options.component as React.ComponentType;
-    const { fireEvent } = await import("@testing-library/react");
-    render(<Page />);
-
-    fireEvent.click(screen.getByTestId("edit-mode-toggle"));
-    // Should render without crashing
-    expect(screen.getByDisplayValue("Test Book")).toBeTruthy();
-  });
-
-  it("shows empty input for works with no isbn in edit mode", async () => {
-    mockView = "table";
-    const work = makeWork("Test Book", ["Author"]);
-    if (work.editions[0]) {
-      work.editions[0].isbn13 = null;
-      work.editions[0].isbn10 = null;
-    }
-    mockLoaderData.libraryResult.works = [work];
-    mockLoaderData.libraryResult.totalCount = 1;
-
-    const { Route } = await import("./library.index");
-    const Page = Route.options.component as React.ComponentType;
-    const { fireEvent } = await import("@testing-library/react");
-    render(<Page />);
-
-    fireEvent.click(screen.getByTestId("edit-mode-toggle"));
-    expect(screen.getByDisplayValue("Test Book")).toBeTruthy();
-  });
-
-  it("shows dash for publisher and isbn when work has no editions in edit mode", async () => {
-    mockView = "table";
-    const work = makeWork("Empty Book", ["Author"]);
-    work.editions = [];
-    mockLoaderData.libraryResult.works = [work];
-    mockLoaderData.libraryResult.totalCount = 1;
-
-    const { Route } = await import("./library.index");
-    const Page = Route.options.component as React.ComponentType;
-    const { fireEvent } = await import("@testing-library/react");
-    render(<Page />);
-
-    fireEvent.click(screen.getByTestId("edit-mode-toggle"));
-    // Should show dash for publisher and isbn since no editions
-    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
-  });
-
   it("does not call updateWorkAuthorsServerFn when authors field is empty", async () => {
     mockView = "table";
     mockLoaderData.libraryResult.works = [makeWork("Test Book", ["Author"])];
@@ -1928,73 +1663,6 @@ describe("LibraryPage", () => {
     fireEvent.blur(authorsInput);
 
     expect(updateWorkAuthorsServerFnMock).not.toHaveBeenCalled();
-  });
-
-  it("calls updateEditionServerFn on isbn blur in edit mode", async () => {
-    mockView = "table";
-    mockLoaderData.libraryResult.works = [makeWork("Test Book", ["Author"])];
-    mockLoaderData.libraryResult.totalCount = 1;
-    updateEditionServerFnMock.mockResolvedValue({ success: true });
-
-    const { Route } = await import("./library.index");
-    const Page = Route.options.component as React.ComponentType;
-    const { fireEvent, waitFor } = await import("@testing-library/react");
-    render(<Page />);
-
-    fireEvent.click(screen.getByTestId("edit-mode-toggle"));
-    const isbnInput = screen.getByDisplayValue("1234567890123");
-    fireEvent.change(isbnInput, { target: { value: "9999999999999" } });
-    fireEvent.blur(isbnInput);
-
-    await waitFor(() => {
-      expect(updateEditionServerFnMock).toHaveBeenCalled();
-    });
-  });
-
-  it("calls updateEditionServerFn on publisher blur in edit mode", async () => {
-    mockView = "table";
-    mockLoaderData.libraryResult.works = [makeWork("Test Book", ["Author"])];
-    mockLoaderData.libraryResult.totalCount = 1;
-    updateEditionServerFnMock.mockResolvedValue({ success: true });
-
-    const { Route } = await import("./library.index");
-    const Page = Route.options.component as React.ComponentType;
-    const { fireEvent, waitFor } = await import("@testing-library/react");
-    render(<Page />);
-
-    fireEvent.click(screen.getByTestId("edit-mode-toggle"));
-    const publisherInput = screen.getByDisplayValue("Test Publisher");
-    fireEvent.change(publisherInput, { target: { value: "" } });
-    fireEvent.blur(publisherInput);
-
-    await waitFor(() => {
-      expect(updateEditionServerFnMock).toHaveBeenCalledWith({
-        data: { editionId: "edition-test-book", fields: { publisher: null } },
-      });
-    });
-  });
-
-  it("calls updateEditionServerFn with null isbn when cleared", async () => {
-    mockView = "table";
-    mockLoaderData.libraryResult.works = [makeWork("Test Book", ["Author"])];
-    mockLoaderData.libraryResult.totalCount = 1;
-    updateEditionServerFnMock.mockResolvedValue({ success: true });
-
-    const { Route } = await import("./library.index");
-    const Page = Route.options.component as React.ComponentType;
-    const { fireEvent, waitFor } = await import("@testing-library/react");
-    render(<Page />);
-
-    fireEvent.click(screen.getByTestId("edit-mode-toggle"));
-    const isbnInput = screen.getByDisplayValue("1234567890123");
-    fireEvent.change(isbnInput, { target: { value: "" } });
-    fireEvent.blur(isbnInput);
-
-    await waitFor(() => {
-      expect(updateEditionServerFnMock).toHaveBeenCalledWith({
-        data: { editionId: "edition-test-book", fields: { isbn13: null } },
-      });
-    });
   });
 
   it("shows Add to Shelf button when works are selected", async () => {

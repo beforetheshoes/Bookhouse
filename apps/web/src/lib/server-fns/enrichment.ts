@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import type { SearchSourcesDeps, RateLimitResult, CoverFromUrlDeps, CoverFromUrlDbDeps, OLSearchResult, OLWork, OLEdition, GBVolume, HCBook } from "@bookhouse/ingest";
+import type { SearchSourcesDeps, RateLimitResult, CoverFromUrlDeps, CoverFromUrlDbDeps, OLSearchResult, OLWork, OLEdition, GBVolume, HCBook, AudibleProduct } from "@bookhouse/ingest";
 
 interface SearchFns {
   searchOpenLibrary: (title: string, author: string | undefined, fetcher: typeof fetch) => Promise<OLSearchResult[] | null>;
@@ -8,6 +8,7 @@ interface SearchFns {
   getOpenLibraryEdition: (isbn: string, fetcher: typeof fetch) => Promise<OLEdition | null>;
   searchGoogleBooks: (title: string, author: string | undefined, apiKey: string, fetcher: typeof fetch) => Promise<GBVolume[] | null>;
   searchHardcover: (title: string, author: string | undefined, apiKey: string, fetcher: typeof fetch) => Promise<HCBook[] | null>;
+  searchAudible: (title: string, author: string | undefined, fetcher: typeof fetch) => Promise<AudibleProduct[] | null>;
 }
 
 export function buildSearchDeps(
@@ -27,6 +28,7 @@ export function buildSearchDeps(
     searchHC: hcKey
       ? (title, a) => fns.searchHardcover(title, a, hcKey, fetcher)
       : () => Promise.resolve(null),
+    searchAudible: (title, a) => fns.searchAudible(title, a, fetcher),
     checkRateLimit: () => rateLimiter.check(),
   };
 }
@@ -76,6 +78,7 @@ export const searchEnrichmentServerFn = createServerFn({
       getOpenLibraryEdition,
       searchGoogleBooks,
       searchHardcover,
+      searchAudible,
       RateLimiter,
     } = await import("@bookhouse/ingest");
     const { getDecryptedApiKey } = await import("./integrations");
@@ -113,6 +116,7 @@ export const searchEnrichmentServerFn = createServerFn({
       getOpenLibraryEdition,
       searchGoogleBooks,
       searchHardcover,
+      searchAudible,
     });
 
     return await searchAllSources(work.titleDisplay, author, deps);
@@ -298,6 +302,10 @@ export const applyEnrichmentServerFn = createServerFn({
         filteredFields.publishedAt = val ? new Date(val) : null;
       }
 
+      // Handle narrators separately — stored via Contributor + EditionContributor (per-edition only)
+      const narrators = filteredFields.narrators as string[] | undefined;
+      delete filteredFields.narrators;
+
       if (Object.keys(filteredFields).length > 0) {
         await db.edition.update({
           where: { id: data.editionId },
@@ -305,6 +313,41 @@ export const applyEnrichmentServerFn = createServerFn({
         });
         appliedAnyFields = true;
         allAppliedFields.push(...Object.keys(filteredFields));
+      }
+
+      // Apply narrators via Contributor + EditionContributor (scoped to this edition only)
+      if (narrators && narrators.length > 0) {
+        const { canonicalizeContributorName } = await import("@bookhouse/ingest");
+
+        const contributorIds: string[] = [];
+        for (const narratorName of narrators) {
+          const trimmed = narratorName.trim();
+          if (trimmed === "") continue;
+          const canonical = canonicalizeContributorName(trimmed) ?? trimmed.toLowerCase();
+          const existing = await db.contributor.findFirst({ where: { nameCanonical: canonical } });
+          if (existing) {
+            contributorIds.push(existing.id);
+          } else {
+            const created = await db.contributor.create({
+              data: { nameDisplay: trimmed, nameCanonical: canonical },
+            });
+            contributorIds.push(created.id);
+          }
+        }
+
+        // Replace NARRATOR contributors on this edition only
+        await db.editionContributor.deleteMany({
+          where: { editionId: data.editionId, role: "NARRATOR" },
+        });
+        const createData = contributorIds.map((contributorId) => ({
+          editionId: data.editionId as string,
+          contributorId,
+          role: "NARRATOR" as const,
+        }));
+        await db.editionContributor.createMany({ data: createData, skipDuplicates: true });
+
+        appliedAnyFields = true;
+        allAppliedFields.push("narrators");
       }
     }
 

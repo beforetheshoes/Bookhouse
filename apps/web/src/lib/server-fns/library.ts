@@ -56,17 +56,15 @@ export type LibraryWork = Awaited<
 const filterSchema = z.object({
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(1).max(100).default(50),
-  sort: z.enum(["title-asc", "title-desc", "author-asc", "author-desc", "publisher-asc", "publisher-desc", "format-asc", "format-desc", "isbn-asc", "isbn-desc", "recent"]).default("title-asc"),
+  sort: z.enum(["title-asc", "title-desc", "author-asc", "author-desc", "format-asc", "format-desc", "recent"]).default("title-asc"),
   q: z.string().optional(),
   format: z.array(z.enum(["EBOOK", "AUDIOBOOK"])).optional(),
   authorId: z.array(z.string()).optional(),
   seriesId: z.array(z.string()).optional(),
-  publisher: z.array(z.string()).optional(),
   hasCover: z.boolean().optional(),
   enriched: z.boolean().optional(),
   hasDescription: z.boolean().optional(),
   inSeries: z.boolean().optional(),
-  hasIsbn: z.boolean().optional(),
 });
 
 function buildWhere(data: z.infer<typeof filterSchema>): Prisma.WorkWhereInput {
@@ -94,18 +92,6 @@ function buildWhere(data: z.infer<typeof filterSchema>): Prisma.WorkWhereInput {
         },
       },
     });
-  }
-
-  if (data.publisher && data.publisher.length > 0) {
-    editionConditions.push({ publisher: { in: data.publisher } });
-  }
-
-  if (data.hasIsbn === true) {
-    editionConditions.push({
-      OR: [{ isbn13: { not: null } }, { isbn10: { not: null } }],
-    });
-  } else if (data.hasIsbn === false) {
-    editionConditions.push({ isbn13: null, isbn10: null });
   }
 
   if (editionConditions.length === 1) {
@@ -173,9 +159,7 @@ function buildOrderBy(sort: string): Prisma.WorkOrderByWithRelationInput {
 /** Sort options that require the two-step fetch (edition/contributor fields). */
 const EDITION_SORT_OPTIONS = new Set([
   "author-asc", "author-desc",
-  "publisher-asc", "publisher-desc",
   "format-asc", "format-desc",
-  "isbn-asc", "isbn-desc",
 ]);
 
 function isEditionSort(sort: string): boolean {
@@ -186,10 +170,7 @@ const EDITION_SORT_SELECT = {
   id: true,
   editions: {
     select: {
-      publisher: true,
       formatFamily: true,
-      isbn13: true,
-      isbn10: true,
       contributors: {
         where: { role: "AUTHOR" as const },
         select: { contributor: { select: { nameCanonical: true } } },
@@ -201,15 +182,12 @@ const EDITION_SORT_SELECT = {
 type LightweightEditionWork = {
   id: string;
   editions: {
-    publisher: string | null;
     formatFamily: string;
-    isbn13: string | null;
-    isbn10: string | null;
     contributors: { contributor: { nameCanonical: string } }[];
   }[];
 };
 
-type EditionSortOption = "author-asc" | "author-desc" | "publisher-asc" | "publisher-desc" | "format-asc" | "format-desc" | "isbn-asc" | "isbn-desc";
+type EditionSortOption = "author-asc" | "author-desc" | "format-asc" | "format-desc";
 
 function extractSortKey(work: LightweightEditionWork, sort: EditionSortOption): string {
   switch (sort) {
@@ -219,20 +197,10 @@ function extractSortKey(work: LightweightEditionWork, sort: EditionSortOption): 
         .flatMap((e) => e.contributors)
         .map((c) => c.contributor.nameCanonical)
         .sort()[0] ?? "\uffff";
-    case "publisher-asc":
-    case "publisher-desc":
-      return work.editions
-        .map((e) => e.publisher ?? "")
-        .sort()[0] ?? "\uffff";
     case "format-asc":
     case "format-desc":
       return work.editions
         .map((e) => e.formatFamily)
-        .sort()[0] ?? "\uffff";
-    case "isbn-asc":
-    case "isbn-desc":
-      return work.editions
-        .map((e) => e.isbn13 ?? e.isbn10 ?? "")
         .sort()[0] ?? "\uffff";
   }
 }
@@ -313,13 +281,11 @@ export const getFilteredLibraryWorksServerFn = createServerFn({
       enrichedCount, unenrichedCount,
       withDescriptionCount, withoutDescriptionCount,
       inSeriesCount, standaloneCount,
-      withIsbnCount, withoutIsbnCount,
       totalFormatCounts,
       totalWithCoverCount, totalWithoutCoverCount,
       totalEnrichedCount, totalUnenrichedCount,
       totalWithDescriptionCount, totalWithoutDescriptionCount,
       totalInSeriesCount, totalStandaloneCount,
-      totalWithIsbnCount, totalWithoutIsbnCount,
     ] = await Promise.all([
       worksPromise,
       db.work.count({ where }),
@@ -337,12 +303,6 @@ export const getFilteredLibraryWorksServerFn = createServerFn({
       db.work.count({ where: { AND: [where, { description: null }] } }),
       db.work.count({ where: { AND: [where, { seriesId: { not: null } }] } }),
       db.work.count({ where: { AND: [where, { seriesId: null }] } }),
-      db.work.count({
-        where: { AND: [where, { editions: { some: { OR: [{ isbn13: { not: null } }, { isbn10: { not: null } }] } } }] },
-      }),
-      db.work.count({
-        where: { AND: [where, { editions: { every: { isbn13: null, isbn10: null } } }] },
-      }),
       // Unfiltered totals for showing "filtered / total" in the UI
       db.edition.groupBy({
         by: ["formatFamily"],
@@ -357,12 +317,6 @@ export const getFilteredLibraryWorksServerFn = createServerFn({
       db.work.count({ where: { AND: [baseWhere, { description: null }] } }),
       db.work.count({ where: { AND: [baseWhere, { seriesId: { not: null } }] } }),
       db.work.count({ where: { AND: [baseWhere, { seriesId: null }] } }),
-      db.work.count({
-        where: { AND: [baseWhere, { editions: { some: { OR: [{ isbn13: { not: null } }, { isbn10: { not: null } }] } } }] },
-      }),
-      db.work.count({
-        where: { AND: [baseWhere, { editions: { every: { isbn13: null, isbn10: null } } }] },
-      }),
     ]);
 
     return {
@@ -386,10 +340,6 @@ export const getFilteredLibraryWorksServerFn = createServerFn({
           inSeries: inSeriesCount,
           standalone: standaloneCount,
         },
-        isbn: {
-          withIsbn: withIsbnCount,
-          withoutIsbn: withoutIsbnCount,
-        },
       },
       totalFacetCounts: {
         format: normalizeFormatCounts(totalFormatCounts),
@@ -408,10 +358,6 @@ export const getFilteredLibraryWorksServerFn = createServerFn({
         series: {
           inSeries: totalInSeriesCount,
           standalone: totalStandaloneCount,
-        },
-        isbn: {
-          withIsbn: totalWithIsbnCount,
-          withoutIsbn: totalWithoutIsbnCount,
         },
       },
     };

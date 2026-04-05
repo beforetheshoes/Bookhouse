@@ -41,8 +41,12 @@ interface EnrichmentDialogProps {
     isbn10: string | null;
     language: string | null;
     pageCount: number | null;
+    asin: string | null;
+    duration: number | null;
+    narrators: string[];
     editedFields: string[];
   } | null;
+  mode?: "work" | "edition";
   onApplied: () => void;
 }
 
@@ -63,6 +67,7 @@ const PROVIDER_LABELS: Record<EnrichmentProvider, string> = {
   openlibrary: "Open Library",
   googlebooks: "Google Books",
   hardcover: "Hardcover",
+  audible: "Audible",
 };
 
 interface FieldDef {
@@ -85,6 +90,9 @@ const EDITION_FIELDS: FieldDef[] = [
   { key: "pageCount", label: "Pages", level: "edition" },
   { key: "isbn13", label: "ISBN-13", level: "edition" },
   { key: "isbn10", label: "ISBN-10", level: "edition" },
+  { key: "asin", label: "ASIN", level: "edition" },
+  { key: "duration", label: "Duration", level: "edition" },
+  { key: "narrators", label: "Narrators", level: "edition" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -98,8 +106,17 @@ function getSourceValue(result: SourceResult, field: FieldDef): EnrichmentFieldV
   return (result.edition as object as Record<string, EnrichmentFieldValue>)[field.key] ?? null;
 }
 
-function formatValue(value: EnrichmentFieldValue | undefined): string {
+export function formatDuration(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (hours === 0) return `${String(minutes)}m`;
+  if (minutes === 0) return `${String(hours)}h`;
+  return `${String(hours)}h ${String(minutes)}m`;
+}
+
+function formatValue(value: EnrichmentFieldValue | undefined, fieldKey?: string): string {
   if (value === null || value === undefined) return "";
+  if (fieldKey === "duration" && typeof value === "number") return formatDuration(value);
   if (Array.isArray(value)) return value.join(", ");
   if (typeof value === "string") return value;
   if (typeof value === "number") return value.toString();
@@ -302,6 +319,7 @@ export function EnrichmentDialog({
   editionId,
   currentWork,
   currentEdition,
+  mode,
   onApplied,
 }: EnrichmentDialogProps) {
   const [status, setStatus] = useState<DialogStatus | null>(null);
@@ -411,12 +429,15 @@ export function EnrichmentDialog({
   const activeSel = getSelection(selections, activeTab);
   const selectedCount = countSelected(activeSel);
   const hasEdition = editionId !== null && currentEdition !== null;
+  const showWorkSection = mode !== "edition";
+  const showEditionSection = mode !== "work" && hasEdition;
+  const dialogTitle = mode === "work" ? "Enrich Work" : mode === "edition" ? "Enrich Edition" : "Enrich Metadata";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>Enrich Metadata</DialogTitle>
+          <DialogTitle>{dialogTitle}</DialogTitle>
           <DialogDescription>
             Compare data from external sources and choose which fields to apply.
           </DialogDescription>
@@ -460,7 +481,7 @@ export function EnrichmentDialog({
                       <SourceHeader result={r} />
 
                       {/* Work Data */}
-                      <div className="space-y-1">
+                      {showWorkSection && <div className="space-y-1">
                         <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground px-2">
                           Work Data
                         </h3>
@@ -496,10 +517,10 @@ export function EnrichmentDialog({
                             );
                           })}
                         </div>
-                      </div>
+                      </div>}
 
                       {/* Edition Data */}
-                      {hasEdition && (
+                      {showEditionSection && (
                         <>
                           <Separator />
                           <div className="space-y-1">
@@ -509,9 +530,10 @@ export function EnrichmentDialog({
                             <div className="space-y-0.5">
                               {EDITION_FIELDS.map((field) => {
                                 const raw = getSourceValue(r, field);
-                                const sourceVal = formatValue(raw);
+                                const sourceVal = formatValue(raw, field.key);
                                 const currentVal = formatValue(
                                   (currentEdition as Record<string, EnrichmentFieldValue>)[field.key],
+                                  field.key,
                                 );
                                 return (
                                   <FieldComparisonRow
@@ -602,10 +624,10 @@ function buildInitialSelections(
     if (currentEdition) {
       for (const field of EDITION_FIELDS) {
         const raw = getSourceValue(r, field);
-        const sourceVal = formatValue(raw);
+        const sourceVal = formatValue(raw, field.key);
         if (!sourceVal) continue;
         if (currentEdition.editedFields.includes(field.key)) continue;
-        const currentVal = formatValue((currentEdition as Record<string, EnrichmentFieldValue>)[field.key]);
+        const currentVal = formatValue((currentEdition as Record<string, EnrichmentFieldValue>)[field.key], field.key);
         if (sourceVal === currentVal) continue;
         sel.editionFields[field.key] = raw;
       }

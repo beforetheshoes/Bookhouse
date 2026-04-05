@@ -25,7 +25,7 @@ const { mockToast } = vi.hoisted(() => ({
 }));
 vi.mock("sonner", () => ({ toast: mockToast }));
 
-import { EnrichmentDialog } from "./enrichment-dialog";
+import { EnrichmentDialog, formatDuration } from "./enrichment-dialog";
 
 beforeEach(() => {
   searchEnrichmentMock.mockReset();
@@ -55,6 +55,9 @@ const baseProps = {
     isbn10: null as string | null,
     language: null as string | null,
     pageCount: null as number | null,
+    asin: null as string | null,
+    duration: null as number | null,
+    narrators: [] as string[],
     editedFields: [] as string[],
   },
   onApplied: vi.fn(),
@@ -64,7 +67,7 @@ const olResult = {
   provider: "openlibrary" as const,
   externalId: "OL123W",
   work: { title: "The Name of the Wind", authors: ["Patrick Rothfuss"], description: "A story about Kvothe", subjects: ["Fantasy", "Epic"], coverUrl: "https://covers.openlibrary.org/b/id/42-L.jpg" },
-  edition: { publisher: "DAW Books", publishedDate: "April 2007", pageCount: 662, isbn13: "9780756404741", isbn10: "0756404746" },
+  edition: { publisher: "DAW Books", publishedDate: "April 2007", pageCount: 662, isbn13: "9780756404741", isbn10: "0756404746", asin: null, duration: null, narrators: null },
   raw: {},
 };
 
@@ -72,7 +75,7 @@ const gbResult = {
   provider: "googlebooks" as const,
   externalId: "gb_xyz",
   work: { title: "The Name of the Wind", authors: ["Patrick Rothfuss"], description: "The riveting first-person narrative", subjects: ["Fiction"], coverUrl: "https://books.google.com/thumb.jpg" },
-  edition: { publisher: "DAW", publishedDate: "2007-04-01", pageCount: 662, isbn13: "9780756404741", isbn10: null },
+  edition: { publisher: "DAW", publishedDate: "2007-04-01", pageCount: 662, isbn13: "9780756404741", isbn10: null, asin: null, duration: null, narrators: null },
   raw: {},
 };
 
@@ -588,6 +591,9 @@ describe("EnrichmentDialog", () => {
         pageCount: forceCast<number>(true),
         isbn13: forceCast<string>(true),
         isbn10: forceCast<string>(true),
+        asin: null,
+        duration: null,
+        narrators: null,
       },
     };
     searchEnrichmentMock.mockResolvedValue({
@@ -792,7 +798,7 @@ describe("EnrichmentDialog", () => {
       provider: "openlibrary" as const,
       externalId: "OL999W",
       work: { title: "The Name of the Wind", description: null, subjects: [], coverUrl: null },
-      edition: { publisher: null, publishedDate: null, pageCount: null, isbn13: null, isbn10: null },
+      edition: { publisher: null, publishedDate: null, pageCount: null, isbn13: null, isbn10: null, asin: null, duration: null, narrators: null },
       raw: {},
     };
     searchEnrichmentMock.mockResolvedValue({
@@ -1100,5 +1106,129 @@ describe("EnrichmentDialog", () => {
     // Should show Edited badge
     const authorsRow = screen.getByText("Authors").closest(".group");
     expect(authorsRow?.querySelector("[aria-label='Select field']")).toBeTruthy();
+  });
+
+  it("displays duration formatted as hours and minutes", async () => {
+    const audibleResult = {
+      provider: "audible" as const,
+      externalId: "B08G9PRS1K",
+      work: { title: "The Name of the Wind", authors: ["Patrick Rothfuss"], description: null, subjects: [], coverUrl: null },
+      edition: { publisher: "Macmillan Audio", publishedDate: "2007-07-17", pageCount: null, isbn13: null, isbn10: null, asin: "B08G9PRS1K", duration: 83760, narrators: ["Nick Podehl"] },
+      raw: {},
+    };
+    searchEnrichmentMock.mockResolvedValue({
+      status: "success",
+      results: [audibleResult],
+    });
+
+    render(<EnrichmentDialog {...baseProps} />);
+
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    // 83760 seconds = 23h 16m
+    expect(screen.getByText("Duration")).toBeTruthy();
+    expect(screen.getByText("23h 16m")).toBeTruthy();
+  });
+
+  it("displays narrators field from Audible source", async () => {
+    const audibleResult = {
+      provider: "audible" as const,
+      externalId: "B08G9PRS1K",
+      work: { title: "The Name of the Wind", authors: ["Patrick Rothfuss"], description: null, subjects: [], coverUrl: null },
+      edition: { publisher: "Macmillan Audio", publishedDate: "2007-07-17", pageCount: null, isbn13: null, isbn10: null, asin: "B08G9PRS1K", duration: 79200, narrators: ["Nick Podehl", "Rupert Degas"] },
+      raw: {},
+    };
+    searchEnrichmentMock.mockResolvedValue({
+      status: "success",
+      results: [audibleResult],
+    });
+
+    render(<EnrichmentDialog {...baseProps} />);
+
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    expect(screen.getByText("Narrators")).toBeTruthy();
+    expect(screen.getByText("Nick Podehl, Rupert Degas")).toBeTruthy();
+  });
+
+  it("displays ASIN field from Audible source", async () => {
+    const audibleResult = {
+      provider: "audible" as const,
+      externalId: "B08G9PRS1K",
+      work: { title: "The Name of the Wind", authors: ["Patrick Rothfuss"], description: null, subjects: [], coverUrl: null },
+      edition: { publisher: "Macmillan Audio", publishedDate: null, pageCount: null, isbn13: null, isbn10: null, asin: "B08G9PRS1K", duration: null, narrators: null },
+      raw: {},
+    };
+    searchEnrichmentMock.mockResolvedValue({
+      status: "success",
+      results: [audibleResult],
+    });
+
+    render(<EnrichmentDialog {...baseProps} />);
+
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    expect(screen.getByText("ASIN")).toBeTruthy();
+    // ASIN value appears in both source header (externalId) and the field row
+    expect(screen.getAllByText("B08G9PRS1K").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("shows only work fields when mode is 'work'", async () => {
+    searchEnrichmentMock.mockResolvedValue({
+      status: "success",
+      results: [olResult],
+    });
+
+    render(<EnrichmentDialog {...baseProps} mode="work" />);
+
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    expect(screen.getByText("Enrich Work")).toBeTruthy();
+    expect(screen.getByText("Work Data")).toBeTruthy();
+    expect(screen.queryByText("Edition Data")).toBeNull();
+  });
+
+  it("shows only edition fields when mode is 'edition'", async () => {
+    searchEnrichmentMock.mockResolvedValue({
+      status: "success",
+      results: [olResult],
+    });
+
+    render(<EnrichmentDialog {...baseProps} mode="edition" />);
+
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    expect(screen.getByText("Enrich Edition")).toBeTruthy();
+    expect(screen.queryByText("Work Data")).toBeNull();
+    expect(screen.getByText("Edition Data")).toBeTruthy();
+  });
+
+  it("shows both sections when mode is not specified", async () => {
+    searchEnrichmentMock.mockResolvedValue({
+      status: "success",
+      results: [olResult],
+    });
+
+    render(<EnrichmentDialog {...baseProps} />);
+
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    expect(screen.getByText("Enrich Metadata")).toBeTruthy();
+    expect(screen.getByText("Work Data")).toBeTruthy();
+    expect(screen.getByText("Edition Data")).toBeTruthy();
+  });
+});
+
+describe("formatDuration", () => {
+  it("formats hours and minutes", () => {
+    expect(formatDuration(83760)).toBe("23h 16m");
+  });
+
+  it("formats hours only when no minutes", () => {
+    expect(formatDuration(7200)).toBe("2h");
+  });
+
+  it("formats minutes only when less than an hour", () => {
+    expect(formatDuration(1800)).toBe("30m");
   });
 });

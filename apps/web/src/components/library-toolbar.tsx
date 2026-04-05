@@ -14,7 +14,7 @@ import type { ReadingFilter } from "~/lib/sort-filter-works";
 import type { LibraryView } from "~/hooks/use-library-view-preference";
 import type { GridTileSize } from "~/hooks/use-grid-tile-size";
 
-export type SortValue = "title-asc" | "title-desc" | "author-asc" | "author-desc" | "publisher-asc" | "publisher-desc" | "format-asc" | "format-desc" | "isbn-asc" | "isbn-desc" | "recent";
+export type SortValue = "title-asc" | "title-desc" | "author-asc" | "author-desc" | "format-asc" | "format-desc" | "recent";
 
 interface LibraryToolbarProps {
   searchValue: string;
@@ -42,8 +42,6 @@ const SORT_OPTIONS: { value: SortValue; label: string }[] = [
   { value: "title-desc", label: "Title Z-A" },
   { value: "author-asc", label: "Author A-Z" },
   { value: "author-desc", label: "Author Z-A" },
-  { value: "publisher-asc", label: "Publisher A-Z" },
-  { value: "publisher-desc", label: "Publisher Z-A" },
   { value: "recent", label: "Recently Added" },
 ];
 

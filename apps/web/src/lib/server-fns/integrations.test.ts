@@ -102,6 +102,7 @@ describe("integrations server functions", () => {
 
       expect(result).toEqual({
         openlibrary: { configured: true, label: "Open Library" },
+        audible: { configured: true, label: "Audible" },
         googlebooks: { configured: false, label: "Google Books" },
         hardcover: { configured: false, label: "Hardcover" },
       });

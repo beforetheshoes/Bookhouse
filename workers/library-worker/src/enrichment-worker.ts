@@ -17,6 +17,7 @@ import {
   getOpenLibraryEdition,
   searchGoogleBooks,
   searchHardcover,
+  searchAudible,
   applyEnrichmentFields,
   canonicalizeContributorName,
   applyCoverFromUrl,
@@ -158,8 +159,10 @@ function buildBulkEnrichDeps(
           publishedAt: Date | null;
           isbn13: string | null;
           isbn10: string | null;
+          asin: string | null;
           language: string | null;
           pageCount: number | null;
+          duration: number | null;
           editedFields: string[];
           contributors: Array<{ role: string; contributor: { nameDisplay: string } }>;
         }) => ({
@@ -169,9 +172,14 @@ function buildBulkEnrichDeps(
           publishedDate: edition.publishedAt ? (edition.publishedAt.toISOString().split("T")[0] ?? null) : null,
           isbn13: edition.isbn13,
           isbn10: edition.isbn10,
+          asin: edition.asin,
           language: edition.language,
           pageCount: edition.pageCount,
+          duration: edition.duration,
           editedFields: edition.editedFields,
+          narrators: edition.contributors
+            .filter((ec) => ec.role === "NARRATOR")
+            .map((ec) => ec.contributor.nameDisplay),
           authors: edition.contributors
             .filter((ec) => ec.role === "AUTHOR")
             .map((ec) => ec.contributor.nameDisplay),
@@ -189,6 +197,7 @@ function buildBulkEnrichDeps(
         searchHC: hcKey
           ? (t: string, a: string | undefined) => searchHardcover(t, a, hcKey, fetch)
           : () => Promise.resolve(null),
+        searchAudible: (t: string, a: string | undefined) => searchAudible(t, a, fetch),
         checkRateLimit: () => rateLimiter.check(),
       };
       return searchAllSources(title, author, searchDeps);

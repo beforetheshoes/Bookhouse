@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { ChevronRight, Sparkles, Trash2 } from "lucide-react";
+import { BookOpen, ChevronRight, Headphones, Sparkles, Trash2 } from "lucide-react";
 import { WorkCover } from "~/components/work-cover";
 import { Button } from "~/components/ui/button";
 import {
@@ -20,7 +20,7 @@ import { WorkProgress } from "~/components/work-progress";
 import { EditionProgress } from "~/components/edition-progress";
 import { ShelfMembership } from "~/components/shelf-membership";
 import { CoverSearchDialog } from "~/components/cover-search-dialog";
-import { EditionTabPanel } from "~/components/edition-tab-panel";
+import { EditionCard } from "~/components/edition-card";
 import { MetadataItem } from "~/components/metadata-item";
 import { getShelvesForWorkServerFn } from "~/lib/server-fns/shelves";
 import {
@@ -69,6 +69,16 @@ function WorkDetailSkeleton() {
   );
 }
 
+export function editionSortKey(e: WorkDetail["editions"][number]): string {
+  const pub = (e.publisher ?? "").toLowerCase();
+  const file = e.editionFiles[0]?.fileAsset.basename ?? "";
+  return `${pub}\0${file}`;
+}
+
+function sortEditions(editions: WorkDetail["editions"]): WorkDetail["editions"] {
+  return [...editions].sort((a, b) => editionSortKey(a).localeCompare(editionSortKey(b)));
+}
+
 function getAuthors(work: WorkDetail): { id: string; name: string }[] {
   const seen = new Set<string>();
   const authors: { id: string; name: string }[] = [];
@@ -93,8 +103,11 @@ function WorkDetailPage() {
   const [deletingEdition, setDeletingEdition] = useState(false);
   const [coverVersion, setCoverVersion] = useState(0);
   const [enrichOpen, setEnrichOpen] = useState(false);
+  const [enrichMode, setEnrichMode] = useState<"work" | "edition">("work");
+  const [enrichEditionId, setEnrichEditionId] = useState<string | null>(null);
   const [coverSearchOpen, setCoverSearchOpen] = useState(false);
-  const [activeEditionIdx, setActiveEditionIdx] = useState(0);
+  const formatFamilies = [...new Set(work.editions.map((e) => e.formatFamily))];
+  const [activeFormat, setActiveFormat] = useState(formatFamilies[0] ?? "EBOOK");
   const authors = getAuthors(work);
   const coverColors = work.coverColors as string[] | null;
   const { setBookColors } = useAppColor();
@@ -157,6 +170,13 @@ function WorkDetailPage() {
     }
   }
 
+  const enrichEdition = enrichMode === "edition"
+    ? work.editions.find((e) => e.id === enrichEditionId)
+    : work.editions[0];
+  const enrichEditionNarrators = enrichEdition
+    ? enrichEdition.contributors.filter((c) => c.role === "NARRATOR").map((c) => c.contributor.nameDisplay)
+    : [];
+
   const handleCoverUpdated = () => {
     setCoverVersion((v) => v + 1);
     void router.invalidate();
@@ -197,9 +217,9 @@ function WorkDetailPage() {
                   className="text-2xl font-bold"
                 />
               </h1>
-              <Button variant="outline" size="sm" onClick={() => { setEnrichOpen(true); }}>
+              <Button variant="outline" size="sm" onClick={() => { setEnrichMode("work"); setEnrichOpen(true); }}>
                 <Sparkles className="size-4" />
-                Enrich
+                Enrich Work
               </Button>
               <Button data-testid="delete-work-btn" variant="outline" size="sm" onClick={() => { setDeleteWorkOpen(true); }}>
                 <Trash2 className="size-4" />
@@ -271,7 +291,8 @@ function WorkDetailPage() {
         open={enrichOpen}
         onOpenChange={setEnrichOpen}
         workId={work.id}
-        editionId={work.editions[activeEditionIdx]?.id ?? null}
+        editionId={enrichEdition?.id ?? null}
+        mode={enrichMode}
         currentWork={{
           title: work.titleDisplay,
           authors: authors.map((a) => a.name),
@@ -280,14 +301,17 @@ function WorkDetailPage() {
           tags: work.tags.map((wt) => wt.tag.name),
           editedFields: work.editedFields,
         }}
-        currentEdition={work.editions[activeEditionIdx] ? {
-          publisher: work.editions[activeEditionIdx].publisher ?? null,
-          publishedDate: work.editions[activeEditionIdx].publishedAt ? String(work.editions[activeEditionIdx].publishedAt) : null,
-          isbn13: work.editions[activeEditionIdx].isbn13 ?? null,
-          isbn10: work.editions[activeEditionIdx].isbn10 ?? null,
-          language: work.editions[activeEditionIdx].language ?? null,
-          pageCount: work.editions[activeEditionIdx].pageCount ?? null,
-          editedFields: work.editions[activeEditionIdx].editedFields,
+        currentEdition={enrichEdition ? {
+          publisher: enrichEdition.publisher ?? null,
+          publishedDate: enrichEdition.publishedAt ? String(enrichEdition.publishedAt) : null,
+          isbn13: enrichEdition.isbn13 ?? null,
+          isbn10: enrichEdition.isbn10 ?? null,
+          language: enrichEdition.language ?? null,
+          pageCount: enrichEdition.pageCount ?? null,
+          asin: enrichEdition.asin ?? null,
+          duration: enrichEdition.duration ?? null,
+          narrators: enrichEditionNarrators,
+          editedFields: enrichEdition.editedFields,
         } : null}
         onApplied={handleCoverUpdated}
       />
@@ -314,36 +338,33 @@ function WorkDetailPage() {
       </div>
 
       {work.editions.length > 0 && (
-        <div className="space-y-4">
-          <h2 className="text-lg font-semibold">Editions</h2>
-          <Tabs
-            value={work.editions[activeEditionIdx]?.id ?? ""}
-            onValueChange={(id) => {
-              const idx = work.editions.findIndex((e) => e.id === id);
-              if (idx >= 0) setActiveEditionIdx(idx);
-            }}
-          >
+        <Tabs value={activeFormat} onValueChange={setActiveFormat}>
+          <div className="flex justify-center">
             <TabsList>
-              {work.editions.map((edition) => (
-                <TabsTrigger key={edition.id} value={edition.id}>
-                  {edition.formatFamily}
+              {formatFamilies.map((fmt) => (
+                <TabsTrigger key={fmt} value={fmt}>
+                  {fmt === "AUDIOBOOK" ? <Headphones className="size-4" /> : <BookOpen className="size-4" />}
+                  {fmt}
                 </TabsTrigger>
               ))}
             </TabsList>
-            {work.editions.map((edition) => (
-              <TabsContent key={edition.id} value={edition.id}>
-                <EditionTabPanel
+          </div>
+          {formatFamilies.map((fmt) => (
+            <TabsContent key={fmt} value={fmt} className="space-y-4 pt-2">
+              {sortEditions(work.editions.filter((e) => e.formatFamily === fmt)).map((edition) => (
+                <EditionCard
+                  key={edition.id}
                   edition={edition}
-                  isLastEdition={work.editions.length === 1}
                   onEditionFieldSaved={() => { void router.invalidate(); }}
                   onDeleteEdition={() => { setDeleteEditionOpen(edition.id); }}
+                  onEnrichEdition={() => { setEnrichEditionId(edition.id); setEnrichMode("edition"); setEnrichOpen(true); }}
                   smtpConfigured={smtpConfigured}
                   kindleConfigured={kindleConfigured}
                 />
-              </TabsContent>
-            ))}
-          </Tabs>
-        </div>
+              ))}
+            </TabsContent>
+          ))}
+        </Tabs>
       )}
 
       <Dialog open={deleteWorkOpen} onOpenChange={setDeleteWorkOpen}>

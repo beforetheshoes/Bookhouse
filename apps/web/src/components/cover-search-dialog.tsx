@@ -38,6 +38,7 @@ const PROVIDER_LABELS: Record<EnrichmentProvider, string> = {
   openlibrary: "Open Library",
   googlebooks: "Google Books",
   hardcover: "Hardcover",
+  audible: "Audible",
 };
 
 // ---------------------------------------------------------------------------

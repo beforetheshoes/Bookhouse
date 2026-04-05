@@ -117,12 +117,10 @@ function LibraryPage() {
           format: search.format,
           authorId: search.authorId,
           seriesId: search.seriesId,
-          publisher: search.publisher,
           hasCover: search.hasCover,
           enriched: search.enriched,
           hasDescription: search.hasDescription,
           inSeries: search.inSeries,
-          hasIsbn: search.hasIsbn,
         },
       });
       setAllWorkIds(ids);
@@ -137,7 +135,7 @@ function LibraryPage() {
     void router.invalidate();
   };
 
-  if (totalCount === 0 && !isScanning && !search.q && !search.format && !search.authorId && !search.seriesId && !search.publisher && search.hasCover === undefined && search.enriched === undefined && search.hasDescription === undefined && search.inSeries === undefined && search.hasIsbn === undefined) {
+  if (totalCount === 0 && !isScanning && !search.q && !search.format && !search.authorId && !search.seriesId && search.hasCover === undefined && search.enriched === undefined && search.hasDescription === undefined && search.inSeries === undefined) {
     return (
       <div>
         <h1 className="text-2xl font-bold">Library</h1>

@@ -57,16 +57,6 @@ describe("librarySearchSchema", () => {
     expect(result.seriesId).toEqual(["s1"]);
   });
 
-  it("parses publisher array", () => {
-    const result = librarySearchSchema.parse({ publisher: ["Penguin"] });
-    expect(result.publisher).toEqual(["Penguin"]);
-  });
-
-  it("parses single publisher as string into array", () => {
-    const result = librarySearchSchema.parse({ publisher: "Penguin" });
-    expect(result.publisher).toEqual(["Penguin"]);
-  });
-
   it("parses hasCover boolean", () => {
     expect(librarySearchSchema.parse({ hasCover: true }).hasCover).toBe(true);
     expect(librarySearchSchema.parse({ hasCover: false }).hasCover).toBe(false);
