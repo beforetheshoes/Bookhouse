@@ -1,4 +1,4 @@
-import type { EnrichmentProvider, SourceResult, SearchSourcesResult } from "./search-sources";
+import type { EnrichmentProvider, SourceResult, SearchSourcesResult, SearchSourcesOptions } from "./search-sources";
 import type { ApplyEnrichmentInput, ApplyEnrichmentResult, ApplyFieldValue } from "./apply-enrichment";
 
 export interface BulkEnrichEditionData {
@@ -29,7 +29,7 @@ export interface BulkEnrichWorkData {
 
 export interface BulkEnrichDeps {
   loadWork: (workId: string) => Promise<BulkEnrichWorkData | null>;
-  searchAllSources: (title: string, author: string | undefined) => Promise<SearchSourcesResult>;
+  searchAllSources: (title: string, author: string | undefined, options?: SearchSourcesOptions) => Promise<SearchSourcesResult>;
   applyEnrichmentFields: (input: ApplyEnrichmentInput, deps: never) => Promise<ApplyEnrichmentResult>;
   applyCoverFromUrl: (workId: string, imageUrl: string, source: { provider: string; externalId: string }) => Promise<void>;
 }
@@ -311,7 +311,12 @@ export async function processBulkEnrichWork(
   const allAuthors = work.editions.flatMap((e) => e.authors);
   const author = allAuthors.length > 0 ? allAuthors[0] : undefined;
 
-  const searchResult = await deps.searchAllSources(work.titleDisplay, author);
+  // Find ASIN from audiobook editions first, then any edition
+  const asin = work.editions.find((e) => e.asin && e.formatFamily === "AUDIOBOOK")?.asin
+    ?? work.editions.find((e) => e.asin)?.asin
+    ?? undefined;
+
+  const searchResult = await deps.searchAllSources(work.titleDisplay, author, asin ? { asin } : undefined);
 
   if (searchResult.status !== "success" || searchResult.results.length === 0) {
     return { status: "no-results" };

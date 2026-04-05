@@ -78,7 +78,12 @@ export interface SearchSourcesDeps {
   searchGB: (title: string, author: string | undefined) => Promise<GBVolume[] | null>;
   searchHC: (title: string, author: string | undefined) => Promise<HCBook[] | null>;
   searchAudible: (title: string, author: string | undefined) => Promise<AudibleProduct[] | null>;
+  lookupAudibleByAsin?: (asin: string) => Promise<AudibleProduct | null>;
   checkRateLimit: () => RateLimitResult;
+}
+
+export interface SearchSourcesOptions {
+  asin?: string;
 }
 
 function normalizeOL(search: OLSearchResult, work: OLWork | null, edition: OLEdition | null): SourceResult {
@@ -161,17 +166,33 @@ export async function searchAllSources(
   title: string,
   author: string | undefined,
   deps: SearchSourcesDeps,
+  options?: SearchSourcesOptions,
 ): Promise<SearchSourcesResult> {
   const rateCheck = deps.checkRateLimit();
   if (!rateCheck.allowed) {
     return { status: "rate-limited", retryAfterMs: rateCheck.retryAfterMs };
   }
 
+  // When an ASIN is provided and a lookup function exists, try direct ASIN lookup first.
+  // If it succeeds, skip the title+author Audible search entirely.
+  let asinProduct: AudibleProduct | null = null;
+  if (options?.asin && deps.lookupAudibleByAsin) {
+    try {
+      asinProduct = await deps.lookupAudibleByAsin(options.asin);
+    } catch {
+      // Fall through to title+author search
+    }
+  }
+
+  const audiblePromise = asinProduct
+    ? Promise.resolve([asinProduct])
+    : deps.searchAudible(title, author);
+
   const [olResult, gbResult, hcResult, audibleResult] = await Promise.allSettled([
     deps.searchOL(title, author),
     deps.searchGB(title, author),
     deps.searchHC(title, author),
-    deps.searchAudible(title, author),
+    audiblePromise,
   ]);
 
   const results: SourceResult[] = [];

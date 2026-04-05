@@ -807,4 +807,55 @@ describe("processBulkEnrichWork", () => {
     // Both contributed 1 field each — first provider in sources wins as tiebreak
     expect(["openlibrary", "hardcover"]).toContain(applyCall[0].source.provider);
   });
+
+  it("passes ASIN from audiobook edition to searchAllSources", async () => {
+    const searchMock = vi.fn().mockResolvedValue({
+      status: "success",
+      results: [makeSourceResult("audible")],
+    } satisfies SearchSourcesResult);
+
+    deps = makeDeps({
+      loadWork: vi.fn().mockResolvedValue({
+        id: "w1",
+        titleDisplay: "Project Hail Mary",
+        description: null,
+        coverPath: null,
+        editedFields: [],
+        tags: [],
+        editions: [{
+          id: "e1",
+          formatFamily: "AUDIOBOOK" as const,
+          publisher: null,
+          publishedDate: null,
+          isbn13: null,
+          isbn10: null,
+          asin: "B08G9PRS1K",
+          language: null,
+          pageCount: null,
+          duration: null,
+          narrators: [],
+          editedFields: [],
+          authors: ["Andy Weir"],
+        }],
+      }),
+      searchAllSources: searchMock,
+    });
+
+    await processBulkEnrichWork("w1", ["audible"], "fullest", deps);
+
+    expect(searchMock).toHaveBeenCalledWith("Project Hail Mary", "Andy Weir", { asin: "B08G9PRS1K" });
+  });
+
+  it("passes undefined options when no edition has ASIN", async () => {
+    const searchMock = vi.fn().mockResolvedValue({
+      status: "success",
+      results: [makeSourceResult("openlibrary")],
+    } satisfies SearchSourcesResult);
+
+    deps = makeDeps({ searchAllSources: searchMock });
+
+    await processBulkEnrichWork("w1", ["openlibrary"], "fullest", deps);
+
+    expect(searchMock).toHaveBeenCalledWith("Existing Title", undefined, undefined);
+  });
 });

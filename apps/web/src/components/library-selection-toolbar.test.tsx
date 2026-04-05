@@ -9,6 +9,10 @@ vi.mock("~/lib/server-fns/deletion", () => ({
   deleteAllEditionsByFormatServerFn: vi.fn(),
 }));
 
+vi.mock("~/lib/server-fns/work-management", () => ({
+  mergeWorksServerFn: vi.fn(),
+}));
+
 vi.mock("~/lib/server-fns/shelves", () => ({
   bulkAddToShelfServerFn: vi.fn(),
 }));
@@ -25,23 +29,27 @@ vi.mock("~/components/bulk-enrich-dialog", () => ({
 import { toast } from "sonner";
 import { bulkDeleteWorksServerFn, bulkDeleteEditionsByFormatForWorksServerFn, deleteAllEditionsByFormatServerFn } from "~/lib/server-fns/deletion";
 import { bulkAddToShelfServerFn } from "~/lib/server-fns/shelves";
+import { mergeWorksServerFn } from "~/lib/server-fns/work-management";
 import { LibrarySelectionToolbar } from "./library-selection-toolbar";
 
 const bulkDeleteWorksServerFnMock = vi.mocked(bulkDeleteWorksServerFn);
 const bulkDeleteByFormatMock = vi.mocked(bulkDeleteEditionsByFormatForWorksServerFn);
 const deleteAllByFormatMock = vi.mocked(deleteAllEditionsByFormatServerFn);
 const bulkAddToShelfServerFnMock = vi.mocked(bulkAddToShelfServerFn);
+const mergeWorksServerFnMock = vi.mocked(mergeWorksServerFn);
 const mockToast = vi.mocked(toast);
 
 const defaultProps = {
   selectedCount: 1,
   selectedWorkIds: ["w1"],
+  selectedWorks: [{ id: "w1", title: "Book One", editionCount: 2 }],
   shelves: [] as { id: string; name: string; _count: { items: number } }[],
   totalCount: 100,
   allPageRowsSelected: false,
   onSelectAll: vi.fn(),
   selectingAll: false,
   onDeleted: vi.fn(),
+  onMerged: vi.fn(),
   onAddedToShelf: vi.fn(),
   onEnrichStarted: vi.fn(),
   onClearSelection: vi.fn(),
@@ -410,5 +418,108 @@ describe("LibrarySelectionToolbar", () => {
     render(<LibrarySelectionToolbar {...defaultProps} />);
     fireEvent.click(screen.getByTestId("bulk-add-to-shelf-btn"));
     expect(screen.getByText(/No shelves created yet/)).toBeTruthy();
+  });
+
+  describe("merge works", () => {
+    const mergeProps = {
+      ...defaultProps,
+      selectedCount: 3,
+      selectedWorkIds: ["w1", "w2", "w3"],
+      selectedWorks: [
+        { id: "w1", title: "Book A", editionCount: 1 },
+        { id: "w2", title: "Book B", editionCount: 3 },
+        { id: "w3", title: "Book C", editionCount: 2 },
+      ],
+    };
+
+    it("does not show merge button when selectedCount < 2", () => {
+      render(<LibrarySelectionToolbar {...defaultProps} />);
+      expect(screen.queryByTestId("merge-works-btn")).toBeNull();
+    });
+
+    it("shows merge button when selectedCount >= 2", () => {
+      render(<LibrarySelectionToolbar {...mergeProps} />);
+      expect(screen.getByTestId("merge-works-btn")).toBeTruthy();
+    });
+
+    it("opens merge dialog on click", () => {
+      render(<LibrarySelectionToolbar {...mergeProps} />);
+      fireEvent.click(screen.getByTestId("merge-works-btn"));
+      expect(screen.getByText("Merge 3 Works")).toBeTruthy();
+    });
+
+    it("lists selected works with radio buttons", () => {
+      render(<LibrarySelectionToolbar {...mergeProps} />);
+      fireEvent.click(screen.getByTestId("merge-works-btn"));
+      expect(screen.getByText("Book A")).toBeTruthy();
+      expect(screen.getByText("Book B")).toBeTruthy();
+      expect(screen.getByText("Book C")).toBeTruthy();
+      expect(screen.getAllByRole("radio")).toHaveLength(3);
+    });
+
+    it("defaults target to work with most editions", () => {
+      render(<LibrarySelectionToolbar {...mergeProps} />);
+      fireEvent.click(screen.getByTestId("merge-works-btn"));
+      const radios = screen.getAllByRole("radio");
+      // Book B has 3 editions (most), should be checked by default
+      const bookBRadio = radios.find((r) => (r as HTMLInputElement).value === "w2");
+      expect((bookBRadio as HTMLInputElement).checked).toBe(true);
+    });
+
+    it("calls mergeWorksServerFn on confirm", async () => {
+      mergeWorksServerFnMock.mockResolvedValue({ targetWorkId: "w2", mergedWorkIds: ["w1", "w3"] });
+      const onMerged = vi.fn();
+      render(<LibrarySelectionToolbar {...mergeProps} onMerged={onMerged} />);
+      fireEvent.click(screen.getByTestId("merge-works-btn"));
+      fireEvent.click(screen.getByRole("button", { name: "Merge" }));
+
+      await waitFor(() => {
+        expect(mergeWorksServerFnMock).toHaveBeenCalledWith({
+          data: { targetWorkId: "w2", sourceWorkIds: ["w1", "w3"] },
+        });
+      });
+      await waitFor(() => {
+        expect(onMerged).toHaveBeenCalled();
+      });
+    });
+
+    it("shows error toast on merge failure with Error", async () => {
+      mergeWorksServerFnMock.mockRejectedValue(new Error("merge failed"));
+      render(<LibrarySelectionToolbar {...mergeProps} />);
+      fireEvent.click(screen.getByTestId("merge-works-btn"));
+      fireEvent.click(screen.getByRole("button", { name: "Merge" }));
+
+      await waitFor(() => {
+        expect(mockToast.error).toHaveBeenCalledWith("merge failed");
+      });
+    });
+
+    it("shows fallback error toast on non-Error merge failure", async () => {
+      mergeWorksServerFnMock.mockRejectedValue("unknown");
+      render(<LibrarySelectionToolbar {...mergeProps} />);
+      fireEvent.click(screen.getByTestId("merge-works-btn"));
+      fireEvent.click(screen.getByRole("button", { name: "Merge" }));
+
+      await waitFor(() => {
+        expect(mockToast.error).toHaveBeenCalledWith("Failed to merge works");
+      });
+    });
+
+    it("closes merge dialog on cancel", () => {
+      render(<LibrarySelectionToolbar {...mergeProps} />);
+      fireEvent.click(screen.getByTestId("merge-works-btn"));
+      expect(screen.getByText("Merge 3 Works")).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(screen.queryByText("Merge 3 Works")).toBeNull();
+    });
+
+    it("allows changing the target work via radio", () => {
+      render(<LibrarySelectionToolbar {...mergeProps} />);
+      fireEvent.click(screen.getByTestId("merge-works-btn"));
+      const radios = screen.getAllByRole("radio");
+      const bookARadio = radios.find((r) => (r as HTMLInputElement).value === "w1") as HTMLInputElement;
+      fireEvent.click(bookARadio);
+      expect(bookARadio.checked).toBe(true);
+    });
   });
 });

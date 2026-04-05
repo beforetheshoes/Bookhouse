@@ -87,6 +87,7 @@ vi.mock("@bookhouse/ingest", () => {
     searchGoogleBooks: vi.fn(),
     searchHardcover: vi.fn(),
     searchAudible: vi.fn(),
+    lookupAudibleByAsin: vi.fn(),
     RateLimiter: MockRateLimiter,
     applyCoverFromUrl: applyCoverFromUrlMock,
     resizeCoverImage: vi.fn(),
@@ -122,6 +123,7 @@ describe("buildSearchDeps", () => {
     searchGoogleBooks: vi.fn().mockResolvedValue([]),
     searchHardcover: vi.fn().mockResolvedValue([]),
     searchAudible: vi.fn().mockResolvedValue([]),
+    lookupAudibleByAsin: vi.fn().mockResolvedValue(null),
   };
   const rateLimiter = { check: () => ({ allowed: true }) };
 
@@ -183,6 +185,14 @@ describe("buildSearchDeps", () => {
     await deps.searchAudible("Dune", "Herbert");
 
     expect(fns.searchAudible).toHaveBeenCalledWith("Dune", "Herbert", fakeFetcher);
+  });
+
+  it("wires lookupAudibleByAsin through to deps", async () => {
+    const deps = buildSearchDeps(null, null, rateLimiter, fakeFetcher, fns);
+
+    await deps.lookupAudibleByAsin?.("B08G9PRS1K");
+
+    expect(fns.lookupAudibleByAsin).toHaveBeenCalledWith("B08G9PRS1K", fakeFetcher);
   });
 
   it("delegates checkRateLimit to rateLimiter", () => {
@@ -264,6 +274,71 @@ describe("searchEnrichmentServerFn", () => {
     await searchEnrichmentServerFn({ data: { workId: "w1" } });
 
     expect(searchAllSourcesMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes ASIN from audiobook edition to searchAllSources", async () => {
+    workFindUniqueMock.mockResolvedValue({
+      id: "w1",
+      titleDisplay: "Project Hail Mary",
+      editions: [
+        { id: "e1", formatFamily: "EBOOK", asin: null, contributors: [{ contributor: { nameDisplay: "Andy Weir" } }] },
+        { id: "e2", formatFamily: "AUDIOBOOK", asin: "B08G9PRS1K", contributors: [] },
+      ],
+    });
+    getDecryptedApiKeyMock.mockResolvedValue(null);
+    searchAllSourcesMock.mockResolvedValue({ status: "no-results" });
+
+    await searchEnrichmentServerFn({ data: { workId: "w1" } });
+
+    expect(searchAllSourcesMock).toHaveBeenCalledWith(
+      "Project Hail Mary",
+      "Andy Weir",
+      expect.anything(),
+      { asin: "B08G9PRS1K" },
+    );
+  });
+
+  it("uses ASIN from the targeted edition when editionId is provided", async () => {
+    workFindUniqueMock.mockResolvedValue({
+      id: "w1",
+      titleDisplay: "A Court of Mist and Fury",
+      editions: [
+        { id: "e1", formatFamily: "AUDIOBOOK", asin: "B09YGG792Q", contributors: [{ contributor: { nameDisplay: "Sarah J. Maas" } }] },
+        { id: "e2", formatFamily: "AUDIOBOOK", asin: "B0B358HP4C", contributors: [] },
+      ],
+    });
+    getDecryptedApiKeyMock.mockResolvedValue(null);
+    searchAllSourcesMock.mockResolvedValue({ status: "no-results" });
+
+    await searchEnrichmentServerFn({ data: { workId: "w1", editionId: "e2" } });
+
+    expect(searchAllSourcesMock).toHaveBeenCalledWith(
+      "A Court of Mist and Fury",
+      "Sarah J. Maas",
+      expect.anything(),
+      { asin: "B0B358HP4C" },
+    );
+  });
+
+  it("passes undefined options when no edition has ASIN", async () => {
+    workFindUniqueMock.mockResolvedValue({
+      id: "w1",
+      titleDisplay: "Dune",
+      editions: [
+        { id: "e1", formatFamily: "EBOOK", asin: null, contributors: [{ contributor: { nameDisplay: "Herbert" } }] },
+      ],
+    });
+    getDecryptedApiKeyMock.mockResolvedValue(null);
+    searchAllSourcesMock.mockResolvedValue({ status: "no-results" });
+
+    await searchEnrichmentServerFn({ data: { workId: "w1" } });
+
+    expect(searchAllSourcesMock).toHaveBeenCalledWith(
+      "Dune",
+      "Herbert",
+      expect.anything(),
+      undefined,
+    );
   });
 
   it("returns no-editions when work has no editions", async () => {

@@ -9,6 +9,7 @@ interface SearchFns {
   searchGoogleBooks: (title: string, author: string | undefined, apiKey: string, fetcher: typeof fetch) => Promise<GBVolume[] | null>;
   searchHardcover: (title: string, author: string | undefined, apiKey: string, fetcher: typeof fetch) => Promise<HCBook[] | null>;
   searchAudible: (title: string, author: string | undefined, fetcher: typeof fetch) => Promise<AudibleProduct[] | null>;
+  lookupAudibleByAsin: (asin: string, fetcher: typeof fetch) => Promise<AudibleProduct | null>;
 }
 
 export function buildSearchDeps(
@@ -29,6 +30,7 @@ export function buildSearchDeps(
       ? (title, a) => fns.searchHardcover(title, a, hcKey, fetcher)
       : () => Promise.resolve(null),
     searchAudible: (title, a) => fns.searchAudible(title, a, fetcher),
+    lookupAudibleByAsin: (asin) => fns.lookupAudibleByAsin(asin, fetcher),
     checkRateLimit: () => rateLimiter.check(),
   };
 }
@@ -63,6 +65,7 @@ export const triggerEnrichmentServerFn = createServerFn({
 
 const searchSchema = z.object({
   workId: z.string(),
+  editionId: z.string().optional(),
 });
 
 export const searchEnrichmentServerFn = createServerFn({
@@ -79,6 +82,7 @@ export const searchEnrichmentServerFn = createServerFn({
       searchGoogleBooks,
       searchHardcover,
       searchAudible,
+      lookupAudibleByAsin,
       RateLimiter,
     } = await import("@bookhouse/ingest");
     const { getDecryptedApiKey } = await import("./integrations");
@@ -88,7 +92,6 @@ export const searchEnrichmentServerFn = createServerFn({
       include: {
         editions: {
           include: { contributors: { include: { contributor: true } } },
-          take: 1,
         },
       },
     });
@@ -101,6 +104,15 @@ export const searchEnrichmentServerFn = createServerFn({
     const author = edition.contributors.length > 0
       ? edition.contributors[0]?.contributor.nameDisplay
       : undefined;
+
+    // When a specific edition is targeted, use its ASIN; otherwise find the first ASIN (prioritize audiobook editions)
+    const targetEdition = data.editionId
+      ? work.editions.find((e: { id: string }) => e.id === data.editionId)
+      : undefined;
+    const asin = (targetEdition as { asin: string | null } | undefined)?.asin
+      ?? work.editions.find((e: { asin: string | null; formatFamily: string }) => e.asin && e.formatFamily === "AUDIOBOOK")?.asin
+      ?? work.editions.find((e: { asin: string | null }) => e.asin)?.asin
+      ?? undefined;
 
     const [gbKey, hcKey] = await Promise.all([
       getDecryptedApiKey("googlebooks"),
@@ -117,9 +129,10 @@ export const searchEnrichmentServerFn = createServerFn({
       searchGoogleBooks,
       searchHardcover,
       searchAudible,
+      lookupAudibleByAsin,
     });
 
-    return await searchAllSources(work.titleDisplay, author, deps);
+    return await searchAllSources(work.titleDisplay, author, deps, asin ? { asin } : undefined);
   });
 
 const getSchema = z.object({
