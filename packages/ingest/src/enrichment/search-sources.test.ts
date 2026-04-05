@@ -397,6 +397,62 @@ describe("searchAllSources", () => {
     expect(audible.edition.narrators).toBeNull();
   });
 
+  it("uses ASIN lookup for Audible when asin is provided", async () => {
+    const deps = makeDeps({
+      lookupAudibleByAsin: vi.fn<NonNullable<SearchSourcesDeps["lookupAudibleByAsin"]>>().mockResolvedValue(audibleProduct),
+    });
+
+    const result = await searchAllSources("Dune", "Herbert", deps, { asin: "B08G9PRS1K" });
+
+    expect(deps.lookupAudibleByAsin).toHaveBeenCalledWith("B08G9PRS1K");
+    expect(deps.searchAudible).not.toHaveBeenCalled();
+    const results = (result as { status: "success"; results: SourceResult[] }).results;
+    expect(results).toHaveLength(1);
+    expect((results[0] as SourceResult).provider).toBe("audible");
+    expect((results[0] as SourceResult).externalId).toBe("B08G9PRS1K");
+  });
+
+  it("falls back to title+author search when ASIN lookup returns null", async () => {
+    const deps = makeDeps({
+      lookupAudibleByAsin: vi.fn<NonNullable<SearchSourcesDeps["lookupAudibleByAsin"]>>().mockResolvedValue(null),
+      searchAudible: vi.fn<SearchSourcesDeps["searchAudible"]>().mockResolvedValue([audibleProduct]),
+    });
+
+    const result = await searchAllSources("Dune", "Herbert", deps, { asin: "B000MISSING" });
+
+    expect(deps.lookupAudibleByAsin).toHaveBeenCalledWith("B000MISSING");
+    expect(deps.searchAudible).toHaveBeenCalledWith("Dune", "Herbert");
+    const results = (result as { status: "success"; results: SourceResult[] }).results;
+    expect(results).toHaveLength(1);
+    expect((results[0] as SourceResult).provider).toBe("audible");
+  });
+
+  it("falls back to title+author search when ASIN lookup throws", async () => {
+    const deps = makeDeps({
+      lookupAudibleByAsin: vi.fn<NonNullable<SearchSourcesDeps["lookupAudibleByAsin"]>>().mockRejectedValue(new Error("API error")),
+      searchAudible: vi.fn<SearchSourcesDeps["searchAudible"]>().mockResolvedValue([audibleProduct]),
+    });
+
+    const result = await searchAllSources("Dune", "Herbert", deps, { asin: "B08G9PRS1K" });
+
+    expect(deps.searchAudible).toHaveBeenCalledWith("Dune", "Herbert");
+    const results = (result as { status: "success"; results: SourceResult[] }).results;
+    expect(results).toHaveLength(1);
+  });
+
+  it("does not call lookupAudibleByAsin when no asin provided", async () => {
+    const lookupMock = vi.fn<NonNullable<SearchSourcesDeps["lookupAudibleByAsin"]>>();
+    const deps = makeDeps({
+      lookupAudibleByAsin: lookupMock,
+      searchAudible: vi.fn<SearchSourcesDeps["searchAudible"]>().mockResolvedValue([audibleProduct]),
+    });
+
+    await searchAllSources("Dune", "Herbert", deps);
+
+    expect(lookupMock).not.toHaveBeenCalled();
+    expect(deps.searchAudible).toHaveBeenCalledWith("Dune", "Herbert");
+  });
+
   it("gracefully handles Audible source failing", async () => {
     const deps = makeDeps({
       searchGB: vi.fn<SearchSourcesDeps["searchGB"]>().mockResolvedValue([gbVolume]),

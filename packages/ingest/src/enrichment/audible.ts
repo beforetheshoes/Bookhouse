@@ -67,6 +67,25 @@ function parseProduct(raw: AudibleRawProduct): AudibleProduct {
   };
 }
 
+export async function lookupAudibleByAsin(
+  asin: string,
+  fetcher: typeof fetch,
+): Promise<AudibleProduct | null> {
+  const params = new URLSearchParams({
+    response_groups: "product_attrs,contributors,product_desc,media",
+  });
+
+  const response = await fetcher(`${AUDIBLE_BASE}/${asin}?${params.toString()}`);
+
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Audible API error: ${String(response.status)}`);
+
+  const data = (await response.json()) as { product?: AudibleRawProduct };
+  if (!data.product) return null;
+
+  return parseProduct(data.product);
+}
+
 export async function searchAudible(
   title: string,
   author: string | undefined,

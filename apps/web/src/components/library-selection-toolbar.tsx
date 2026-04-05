@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { BookOpen, ChevronDown, FolderOpen, Headphones, Loader2, Trash2, Wand2, X } from "lucide-react";
+import { BookOpen, ChevronDown, FolderOpen, GitMerge, Headphones, Loader2, Trash2, Wand2, X } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -21,17 +21,20 @@ import {
 } from "~/components/ui/dropdown-menu";
 import { bulkDeleteWorksServerFn, bulkDeleteEditionsByFormatForWorksServerFn, deleteAllEditionsByFormatServerFn } from "~/lib/server-fns/deletion";
 import { bulkAddToShelfServerFn } from "~/lib/server-fns/shelves";
+import { mergeWorksServerFn } from "~/lib/server-fns/work-management";
 import { BulkEnrichDialog } from "~/components/bulk-enrich-dialog";
 
 interface LibrarySelectionToolbarProps {
   selectedCount: number;
   selectedWorkIds: string[];
+  selectedWorks: { id: string; title: string; editionCount: number }[];
   shelves: { id: string; name: string; _count: { items: number } }[];
   totalCount: number;
   allPageRowsSelected: boolean;
   onSelectAll: () => void;
   selectingAll: boolean;
   onDeleted: () => void;
+  onMerged: () => void;
   onAddedToShelf: () => void;
   onEnrichStarted: () => void;
   onClearSelection: () => void;
@@ -40,12 +43,14 @@ interface LibrarySelectionToolbarProps {
 export function LibrarySelectionToolbar({
   selectedCount,
   selectedWorkIds,
+  selectedWorks,
   shelves,
   totalCount,
   allPageRowsSelected,
   onSelectAll,
   selectingAll,
   onDeleted,
+  onMerged,
   onAddedToShelf,
   onEnrichStarted,
   onClearSelection,
@@ -57,6 +62,13 @@ export function LibrarySelectionToolbar({
   const [addToShelfOpen, setAddToShelfOpen] = useState(false);
   const [addingToShelf, setAddingToShelf] = useState(false);
   const [bulkEnrichOpen, setBulkEnrichOpen] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [merging, setMerging] = useState(false);
+
+  const defaultTargetId = selectedWorks.length > 0
+    ? ([...selectedWorks].sort((a, b) => b.editionCount - a.editionCount)[0] as (typeof selectedWorks)[number]).id
+    : "";
+  const [mergeTargetId, setMergeTargetId] = useState(defaultTargetId);
 
   if (selectedCount === 0) return null;
 
@@ -110,6 +122,21 @@ export function LibrarySelectionToolbar({
     }
   }
 
+  async function handleMerge() {
+    setMerging(true);
+    try {
+      const sourceWorkIds = selectedWorkIds.filter((id) => id !== mergeTargetId);
+      await mergeWorksServerFn({ data: { targetWorkId: mergeTargetId, sourceWorkIds } });
+      toast.success(`Merged ${String(selectedCount)} works`);
+      setMergeOpen(false);
+      onMerged();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to merge works");
+    } finally {
+      setMerging(false);
+    }
+  }
+
   const otherFormat = deleteFormatMode === "EBOOK" ? "audiobook" : "ebook";
   const thisFormat = deleteFormatMode === "EBOOK" ? "ebook" : "audiobook";
 
@@ -144,6 +171,12 @@ export function LibrarySelectionToolbar({
             <Wand2 className="mr-1.5 size-3.5" />
             Enrich Metadata
           </Button>
+          {selectedCount >= 2 && (
+            <Button variant="outline" size="sm" onClick={() => { setMergeTargetId(defaultTargetId); setMergeOpen(true); }} data-testid="merge-works-btn">
+              <GitMerge className="mr-1.5 size-3.5" />
+              Merge
+            </Button>
+          )}
           <div className="flex items-center">
             <Button
               variant="destructive"
@@ -280,6 +313,41 @@ export function LibrarySelectionToolbar({
           onEnrichStarted();
         }}
       />
+
+      <Dialog open={mergeOpen} onOpenChange={setMergeOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Merge {selectedCount} Work{selectedCount === 1 ? "" : "s"}</DialogTitle>
+            <DialogDescription>
+              All editions from the other works will be moved to the target work. The other works will be deleted.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 max-h-60 overflow-y-auto">
+            {selectedWorks.map((work) => (
+              <label key={work.id} className="flex items-center gap-3 rounded-md border p-2 cursor-pointer hover:bg-muted/50">
+                <input
+                  type="radio"
+                  name="merge-target"
+                  value={work.id}
+                  checked={mergeTargetId === work.id}
+                  onChange={() => { setMergeTargetId(work.id); }}
+                  disabled={merging}
+                />
+                <span className="flex-1 text-sm font-medium truncate">{work.title}</span>
+                <span className="text-xs text-muted-foreground">{work.editionCount} edition{work.editionCount === 1 ? "" : "s"}</span>
+              </label>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setMergeOpen(false); }} disabled={merging}>
+              Cancel
+            </Button>
+            <Button onClick={() => { void handleMerge(); }} disabled={merging}>
+              {merging ? "Merging..." : "Merge"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

@@ -68,7 +68,7 @@ export { searchGoogleBooks, getGoogleBooksVolume } from "./enrichment/google-boo
 export type { GBVolume } from "./enrichment/google-books";
 export { searchHardcover, getHardcoverBook } from "./enrichment/hardcover";
 export type { HCBook } from "./enrichment/hardcover";
-export { searchAudible } from "./enrichment/audible";
+export { searchAudible, lookupAudibleByAsin } from "./enrichment/audible";
 export type { AudibleProduct } from "./enrichment/audible";
 export { searchAllSources } from "./enrichment/search-sources";
 export type {
@@ -78,6 +78,7 @@ export type {
   SourceResult,
   SearchSourcesResult,
   SearchSourcesDeps,
+  SearchSourcesOptions,
 } from "./enrichment/search-sources";
 export { extractDominantColors, extractDominantColorsDefault } from "./cover-colors";
 export { VALID_WORK_ID, MAX_FILE_SIZE, ALLOWED_MIME_TYPES, IMAGE_SIGNATURES, isValidImageData, isAllowedMimeType } from "./cover-validation";

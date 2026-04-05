@@ -29,6 +29,8 @@ import {
 } from "~/lib/server-fns/work-detail";
 import { getReadingProgressServerFn, updateReadingProgressServerFn } from "~/lib/server-fns/reading-progress";
 import { deleteWorkServerFn, deleteEditionServerFn } from "~/lib/server-fns/deletion";
+import { splitEditionToWorkServerFn, splitEditionFilesServerFn } from "~/lib/server-fns/work-management";
+import { SplitEditionDialog } from "~/components/split-edition-dialog";
 import { EditableField } from "~/components/editable-field";
 import { EditableTagField } from "~/components/editable-tag-field";
 import { updateWorkServerFn, updateWorkAuthorsServerFn, getContributorNamesServerFn } from "~/lib/server-fns/editing";
@@ -99,6 +101,10 @@ function WorkDetailPage() {
   const [enrichMode, setEnrichMode] = useState<"work" | "edition">("work");
   const [enrichEditionId, setEnrichEditionId] = useState<string | null>(null);
   const [coverSearchOpen, setCoverSearchOpen] = useState(false);
+  const [splitToWorkEditionId, setSplitToWorkEditionId] = useState<string | null>(null);
+  const [splittingToWork, setSplittingToWork] = useState(false);
+  const [splitFilesEditionId, setSplitFilesEditionId] = useState<string | null>(null);
+  const [splittingFiles, setSplittingFiles] = useState(false);
   const formatFamilies = [...new Set(work.editions.map((e) => e.formatFamily))];
   const [activeFormat, setActiveFormat] = useState<string>(formatFamilies[0] ?? "EBOOK");
   const editionsByFormat: Record<string, WorkDetail["editions"]> = {};
@@ -167,6 +173,35 @@ function WorkDetailPage() {
     }
   }
 
+  async function handleSplitToWork(editionId: string) {
+    setSplittingToWork(true);
+    try {
+      const result = await splitEditionToWorkServerFn({ data: { editionId } });
+      toast.success("Edition moved to new work");
+      setSplitToWorkEditionId(null);
+      void router.navigate({ to: "/library/$workId", params: { workId: result.newWorkId } });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to split edition");
+    } finally {
+      setSplittingToWork(false);
+    }
+  }
+
+  async function handleSplitFiles(editionFileIds: string[]) {
+    const editionId = splitFilesEditionId as string;
+    setSplittingFiles(true);
+    try {
+      await splitEditionFilesServerFn({ data: { editionId, editionFileIds } });
+      toast.success("Files moved to new edition");
+      setSplitFilesEditionId(null);
+      void router.invalidate();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to split files");
+    } finally {
+      setSplittingFiles(false);
+    }
+  }
+
   const enrichEdition = enrichMode === "edition"
     ? work.editions.find((e) => e.id === enrichEditionId)
     : work.editions[0];
@@ -176,10 +211,13 @@ function WorkDetailPage() {
   const enrichEditionNarrators: string[] = [];
   for (const c of narratorContributors) enrichEditionNarrators.push(c.contributor.nameDisplay);
 
+  const splitFilesEdition = splitFilesEditionId ? work.editions.find((e) => e.id === splitFilesEditionId) : undefined;
+  const contentMediaKinds = new Set(["EPUB", "MOBI", "AZW", "AZW3", "PDF", "CBZ", "AUDIO"]);
   const editionCards: Record<string, React.ReactNode[]> = {};
   for (const fmt of formatFamilies) {
     const cards: React.ReactNode[] = [];
     for (const edition of editionsByFormat[fmt] as WorkDetail["editions"]) {
+      const contentFileCount = edition.editionFiles.filter((ef) => contentMediaKinds.has(ef.fileAsset.mediaKind)).length;
       cards.push(
         <EditionCard
           key={edition.id}
@@ -189,6 +227,10 @@ function WorkDetailPage() {
           onEnrichEdition={() => { setEnrichEditionId(edition.id); setEnrichMode("edition"); setEnrichOpen(true); }}
           smtpConfigured={smtpConfigured}
           kindleConfigured={kindleConfigured}
+          canSplitToWork={work.editions.length >= 2}
+          onSplitToNewWork={() => { setSplitToWorkEditionId(edition.id); }}
+          canSplitFiles={contentFileCount >= 2}
+          onSplitEdition={() => { setSplitFilesEditionId(edition.id); }}
         />,
       );
     }
@@ -415,6 +457,36 @@ function WorkDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {splitToWorkEditionId && (
+        <Dialog open onOpenChange={() => { setSplitToWorkEditionId(null); }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Move to New Work</DialogTitle>
+              <DialogDescription>
+                This will create a new work and move this edition to it.
+                The new work will start as a stub that you can enrich with metadata.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setSplitToWorkEditionId(null); }} disabled={splittingToWork}>
+                Cancel
+              </Button>
+              <Button onClick={() => { void handleSplitToWork(splitToWorkEditionId); }} disabled={splittingToWork}>
+                {splittingToWork ? "Moving..." : "Move"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      <SplitEditionDialog
+        open={splitFilesEditionId !== null}
+        onOpenChange={() => { setSplitFilesEditionId(null); }}
+        editionFiles={(splitFilesEdition?.editionFiles ?? []).filter((ef) => contentMediaKinds.has(ef.fileAsset.mediaKind))}
+        onConfirm={(editionFileIds) => { void handleSplitFiles(editionFileIds); }}
+        confirming={splittingFiles}
+      />
 
     </div>
   );

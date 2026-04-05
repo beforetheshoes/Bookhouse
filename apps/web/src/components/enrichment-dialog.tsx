@@ -341,7 +341,7 @@ export function EnrichmentDialog({
 
     void (async () => {
       try {
-        const response = await searchEnrichmentServerFn({ data: { workId } }) as {
+        const response = await searchEnrichmentServerFn({ data: { workId, editionId: editionId ?? undefined } }) as {
           status: string;
           results?: SourceResult[];
         };

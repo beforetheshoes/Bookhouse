@@ -18,6 +18,7 @@ import {
   searchGoogleBooks,
   searchHardcover,
   searchAudible,
+  lookupAudibleByAsin,
   applyEnrichmentFields,
   canonicalizeContributorName,
   applyCoverFromUrl,
@@ -186,7 +187,7 @@ function buildBulkEnrichDeps(
         })),
       };
     },
-    searchAllSources: (title, author) => {
+    searchAllSources: (title, author, options) => {
       const searchDeps = {
         searchOL: (t: string, a: string | undefined) => searchOpenLibrary(t, a, olFetch),
         getOLWork: (olid: string) => getOpenLibraryWork(olid, olFetch),
@@ -198,9 +199,10 @@ function buildBulkEnrichDeps(
           ? (t: string, a: string | undefined) => searchHardcover(t, a, hcKey, fetch)
           : () => Promise.resolve(null),
         searchAudible: (t: string, a: string | undefined) => searchAudible(t, a, fetch),
+        lookupAudibleByAsin: (asin: string) => lookupAudibleByAsin(asin, fetch),
         checkRateLimit: () => rateLimiter.check(),
       };
-      return searchAllSources(title, author, searchDeps);
+      return searchAllSources(title, author, searchDeps, options);
     },
     applyEnrichmentFields: (input) => {
       const applyDeps: ApplyEnrichmentDeps = {

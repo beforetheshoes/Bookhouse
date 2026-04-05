@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown, Download, EllipsisVertical, Loader2, Sparkles, TabletSmartphone, Trash2 } from "lucide-react";
+import { ArrowUpRight, ChevronDown, Download, EllipsisVertical, Loader2, Scissors, Sparkles, TabletSmartphone, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -29,6 +29,10 @@ interface EditionCardProps {
   onEnrichEdition: () => void;
   smtpConfigured: boolean;
   kindleConfigured: boolean;
+  canSplitToWork?: boolean;
+  onSplitToNewWork?: () => void;
+  canSplitFiles?: boolean;
+  onSplitEdition?: () => void;
 }
 
 export function parseDuration(input: string): number {
@@ -65,6 +69,10 @@ export function EditionCard({
   onEnrichEdition,
   smtpConfigured,
   kindleConfigured,
+  canSplitToWork,
+  onSplitToNewWork,
+  canSplitFiles,
+  onSplitEdition,
 }: EditionCardProps) {
   const [sendingKindle, setSendingKindle] = useState(false);
 
@@ -118,6 +126,18 @@ export function EditionCard({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            {canSplitToWork && (
+              <DropdownMenuItem onClick={onSplitToNewWork}>
+                <ArrowUpRight className="size-4" />
+                Move to New Work
+              </DropdownMenuItem>
+            )}
+            {canSplitFiles && (
+              <DropdownMenuItem onClick={onSplitEdition}>
+                <Scissors className="size-4" />
+                Split Edition
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem
               className="text-destructive focus:text-destructive"
               onClick={onDeleteEdition}

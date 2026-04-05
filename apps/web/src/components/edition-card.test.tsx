@@ -1607,4 +1607,149 @@ describe("EditionCard", () => {
       expect(downloadBtn).toBeTruthy();
     });
   });
+
+  describe("Move to New Work kebab action", () => {
+    it("does not render when canSplitToWork is false", () => {
+      render(
+        <EditionCard
+          edition={baseEdition}
+          onEditionFieldSaved={vi.fn()}
+          onDeleteEdition={vi.fn()}
+          onEnrichEdition={vi.fn()}
+          smtpConfigured={false}
+          kindleConfigured={false}
+          canSplitToWork={false}
+        />,
+      );
+      expect(screen.queryByText("Move to New Work")).toBeNull();
+    });
+
+    it("does not render when canSplitToWork is undefined", async () => {
+      const user = userEvent.setup();
+      render(
+        <EditionCard
+          edition={baseEdition}
+          onEditionFieldSaved={vi.fn()}
+          onDeleteEdition={vi.fn()}
+          onEnrichEdition={vi.fn()}
+          smtpConfigured={false}
+          kindleConfigured={false}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: /edition actions/i }));
+      expect(screen.queryByText("Move to New Work")).toBeNull();
+    });
+
+    it("renders when canSplitToWork is true", async () => {
+      const user = userEvent.setup();
+      render(
+        <EditionCard
+          edition={baseEdition}
+          onEditionFieldSaved={vi.fn()}
+          onDeleteEdition={vi.fn()}
+          onEnrichEdition={vi.fn()}
+          smtpConfigured={false}
+          kindleConfigured={false}
+          canSplitToWork={true}
+          onSplitToNewWork={vi.fn()}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: /edition actions/i }));
+      expect(screen.getByText("Move to New Work")).toBeTruthy();
+    });
+
+    it("calls onSplitToNewWork when clicked", async () => {
+      const onSplit = vi.fn();
+      const user = userEvent.setup();
+      render(
+        <EditionCard
+          edition={baseEdition}
+          onEditionFieldSaved={vi.fn()}
+          onDeleteEdition={vi.fn()}
+          onEnrichEdition={vi.fn()}
+          smtpConfigured={false}
+          kindleConfigured={false}
+          canSplitToWork={true}
+          onSplitToNewWork={onSplit}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: /edition actions/i }));
+      await user.click(screen.getByText("Move to New Work"));
+      expect(onSplit).toHaveBeenCalled();
+    });
+  });
+
+  describe("Split Edition kebab action", () => {
+    const multiFileEdition = {
+      ...baseEdition,
+      editionFiles: [
+        baseEdition.editionFiles[0],
+        {
+          ...baseEdition.editionFiles[0],
+          id: "ef2",
+          fileAssetId: "fa2",
+          fileAsset: {
+            ...(baseEdition.editionFiles[0] as (typeof baseEdition.editionFiles)[number]).fileAsset,
+            id: "fa2",
+            basename: "wind2.epub",
+          },
+        },
+      ],
+    } as EditionType;
+
+    it("does not render when canSplitFiles is false", async () => {
+      const user = userEvent.setup();
+      render(
+        <EditionCard
+          edition={multiFileEdition}
+          onEditionFieldSaved={vi.fn()}
+          onDeleteEdition={vi.fn()}
+          onEnrichEdition={vi.fn()}
+          smtpConfigured={false}
+          kindleConfigured={false}
+          canSplitFiles={false}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: /edition actions/i }));
+      expect(screen.queryByText("Split Edition")).toBeNull();
+    });
+
+    it("renders when canSplitFiles is true", async () => {
+      const user = userEvent.setup();
+      render(
+        <EditionCard
+          edition={multiFileEdition}
+          onEditionFieldSaved={vi.fn()}
+          onDeleteEdition={vi.fn()}
+          onEnrichEdition={vi.fn()}
+          smtpConfigured={false}
+          kindleConfigured={false}
+          canSplitFiles={true}
+          onSplitEdition={vi.fn()}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: /edition actions/i }));
+      expect(screen.getByText("Split Edition")).toBeTruthy();
+    });
+
+    it("calls onSplitEdition when clicked", async () => {
+      const onSplit = vi.fn();
+      const user = userEvent.setup();
+      render(
+        <EditionCard
+          edition={multiFileEdition}
+          onEditionFieldSaved={vi.fn()}
+          onDeleteEdition={vi.fn()}
+          onEnrichEdition={vi.fn()}
+          smtpConfigured={false}
+          kindleConfigured={false}
+          canSplitFiles={true}
+          onSplitEdition={onSplit}
+        />,
+      );
+      await user.click(screen.getByRole("button", { name: /edition actions/i }));
+      await user.click(screen.getByText("Split Edition"));
+      expect(onSplit).toHaveBeenCalled();
+    });
+  });
 });

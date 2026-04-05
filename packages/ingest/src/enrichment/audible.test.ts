@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { searchAudible, type AudibleProduct } from "./audible";
+import { searchAudible, lookupAudibleByAsin, type AudibleProduct } from "./audible";
 
 function fakeFetch(body: object | string | null, status = 200): typeof fetch {
   return vi.fn().mockResolvedValue({
@@ -205,5 +205,53 @@ describe("searchAudible", () => {
 
     expect(results).toHaveLength(2);
     expect((results as AudibleProduct[])[1]?.asin).toBe("B000000002");
+  });
+});
+
+describe("lookupAudibleByAsin", () => {
+  it("fetches product by ASIN and returns parsed result", async () => {
+    const fetcher = fakeFetch({
+      product: sampleProduct,
+    });
+
+    const result = await lookupAudibleByAsin("B08G9PRS1K", fetcher);
+
+    expect(result).not.toBeNull();
+    expect((result as AudibleProduct).asin).toBe("B08G9PRS1K");
+    expect((result as AudibleProduct).title).toBe("Project Hail Mary");
+    expect((result as AudibleProduct).narrators).toEqual(["Ray Porter"]);
+    expect((result as AudibleProduct).durationSeconds).toBe(58200);
+  });
+
+  it("sends correct URL with ASIN path and response_groups", async () => {
+    const fetcher = fakeFetch({ product: sampleProduct });
+
+    await lookupAudibleByAsin("B08G9PRS1K", fetcher);
+
+    const [[url]] = (fetcher as ReturnType<typeof vi.fn>).mock.calls as [[string]];
+    expect(url).toContain("https://api.audible.com/1.0/catalog/products/B08G9PRS1K");
+    expect(url).toContain("response_groups=product_attrs");
+  });
+
+  it("returns null on 404 response", async () => {
+    const fetcher = fakeFetch(null, 404);
+
+    const result = await lookupAudibleByAsin("B000MISSING", fetcher);
+
+    expect(result).toBeNull();
+  });
+
+  it("throws on non-ok response", async () => {
+    const fetcher = fakeFetch("Server error", 500);
+
+    await expect(lookupAudibleByAsin("B08G9PRS1K", fetcher)).rejects.toThrow("Audible API error: 500");
+  });
+
+  it("returns null when product field is missing", async () => {
+    const fetcher = fakeFetch({});
+
+    const result = await lookupAudibleByAsin("B08G9PRS1K", fetcher);
+
+    expect(result).toBeNull();
   });
 });

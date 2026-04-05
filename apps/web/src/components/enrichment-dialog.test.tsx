@@ -91,7 +91,7 @@ describe("EnrichmentDialog", () => {
     searchEnrichmentMock.mockImplementation(() => new Promise(() => {}));
     render(<EnrichmentDialog {...baseProps} />);
 
-    expect(searchEnrichmentMock).toHaveBeenCalledWith({ data: { workId: "w1" } });
+    expect(searchEnrichmentMock).toHaveBeenCalledWith({ data: { workId: "w1", editionId: "e1" } });
     // Should show loading state
     expect(screen.getByText("Searching sources...")).toBeTruthy();
   });

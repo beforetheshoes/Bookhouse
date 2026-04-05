@@ -74,6 +74,13 @@ function LibraryPage() {
   const selectedCount = allWorkIds ? allWorkIds.length : Object.keys(rowSelection).length;
   const allPageRowsSelected = filteredByReading.length > 0 && Object.keys(rowSelection).length === filteredByReading.length;
 
+  const selectedWorks = useMemo(() => {
+    const idSet = new Set(selectedWorkIds);
+    return filteredByReading
+      .filter((w) => idSet.has(w.id))
+      .map((w) => ({ id: w.id, title: w.titleDisplay, editionCount: w.editions.length }));
+  }, [selectedWorkIds, filteredByReading]);
+
   useSSE();
 
   useEffect(() => {
@@ -225,12 +232,14 @@ function LibraryPage() {
       <LibrarySelectionToolbar
         selectedCount={selectedCount}
         selectedWorkIds={selectedWorkIds}
+        selectedWorks={selectedWorks}
         shelves={shelves}
         totalCount={totalCount}
         allPageRowsSelected={allPageRowsSelected}
         onSelectAll={() => { void handleSelectAll(); }}
         selectingAll={selectingAll}
         onDeleted={handleSelectionDone}
+        onMerged={handleSelectionDone}
         onAddedToShelf={handleSelectionDone}
         onEnrichStarted={handleSelectionDone}
         onClearSelection={() => { setRowSelection({}); setAllWorkIds(null); }}
