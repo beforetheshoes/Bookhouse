@@ -14,7 +14,8 @@ test.describe("Delete edition from work detail page", () => {
     await page.getByText("Single Edition Book").click();
     await expect(page.locator("h1")).toContainText("Single Edition Book");
 
-    // Click the edition delete button (testid starts with "delete-edition-")
+    // Open the edition kebab menu, then click Delete Edition
+    await page.getByLabel("Edition actions").first().click();
     await page.locator("[data-testid^='delete-edition-']").first().click();
 
     // Confirmation dialog
@@ -63,7 +64,8 @@ test.describe("Delete edition from work detail page", () => {
     await expect(page.getByText("EBOOK").first()).toBeVisible();
     await expect(page.getByText("AUDIOBOOK").first()).toBeVisible();
 
-    // Delete the first edition
+    // Open the edition kebab menu, then click Delete Edition
+    await page.getByLabel("Edition actions").first().click();
     await page.locator("[data-testid^='delete-edition-']").first().click();
     await expect(page.locator("[role='dialog']").getByText("Delete Edition")).toBeVisible();
     await page.locator("[role='dialog'] button", { hasText: "Delete" }).click();

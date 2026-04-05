@@ -286,7 +286,8 @@ describe("editionSortKey", () => {
     const edition = {
       publisher: "DAW Books",
       editionFiles: [{ fileAsset: { basename: "wind.epub" } }],
-    } as unknown as Parameters<typeof editionSortKey>[0];
+      contributors: [],
+    } as Parameters<typeof editionSortKey>[0];
     expect(editionSortKey(edition)).toBe("daw books\0wind.epub");
   });
 
@@ -295,7 +296,8 @@ describe("editionSortKey", () => {
     const edition = {
       publisher: null,
       editionFiles: [],
-    } as unknown as Parameters<typeof editionSortKey>[0];
+      contributors: [],
+    } as Parameters<typeof editionSortKey>[0];
     expect(editionSortKey(edition)).toBe("\0");
   });
 });
