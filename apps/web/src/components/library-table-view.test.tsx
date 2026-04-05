@@ -28,6 +28,9 @@ const defaultProps = {
   onRowSelectionChange: vi.fn(),
   sorting: [],
   onSortingChange: vi.fn(),
+  viewMode: "works" as const,
+  onViewModeChange: vi.fn(),
+  columnPickerItems: [{ id: "authors", label: "Author(s)" }],
 };
 
 describe("LibraryTableView", () => {
@@ -86,5 +89,36 @@ describe("LibraryTableView", () => {
     const table = screen.getByTestId("virtualized-data-table");
     expect(table.getAttribute("data-column-visibility")).toBe(JSON.stringify({ isbn: false }));
     expect(table.getAttribute("data-text-overflow")).toBe("wrap");
+  });
+
+  it("renders Works/Editions view mode toggle", () => {
+    render(<LibraryTableView {...defaultProps} />);
+    expect(screen.getByRole("button", { name: /works view/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /editions view/i })).toBeTruthy();
+  });
+
+  it("highlights active view mode button", () => {
+    render(<LibraryTableView {...defaultProps} viewMode="editions" />);
+    const editionsBtn = screen.getByRole("button", { name: /editions view/i });
+    expect(editionsBtn.getAttribute("data-active")).toBe("true");
+  });
+
+  it("calls onViewModeChange when Editions button is clicked", () => {
+    const onViewModeChange = vi.fn();
+    render(<LibraryTableView {...defaultProps} onViewModeChange={onViewModeChange} />);
+    fireEvent.click(screen.getByRole("button", { name: /editions view/i }));
+    expect(onViewModeChange).toHaveBeenCalledWith("editions");
+  });
+
+  it("calls onViewModeChange with works when Works button is clicked", () => {
+    const onViewModeChange = vi.fn();
+    render(<LibraryTableView {...defaultProps} viewMode="editions" onViewModeChange={onViewModeChange} />);
+    fireEvent.click(screen.getByRole("button", { name: /works view/i }));
+    expect(onViewModeChange).toHaveBeenCalledWith("works");
+  });
+
+  it("shows edit mode toggle in editions view", () => {
+    render(<LibraryTableView {...defaultProps} viewMode="editions" />);
+    expect(screen.getByTestId("edit-mode-toggle")).toBeTruthy();
   });
 });

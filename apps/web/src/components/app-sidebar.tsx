@@ -67,7 +67,7 @@ export function AppSidebar({ user }: { user: AuthenticatedUser }) {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
-              <Link to="/library" search={{ page: 1, pageSize: 50, sort: "title-asc" as const }}>
+              <Link to="/library" search={{ page: 1, pageSize: 50, sort: "title-asc" as const, view: "works" as const }}>
                 <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                   <BookOpen className="size-4" />
                 </div>

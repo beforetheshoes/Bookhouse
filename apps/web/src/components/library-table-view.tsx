@@ -1,9 +1,8 @@
 import type { ColumnDef, OnChangeFn, RowSelectionState, SortingState, Updater } from "@tanstack/react-table";
-import { AlignJustify, Pencil, WrapText } from "lucide-react";
+import { AlignJustify, BookOpen, Library, Pencil, WrapText } from "lucide-react";
 import { VirtualizedDataTable } from "~/components/data-table";
 import { DataTableColumnPicker } from "~/components/data-table/data-table-column-picker";
 import { Button } from "~/components/ui/button";
-import { COLUMN_PICKER_ITEMS } from "~/lib/library-columns";
 
 interface LibraryTableViewProps<T> {
   works: T[];
@@ -17,6 +16,9 @@ interface LibraryTableViewProps<T> {
   onRowSelectionChange: OnChangeFn<RowSelectionState>;
   sorting: SortingState;
   onSortingChange: (updater: Updater<SortingState>) => void;
+  viewMode: "works" | "editions";
+  onViewModeChange: (mode: "works" | "editions") => void;
+  columnPickerItems: { id: string; label: string }[];
 }
 
 export function LibraryTableView<T>({
@@ -31,20 +33,47 @@ export function LibraryTableView<T>({
   onRowSelectionChange,
   sorting,
   onSortingChange,
+  viewMode,
+  onViewModeChange,
+  columnPickerItems,
 }: LibraryTableViewProps<T>) {
   return (
     <>
       <div className="flex items-center gap-2 justify-end">
+        <div className="flex items-center rounded-md border mr-auto">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => { onViewModeChange("works"); }}
+            aria-label="Works view"
+            data-active={viewMode === "works"}
+            className="rounded-r-none data-[active=true]:bg-muted"
+          >
+            <Library className="mr-1 h-4 w-4" />
+            Works
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => { onViewModeChange("editions"); }}
+            aria-label="Editions view"
+            data-active={viewMode === "editions"}
+            className="rounded-l-none data-[active=true]:bg-muted"
+          >
+            <BookOpen className="mr-1 h-4 w-4" />
+            Editions
+          </Button>
+        </div>
         <Button
-          data-testid="edit-mode-toggle"
-          variant={editMode ? "default" : "outline"}
-          size="sm"
-          onClick={onEditModeToggle}
-          aria-label={editMode ? "Exit edit mode" : "Enter edit mode"}
-        >
-          <Pencil className="mr-2 h-4 w-4" />
-          {editMode ? "Done" : "Edit"}
-        </Button>
+            data-testid="edit-mode-toggle"
+            variant={editMode ? "default" : "outline"}
+            size="sm"
+            onClick={onEditModeToggle}
+            aria-label={editMode ? "Exit edit mode" : "Enter edit mode"}
+          >
+            <Pencil className="mr-2 h-4 w-4" />
+            {editMode ? "Done" : "Edit"}
+          </Button>
         <Button
           variant="outline"
           size="sm"
@@ -59,7 +88,7 @@ export function LibraryTableView<T>({
           {tablePrefs.textOverflow === "truncate" ? "Wrap" : "Truncate"}
         </Button>
         <DataTableColumnPicker
-          columns={COLUMN_PICKER_ITEMS}
+          columns={columnPickerItems}
           columnVisibility={tablePrefs.columnVisibility}
           onToggle={onColumnToggle}
         />

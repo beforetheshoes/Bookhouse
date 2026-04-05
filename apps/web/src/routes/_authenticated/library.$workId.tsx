@@ -146,7 +146,7 @@ function WorkDetailPage() {
       await deleteWorkServerFn({ data: { workId: work.id } });
       toast.success(`"${work.titleDisplay}" deleted`);
       setDeleteWorkOpen(false);
-      void router.navigate({ to: "/library", search: { page: 1, pageSize: 50, sort: "title-asc" as const } });
+      void router.navigate({ to: "/library", search: { page: 1, pageSize: 50, sort: "title-asc" as const, view: "works" as const } });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to delete work");
     } finally {
@@ -160,7 +160,7 @@ function WorkDetailPage() {
       const result = await deleteEditionServerFn({ data: { editionId } });
       if (result.deletedWorkId) {
         toast.success("Edition deleted — work had no remaining editions and was also removed");
-        void router.navigate({ to: "/library", search: { page: 1, pageSize: 50, sort: "title-asc" as const } });
+        void router.navigate({ to: "/library", search: { page: 1, pageSize: 50, sort: "title-asc" as const, view: "works" as const } });
       } else {
         toast.success("Edition deleted");
         void router.invalidate();
@@ -245,7 +245,7 @@ function WorkDetailPage() {
   return (
     <div className="space-y-6">
       <nav className="flex items-center gap-1 text-sm text-muted-foreground">
-        <Link to="/library" search={{ page: 1, pageSize: 50, sort: "title-asc" as const }} className="hover:text-foreground">
+        <Link to="/library" search={{ page: 1, pageSize: 50, sort: "title-asc" as const, view: "works" as const }} className="hover:text-foreground">
           Library
         </Link>
         <ChevronRight className="size-4" />

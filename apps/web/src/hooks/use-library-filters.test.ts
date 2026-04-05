@@ -19,7 +19,7 @@ describe("useLibraryFilters", () => {
     }
   });
 
-  const defaultSearch = { page: 1, pageSize: 50, sort: "title-asc" as const };
+  const defaultSearch = { page: 1, pageSize: 50, sort: "title-asc" as const, view: "works" as const };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -167,5 +167,56 @@ describe("useLibraryFilters", () => {
     expect(result.current.currentFilters.format).toEqual(["EBOOK"]);
     expect(result.current.currentFilters.hasCover).toBe(true);
     expect(result.current.currentFilters.authorId).toEqual(["a1"]);
+  });
+
+  it("handleViewModeChange navigates with view, resets sort and page", () => {
+    const { result } = renderHook(() =>
+      useLibraryFilters({ search: { ...defaultSearch, sort: "author-desc" as const, page: 3 }, navigate: mockNavigate }),
+    );
+    act(() => {
+      result.current.handleViewModeChange("editions");
+    });
+    expect(mockNavigate).toHaveBeenCalled();
+    const merged = extractSearch(mockNavigate)({});
+    expect(merged.view).toBe("editions");
+    expect(merged.sort).toBe("title-asc");
+    expect(merged.page).toBe(1);
+  });
+
+  it("tableSorting uses custom sortToColumn map when provided", () => {
+    const customSortToColumn = {
+      "publisher-asc": { id: "publisher", desc: false },
+    };
+    const { result } = renderHook(() =>
+      useLibraryFilters({
+        search: { ...defaultSearch, sort: "publisher-asc" as const },
+        navigate: mockNavigate,
+        sortToColumn: customSortToColumn,
+      }),
+    );
+    expect(result.current.tableSorting).toEqual([{ id: "publisher", desc: false }]);
+  });
+
+  it("handleColumnSort uses custom sortMap when provided", () => {
+    const customSortMap = {
+      publisher: { asc: "publisher-asc" as const, desc: "publisher-desc" as const },
+    };
+    const customSortToColumn = {
+      "publisher-asc": { id: "publisher", desc: false },
+    };
+    const { result } = renderHook(() =>
+      useLibraryFilters({
+        search: { ...defaultSearch, sort: "publisher-asc" as const },
+        navigate: mockNavigate,
+        sortMap: customSortMap,
+        sortToColumn: customSortToColumn,
+      }),
+    );
+    act(() => {
+      result.current.handleColumnSort(() => [{ id: "publisher", desc: true }]);
+    });
+    expect(mockNavigate).toHaveBeenCalled();
+    const merged = extractSearch(mockNavigate)({});
+    expect(merged.sort).toBe("publisher-desc");
   });
 });
