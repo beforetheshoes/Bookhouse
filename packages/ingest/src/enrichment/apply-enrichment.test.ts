@@ -408,6 +408,19 @@ describe("applyEnrichmentFields", () => {
     expect(deps.findContributorByCanonical).toHaveBeenCalledTimes(1);
   });
 
+  it("falls back to lowercase when canonicalize returns null for narrator", async () => {
+    deps = makeDeps({
+      canonicalizeContributorName: () => null,
+    });
+    const input = makeInput({
+      editionFields: { narrators: ["Scott Brick"] },
+    });
+
+    await applyEnrichmentFields(input, deps);
+
+    expect(deps.findContributorByCanonical).toHaveBeenCalledWith("scott brick");
+  });
+
   it("includes narrators in appliedFields for provenance", async () => {
     const input = makeInput({
       editionFields: { narrators: ["Scott Brick"] },

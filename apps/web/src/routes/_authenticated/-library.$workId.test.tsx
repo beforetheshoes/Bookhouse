@@ -280,25 +280,12 @@ vi.mock("~/components/metadata-item", () => ({
   ),
 }));
 
-describe("editionSortKey", () => {
-  it("generates sort key from publisher and filename", async () => {
-    const { editionSortKey } = await import("./library.$workId");
-    const edition = {
-      publisher: "DAW Books",
-      editionFiles: [{ fileAsset: { basename: "wind.epub" } }],
-      contributors: [],
-    } as Parameters<typeof editionSortKey>[0];
-    expect(editionSortKey(edition)).toBe("daw books\0wind.epub");
-  });
-
-  it("handles null publisher and empty files", async () => {
-    const { editionSortKey } = await import("./library.$workId");
-    const edition = {
-      publisher: null,
-      editionFiles: [],
-      contributors: [],
-    } as Parameters<typeof editionSortKey>[0];
-    expect(editionSortKey(edition)).toBe("\0");
+describe("WorkDetailSkeleton", () => {
+  it("renders skeleton placeholder", async () => {
+    const { Route } = await import("./library.$workId");
+    const Skeleton = Route.options.pendingComponent as React.ComponentType;
+    render(<Skeleton />);
+    expect(screen.getByTestId("work-detail-skeleton")).toBeTruthy();
   });
 });
 
@@ -331,6 +318,7 @@ describe("WorkDetailPage", () => {
             editedFields: [],
             contributors: [
               { role: "AUTHOR", contributor: { id: "contrib-1", nameDisplay: "Patrick Rothfuss" } },
+              { role: "NARRATOR", contributor: { id: "contrib-n1", nameDisplay: "Nick Podehl" } },
             ],
             editionFiles: [
               {

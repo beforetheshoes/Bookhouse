@@ -549,6 +549,39 @@ describe("updateEditionNarratorsServerFn", () => {
     });
   });
 
+  it("falls back to lowercase when canonicalize returns undefined for narrator", async () => {
+    canonicalizeContributorNameMock.mockReturnValue(undefined);
+    contributorFindFirstMock.mockResolvedValue(null);
+    contributorCreateMock.mockResolvedValue({ id: "c-new" });
+    editionContributorDeleteManyMock.mockResolvedValue({ count: 0 });
+    editionContributorCreateManyMock.mockResolvedValue({ count: 1 });
+    editionFindUniqueMock.mockResolvedValue({ id: "e1", editedFields: [] });
+    editionUpdateMock.mockResolvedValue({ id: "e1" });
+
+    await updateEditionNarratorsServerFn({
+      data: { editionId: "e1", narrators: ["Some Narrator"] },
+    });
+
+    expect(contributorFindFirstMock).toHaveBeenCalledWith({
+      where: { nameCanonical: "some narrator" },
+    });
+  });
+
+  it("handles edition not found gracefully for editedFields", async () => {
+    editionContributorDeleteManyMock.mockResolvedValue({ count: 0 });
+    editionFindUniqueMock.mockResolvedValue(null);
+    editionUpdateMock.mockResolvedValue({ id: "e1" });
+
+    await updateEditionNarratorsServerFn({
+      data: { editionId: "e1", narrators: [] },
+    });
+
+    expect(editionUpdateMock).toHaveBeenCalledWith({
+      where: { id: "e1" },
+      data: { editedFields: ["narrators"] },
+    });
+  });
+
   it("clears narrators when empty array provided", async () => {
     editionContributorDeleteManyMock.mockResolvedValue({ count: 1 });
     editionFindUniqueMock.mockResolvedValue({ id: "e1", editedFields: [] });

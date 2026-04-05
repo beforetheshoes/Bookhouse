@@ -21,7 +21,7 @@ vi.mock("~/lib/server-fns/kindle", () => ({
   sendToKindleServerFn: sendToKindleServerFnMock,
 }));
 
-import { EditionCard, parseDuration } from "./edition-card";
+import { EditionCard, parseDuration, sortEpubFirst } from "./edition-card";
 import type { WorkDetail } from "~/lib/server-fns/work-detail";
 
 type EditionType = WorkDetail["editions"][number];
@@ -1551,8 +1551,29 @@ describe("EditionCard", () => {
     });
   });
 
+  describe("sortEpubFirst", () => {
+    it("sorts EPUB before other formats", () => {
+      const files = [
+        { fileAsset: { mediaKind: "PDF" } },
+        { fileAsset: { mediaKind: "EPUB" } },
+        { fileAsset: { mediaKind: "MOBI" } },
+      ];
+      const sorted = sortEpubFirst(files);
+      expect(sorted.map((f) => f.fileAsset.mediaKind)).toEqual(["EPUB", "PDF", "MOBI"]);
+    });
+
+    it("preserves order when no EPUB present", () => {
+      const files = [
+        { fileAsset: { mediaKind: "PDF" } },
+        { fileAsset: { mediaKind: "MOBI" } },
+      ];
+      const sorted = sortEpubFirst(files);
+      expect(sorted.map((f) => f.fileAsset.mediaKind)).toEqual(["PDF", "MOBI"]);
+    });
+  });
+
   describe("download format sorting", () => {
-    it("sorts EPUB first in download dropdown with non-EPUB formats", () => {
+    it("sorts EPUB first in download dropdown with mixed formats", () => {
       const edition = {
         ...baseEdition,
         editionFiles: [
@@ -1566,16 +1587,7 @@ describe("EditionCard", () => {
               mediaKind: "PDF",
             },
           },
-          {
-            ...baseEdition.editionFiles[0],
-            id: "ef-mobi",
-            fileAsset: {
-              ...(baseEdition.editionFiles[0] as (typeof baseEdition.editionFiles)[number]).fileAsset,
-              id: "fa-mobi",
-              basename: "book.mobi",
-              mediaKind: "MOBI",
-            },
-          },
+          baseEdition.editionFiles[0],
         ],
       } as EditionType;
       render(

@@ -50,6 +50,14 @@ function formatBytes(bytes: bigint | number | null): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+export function sortEpubFirst<T extends { fileAsset: { mediaKind: string } }>(files: T[]): T[] {
+  return [...files].sort((a, b) => {
+    if (a.fileAsset.mediaKind === "EPUB") return -1;
+    if (b.fileAsset.mediaKind === "EPUB") return 1;
+    return 0;
+  });
+}
+
 export function EditionCard({
   edition,
   onEditionFieldSaved,
@@ -72,11 +80,9 @@ export function EditionCard({
   );
   const isAudiobook = edition.formatFamily === "AUDIOBOOK";
 
-  const ebookDownloadFiles = presentFiles
-    .filter((ef) => ef.fileAsset.mediaKind !== "AUDIO")
-    .sort((a, b) =>
-      a.fileAsset.mediaKind === "EPUB" ? -1 : b.fileAsset.mediaKind === "EPUB" ? 1 : 0,
-    );
+  const ebookDownloadFiles = sortEpubFirst(
+    presentFiles.filter((ef) => ef.fileAsset.mediaKind !== "AUDIO"),
+  );
 
   async function saveField(field: string, val: string) {
     await updateEditionServerFn({ data: { editionId: edition.id, fields: { [field]: val || null } } });

@@ -36,6 +36,7 @@ import { getSmtpStatusServerFn } from "~/lib/server-fns/smtp";
 import { getKindleStatusServerFn } from "~/lib/server-fns/kindle";
 import { updateWorkTagsServerFn } from "~/lib/server-fns/tags";
 import { useAppColor } from "~/hooks/use-app-color";
+import { sortEditionsByKey } from "~/lib/edition-sort";
 
 export const Route = createFileRoute("/_authenticated/library/$workId")({
   loader: async ({ params }) => {
@@ -69,15 +70,7 @@ function WorkDetailSkeleton() {
   );
 }
 
-export function editionSortKey(e: WorkDetail["editions"][number]): string {
-  const pub = (e.publisher ?? "").toLowerCase();
-  const file = e.editionFiles[0]?.fileAsset.basename ?? "";
-  return `${pub}\0${file}`;
-}
-
-function sortEditions(editions: WorkDetail["editions"]): WorkDetail["editions"] {
-  return [...editions].sort((a, b) => editionSortKey(a).localeCompare(editionSortKey(b)));
-}
+// Edition sorting extracted to ~/lib/edition-sort.ts for testability
 
 function getAuthors(work: WorkDetail): { id: string; name: string }[] {
   const seen = new Set<string>();
@@ -108,6 +101,10 @@ function WorkDetailPage() {
   const [coverSearchOpen, setCoverSearchOpen] = useState(false);
   const formatFamilies = [...new Set(work.editions.map((e) => e.formatFamily))];
   const [activeFormat, setActiveFormat] = useState<string>(formatFamilies[0] ?? "EBOOK");
+  const editionsByFormat: Record<string, WorkDetail["editions"]> = {};
+  for (const fmt of formatFamilies) {
+    editionsByFormat[fmt] = sortEditionsByKey(work.editions.filter((e) => e.formatFamily === fmt));
+  }
   const authors = getAuthors(work);
   const coverColors = work.coverColors as string[] | null;
   const { setBookColors } = useAppColor();
@@ -173,9 +170,30 @@ function WorkDetailPage() {
   const enrichEdition = enrichMode === "edition"
     ? work.editions.find((e) => e.id === enrichEditionId)
     : work.editions[0];
-  const enrichEditionNarrators = enrichEdition
-    ? enrichEdition.contributors.filter((c) => c.role === "NARRATOR").map((c) => c.contributor.nameDisplay)
+  const narratorContributors = enrichEdition
+    ? enrichEdition.contributors.filter((c) => c.role === "NARRATOR")
     : [];
+  const enrichEditionNarrators: string[] = [];
+  for (const c of narratorContributors) enrichEditionNarrators.push(c.contributor.nameDisplay);
+
+  const editionCards: Record<string, React.ReactNode[]> = {};
+  for (const fmt of formatFamilies) {
+    const cards: React.ReactNode[] = [];
+    for (const edition of editionsByFormat[fmt] as WorkDetail["editions"]) {
+      cards.push(
+        <EditionCard
+          key={edition.id}
+          edition={edition}
+          onEditionFieldSaved={() => { void router.invalidate(); }}
+          onDeleteEdition={() => { setDeleteEditionOpen(edition.id); }}
+          onEnrichEdition={() => { setEnrichEditionId(edition.id); setEnrichMode("edition"); setEnrichOpen(true); }}
+          smtpConfigured={smtpConfigured}
+          kindleConfigured={kindleConfigured}
+        />,
+      );
+    }
+    editionCards[fmt] = cards;
+  }
 
   const handleCoverUpdated = () => {
     setCoverVersion((v) => v + 1);
@@ -351,17 +369,7 @@ function WorkDetailPage() {
           </div>
           {formatFamilies.map((fmt) => (
             <TabsContent key={fmt} value={fmt} className="space-y-4 pt-2">
-              {sortEditions(work.editions.filter((e) => e.formatFamily === fmt)).map((edition) => (
-                <EditionCard
-                  key={edition.id}
-                  edition={edition}
-                  onEditionFieldSaved={() => { void router.invalidate(); }}
-                  onDeleteEdition={() => { setDeleteEditionOpen(edition.id); }}
-                  onEnrichEdition={() => { setEnrichEditionId(edition.id); setEnrichMode("edition"); setEnrichOpen(true); }}
-                  smtpConfigured={smtpConfigured}
-                  kindleConfigured={kindleConfigured}
-                />
-              ))}
+              {editionCards[fmt]}
             </TabsContent>
           ))}
         </Tabs>

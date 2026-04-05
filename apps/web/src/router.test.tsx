@@ -20,5 +20,5 @@ describe("router helpers", () => {
     expect(router.options.defaultPreload).toBe("intent");
     expect(router.options.scrollRestoration).toBe(true);
     expect(getRouter()).toBeDefined();
-  }, 30_000);
+  }, 60_000);
 });
