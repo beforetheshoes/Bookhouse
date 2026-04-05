@@ -43,3 +43,5 @@ covers/
 e2e/.auth/
 test-results/
 playwright-report/
+coverage-json/
+coverage-json2/
