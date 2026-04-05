@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import type { Prisma } from "@bookhouse/db";
+import { SORT_OPTIONS } from "~/lib/library-search-schema";
 
 const FORMAT_FAMILIES = ["EBOOK", "AUDIOBOOK"] as const;
 
@@ -56,7 +57,7 @@ export type LibraryWork = Awaited<
 const filterSchema = z.object({
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(1).max(100).default(50),
-  sort: z.enum(["title-asc", "title-desc", "author-asc", "author-desc", "format-asc", "format-desc", "recent"]).default("title-asc"),
+  sort: z.enum(SORT_OPTIONS).default("title-asc"),
   q: z.string().optional(),
   format: z.array(z.enum(["EBOOK", "AUDIOBOOK"])).optional(),
   authorId: z.array(z.string()).optional(),
@@ -366,6 +367,252 @@ export const getFilteredLibraryWorksServerFn = createServerFn({
 export type FilteredLibraryResult = Awaited<
   ReturnType<typeof getFilteredLibraryWorksServerFn>
 >;
+
+// ---------- Editions view ----------
+
+const EDITION_VIEW_INCLUDE = {
+  work: {
+    include: {
+      series: true,
+      editions: {
+        include: {
+          contributors: {
+            where: { role: "AUTHOR" as const },
+            include: { contributor: true },
+          },
+        },
+      },
+    },
+  },
+  contributors: { include: { contributor: true } },
+} as const;
+
+function buildEditionWhere(data: z.infer<typeof filterSchema>): Prisma.EditionWhereInput {
+  const where: Prisma.EditionWhereInput = {};
+  const workConditions: Prisma.WorkWhereInput[] = [];
+
+  if (data.q) {
+    workConditions.push({
+      OR: [
+        { titleDisplay: { contains: data.q, mode: "insensitive" } },
+        { titleCanonical: { contains: data.q, mode: "insensitive" } },
+      ],
+    });
+  }
+
+  if (data.format && data.format.length > 0) {
+    where.formatFamily = { in: data.format };
+  }
+
+  if (data.authorId && data.authorId.length > 0) {
+    where.contributors = {
+      some: {
+        contributorId: { in: data.authorId },
+        role: "AUTHOR",
+      },
+    };
+  }
+
+  if (data.seriesId && data.seriesId.length > 0) {
+    workConditions.push({ seriesId: { in: data.seriesId } });
+  }
+
+  if (data.hasCover === true) {
+    workConditions.push({ coverPath: { not: null } });
+  } else if (data.hasCover === false) {
+    workConditions.push({ coverPath: null });
+  }
+
+  if (data.enriched === true) {
+    workConditions.push({ enrichmentStatus: "ENRICHED" });
+  } else if (data.enriched === false) {
+    workConditions.push({ enrichmentStatus: "STUB" });
+  }
+
+  if (data.hasDescription === true) {
+    workConditions.push({ description: { not: null } });
+  } else if (data.hasDescription === false) {
+    workConditions.push({ description: null });
+  }
+
+  if (data.inSeries === true) {
+    workConditions.push({ seriesId: { not: null } });
+  } else if (data.inSeries === false) {
+    workConditions.push({ seriesId: null });
+  }
+
+  if (workConditions.length === 1) {
+    where.work = workConditions[0];
+  } else if (workConditions.length > 1) {
+    where.work = { AND: workConditions };
+  }
+
+  where.editionFiles = {
+    some: {
+      fileAsset: { availabilityStatus: "PRESENT", mediaKind: { notIn: [...KEPUB_EXCLUDED_MEDIA_KINDS] } },
+    },
+  };
+
+  return where;
+}
+
+type EditionOrderBy = Prisma.EditionOrderByWithRelationInput;
+
+function buildEditionOrderBy(sort: string): EditionOrderBy {
+  switch (sort) {
+    case "title-desc":
+      return { work: { titleCanonical: "desc" } };
+    case "publisher-asc":
+      return { publisher: "asc" };
+    case "publisher-desc":
+      return { publisher: "desc" };
+    case "publishDate-asc":
+      return { publishedAt: "asc" };
+    case "publishDate-desc":
+      return { publishedAt: "desc" };
+    case "pageCount-asc":
+      return { pageCount: "asc" };
+    case "pageCount-desc":
+      return { pageCount: "desc" };
+    case "duration-asc":
+      return { duration: "asc" };
+    case "duration-desc":
+      return { duration: "desc" };
+    case "format-asc":
+      return { formatFamily: "asc" };
+    case "format-desc":
+      return { formatFamily: "desc" };
+    case "isbn13-asc":
+      return { isbn13: "asc" };
+    case "isbn13-desc":
+      return { isbn13: "desc" };
+    case "isbn10-asc":
+      return { isbn10: "asc" };
+    case "isbn10-desc":
+      return { isbn10: "desc" };
+    case "asin-asc":
+      return { asin: "asc" };
+    case "asin-desc":
+      return { asin: "desc" };
+    case "recent":
+      return { createdAt: "desc" };
+    default:
+      return { work: { titleCanonical: "asc" } };
+  }
+}
+
+const EDITION_CONTRIBUTOR_SORT_OPTIONS = new Set([
+  "author-asc", "author-desc",
+  "narrator-asc", "narrator-desc",
+]);
+
+const EDITION_CONTRIBUTOR_SORT_SELECT = {
+  id: true,
+  contributors: {
+    select: { contributor: { select: { nameCanonical: true } } },
+  },
+} as const;
+
+type LightweightEditionContributor = {
+  id: string;
+  contributors: { contributor: { nameCanonical: string } }[];
+};
+
+type EditionContributorSortOption = "author-asc" | "author-desc" | "narrator-asc" | "narrator-desc";
+
+function extractEditionContributorSortKey(edition: LightweightEditionContributor): string {
+  return edition.contributors
+    .map((c) => c.contributor.nameCanonical)
+    .sort()[0] ?? "\uffff";
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Prisma client's findMany has complex generics
+type EditionFindMany = (args: any) => Promise<any[]>;
+type EditionDbClient = { edition: { findMany: EditionFindMany } };
+
+async function fetchEditionsWithContributorSort(
+  db: EditionDbClient,
+  where: Prisma.EditionWhereInput,
+  page: number,
+  pageSize: number,
+  sort: EditionContributorSortOption,
+) {
+  const direction = sort.endsWith("-desc") ? "desc" : "asc";
+  const role = sort.startsWith("narrator") ? "NARRATOR" as const : "AUTHOR" as const;
+
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Prisma select narrows the type at runtime
+  const allEditions: LightweightEditionContributor[] = await db.edition.findMany({
+    where,
+    select: {
+      ...EDITION_CONTRIBUTOR_SORT_SELECT,
+      contributors: {
+        ...EDITION_CONTRIBUTOR_SORT_SELECT.contributors,
+        where: { role },
+      },
+    },
+  });
+
+  const sorted = allEditions
+    .map((e) => ({ id: e.id, key: extractEditionContributorSortKey(e) }))
+    .sort((a, b) =>
+      direction === "asc"
+        ? a.key.localeCompare(b.key)
+        : b.key.localeCompare(a.key),
+    );
+
+  const pageIds = sorted
+    .slice((page - 1) * pageSize, page * pageSize)
+    .map((e) => e.id);
+
+  if (pageIds.length === 0) return [] as Prisma.EditionGetPayload<{ include: typeof EDITION_VIEW_INCLUDE }>[];
+
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Prisma include narrows the type at runtime
+  const fullEditions: Prisma.EditionGetPayload<{ include: typeof EDITION_VIEW_INCLUDE }>[] = await db.edition.findMany({
+    where: { id: { in: pageIds } },
+    include: EDITION_VIEW_INCLUDE,
+  });
+
+  const byId = Object.fromEntries(fullEditions.map((e) => [e.id, e]));
+  return pageIds.map((id) => byId[id]).filter(Boolean) as typeof fullEditions;
+}
+
+export const getFilteredLibraryEditionsServerFn = createServerFn({
+  method: "GET",
+})
+  .inputValidator(filterSchema)
+  .handler(async ({ data }) => {
+    const { db } = await import("@bookhouse/db");
+
+    const parsed = filterSchema.parse(data);
+    const where = buildEditionWhere(parsed);
+
+    const editionsPromise = EDITION_CONTRIBUTOR_SORT_OPTIONS.has(parsed.sort)
+      ? fetchEditionsWithContributorSort(
+          db,
+          where,
+          parsed.page,
+          parsed.pageSize,
+          parsed.sort as EditionContributorSortOption,
+        )
+      : db.edition.findMany({
+          where,
+          orderBy: buildEditionOrderBy(parsed.sort),
+          skip: (parsed.page - 1) * parsed.pageSize,
+          take: parsed.pageSize,
+          include: EDITION_VIEW_INCLUDE,
+        });
+
+    const [editions, totalCount] = await Promise.all([
+      editionsPromise,
+      db.edition.count({ where }),
+    ]);
+
+    return { editions, totalCount };
+  });
+
+export type LibraryEdition = Awaited<
+  ReturnType<typeof getFilteredLibraryEditionsServerFn>
+>["editions"][number];
 
 const idsOnlyFilterSchema = filterSchema.omit({ page: true, pageSize: true, sort: true });
 

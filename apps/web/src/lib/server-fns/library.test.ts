@@ -17,11 +17,13 @@ vi.mock("@tanstack/react-start", () => ({
 const findManyMock = vi.fn();
 const countMock = vi.fn();
 const editionGroupByMock = vi.fn();
+const editionFindManyMock = vi.fn();
+const editionCountMock = vi.fn();
 
 vi.mock("@bookhouse/db", () => ({
   db: {
     work: { findMany: findManyMock, count: countMock },
-    edition: { groupBy: editionGroupByMock },
+    edition: { groupBy: editionGroupByMock, findMany: editionFindManyMock, count: editionCountMock },
   },
 }));
 
@@ -29,6 +31,7 @@ import {
   getLibraryWorksServerFn,
   getFilteredLibraryWorksServerFn,
   getAllFilteredWorkIdsServerFn,
+  getFilteredLibraryEditionsServerFn,
 } from "./library";
 
 describe("getLibraryWorksServerFn", () => {
@@ -917,5 +920,496 @@ describe("getAllFilteredWorkIdsServerFn", () => {
 
     const call = findManyMock.mock.calls[0] as [{ where: Record<string, string> }];
     expect(call[0].where).toBeTruthy();
+  });
+});
+
+describe("getFilteredLibraryEditionsServerFn", () => {
+  beforeEach(() => {
+    editionFindManyMock.mockReset();
+    editionCountMock.mockReset();
+  });
+
+  it("returns paginated editions with defaults", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    const result = await getFilteredLibraryEditionsServerFn({ data: {} });
+
+    expect(editionFindManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        skip: 0,
+        take: 50,
+        orderBy: { work: { titleCanonical: "asc" } },
+      }),
+    );
+    expect(result).toEqual({ editions: [], totalCount: 0 });
+  });
+
+  it("applies page and pageSize", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(100);
+    await getFilteredLibraryEditionsServerFn({ data: { page: 3, pageSize: 20 } });
+
+    expect(editionFindManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ skip: 40, take: 20 }),
+    );
+  });
+
+  it("sorts by title-desc via nested work", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    await getFilteredLibraryEditionsServerFn({ data: { sort: "title-desc" } });
+
+    expect(editionFindManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: { work: { titleCanonical: "desc" } } }),
+    );
+  });
+
+  it("sorts by publisher-asc", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    await getFilteredLibraryEditionsServerFn({ data: { sort: "publisher-asc" } });
+
+    expect(editionFindManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: { publisher: "asc" } }),
+    );
+  });
+
+  it("sorts by publisher-desc", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    await getFilteredLibraryEditionsServerFn({ data: { sort: "publisher-desc" } });
+
+    expect(editionFindManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: { publisher: "desc" } }),
+    );
+  });
+
+  it("sorts by publishDate-asc", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    await getFilteredLibraryEditionsServerFn({ data: { sort: "publishDate-asc" } });
+
+    expect(editionFindManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: { publishedAt: "asc" } }),
+    );
+  });
+
+  it("sorts by publishDate-desc", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    await getFilteredLibraryEditionsServerFn({ data: { sort: "publishDate-desc" } });
+
+    expect(editionFindManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: { publishedAt: "desc" } }),
+    );
+  });
+
+  it("sorts by pageCount-asc", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    await getFilteredLibraryEditionsServerFn({ data: { sort: "pageCount-asc" } });
+
+    expect(editionFindManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: { pageCount: "asc" } }),
+    );
+  });
+
+  it("sorts by duration-desc", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    await getFilteredLibraryEditionsServerFn({ data: { sort: "duration-desc" } });
+
+    expect(editionFindManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: { duration: "desc" } }),
+    );
+  });
+
+  it("sorts by format-asc", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    await getFilteredLibraryEditionsServerFn({ data: { sort: "format-asc" } });
+
+    expect(editionFindManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: { formatFamily: "asc" } }),
+    );
+  });
+
+  it("sorts by recent", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    await getFilteredLibraryEditionsServerFn({ data: { sort: "recent" } });
+
+    expect(editionFindManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: { createdAt: "desc" } }),
+    );
+  });
+
+  it("sorts by author-asc using two-step approach", async () => {
+    const lightweightEditions = [
+      { id: "e-b", contributors: [{ contributor: { nameCanonical: "bravo" } }] },
+      { id: "e-a", contributors: [{ contributor: { nameCanonical: "alpha" } }] },
+    ];
+    editionFindManyMock
+      .mockResolvedValueOnce(lightweightEditions)
+      .mockResolvedValueOnce([{ id: "e-a" }, { id: "e-b" }]);
+    editionCountMock.mockResolvedValue(2);
+    const result = await getFilteredLibraryEditionsServerFn({ data: { sort: "author-asc" } });
+
+    expect(editionFindManyMock).toHaveBeenCalledTimes(2);
+    const secondCall = (editionFindManyMock.mock.calls[1] as [{ where: { id: { in: string[] } } }])[0];
+    expect(secondCall.where.id.in).toEqual(["e-a", "e-b"]);
+    expect(result.editions.map((e: { id: string }) => e.id)).toEqual(["e-a", "e-b"]);
+  });
+
+  it("sorts by narrator-asc using two-step approach", async () => {
+    const lightweightEditions = [
+      { id: "e-b", contributors: [{ contributor: { nameCanonical: "zach" } }] },
+      { id: "e-a", contributors: [{ contributor: { nameCanonical: "anna" } }] },
+    ];
+    editionFindManyMock
+      .mockResolvedValueOnce(lightweightEditions)
+      .mockResolvedValueOnce([{ id: "e-a" }, { id: "e-b" }]);
+    editionCountMock.mockResolvedValue(2);
+    const result = await getFilteredLibraryEditionsServerFn({ data: { sort: "narrator-asc" } });
+
+    expect(editionFindManyMock).toHaveBeenCalledTimes(2);
+    const secondCall = (editionFindManyMock.mock.calls[1] as [{ where: { id: { in: string[] } } }])[0];
+    expect(secondCall.where.id.in).toEqual(["e-a", "e-b"]);
+    expect(result.editions.map((e: { id: string }) => e.id)).toEqual(["e-a", "e-b"]);
+  });
+
+  it("sorts by author-desc with data", async () => {
+    const lightweightEditions = [
+      { id: "e-a", contributors: [{ contributor: { nameCanonical: "alpha" } }] },
+      { id: "e-b", contributors: [{ contributor: { nameCanonical: "bravo" } }] },
+    ];
+    editionFindManyMock
+      .mockResolvedValueOnce(lightweightEditions)
+      .mockResolvedValueOnce([{ id: "e-b" }, { id: "e-a" }]);
+    editionCountMock.mockResolvedValue(2);
+    const result = await getFilteredLibraryEditionsServerFn({ data: { sort: "author-desc" } });
+
+    const secondCall = (editionFindManyMock.mock.calls[1] as [{ where: { id: { in: string[] } } }])[0];
+    expect(secondCall.where.id.in).toEqual(["e-b", "e-a"]);
+    expect(result.editions.map((e: { id: string }) => e.id)).toEqual(["e-b", "e-a"]);
+  });
+
+  it("sorts by narrator-desc with data", async () => {
+    const lightweightEditions = [
+      { id: "e-a", contributors: [{ contributor: { nameCanonical: "alpha" } }] },
+      { id: "e-b", contributors: [{ contributor: { nameCanonical: "bravo" } }] },
+    ];
+    editionFindManyMock
+      .mockResolvedValueOnce(lightweightEditions)
+      .mockResolvedValueOnce([{ id: "e-b" }, { id: "e-a" }]);
+    editionCountMock.mockResolvedValue(2);
+    const result = await getFilteredLibraryEditionsServerFn({ data: { sort: "narrator-desc" } });
+
+    const secondCall = (editionFindManyMock.mock.calls[1] as [{ where: { id: { in: string[] } } }])[0];
+    expect(secondCall.where.id.in).toEqual(["e-b", "e-a"]);
+    expect(result.editions.map((e: { id: string }) => e.id)).toEqual(["e-b", "e-a"]);
+  });
+
+  it("editions with no contributors sort last", async () => {
+    const lightweightEditions = [
+      { id: "e-none", contributors: [] },
+      { id: "e-a", contributors: [{ contributor: { nameCanonical: "alpha" } }] },
+    ];
+    editionFindManyMock
+      .mockResolvedValueOnce(lightweightEditions)
+      .mockResolvedValueOnce([{ id: "e-a" }, { id: "e-none" }]);
+    editionCountMock.mockResolvedValue(2);
+    const result = await getFilteredLibraryEditionsServerFn({ data: { sort: "author-asc" } });
+
+    const secondCall = (editionFindManyMock.mock.calls[1] as [{ where: { id: { in: string[] } } }])[0];
+    expect(secondCall.where.id.in).toEqual(["e-a", "e-none"]);
+    expect(result.editions.map((e: { id: string }) => e.id)).toEqual(["e-a", "e-none"]);
+  });
+
+  it("includes correct relations", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    await getFilteredLibraryEditionsServerFn({ data: {} });
+
+    expect(editionFindManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: {
+          work: {
+            include: {
+              series: true,
+              editions: {
+                include: {
+                  contributors: {
+                    where: { role: "AUTHOR" },
+                    include: { contributor: true },
+                  },
+                },
+              },
+            },
+          },
+          contributors: { include: { contributor: true } },
+        },
+      }),
+    );
+  });
+
+  it("filters by text query via work title", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    await getFilteredLibraryEditionsServerFn({ data: { q: "hobbit" } });
+
+    const call = (editionFindManyMock.mock.calls[0] as [{ where: Record<string, object> }])[0];
+    expect(call.where).toEqual(
+      expect.objectContaining({
+        work: expect.objectContaining({
+          OR: [
+            { titleDisplay: { contains: "hobbit", mode: "insensitive" } },
+            { titleCanonical: { contains: "hobbit", mode: "insensitive" } },
+          ],
+        }) as object,
+      }),
+    );
+  });
+
+  it("filters by format directly on edition", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    await getFilteredLibraryEditionsServerFn({ data: { format: ["EBOOK"] } });
+
+    const call = (editionFindManyMock.mock.calls[0] as [{ where: Record<string, object> }])[0];
+    expect(call.where).toEqual(
+      expect.objectContaining({
+        formatFamily: { in: ["EBOOK"] },
+      }),
+    );
+  });
+
+  it("filters by authorId via contributors", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    await getFilteredLibraryEditionsServerFn({ data: { authorId: ["author-1"] } });
+
+    const call = (editionFindManyMock.mock.calls[0] as [{ where: Record<string, object> }])[0];
+    expect(call.where).toEqual(
+      expect.objectContaining({
+        contributors: {
+          some: {
+            contributorId: { in: ["author-1"] },
+            role: "AUTHOR",
+          },
+        },
+      }),
+    );
+  });
+
+  it("filters by seriesId via work", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    await getFilteredLibraryEditionsServerFn({ data: { seriesId: ["series-1"] } });
+
+    const call = (editionFindManyMock.mock.calls[0] as [{ where: Record<string, object> }])[0];
+    expect(call.where).toEqual(
+      expect.objectContaining({
+        work: expect.objectContaining({
+          seriesId: { in: ["series-1"] },
+        }) as object,
+      }),
+    );
+  });
+
+  it("filters by hasCover via work", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    await getFilteredLibraryEditionsServerFn({ data: { hasCover: true } });
+
+    const call = (editionFindManyMock.mock.calls[0] as [{ where: Record<string, object> }])[0];
+    expect(call.where).toEqual(
+      expect.objectContaining({
+        work: expect.objectContaining({
+          coverPath: { not: null },
+        }) as object,
+      }),
+    );
+  });
+
+  it("always includes availability filter", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    await getFilteredLibraryEditionsServerFn({ data: {} });
+
+    const call = (editionFindManyMock.mock.calls[0] as [{ where: Record<string, object> }])[0];
+    expect(call.where).toEqual(
+      expect.objectContaining({
+        editionFiles: {
+          some: {
+            fileAsset: { availabilityStatus: "PRESENT", mediaKind: { notIn: ["KEPUB", "COVER", "SIDECAR"] } },
+          },
+        },
+      }),
+    );
+  });
+
+  it("passes same where to count as to findMany", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(5);
+    await getFilteredLibraryEditionsServerFn({ data: { format: ["AUDIOBOOK"] } });
+
+    const findManyWhere = (editionFindManyMock.mock.calls[0] as [{ where: object }])[0].where;
+    expect(editionCountMock).toHaveBeenCalledWith({ where: findManyWhere });
+  });
+
+  it("returns empty editions when two-step sort has no results", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    const result = await getFilteredLibraryEditionsServerFn({ data: { sort: "author-asc" } });
+
+    expect(result.editions).toEqual([]);
+    expect(result.totalCount).toBe(0);
+  });
+
+  it("sorts by pageCount-desc", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    await getFilteredLibraryEditionsServerFn({ data: { sort: "pageCount-desc" } });
+
+    expect(editionFindManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: { pageCount: "desc" } }),
+    );
+  });
+
+  it("sorts by duration-asc", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    await getFilteredLibraryEditionsServerFn({ data: { sort: "duration-asc" } });
+
+    expect(editionFindManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: { duration: "asc" } }),
+    );
+  });
+
+  it("sorts by format-desc", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    await getFilteredLibraryEditionsServerFn({ data: { sort: "format-desc" } });
+
+    expect(editionFindManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: { formatFamily: "desc" } }),
+    );
+  });
+
+  it.each([
+    ["isbn13-asc", { isbn13: "asc" }],
+    ["isbn13-desc", { isbn13: "desc" }],
+    ["isbn10-asc", { isbn10: "asc" }],
+    ["isbn10-desc", { isbn10: "desc" }],
+    ["asin-asc", { asin: "asc" }],
+    ["asin-desc", { asin: "desc" }],
+  ] as const)("sorts by %s", async (sort, expectedOrderBy) => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    await getFilteredLibraryEditionsServerFn({ data: { sort } });
+
+    expect(editionFindManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: expectedOrderBy }),
+    );
+  });
+
+  it("filters by enriched true via work", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    await getFilteredLibraryEditionsServerFn({ data: { enriched: true } });
+
+    const call = (editionFindManyMock.mock.calls[0] as [{ where: Record<string, object> }])[0];
+    expect(call.where).toEqual(expect.objectContaining({
+      work: expect.objectContaining({ enrichmentStatus: "ENRICHED" }) as object,
+    }));
+  });
+
+  it("filters by enriched false via work", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    await getFilteredLibraryEditionsServerFn({ data: { enriched: false } });
+
+    const call = (editionFindManyMock.mock.calls[0] as [{ where: Record<string, object> }])[0];
+    expect(call.where).toEqual(expect.objectContaining({
+      work: expect.objectContaining({ enrichmentStatus: "STUB" }) as object,
+    }));
+  });
+
+  it("filters by hasDescription true via work", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    await getFilteredLibraryEditionsServerFn({ data: { hasDescription: true } });
+
+    const call = (editionFindManyMock.mock.calls[0] as [{ where: Record<string, object> }])[0];
+    expect(call.where).toEqual(expect.objectContaining({
+      work: expect.objectContaining({ description: { not: null } }) as object,
+    }));
+  });
+
+  it("filters by hasDescription false via work", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    await getFilteredLibraryEditionsServerFn({ data: { hasDescription: false } });
+
+    const call = (editionFindManyMock.mock.calls[0] as [{ where: Record<string, object> }])[0];
+    expect(call.where).toEqual(expect.objectContaining({
+      work: expect.objectContaining({ description: null }) as object,
+    }));
+  });
+
+  it("filters by inSeries true via work", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    await getFilteredLibraryEditionsServerFn({ data: { inSeries: true } });
+
+    const call = (editionFindManyMock.mock.calls[0] as [{ where: Record<string, object> }])[0];
+    expect(call.where).toEqual(expect.objectContaining({
+      work: expect.objectContaining({ seriesId: { not: null } }) as object,
+    }));
+  });
+
+  it("filters by inSeries false via work", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    await getFilteredLibraryEditionsServerFn({ data: { inSeries: false } });
+
+    const call = (editionFindManyMock.mock.calls[0] as [{ where: Record<string, object> }])[0];
+    expect(call.where).toEqual(expect.objectContaining({
+      work: expect.objectContaining({ seriesId: null }) as object,
+    }));
+  });
+
+  it("filters by hasCover false via work", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    await getFilteredLibraryEditionsServerFn({ data: { hasCover: false } });
+
+    const call = (editionFindManyMock.mock.calls[0] as [{ where: Record<string, object> }])[0];
+    expect(call.where).toEqual(expect.objectContaining({
+      work: expect.objectContaining({ coverPath: null }) as object,
+    }));
+  });
+
+  it("combines multiple work-level filters with AND", async () => {
+    editionFindManyMock.mockResolvedValue([]);
+    editionCountMock.mockResolvedValue(0);
+    await getFilteredLibraryEditionsServerFn({
+      data: { q: "test", hasCover: true, seriesId: ["s-1"] },
+    });
+
+    const call = (editionFindManyMock.mock.calls[0] as [{ where: Record<string, object> }])[0];
+    expect(call.where.work).toEqual(
+      expect.objectContaining({
+        AND: expect.arrayContaining([
+          expect.objectContaining({
+            OR: [
+              { titleDisplay: { contains: "test", mode: "insensitive" } },
+              { titleCanonical: { contains: "test", mode: "insensitive" } },
+            ],
+          }),
+        ]) as object[],
+      }),
+    );
   });
 });

@@ -44,6 +44,7 @@ let mockLoaderData: {
     facetCounts: typeof defaultFacetCounts;
     totalFacetCounts: typeof defaultFacetCounts;
   };
+  editionsResult: { editions: object[]; totalCount: number } | null;
   activeJobCount: number;
   progressMap: Record<string, number>;
   shelves: { id: string; name: string; _count: { items: number } }[];
@@ -54,12 +55,13 @@ let mockLoaderData: {
     facetCounts: defaultFacetCounts,
     totalFacetCounts: defaultFacetCounts,
   },
+  editionsResult: null,
   activeJobCount: 0,
   progressMap: {},
   shelves: [],
 };
 
-let mockSearch: { page: number; pageSize: number; sort: string } = { page: 1, pageSize: 50, sort: "title-asc" };
+let mockSearch: Record<string, string | number | boolean | string[] | undefined> = { page: 1, pageSize: 50, sort: "title-asc" };
 const mockRouterInvalidate = vi.fn();
 const mockRouterNavigate = vi.fn();
 const mockRouter = { invalidate: mockRouterInvalidate, navigate: mockRouterNavigate };
@@ -134,9 +136,11 @@ vi.mock("~/hooks/use-sse", () => ({
 }));
 
 const getFilteredLibraryWorksServerFnMock = vi.fn();
+const getFilteredLibraryEditionsServerFnMock = vi.fn();
 const getAllFilteredWorkIdsServerFnMock = vi.fn().mockResolvedValue([]);
 vi.mock("~/lib/server-fns/library", () => ({
   getFilteredLibraryWorksServerFn: getFilteredLibraryWorksServerFnMock,
+  getFilteredLibraryEditionsServerFn: getFilteredLibraryEditionsServerFnMock,
   getAllFilteredWorkIdsServerFn: getAllFilteredWorkIdsServerFnMock,
 }));
 
@@ -325,6 +329,7 @@ describe("LibraryPage", () => {
         facetCounts: defaultFacetCounts,
         totalFacetCounts: defaultFacetCounts,
       },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -352,6 +357,27 @@ describe("LibraryPage", () => {
     expect(getBulkReadingProgressServerFnMock).toHaveBeenCalled();
     expect(result).toEqual({
       libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    });
+  });
+
+  it("loader fetches editions when view=editions", async () => {
+    getFilteredLibraryWorksServerFnMock.mockResolvedValueOnce({ works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts });
+    getFilteredLibraryEditionsServerFnMock.mockResolvedValueOnce({ editions: [], totalCount: 0 });
+    getActiveJobCountServerFnMock.mockResolvedValueOnce(0);
+    getBulkReadingProgressServerFnMock.mockResolvedValueOnce({});
+    const { Route } = await import("./library.index");
+    const deps = { page: 1, pageSize: 50, sort: "title-asc", view: "editions" };
+    const result = await asLoader<Record<string, string | object>, object>(Route.options.loader as object)({ deps });
+    // Works are fetched with pageSize: 1 for facet counts only
+    expect(getFilteredLibraryWorksServerFnMock).toHaveBeenCalledWith({ data: { ...deps, pageSize: 1 } });
+    expect(getFilteredLibraryEditionsServerFnMock).toHaveBeenCalledWith({ data: deps });
+    expect(result).toEqual({
+      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: { editions: [], totalCount: 0 },
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -361,6 +387,7 @@ describe("LibraryPage", () => {
   it("renders 'Library' heading", async () => {
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -380,6 +407,7 @@ describe("LibraryPage", () => {
         facetCounts: defaultFacetCounts,
         totalFacetCounts: defaultFacetCounts,
       },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -399,6 +427,7 @@ describe("LibraryPage", () => {
         facetCounts: defaultFacetCounts,
         totalFacetCounts: defaultFacetCounts,
       },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -420,6 +449,7 @@ describe("LibraryPage", () => {
         facetCounts: defaultFacetCounts,
         totalFacetCounts: defaultFacetCounts,
       },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -441,6 +471,7 @@ describe("LibraryPage", () => {
         facetCounts: defaultFacetCounts,
         totalFacetCounts: defaultFacetCounts,
       },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -461,6 +492,7 @@ describe("LibraryPage", () => {
         facetCounts: defaultFacetCounts,
         totalFacetCounts: defaultFacetCounts,
       },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -480,6 +512,7 @@ describe("LibraryPage", () => {
         facetCounts: defaultFacetCounts,
         totalFacetCounts: defaultFacetCounts,
       },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -500,6 +533,7 @@ describe("LibraryPage", () => {
         facetCounts: defaultFacetCounts,
         totalFacetCounts: defaultFacetCounts,
       },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -520,6 +554,7 @@ describe("LibraryPage", () => {
         facetCounts: defaultFacetCounts,
         totalFacetCounts: defaultFacetCounts,
       },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -539,6 +574,7 @@ describe("LibraryPage", () => {
         facetCounts: defaultFacetCounts,
         totalFacetCounts: defaultFacetCounts,
       },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -559,6 +595,7 @@ describe("LibraryPage", () => {
         facetCounts: defaultFacetCounts,
         totalFacetCounts: defaultFacetCounts,
       },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -579,6 +616,7 @@ describe("LibraryPage", () => {
         facetCounts: defaultFacetCounts,
         totalFacetCounts: defaultFacetCounts,
       },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -599,6 +637,7 @@ describe("LibraryPage", () => {
         facetCounts: defaultFacetCounts,
         totalFacetCounts: defaultFacetCounts,
       },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -620,6 +659,7 @@ describe("LibraryPage", () => {
         facetCounts: defaultFacetCounts,
         totalFacetCounts: defaultFacetCounts,
       },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -636,6 +676,7 @@ describe("LibraryPage", () => {
   it("renders LibraryToolbar", async () => {
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -649,6 +690,7 @@ describe("LibraryPage", () => {
   it("renders LibraryFilters", async () => {
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -662,6 +704,7 @@ describe("LibraryPage", () => {
   it("renders LibraryPagination", async () => {
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -675,6 +718,7 @@ describe("LibraryPage", () => {
   it("shows empty state when no works and not scanning with no filters", async () => {
     mockLoaderData = {
       libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -689,6 +733,7 @@ describe("LibraryPage", () => {
   it("empty state links to settings/libraries", async () => {
     mockLoaderData = {
       libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -703,6 +748,7 @@ describe("LibraryPage", () => {
   it("does not show empty state when scanning with no works", async () => {
     mockLoaderData = {
       libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 1,
       progressMap: {},
       shelves: [],
@@ -715,9 +761,10 @@ describe("LibraryPage", () => {
   });
 
   it("does not show empty state when filters are active and results are empty", async () => {
-    mockSearch = { ...mockSearch, q: "something" } as typeof mockSearch;
+    mockSearch = { ...mockSearch, q: "something" };
     mockLoaderData = {
       libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -731,6 +778,7 @@ describe("LibraryPage", () => {
   it("shows scanning indicator when activeJobCount > 0", async () => {
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 2,
       progressMap: {},
       shelves: [],
@@ -744,6 +792,7 @@ describe("LibraryPage", () => {
   it("shows scanning indicator with new count when totalCount > prevCount", async () => {
     mockLoaderData = {
       libraryResult: { works: [makeWork("Old Book")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -756,6 +805,7 @@ describe("LibraryPage", () => {
 
     mockLoaderData = {
       libraryResult: { works: [makeWork("Old Book"), makeWork("New Book")], totalCount: 2, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 1,
       progressMap: {},
       shelves: [],
@@ -774,6 +824,7 @@ describe("LibraryPage", () => {
         facetCounts: defaultFacetCounts,
         totalFacetCounts: defaultFacetCounts,
       },
+      editionsResult: null,
       activeJobCount: 1,
       progressMap: {},
       shelves: [],
@@ -793,6 +844,7 @@ describe("LibraryPage", () => {
         facetCounts: defaultFacetCounts,
         totalFacetCounts: defaultFacetCounts,
       },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -812,6 +864,7 @@ describe("LibraryPage", () => {
         facetCounts: defaultFacetCounts,
         totalFacetCounts: defaultFacetCounts,
       },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -826,6 +879,7 @@ describe("LibraryPage", () => {
     mockView = "grid";
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: { "work-test": 42 },
       shelves: [],
@@ -842,6 +896,7 @@ describe("LibraryPage", () => {
     mockTileSize = "large";
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -858,6 +913,7 @@ describe("LibraryPage", () => {
     mockTileSize = "small";
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -872,6 +928,7 @@ describe("LibraryPage", () => {
   it("does not show scanning indicator when activeJobCount is 0", async () => {
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -885,6 +942,7 @@ describe("LibraryPage", () => {
   it("navigates with search text when onSearchChange is called", async () => {
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -903,6 +961,7 @@ describe("LibraryPage", () => {
   it("navigates with empty q when search is cleared", async () => {
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -918,6 +977,7 @@ describe("LibraryPage", () => {
   it("navigates with sort when onSortChange is called", async () => {
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -933,6 +993,7 @@ describe("LibraryPage", () => {
   it("navigates with filters when onFiltersChange is called", async () => {
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -948,6 +1009,7 @@ describe("LibraryPage", () => {
   it("navigates with page when onPageChange is called", async () => {
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 100, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -963,6 +1025,7 @@ describe("LibraryPage", () => {
   it("navigates with pageSize and page 1 when onPageSizeChange is called", async () => {
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 100, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -984,6 +1047,7 @@ describe("LibraryPage", () => {
         facetCounts: defaultFacetCounts,
         totalFacetCounts: defaultFacetCounts,
       },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: { "work-reading": 50, "work-done": 100 },
       shelves: [],
@@ -1011,6 +1075,7 @@ describe("LibraryPage", () => {
         facetCounts: defaultFacetCounts,
         totalFacetCounts: defaultFacetCounts,
       },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: { "work-done": 100 },
       shelves: [],
@@ -1035,6 +1100,7 @@ describe("LibraryPage", () => {
         facetCounts: defaultFacetCounts,
         totalFacetCounts: defaultFacetCounts,
       },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: { "work-done": 100 },
       shelves: [],
@@ -1051,9 +1117,10 @@ describe("LibraryPage", () => {
   });
 
   it("does not show empty state when format filter is active", async () => {
-    mockSearch = { ...mockSearch, format: ["EBOOK"] } as typeof mockSearch;
+    mockSearch = { ...mockSearch, format: ["EBOOK"] };
     mockLoaderData = {
       libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -1065,9 +1132,10 @@ describe("LibraryPage", () => {
   });
 
   it("does not show empty state when authorId filter is active", async () => {
-    mockSearch = { ...mockSearch, authorId: ["a1"] } as typeof mockSearch;
+    mockSearch = { ...mockSearch, authorId: ["a1"] };
     mockLoaderData = {
       libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -1079,9 +1147,10 @@ describe("LibraryPage", () => {
   });
 
   it("does not show empty state when seriesId filter is active", async () => {
-    mockSearch = { ...mockSearch, seriesId: ["s1"] } as typeof mockSearch;
+    mockSearch = { ...mockSearch, seriesId: ["s1"] };
     mockLoaderData = {
       libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -1093,9 +1162,10 @@ describe("LibraryPage", () => {
   });
 
   it("does not show empty state when hasCover filter is active", async () => {
-    mockSearch = { ...mockSearch, hasCover: true } as typeof mockSearch;
+    mockSearch = { ...mockSearch, hasCover: true };
     mockLoaderData = {
       libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -1107,9 +1177,10 @@ describe("LibraryPage", () => {
   });
 
   it("passes search params as toolbar search value", async () => {
-    mockSearch = { ...mockSearch, q: "test query" } as typeof mockSearch;
+    mockSearch = { ...mockSearch, q: "test query" };
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -1121,9 +1192,10 @@ describe("LibraryPage", () => {
   });
 
   it("passes current filters from search to LibraryFilters", async () => {
-    mockSearch = { ...mockSearch, format: ["EBOOK"], hasCover: true } as typeof mockSearch;
+    mockSearch = { ...mockSearch, format: ["EBOOK"], hasCover: true };
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -1140,6 +1212,7 @@ describe("LibraryPage", () => {
     mockView = "table";
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -1155,6 +1228,7 @@ describe("LibraryPage", () => {
     mockView = "grid";
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -1172,6 +1246,7 @@ describe("LibraryPage", () => {
     mockTablePrefs = { columnVisibility: { authors: false }, textOverflow: "truncate" };
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -1187,6 +1262,7 @@ describe("LibraryPage", () => {
     mockTablePrefs = { columnVisibility: {}, textOverflow: "truncate" };
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -1207,6 +1283,7 @@ describe("LibraryPage", () => {
     mockTablePrefs = { columnVisibility: {}, textOverflow: "truncate" };
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -1227,6 +1304,7 @@ describe("LibraryPage", () => {
     mockTablePrefs = { columnVisibility: {}, textOverflow: "wrap" };
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -1248,6 +1326,7 @@ describe("LibraryPage", () => {
     mockView = "table";
     mockLoaderData = {
       libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -1263,6 +1342,7 @@ describe("LibraryPage", () => {
     mockView = "table";
     mockLoaderData = {
       libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -1287,6 +1367,7 @@ describe("LibraryPage", () => {
     mockView = "table";
     mockLoaderData = {
       libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -1324,6 +1405,7 @@ describe("LibraryPage", () => {
     mockView = "table";
     mockLoaderData = {
       libraryResult: { works: [makeWork("Book A"), makeWork("Book B")], totalCount: 2, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -1354,6 +1436,7 @@ describe("LibraryPage", () => {
     mockView = "table";
     mockLoaderData = {
       libraryResult: { works: [makeWork("Book A"), makeWork("Book B")], totalCount: 2, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -1381,6 +1464,7 @@ describe("LibraryPage", () => {
         facetCounts: defaultFacetCounts,
         totalFacetCounts: defaultFacetCounts,
       },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -1416,6 +1500,7 @@ describe("LibraryPage", () => {
     mockView = "table";
     mockLoaderData = {
       libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -1448,6 +1533,7 @@ describe("LibraryPage", () => {
     mockView = "table";
     mockLoaderData = {
       libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -1479,6 +1565,7 @@ describe("LibraryPage", () => {
     mockView = "table";
     mockLoaderData = {
       libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -1506,6 +1593,7 @@ describe("LibraryPage", () => {
     mockView = "table";
     mockLoaderData = {
       libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -1671,6 +1759,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      editionsResult: null,
       shelves: [{ id: "s1", name: "Fiction", _count: { items: 3 } }],
     };
     const { Route } = await import("./library.index");
@@ -1694,6 +1783,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      editionsResult: null,
       shelves: [{ id: "s1", name: "Fiction", _count: { items: 3 } }],
     };
     const { Route } = await import("./library.index");
@@ -1731,6 +1821,7 @@ describe("LibraryPage", () => {
       libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       activeJobCount: 0,
       progressMap: {},
+      editionsResult: null,
       shelves: [{ id: "s1", name: "Fiction", _count: { items: 3 } }],
     };
     const { Route } = await import("./library.index");
@@ -1761,6 +1852,7 @@ describe("LibraryPage", () => {
     mockView = "table";
     mockLoaderData = {
       libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -1787,6 +1879,7 @@ describe("LibraryPage", () => {
     mockView = "table";
     mockLoaderData = {
       libraryResult: { works: [makeWork("Stable", ["Author"])], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
       shelves: [],
@@ -1811,5 +1904,122 @@ describe("LibraryPage", () => {
 
     const laterColumns = capturedColumnRefs[capturedColumnRefs.length - 1];
     expect(laterColumns).toBe(firstColumns);
+  });
+
+  it("renders editions table when view=editions and table mode", async () => {
+    mockView = "table";
+    mockSearch = { page: 1, pageSize: 50, sort: "title-asc", view: "editions" };
+    mockLoaderData = {
+      libraryResult: { works: [], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: {
+        editions: [{
+          id: "e-1",
+          workId: "w-1",
+          formatFamily: "EBOOK",
+          publisher: "Penguin",
+          publishedAt: new Date("2024-01-15"),
+          isbn13: null,
+          isbn10: null,
+          asin: null,
+          language: "en",
+          pageCount: 300,
+          duration: null,
+          editedFields: [],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          work: {
+            id: "w-1",
+            titleDisplay: "Edition Book",
+            titleCanonical: "edition book",
+            sortTitle: null,
+            description: null,
+            coverPath: null,
+            coverColors: null,
+            seriesId: null,
+            seriesPosition: null,
+            enrichmentStatus: "ENRICHED",
+            editedFields: [],
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            series: null,
+            editions: [
+              { id: "e-1", contributors: [{ id: "ec-1", editionId: "e-1", contributorId: "c-1", role: "AUTHOR", contributor: { id: "c-1", nameDisplay: "Alice", nameCanonical: "alice", editedFields: [], createdAt: new Date(), updatedAt: new Date() } }] },
+            ],
+          },
+          contributors: [
+            { id: "ec-1", editionId: "e-1", contributorId: "c-1", role: "AUTHOR", contributor: { id: "c-1", nameDisplay: "Alice", nameCanonical: "alice", editedFields: [], createdAt: new Date(), updatedAt: new Date() } },
+          ],
+        }],
+        totalCount: 1,
+      },
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    // Should render edition columns via the table
+    await waitFor(() => {
+      expect(screen.getByText("Edition Book")).toBeTruthy();
+    });
+  });
+
+  it("onViewChange to table does not reset view mode", async () => {
+    mockView = "grid";
+    mockSearch = { page: 1, pageSize: 50, sort: "title-asc" };
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    const toolbarViewChange = capturedToolbarProps.onViewChange as (v: string) => void;
+    toolbarViewChange("table");
+    expect(mockSetView).toHaveBeenCalledWith("table");
+  });
+
+  it("grid onViewChange with editions mode resets to works", async () => {
+    mockView = "table";
+    mockSearch = { page: 1, pageSize: 50, sort: "title-asc", view: "editions" };
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: { editions: [], totalCount: 0 },
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    // The toolbar onViewChange should call navigate with view=works when switching to grid from editions
+    const toolbarViewChange = capturedToolbarProps.onViewChange as (v: string) => void;
+    toolbarViewChange("grid");
+    expect(mockSetView).toHaveBeenCalledWith("grid");
+    expect(mockNavigate).toHaveBeenCalled();
+  });
+
+  it("editions pagination uses editionsResult totalCount", async () => {
+    mockView = "table";
+    mockSearch = { page: 1, pageSize: 50, sort: "title-asc", view: "editions" };
+    mockLoaderData = {
+      libraryResult: { works: [], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: { editions: [], totalCount: 42 },
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    expect(capturedPaginationProps.totalCount).toBe(42);
   });
 });

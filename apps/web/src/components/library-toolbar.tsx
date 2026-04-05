@@ -13,8 +13,9 @@ import {
 import type { ReadingFilter } from "~/lib/sort-filter-works";
 import type { LibraryView } from "~/hooks/use-library-view-preference";
 import type { GridTileSize } from "~/hooks/use-grid-tile-size";
+import type { LibrarySearchParams } from "~/lib/library-search-schema";
 
-export type SortValue = "title-asc" | "title-desc" | "author-asc" | "author-desc" | "format-asc" | "format-desc" | "recent";
+export type SortValue = LibrarySearchParams["sort"];
 
 interface LibraryToolbarProps {
   searchValue: string;

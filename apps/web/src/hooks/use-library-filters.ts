@@ -10,12 +10,19 @@ type NavigateFn = (opts: {
   replace: boolean;
 }) => void | Promise<void>;
 
+type SortMapType = Record<string, { asc: LibrarySearchParams["sort"]; desc: LibrarySearchParams["sort"] }>;
+type SortToColumnType = Record<string, { id: string; desc: boolean }>;
+
 interface UseLibraryFiltersOptions {
   search: LibrarySearchParams;
   navigate: NavigateFn;
+  sortMap?: SortMapType;
+  sortToColumn?: SortToColumnType;
 }
 
-export function useLibraryFilters({ search, navigate }: UseLibraryFiltersOptions) {
+export function useLibraryFilters({ search, navigate, sortMap, sortToColumn }: UseLibraryFiltersOptions) {
+  const activeSortMap = sortMap ?? COLUMN_SORT_MAP;
+  const activeSortToColumn = sortToColumn ?? SORT_TO_COLUMN;
   const updateSearch = useCallback(
     (updates: Partial<LibrarySearchParams>) => {
       void navigate({
@@ -61,16 +68,23 @@ export function useLibraryFilters({ search, navigate }: UseLibraryFiltersOptions
   );
 
   const tableSorting: SortingState = useMemo(() => {
-    const mapped = SORT_TO_COLUMN[search.sort];
+    const mapped = activeSortToColumn[search.sort];
     return mapped ? [mapped] : [];
-  }, [search.sort]);
+  }, [search.sort, activeSortToColumn]);
 
   const handleColumnSort = useCallback(
     (updater: Updater<SortingState>) => {
       const newState = (updater as (prev: SortingState) => SortingState)(tableSorting);
-      updateSearch({ sort: columnSortToParam(newState, COLUMN_SORT_MAP) });
+      updateSearch({ sort: columnSortToParam(newState, activeSortMap) });
     },
-    [tableSorting, updateSearch],
+    [tableSorting, updateSearch, activeSortMap],
+  );
+
+  const handleViewModeChange = useCallback(
+    (view: "works" | "editions") => {
+      updateSearch({ view, sort: "title-asc", page: 1 });
+    },
+    [updateSearch],
   );
 
   const handlePageChange = useCallback(
@@ -103,6 +117,7 @@ export function useLibraryFilters({ search, navigate }: UseLibraryFiltersOptions
     handleSearchChange,
     handleSortChange,
     handleColumnSort,
+    handleViewModeChange,
     handlePageChange,
     handlePageSizeChange,
     tableSorting,

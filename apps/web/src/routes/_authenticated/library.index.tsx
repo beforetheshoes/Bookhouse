@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { useSSE } from "~/hooks/use-sse";
 import { useLibraryViewPreference } from "~/hooks/use-library-view-preference";
@@ -9,16 +9,18 @@ import type { RowSelectionState } from "@tanstack/react-table";
 import { BookOpen, Loader2 } from "lucide-react";
 import { LibrarySelectionToolbar } from "~/components/library-selection-toolbar";
 import { GridPageSkeleton } from "~/components/skeletons/grid-page-skeleton";
-import { getColumns } from "~/lib/library-columns";
+import { getColumns, COLUMN_PICKER_ITEMS } from "~/lib/library-columns";
+import { getEditionColumns, EDITION_COLUMN_PICKER_ITEMS } from "~/lib/library-edition-columns";
 import { LibraryTableView } from "~/components/library-table-view";
 import { filterByReadingStatus } from "~/lib/library-filter-helpers";
+import { EDITION_COLUMN_SORT_MAP, EDITION_SORT_TO_COLUMN } from "~/lib/library-edition-filter-helpers";
 import { LibraryToolbar } from "~/components/library-toolbar";
 import { LibraryGrid } from "~/components/library-grid";
 import { LibraryFilters } from "~/components/library-filters";
 import { LibraryPagination } from "~/components/library-pagination";
 import { librarySearchSchema } from "~/lib/library-search-schema";
 import type { ReadingFilter } from "~/lib/sort-filter-works";
-import { getFilteredLibraryWorksServerFn, getAllFilteredWorkIdsServerFn } from "~/lib/server-fns/library";
+import { getFilteredLibraryWorksServerFn, getFilteredLibraryEditionsServerFn, getAllFilteredWorkIdsServerFn } from "~/lib/server-fns/library";
 import { getActiveJobCountServerFn } from "~/lib/server-fns/import-jobs";
 import { getBulkReadingProgressServerFn } from "~/lib/server-fns/reading-progress";
 import { getShelvesServerFn } from "~/lib/server-fns/shelves";
@@ -27,20 +29,27 @@ export const Route = createFileRoute("/_authenticated/library/")({
   validateSearch: (search) => librarySearchSchema.parse(search),
   loaderDeps: ({ search }) => search,
   loader: async ({ deps }) => {
-    const [libraryResult, activeJobCount, progressMap, shelves] = await Promise.all([
-      getFilteredLibraryWorksServerFn({ data: deps }),
+    const isEditionsView = deps.view === "editions";
+
+    const [libraryResult, editionsResult, activeJobCount, progressMap, shelves] = await Promise.all([
+      getFilteredLibraryWorksServerFn({
+        data: isEditionsView ? { ...deps, pageSize: 1 } : deps,
+      }),
+      isEditionsView
+        ? getFilteredLibraryEditionsServerFn({ data: deps })
+        : Promise.resolve(null),
       getActiveJobCountServerFn(),
       getBulkReadingProgressServerFn(),
       getShelvesServerFn(),
     ]);
-    return { libraryResult, activeJobCount, progressMap, shelves };
+    return { libraryResult, editionsResult, activeJobCount, progressMap, shelves };
   },
   pendingComponent: GridPageSkeleton,
   component: LibraryPage,
 });
 
 function LibraryPage() {
-  const { libraryResult, activeJobCount, progressMap, shelves } = Route.useLoaderData();
+  const { libraryResult, editionsResult, activeJobCount, progressMap, shelves } = Route.useLoaderData();
   const { works, totalCount, facetCounts, totalFacetCounts } = libraryResult;
   const search = Route.useSearch();
   const navigate = useNavigate();
@@ -56,7 +65,9 @@ function LibraryPage() {
   const [selectingAll, setSelectingAll] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const isScanning = activeJobCount > 0;
-  const columns = useMemo(() => getColumns(isScanning, editMode, router, progressMap), [isScanning, editMode, router, progressMap]);
+  const isEditionsView = search.view === "editions";
+  const workColumns = useMemo(() => getColumns(isScanning, editMode, router, progressMap), [isScanning, editMode, router, progressMap]);
+  const editionColumns = useMemo(() => getEditionColumns(editMode, router), [editMode, router]);
   const newCount = totalCount - prevCount;
 
   const filteredByReading = useMemo(
@@ -94,11 +105,27 @@ function LibraryPage() {
     handleSearchChange,
     handleSortChange,
     handleColumnSort,
+    handleViewModeChange,
     handlePageChange,
     handlePageSizeChange,
     tableSorting,
     currentFilters,
-  } = useLibraryFilters({ search, navigate });
+  } = useLibraryFilters({
+    search,
+    navigate,
+    ...(isEditionsView
+      ? { sortMap: EDITION_COLUMN_SORT_MAP, sortToColumn: EDITION_SORT_TO_COLUMN }
+      : {}),
+  });
+
+  const handleEditModeToggle = useCallback(() => { setEditMode(!editMode); }, [editMode]);
+
+  const handleDisplayViewChange = useCallback((v: "grid" | "table") => {
+    setView(v);
+    if (v === "grid" && isEditionsView) {
+      handleViewModeChange("works");
+    }
+  }, [isEditionsView, handleViewModeChange, setView]);
 
   const handleColumnToggle = (columnId: string) => {
     const current = tablePrefs.columnVisibility[columnId] !== false;
@@ -142,7 +169,9 @@ function LibraryPage() {
     void router.invalidate();
   };
 
-  if (totalCount === 0 && !isScanning && !search.q && !search.format && !search.authorId && !search.seriesId && search.hasCover === undefined && search.enriched === undefined && search.hasDescription === undefined && search.inSeries === undefined) {
+  const effectiveTotalCount = isEditionsView && editionsResult ? editionsResult.totalCount : totalCount;
+
+  if (totalCount === 0 && !isEditionsView && !isScanning && !search.q && !search.format && !search.authorId && !search.seriesId && search.hasCover === undefined && search.enriched === undefined && search.hasDescription === undefined && search.inSeries === undefined) {
     return (
       <div>
         <h1 className="text-2xl font-bold">Library</h1>
@@ -195,7 +224,7 @@ function LibraryPage() {
             sortValue={search.sort}
             onSortChange={handleSortChange}
             view={view}
-            onViewChange={setView}
+            onViewChange={handleDisplayViewChange}
             filterValue={readingFilter}
             onFilterChange={setReadingFilter}
             showSort={view !== "table"}
@@ -204,12 +233,29 @@ function LibraryPage() {
           />
           {view === "grid" ? (
             <LibraryGrid works={filteredByReading} progressMap={progressMap} scanActive={isScanning} tileSize={tileSize} />
+          ) : isEditionsView && editionsResult ? (
+            <LibraryTableView
+              works={editionsResult.editions}
+              columns={editionColumns}
+              editMode={editMode}
+              onEditModeToggle={handleEditModeToggle}
+              tablePrefs={tablePrefs}
+              onColumnToggle={handleColumnToggle}
+              onTextOverflowToggle={handleTextOverflowToggle}
+              rowSelection={{}}
+              onRowSelectionChange={setRowSelection}
+              sorting={tableSorting}
+              onSortingChange={handleColumnSort}
+              viewMode="editions"
+              onViewModeChange={handleViewModeChange}
+              columnPickerItems={EDITION_COLUMN_PICKER_ITEMS}
+            />
           ) : (
             <LibraryTableView
               works={filteredByReading}
-              columns={columns}
+              columns={workColumns}
               editMode={editMode}
-              onEditModeToggle={() => { setEditMode(!editMode); }}
+              onEditModeToggle={handleEditModeToggle}
               tablePrefs={tablePrefs}
               onColumnToggle={handleColumnToggle}
               onTextOverflowToggle={handleTextOverflowToggle}
@@ -217,12 +263,15 @@ function LibraryPage() {
               onRowSelectionChange={setRowSelection}
               sorting={tableSorting}
               onSortingChange={handleColumnSort}
+              viewMode="works"
+              onViewModeChange={handleViewModeChange}
+              columnPickerItems={COLUMN_PICKER_ITEMS}
             />
           )}
           <LibraryPagination
             page={search.page}
             pageSize={search.pageSize}
-            totalCount={totalCount}
+            totalCount={effectiveTotalCount}
             onPageChange={handlePageChange}
             onPageSizeChange={handlePageSizeChange}
           />

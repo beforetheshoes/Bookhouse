@@ -8,6 +8,7 @@ describe("librarySearchSchema", () => {
       page: 1,
       pageSize: 50,
       sort: "title-asc",
+      view: "works",
     });
   });
 
@@ -82,5 +83,33 @@ describe("librarySearchSchema", () => {
 
   it("rejects invalid format values", () => {
     expect(() => librarySearchSchema.parse({ format: ["INVALID"] })).toThrow();
+  });
+
+  it("defaults view to works", () => {
+    const result = librarySearchSchema.parse({});
+    expect(result.view).toBe("works");
+  });
+
+  it("parses view=editions", () => {
+    const result = librarySearchSchema.parse({ view: "editions" });
+    expect(result.view).toBe("editions");
+  });
+
+  it("rejects invalid view values", () => {
+    expect(() => librarySearchSchema.parse({ view: "invalid" })).toThrow();
+  });
+
+  it.each([
+    "publisher-asc", "publisher-desc",
+    "publishDate-asc", "publishDate-desc",
+    "pageCount-asc", "pageCount-desc",
+    "duration-asc", "duration-desc",
+    "narrator-asc", "narrator-desc",
+    "isbn13-asc", "isbn13-desc",
+    "isbn10-asc", "isbn10-desc",
+    "asin-asc", "asin-desc",
+  ])("parses edition sort value %s", (sort) => {
+    const result = librarySearchSchema.parse({ sort });
+    expect(result.sort).toBe(sort);
   });
 });
