@@ -1,30 +1,34 @@
 // @vitest-environment happy-dom
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockToast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 vi.mock("sonner", () => ({ toast: mockToast }));
 
-const { updateEditionServerFnMock, sendToKindleServerFnMock } = vi.hoisted(() => ({
+const { updateEditionServerFnMock, updateEditionNarratorsServerFnMock, sendToKindleServerFnMock } = vi.hoisted(() => ({
   updateEditionServerFnMock: vi.fn(),
+  updateEditionNarratorsServerFnMock: vi.fn(),
   sendToKindleServerFnMock: vi.fn(),
 }));
 
 vi.mock("~/lib/server-fns/editing", () => ({
   updateEditionServerFn: updateEditionServerFnMock,
+  updateEditionNarratorsServerFn: updateEditionNarratorsServerFnMock,
 }));
 
 vi.mock("~/lib/server-fns/kindle", () => ({
   sendToKindleServerFn: sendToKindleServerFnMock,
 }));
 
-import { EditionTabPanel } from "./edition-tab-panel";
+import { EditionCard, parseDuration, sortEpubFirst } from "./edition-card";
 import type { WorkDetail } from "~/lib/server-fns/work-detail";
 
 type EditionType = WorkDetail["editions"][number];
 
 beforeEach(() => {
   updateEditionServerFnMock.mockReset();
+  updateEditionNarratorsServerFnMock.mockReset();
   sendToKindleServerFnMock.mockReset();
 });
 
@@ -75,14 +79,15 @@ const baseEdition = {
   ],
 } as EditionType;
 
-describe("EditionTabPanel", () => {
+describe("EditionCard", () => {
   it("renders edition metadata fields", () => {
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={baseEdition}
-        isLastEdition={false}
+
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
@@ -99,27 +104,29 @@ describe("EditionTabPanel", () => {
 
   it("renders contributors", () => {
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={baseEdition}
-        isLastEdition={false}
+
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
     );
 
     expect(screen.getByText("Patrick Rothfuss")).toBeTruthy();
-    expect(screen.getByText("AUTHOR:")).toBeTruthy();
+    expect(screen.getByText("Authors")).toBeTruthy();
   });
 
   it("renders files with size and status", () => {
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={baseEdition}
-        isLastEdition={false}
+
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
@@ -151,11 +158,12 @@ describe("EditionTabPanel", () => {
     } as EditionType;
 
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={edition}
-        isLastEdition={false}
+
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
@@ -164,60 +172,68 @@ describe("EditionTabPanel", () => {
     expect(screen.getByText("wind.azw")).toBeTruthy();
   });
 
-  it("renders delete button", () => {
+  it("renders edition actions kebab menu with delete option", () => {
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={baseEdition}
-        isLastEdition={false}
+
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
     );
 
-    expect(screen.getByRole("button", { name: /delete edition/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /edition actions/i })).toBeTruthy();
   });
 
-  it("calls onDeleteEdition when delete button clicked", () => {
+  it("calls onDeleteEdition from kebab menu", async () => {
     const onDelete = vi.fn();
+    const user = userEvent.setup();
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={baseEdition}
-        isLastEdition={false}
+
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={onDelete}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /delete edition/i }));
+    // Open kebab menu
+    await user.click(screen.getByRole("button", { name: /edition actions/i }));
+    // Click delete menu item
+    await user.click(screen.getByText("Delete Edition"));
     expect(onDelete).toHaveBeenCalled();
   });
 
   it("hides contributors section when none exist", () => {
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={{ ...baseEdition, contributors: [] }}
-        isLastEdition={false}
+
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
     );
 
-    expect(screen.queryByText("AUTHOR:")).toBeNull();
+    expect(screen.queryByText("Authors")).toBeNull();
   });
 
   it("hides files section when none exist", () => {
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={{ ...baseEdition, editionFiles: [] }}
-        isLastEdition={false}
+
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
@@ -228,11 +244,12 @@ describe("EditionTabPanel", () => {
 
   it("renders page count as string", () => {
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={baseEdition}
-        isLastEdition={false}
+
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
@@ -246,18 +263,19 @@ describe("EditionTabPanel", () => {
     const onFieldSaved = vi.fn();
     const { waitFor } = await import("@testing-library/react");
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={baseEdition}
-        isLastEdition={false}
+
         onEditionFieldSaved={onFieldSaved}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
     );
 
-    // Click the publisher field text to enter edit mode
-    const publisherField = screen.getByText("DAW Books");
+    // Click the publisher field text to enter edit mode (use role=button to target the editable field, not the card header)
+    const publisherField = screen.getByRole("button", { name: "DAW Books" });
     fireEvent.click(publisherField);
 
     // Now an input should appear with the current value
@@ -278,11 +296,12 @@ describe("EditionTabPanel", () => {
     const onFieldSaved = vi.fn();
     const { waitFor } = await import("@testing-library/react");
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={baseEdition}
-        isLastEdition={false}
+
         onEditionFieldSaved={onFieldSaved}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
@@ -305,11 +324,12 @@ describe("EditionTabPanel", () => {
 
   it("renders published date as localized string", () => {
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={baseEdition}
-        isLastEdition={false}
+
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
@@ -322,11 +342,12 @@ describe("EditionTabPanel", () => {
 
   it("renders placeholder for null publishedAt", () => {
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={{ ...baseEdition, publishedAt: null }}
-        isLastEdition={false}
+
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
@@ -338,11 +359,12 @@ describe("EditionTabPanel", () => {
 
   it("renders placeholder for null pageCount", () => {
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={{ ...baseEdition, pageCount: null }}
-        isLastEdition={false}
+
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
@@ -364,11 +386,12 @@ describe("EditionTabPanel", () => {
     } as EditionType;
 
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={nullEdition}
-        isLastEdition={false}
+
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
@@ -398,11 +421,12 @@ describe("EditionTabPanel", () => {
       ],
     } as EditionType;
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={edition}
-        isLastEdition={false}
+
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
@@ -425,11 +449,12 @@ describe("EditionTabPanel", () => {
       ],
     } as EditionType;
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={edition}
-        isLastEdition={false}
+
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
@@ -452,11 +477,12 @@ describe("EditionTabPanel", () => {
       ],
     } as EditionType;
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={edition}
-        isLastEdition={false}
+
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
@@ -470,11 +496,12 @@ describe("EditionTabPanel", () => {
     const onFieldSaved = vi.fn();
     const { waitFor } = await import("@testing-library/react");
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={baseEdition}
-        isLastEdition={false}
+
         onEditionFieldSaved={onFieldSaved}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
@@ -500,11 +527,12 @@ describe("EditionTabPanel", () => {
     const onFieldSaved = vi.fn();
     const { waitFor } = await import("@testing-library/react");
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={baseEdition}
-        isLastEdition={false}
+
         onEditionFieldSaved={onFieldSaved}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
@@ -529,11 +557,12 @@ describe("EditionTabPanel", () => {
     const onFieldSaved = vi.fn();
     const { waitFor } = await import("@testing-library/react");
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={baseEdition}
-        isLastEdition={false}
+
         onEditionFieldSaved={onFieldSaved}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
@@ -558,11 +587,12 @@ describe("EditionTabPanel", () => {
     const onFieldSaved = vi.fn();
     const { waitFor } = await import("@testing-library/react");
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={baseEdition}
-        isLastEdition={false}
+
         onEditionFieldSaved={onFieldSaved}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
@@ -587,11 +617,12 @@ describe("EditionTabPanel", () => {
     const onFieldSaved = vi.fn();
     const { waitFor } = await import("@testing-library/react");
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={baseEdition}
-        isLastEdition={false}
+
         onEditionFieldSaved={onFieldSaved}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
@@ -611,24 +642,25 @@ describe("EditionTabPanel", () => {
     });
   });
 
-  it("renders download link for PRESENT file", () => {
+  it("renders top-level download button for ebook with single PRESENT file", () => {
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={baseEdition}
-        isLastEdition={false}
+
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
     );
 
-    const link = screen.getByRole("link", { name: /download wind\.epub/i });
+    const link = screen.getByRole("link", { name: /download epub/i });
     expect(link).toBeTruthy();
     expect(link.getAttribute("href")).toBe("/api/edition-files/download/ef1");
   });
 
-  it("does not render download link for MISSING file", () => {
+  it("does not render download button for MISSING file", () => {
     const edition = {
       ...baseEdition,
       editionFiles: [
@@ -642,11 +674,12 @@ describe("EditionTabPanel", () => {
       ],
     } as EditionType;
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={edition}
-        isLastEdition={false}
+
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
@@ -655,7 +688,7 @@ describe("EditionTabPanel", () => {
     expect(screen.queryByRole("link", { name: /download/i })).toBeNull();
   });
 
-  it("does not render download link for IGNORED file", () => {
+  it("does not render download button for IGNORED file", () => {
     const edition = {
       ...baseEdition,
       editionFiles: [
@@ -669,11 +702,12 @@ describe("EditionTabPanel", () => {
       ],
     } as EditionType;
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={edition}
-        isLastEdition={false}
+
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
@@ -682,78 +716,7 @@ describe("EditionTabPanel", () => {
     expect(screen.queryByRole("link", { name: /download/i })).toBeNull();
   });
 
-  it("renders download link only for PRESENT files when mixed statuses", () => {
-    const edition = {
-      ...baseEdition,
-      editionFiles: [
-        baseEdition.editionFiles[0],
-        {
-          id: "ef2",
-          editionId: "e1",
-          fileAssetId: "fa2",
-          role: "ALTERNATE_FORMAT",
-          fileAsset: {
-            ...(baseEdition.editionFiles[0] as (typeof baseEdition.editionFiles)[number]).fileAsset,
-            id: "fa2",
-            basename: "wind.pdf",
-            availabilityStatus: "MISSING",
-          },
-        },
-      ],
-    } as EditionType;
-    render(
-      <EditionTabPanel
-        edition={edition}
-        isLastEdition={false}
-        onEditionFieldSaved={vi.fn()}
-        onDeleteEdition={vi.fn()}
-        smtpConfigured={false}
-        kindleConfigured={false}
-      />,
-    );
-
-    // Only 1 PRESENT file → individual download button, no "Download All"
-    const link = screen.getByRole("link", { name: /download wind\.epub/i });
-    expect(link.getAttribute("href")).toBe("/api/edition-files/download/ef1");
-    expect(screen.queryByRole("link", { name: /download wind\.pdf/i })).toBeNull();
-    expect(screen.queryByRole("link", { name: /download all/i })).toBeNull();
-  });
-
-  it("renders Download All button when multiple PRESENT files exist", () => {
-    const edition = {
-      ...baseEdition,
-      editionFiles: [
-        baseEdition.editionFiles[0],
-        {
-          id: "ef2",
-          editionId: "e1",
-          fileAssetId: "fa2",
-          role: "AUDIO_TRACK",
-          fileAsset: {
-            ...(baseEdition.editionFiles[0] as (typeof baseEdition.editionFiles)[number]).fileAsset,
-            id: "fa2",
-            basename: "track02.mp3",
-            availabilityStatus: "PRESENT",
-          },
-        },
-      ],
-    } as EditionType;
-    render(
-      <EditionTabPanel
-        edition={edition}
-        isLastEdition={false}
-        onEditionFieldSaved={vi.fn()}
-        onDeleteEdition={vi.fn()}
-        smtpConfigured={false}
-        kindleConfigured={false}
-      />,
-    );
-
-    const link = screen.getByRole("link", { name: /download all \(2 files\)/i });
-    expect(link.getAttribute("href")).toBe("/api/editions/download-all/e1");
-  });
-
-  it("keeps individual download links visible when Download All is shown", () => {
+  it("renders download dropdown when ebook has multiple PRESENT format files", () => {
     const edition = {
       ...baseEdition,
       editionFiles: [
@@ -774,26 +737,35 @@ describe("EditionTabPanel", () => {
       ],
     } as EditionType;
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={edition}
-        isLastEdition={false}
+
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
     );
 
-    expect(screen.getByRole("link", { name: /download wind\.epub/i })).toBeTruthy();
-    expect(screen.getByRole("link", { name: /download wind\.pdf/i })).toBeTruthy();
-    expect(screen.getByRole("link", { name: /download all \(2 files\)/i })).toBeTruthy();
+    // Should show a dropdown trigger button (not a direct link)
+    const downloadBtn = screen.getByRole("button", { name: /download/i });
+    expect(downloadBtn).toBeTruthy();
   });
 
-  it("keeps individual download links visible for audiobook files when Download All is shown", () => {
+  it("renders Download button for audiobook editions linking to download-all", () => {
     const edition = {
       ...baseEdition,
+      formatFamily: "AUDIOBOOK" as const,
       editionFiles: [
-        baseEdition.editionFiles[0],
+        {
+          ...baseEdition.editionFiles[0],
+          fileAsset: {
+            ...(baseEdition.editionFiles[0] as (typeof baseEdition.editionFiles)[number]).fileAsset,
+            basename: "track01.mp3",
+            mediaKind: "AUDIO",
+          },
+        },
         {
           id: "ef2",
           editionId: "e1",
@@ -803,72 +775,67 @@ describe("EditionTabPanel", () => {
             ...(baseEdition.editionFiles[0] as (typeof baseEdition.editionFiles)[number]).fileAsset,
             id: "fa2",
             basename: "track02.mp3",
+            mediaKind: "AUDIO",
             availabilityStatus: "PRESENT",
           },
         },
       ],
     } as EditionType;
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={edition}
-        isLastEdition={false}
+
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
     );
 
-    expect(screen.getByRole("link", { name: /download wind\.epub/i })).toBeTruthy();
-    expect(screen.getByRole("link", { name: /download track02\.mp3/i })).toBeTruthy();
-    expect(screen.getByRole("link", { name: /download all \(2 files\)/i })).toBeTruthy();
+    const link = screen.getByRole("link", { name: /download all audio/i });
+    expect(link.getAttribute("href")).toBe("/api/editions/download-all/e1");
   });
 
-  it("counts only PRESENT files toward Download All threshold", () => {
+  it("does not show download for ebook when only MISSING files with mixed statuses", () => {
     const edition = {
       ...baseEdition,
       editionFiles: [
-        baseEdition.editionFiles[0],
+        {
+          ...baseEdition.editionFiles[0],
+          fileAsset: {
+            ...(baseEdition.editionFiles[0] as (typeof baseEdition.editionFiles)[number]).fileAsset,
+            availabilityStatus: "MISSING",
+          },
+        },
         {
           id: "ef2",
           editionId: "e1",
           fileAssetId: "fa2",
-          role: "AUDIO_TRACK",
+          role: "ALTERNATE_FORMAT",
           fileAsset: {
             ...(baseEdition.editionFiles[0] as (typeof baseEdition.editionFiles)[number]).fileAsset,
             id: "fa2",
-            basename: "track02.mp3",
-            availabilityStatus: "PRESENT",
-          },
-        },
-        {
-          id: "ef3",
-          editionId: "e1",
-          fileAssetId: "fa3",
-          role: "AUDIO_TRACK",
-          fileAsset: {
-            ...(baseEdition.editionFiles[0] as (typeof baseEdition.editionFiles)[number]).fileAsset,
-            id: "fa3",
-            basename: "track03.mp3",
+            basename: "wind.pdf",
             availabilityStatus: "MISSING",
           },
         },
       ],
     } as EditionType;
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={edition}
-        isLastEdition={false}
+
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
     );
 
-    // 2 PRESENT + 1 MISSING → Download All with count of 2
-    const link = screen.getByRole("link", { name: /download all \(2 files\)/i });
-    expect(link.getAttribute("href")).toBe("/api/editions/download-all/e1");
+    expect(screen.queryByRole("link", { name: /download/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /download/i })).toBeNull();
   });
 
   it("hides sidecar files from the files list", () => {
@@ -903,11 +870,12 @@ describe("EditionTabPanel", () => {
       ],
     } as EditionType;
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={edition}
-        isLastEdition={false}
+
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
@@ -918,7 +886,7 @@ describe("EditionTabPanel", () => {
     expect(screen.queryByText("cover.jpg")).toBeNull();
   });
 
-  it("treats only content files as PRESENT for download threshold", () => {
+  it("treats only content files for download — sidecar files are excluded", () => {
     const edition = {
       ...baseEdition,
       editionFiles: [
@@ -939,20 +907,20 @@ describe("EditionTabPanel", () => {
       ],
     } as EditionType;
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={edition}
-        isLastEdition={false}
+
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
     );
 
-    // Only 1 content file → individual download, not "Download All"
-    const link = screen.getByRole("link", { name: /download wind\.epub/i });
+    // Only 1 content file → single download button (not dropdown)
+    const link = screen.getByRole("link", { name: /download epub/i });
     expect(link.getAttribute("href")).toBe("/api/edition-files/download/ef1");
-    expect(screen.queryByRole("link", { name: /download all/i })).toBeNull();
   });
 
   it("renders destructive badge for non-PRESENT file status", () => {
@@ -969,11 +937,12 @@ describe("EditionTabPanel", () => {
       ],
     } as EditionType;
     render(
-      <EditionTabPanel
+      <EditionCard
         edition={edition}
-        isLastEdition={false}
+
         onEditionFieldSaved={vi.fn()}
         onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
         smtpConfigured={false}
         kindleConfigured={false}
       />,
@@ -985,11 +954,12 @@ describe("EditionTabPanel", () => {
   describe("Send to Kindle", () => {
     it("does not show Send to Kindle when kindleConfigured is false", () => {
       render(
-        <EditionTabPanel
+        <EditionCard
           edition={baseEdition}
-          isLastEdition={false}
+  
           onEditionFieldSaved={vi.fn()}
           onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
           smtpConfigured={true}
           kindleConfigured={false}
         />,
@@ -1000,11 +970,12 @@ describe("EditionTabPanel", () => {
 
     it("does not show Send to Kindle when smtpConfigured is false", () => {
       render(
-        <EditionTabPanel
+        <EditionCard
           edition={baseEdition}
-          isLastEdition={false}
+  
           onEditionFieldSaved={vi.fn()}
           onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
           smtpConfigured={false}
           kindleConfigured={true}
         />,
@@ -1015,11 +986,12 @@ describe("EditionTabPanel", () => {
 
     it("shows Send to Kindle for EPUB file when both configured", () => {
       render(
-        <EditionTabPanel
+        <EditionCard
           edition={baseEdition}
-          isLastEdition={false}
+  
           onEditionFieldSaved={vi.fn()}
           onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
           smtpConfigured={true}
           kindleConfigured={true}
         />,
@@ -1043,11 +1015,12 @@ describe("EditionTabPanel", () => {
         ],
       } as EditionType;
       render(
-        <EditionTabPanel
+        <EditionCard
           edition={pdfEdition}
-          isLastEdition={false}
+  
           onEditionFieldSaved={vi.fn()}
           onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
           smtpConfigured={true}
           kindleConfigured={true}
         />,
@@ -1071,11 +1044,12 @@ describe("EditionTabPanel", () => {
         ],
       } as EditionType;
       render(
-        <EditionTabPanel
+        <EditionCard
           edition={cbzEdition}
-          isLastEdition={false}
+  
           onEditionFieldSaved={vi.fn()}
           onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
           smtpConfigured={true}
           kindleConfigured={true}
         />,
@@ -1099,11 +1073,12 @@ describe("EditionTabPanel", () => {
         ],
       } as EditionType;
       render(
-        <EditionTabPanel
+        <EditionCard
           edition={audioEdition}
-          isLastEdition={false}
+  
           onEditionFieldSaved={vi.fn()}
           onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
           smtpConfigured={true}
           kindleConfigured={true}
         />,
@@ -1126,11 +1101,12 @@ describe("EditionTabPanel", () => {
         ],
       } as EditionType;
       render(
-        <EditionTabPanel
+        <EditionCard
           edition={missingEdition}
-          isLastEdition={false}
+  
           onEditionFieldSaved={vi.fn()}
           onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
           smtpConfigured={true}
           kindleConfigured={true}
         />,
@@ -1143,11 +1119,12 @@ describe("EditionTabPanel", () => {
       sendToKindleServerFnMock.mockResolvedValue({ success: true });
 
       render(
-        <EditionTabPanel
+        <EditionCard
           edition={baseEdition}
-          isLastEdition={false}
+  
           onEditionFieldSaved={vi.fn()}
           onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
           smtpConfigured={true}
           kindleConfigured={true}
         />,
@@ -1166,11 +1143,12 @@ describe("EditionTabPanel", () => {
       sendToKindleServerFnMock.mockResolvedValue({ success: true });
 
       render(
-        <EditionTabPanel
+        <EditionCard
           edition={baseEdition}
-          isLastEdition={false}
+  
           onEditionFieldSaved={vi.fn()}
           onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
           smtpConfigured={true}
           kindleConfigured={true}
         />,
@@ -1187,11 +1165,12 @@ describe("EditionTabPanel", () => {
       sendToKindleServerFnMock.mockResolvedValue({ success: false, error: "File too large" });
 
       render(
-        <EditionTabPanel
+        <EditionCard
           edition={baseEdition}
-          isLastEdition={false}
+  
           onEditionFieldSaved={vi.fn()}
           onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
           smtpConfigured={true}
           kindleConfigured={true}
         />,
@@ -1208,11 +1187,12 @@ describe("EditionTabPanel", () => {
       sendToKindleServerFnMock.mockRejectedValue(new Error("Network error"));
 
       render(
-        <EditionTabPanel
+        <EditionCard
           edition={baseEdition}
-          isLastEdition={false}
+  
           onEditionFieldSaved={vi.fn()}
           onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
           smtpConfigured={true}
           kindleConfigured={true}
         />,
@@ -1234,11 +1214,12 @@ describe("EditionTabPanel", () => {
       );
 
       render(
-        <EditionTabPanel
+        <EditionCard
           edition={baseEdition}
-          isLastEdition={false}
+  
           onEditionFieldSaved={vi.fn()}
           onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
           smtpConfigured={true}
           kindleConfigured={true}
         />,
@@ -1261,11 +1242,12 @@ describe("EditionTabPanel", () => {
       sendToKindleServerFnMock.mockResolvedValue({ success: false });
 
       render(
-        <EditionTabPanel
+        <EditionCard
           edition={baseEdition}
-          isLastEdition={false}
+  
           onEditionFieldSaved={vi.fn()}
           onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
           smtpConfigured={true}
           kindleConfigured={true}
         />,
@@ -1282,11 +1264,12 @@ describe("EditionTabPanel", () => {
       sendToKindleServerFnMock.mockRejectedValue("string-error");
 
       render(
-        <EditionTabPanel
+        <EditionCard
           edition={baseEdition}
-          isLastEdition={false}
+  
           onEditionFieldSaved={vi.fn()}
           onDeleteEdition={vi.fn()}
+        onEnrichEdition={vi.fn()}
           smtpConfigured={true}
           kindleConfigured={true}
         />,
@@ -1297,6 +1280,331 @@ describe("EditionTabPanel", () => {
       await waitFor(() => {
         expect(mockToast.error).toHaveBeenCalledWith("Failed to send to Kindle");
       });
+    });
+  });
+
+  describe("duration display", () => {
+    it("shows duration for audiobook editions", () => {
+      const audioEdition = {
+        ...baseEdition,
+        formatFamily: "AUDIOBOOK" as const,
+        duration: 79200,
+      } as EditionType;
+
+      render(
+        <EditionCard
+          edition={audioEdition}
+  
+          onEditionFieldSaved={vi.fn()}
+          onDeleteEdition={vi.fn()}
+          onEnrichEdition={vi.fn()}
+          smtpConfigured={false}
+          kindleConfigured={false}
+        />,
+      );
+
+      expect(screen.getByText("Duration")).toBeTruthy();
+      expect(screen.getByText("22h")).toBeTruthy();
+    });
+
+    it("does not show duration for ebook without duration", () => {
+      render(
+        <EditionCard
+          edition={baseEdition}
+  
+          onEditionFieldSaved={vi.fn()}
+          onDeleteEdition={vi.fn()}
+          onEnrichEdition={vi.fn()}
+          smtpConfigured={false}
+          kindleConfigured={false}
+        />,
+      );
+
+      expect(screen.queryByText("Duration")).toBeNull();
+    });
+  });
+
+  describe("narrator display", () => {
+    it("shows narrators section for audiobook editions", () => {
+      const audioEdition = {
+        ...baseEdition,
+        formatFamily: "AUDIOBOOK" as const,
+        contributors: [
+          ...baseEdition.contributors,
+          { id: "ec2", editionId: "e1", contributorId: "c2", role: "NARRATOR", contributor: { id: "c2", nameDisplay: "Scott Brick", nameCanonical: "scott brick", createdAt: new Date() } },
+        ],
+      } as EditionType;
+
+      render(
+        <EditionCard
+          edition={audioEdition}
+  
+          onEditionFieldSaved={vi.fn()}
+          onDeleteEdition={vi.fn()}
+          onEnrichEdition={vi.fn()}
+          smtpConfigured={false}
+          kindleConfigured={false}
+        />,
+      );
+
+      expect(screen.getByText("Narrators")).toBeTruthy();
+    });
+
+    it("renders Enrich Edition button", () => {
+      const onEnrich = vi.fn();
+
+      render(
+        <EditionCard
+          edition={baseEdition}
+  
+          onEditionFieldSaved={vi.fn()}
+          onDeleteEdition={vi.fn()}
+          onEnrichEdition={onEnrich}
+          smtpConfigured={false}
+          kindleConfigured={false}
+        />,
+      );
+
+      const button = screen.getByRole("button", { name: /enrich edition/i });
+      expect(button).toBeTruthy();
+      fireEvent.click(button);
+      expect(onEnrich).toHaveBeenCalledTimes(1);
+    });
+
+    it("saves narrator edits via updateEditionNarratorsServerFn", async () => {
+      const onSaved = vi.fn();
+      updateEditionNarratorsServerFnMock.mockResolvedValue({ success: true });
+      // Edition with no narrators but audiobook format so section appears
+      const audioEdition = {
+        ...baseEdition,
+        formatFamily: "AUDIOBOOK" as const,
+      } as EditionType;
+
+      render(
+        <EditionCard
+          edition={audioEdition}
+  
+          onEditionFieldSaved={onSaved}
+          onDeleteEdition={vi.fn()}
+          onEnrichEdition={vi.fn()}
+          smtpConfigured={false}
+          kindleConfigured={false}
+        />,
+      );
+
+      // Click on the "No narrators" placeholder to start editing
+      const placeholder = screen.getByText("No narrators");
+      fireEvent.click(placeholder);
+
+      // Type a narrator and blur to save (blur includes pending input as tag)
+      const input = screen.getByRole("textbox");
+      fireEvent.change(input, { target: { value: "Scott Brick" } });
+      fireEvent.blur(input);
+
+      await waitFor(() => {
+        expect(updateEditionNarratorsServerFnMock).toHaveBeenCalledWith({
+          data: { editionId: "e1", narrators: ["Scott Brick"] },
+        });
+      });
+      expect(onSaved).toHaveBeenCalled();
+    });
+  });
+
+  describe("duration editing", () => {
+    it("saves duration via saveField with parsed seconds", async () => {
+      updateEditionServerFnMock.mockResolvedValue({ success: true });
+      const onSaved = vi.fn();
+      const audioEdition = {
+        ...baseEdition,
+        formatFamily: "AUDIOBOOK" as const,
+        duration: 79200,
+      } as EditionType;
+
+      render(
+        <EditionCard
+          edition={audioEdition}
+  
+          onEditionFieldSaved={onSaved}
+          onDeleteEdition={vi.fn()}
+          onEnrichEdition={vi.fn()}
+          smtpConfigured={false}
+          kindleConfigured={false}
+        />,
+      );
+
+      // Click on duration to start editing
+      const durationField = screen.getByText("22h");
+      fireEvent.click(durationField);
+
+      const input = screen.getByDisplayValue("22h");
+      fireEvent.change(input, { target: { value: "23h 30m" } });
+      fireEvent.blur(input);
+
+      await waitFor(() => {
+        expect(updateEditionServerFnMock).toHaveBeenCalledWith({
+          data: {
+            editionId: "e1",
+            fields: { duration: "84600" },
+          },
+        });
+      });
+    });
+
+    it("clears duration by saving empty value", async () => {
+      updateEditionServerFnMock.mockResolvedValue({ success: true });
+      const audioEdition = {
+        ...baseEdition,
+        formatFamily: "AUDIOBOOK" as const,
+        duration: 3600,
+      } as EditionType;
+
+      render(
+        <EditionCard
+          edition={audioEdition}
+  
+          onEditionFieldSaved={vi.fn()}
+          onDeleteEdition={vi.fn()}
+          onEnrichEdition={vi.fn()}
+          smtpConfigured={false}
+          kindleConfigured={false}
+        />,
+      );
+
+      const durationField = screen.getByText("1h");
+      fireEvent.click(durationField);
+
+      const input = screen.getByDisplayValue("1h");
+      fireEvent.change(input, { target: { value: "" } });
+      fireEvent.blur(input);
+
+      await waitFor(() => {
+        expect(updateEditionServerFnMock).toHaveBeenCalledWith({
+          data: {
+            editionId: "e1",
+            fields: { duration: null },
+          },
+        });
+      });
+    });
+
+    it("parses raw numeric duration input as seconds", async () => {
+      updateEditionServerFnMock.mockResolvedValue({ success: true });
+      const audioEdition = {
+        ...baseEdition,
+        formatFamily: "AUDIOBOOK" as const,
+        duration: 3600,
+      } as EditionType;
+
+      render(
+        <EditionCard
+          edition={audioEdition}
+  
+          onEditionFieldSaved={vi.fn()}
+          onDeleteEdition={vi.fn()}
+          onEnrichEdition={vi.fn()}
+          smtpConfigured={false}
+          kindleConfigured={false}
+        />,
+      );
+
+      const durationField = screen.getByText("1h");
+      fireEvent.click(durationField);
+
+      const input = screen.getByDisplayValue("1h");
+      fireEvent.change(input, { target: { value: "7200" } });
+      fireEvent.blur(input);
+
+      await waitFor(() => {
+        expect(updateEditionServerFnMock).toHaveBeenCalledWith({
+          data: {
+            editionId: "e1",
+            fields: { duration: "7200" },
+          },
+        });
+      });
+    });
+  });
+
+  describe("parseDuration", () => {
+    it("parses hours and minutes", () => {
+      expect(parseDuration("22h 30m")).toBe(81000);
+    });
+
+    it("parses hours only", () => {
+      expect(parseDuration("5h")).toBe(18000);
+    });
+
+    it("parses minutes only", () => {
+      expect(parseDuration("45m")).toBe(2700);
+    });
+
+    it("parses raw numeric seconds", () => {
+      expect(parseDuration("7200")).toBe(7200);
+    });
+
+    it("returns 0 for empty string", () => {
+      expect(parseDuration("")).toBe(0);
+    });
+
+    it("returns 0 for non-numeric string", () => {
+      expect(parseDuration("abc")).toBe(0);
+    });
+  });
+
+  describe("sortEpubFirst", () => {
+    it("sorts EPUB before other formats", () => {
+      const files = [
+        { fileAsset: { mediaKind: "PDF" } },
+        { fileAsset: { mediaKind: "EPUB" } },
+        { fileAsset: { mediaKind: "MOBI" } },
+      ];
+      const sorted = sortEpubFirst(files);
+      expect(sorted.map((f) => f.fileAsset.mediaKind)).toEqual(["EPUB", "PDF", "MOBI"]);
+    });
+
+    it("preserves order when no EPUB present", () => {
+      const files = [
+        { fileAsset: { mediaKind: "PDF" } },
+        { fileAsset: { mediaKind: "MOBI" } },
+      ];
+      const sorted = sortEpubFirst(files);
+      expect(sorted.map((f) => f.fileAsset.mediaKind)).toEqual(["PDF", "MOBI"]);
+    });
+  });
+
+  describe("download format sorting", () => {
+    it("sorts EPUB first in download dropdown with mixed formats", () => {
+      const edition = {
+        ...baseEdition,
+        editionFiles: [
+          {
+            ...baseEdition.editionFiles[0],
+            id: "ef-pdf",
+            fileAsset: {
+              ...(baseEdition.editionFiles[0] as (typeof baseEdition.editionFiles)[number]).fileAsset,
+              id: "fa-pdf",
+              basename: "book.pdf",
+              mediaKind: "PDF",
+            },
+          },
+          baseEdition.editionFiles[0],
+        ],
+      } as EditionType;
+      render(
+        <EditionCard
+          edition={edition}
+  
+          onEditionFieldSaved={vi.fn()}
+          onDeleteEdition={vi.fn()}
+          onEnrichEdition={vi.fn()}
+          smtpConfigured={false}
+          kindleConfigured={false}
+        />,
+      );
+
+      // Should render download dropdown since multiple formats
+      const downloadBtn = screen.getByRole("button", { name: /download/i });
+      expect(downloadBtn).toBeTruthy();
     });
   });
 });

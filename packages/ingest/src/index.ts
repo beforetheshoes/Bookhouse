@@ -68,6 +68,8 @@ export { searchGoogleBooks, getGoogleBooksVolume } from "./enrichment/google-boo
 export type { GBVolume } from "./enrichment/google-books";
 export { searchHardcover, getHardcoverBook } from "./enrichment/hardcover";
 export type { HCBook } from "./enrichment/hardcover";
+export { searchAudible } from "./enrichment/audible";
+export type { AudibleProduct } from "./enrichment/audible";
 export { searchAllSources } from "./enrichment/search-sources";
 export type {
   EnrichmentProvider,

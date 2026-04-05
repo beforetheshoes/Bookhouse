@@ -13,7 +13,7 @@ import {
 import { bulkEnrichServerFn } from "~/lib/server-fns/bulk-enrich";
 import { getIntegrationStatusServerFn } from "~/lib/server-fns/integrations";
 
-type EnrichmentProvider = "openlibrary" | "googlebooks" | "hardcover";
+type EnrichmentProvider = "openlibrary" | "googlebooks" | "hardcover" | "audible";
 type MergeStrategy = "fullest" | "priority";
 
 interface SourceStatus {
@@ -29,7 +29,7 @@ interface BulkEnrichDialogProps {
   onStarted: () => void;
 }
 
-const SOURCE_ORDER: EnrichmentProvider[] = ["openlibrary", "googlebooks", "hardcover"];
+const SOURCE_ORDER: EnrichmentProvider[] = ["openlibrary", "googlebooks", "hardcover", "audible"];
 
 export function BulkEnrichDialog({
   open,

@@ -30,6 +30,8 @@ function makeDeps(overrides: Partial<ApplyEnrichmentDeps> = {}): ApplyEnrichment
     findEditionIdsByWorkId: vi.fn().mockResolvedValue(["e1"]),
     deleteAuthorContributors: vi.fn().mockResolvedValue(undefined),
     createEditionContributors: vi.fn().mockResolvedValue(undefined),
+    deleteNarratorContributors: vi.fn().mockResolvedValue(undefined),
+    createNarratorContributors: vi.fn().mockResolvedValue(undefined),
     upsertExternalLink: vi.fn().mockResolvedValue(undefined),
     canonicalizeContributorName: (name: string) => name.toLowerCase(),
     ...overrides,
@@ -337,5 +339,95 @@ describe("applyEnrichmentFields", () => {
         appliedFields: expect.arrayContaining(["description", "publisher"]) as string[],
       }),
     );
+  });
+
+  it("applies narrators as per-edition contributors", async () => {
+    const input = makeInput({
+      editionFields: { narrators: ["Scott Brick", "Julia Whelan"] },
+    });
+
+    await applyEnrichmentFields(input, deps);
+
+    expect(deps.findContributorByCanonical).toHaveBeenCalledWith("scott brick");
+    expect(deps.findContributorByCanonical).toHaveBeenCalledWith("julia whelan");
+    expect(deps.createContributor).toHaveBeenCalledTimes(2);
+    expect(deps.deleteNarratorContributors).toHaveBeenCalledWith("e1");
+    expect(deps.createNarratorContributors).toHaveBeenCalledWith(
+      "e1",
+      ["contrib-scott brick", "contrib-julia whelan"],
+    );
+  });
+
+  it("reuses existing contributors for narrators", async () => {
+    deps = makeDeps({
+      findContributorByCanonical: vi.fn().mockResolvedValue("existing-narrator-id"),
+    });
+    const input = makeInput({
+      editionFields: { narrators: ["Scott Brick"] },
+    });
+
+    await applyEnrichmentFields(input, deps);
+
+    expect(deps.createContributor).not.toHaveBeenCalled();
+    expect(deps.createNarratorContributors).toHaveBeenCalledWith("e1", ["existing-narrator-id"]);
+  });
+
+  it("strips narrators from edition column update", async () => {
+    const input = makeInput({
+      editionFields: { publisher: "Macmillan Audio", narrators: ["Scott Brick"] },
+    });
+
+    await applyEnrichmentFields(input, deps);
+
+    const call = (deps.updateEdition as ReturnType<typeof vi.fn>).mock.calls[0] as [string, Record<string, string | string[] | number | Date | null>];
+    expect(call[1]).toEqual({ publisher: "Macmillan Audio" });
+    expect(deps.deleteNarratorContributors).toHaveBeenCalledWith("e1");
+  });
+
+  it("skips narrators when in editedFields", async () => {
+    deps = makeDeps({
+      findEdition: vi.fn().mockResolvedValue({ editedFields: ["narrators"] }),
+    });
+    const input = makeInput({
+      editionFields: { narrators: ["Scott Brick"] },
+    });
+
+    await applyEnrichmentFields(input, deps);
+
+    expect(deps.deleteNarratorContributors).not.toHaveBeenCalled();
+    expect(deps.createNarratorContributors).not.toHaveBeenCalled();
+  });
+
+  it("skips empty narrator strings", async () => {
+    const input = makeInput({
+      editionFields: { narrators: ["Scott Brick", "", "  "] },
+    });
+
+    await applyEnrichmentFields(input, deps);
+
+    expect(deps.findContributorByCanonical).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to lowercase when canonicalize returns null for narrator", async () => {
+    deps = makeDeps({
+      canonicalizeContributorName: () => null,
+    });
+    const input = makeInput({
+      editionFields: { narrators: ["Scott Brick"] },
+    });
+
+    await applyEnrichmentFields(input, deps);
+
+    expect(deps.findContributorByCanonical).toHaveBeenCalledWith("scott brick");
+  });
+
+  it("includes narrators in appliedFields for provenance", async () => {
+    const input = makeInput({
+      editionFields: { narrators: ["Scott Brick"] },
+    });
+
+    const result = await applyEnrichmentFields(input, deps);
+
+    expect(result.appliedFields).toContain("narrators");
   });
 });

@@ -1,9 +1,10 @@
 import type { OLSearchResult, OLWork, OLEdition } from "./open-library";
 import type { GBVolume } from "./google-books";
 import type { HCBook } from "./hardcover";
+import type { AudibleProduct } from "./audible";
 import type { RateLimitResult } from "./rate-limiter";
 
-export type EnrichmentProvider = "openlibrary" | "googlebooks" | "hardcover";
+export type EnrichmentProvider = "openlibrary" | "googlebooks" | "hardcover" | "audible";
 
 export interface EnrichmentWorkData {
   title: string;
@@ -19,6 +20,9 @@ export interface EnrichmentEditionData {
   pageCount: number | null;
   isbn13: string | null;
   isbn10: string | null;
+  asin: string | null;
+  duration: number | null;
+  narrators: string[] | null;
 }
 
 export interface OLRawData {
@@ -27,7 +31,7 @@ export interface OLRawData {
   edition: OLEdition | null;
 }
 
-export type SourceRaw = OLRawData | GBVolume | HCBook;
+export type SourceRaw = OLRawData | GBVolume | HCBook | AudibleProduct;
 
 export interface SourceResult {
   provider: EnrichmentProvider;
@@ -42,12 +46,38 @@ export type SearchSourcesResult =
   | { status: "no-results" }
   | { status: "rate-limited"; retryAfterMs: number | undefined };
 
+function normalizeAudible(product: AudibleProduct): SourceResult {
+  return {
+    provider: "audible",
+    externalId: product.asin,
+    work: {
+      title: product.title,
+      authors: product.authors,
+      description: product.description,
+      subjects: [],
+      coverUrl: product.coverUrl,
+    },
+    edition: {
+      publisher: product.publisher,
+      publishedDate: product.publishedDate,
+      pageCount: null,
+      isbn13: null,
+      isbn10: null,
+      asin: product.asin,
+      duration: product.durationSeconds,
+      narrators: product.narrators.length > 0 ? product.narrators : null,
+    },
+    raw: product,
+  };
+}
+
 export interface SearchSourcesDeps {
   searchOL: (title: string, author: string | undefined) => Promise<OLSearchResult[] | null>;
   getOLWork: (olid: string) => Promise<OLWork | null>;
   getOLEdition: (isbn: string) => Promise<OLEdition | null>;
   searchGB: (title: string, author: string | undefined) => Promise<GBVolume[] | null>;
   searchHC: (title: string, author: string | undefined) => Promise<HCBook[] | null>;
+  searchAudible: (title: string, author: string | undefined) => Promise<AudibleProduct[] | null>;
   checkRateLimit: () => RateLimitResult;
 }
 
@@ -69,6 +99,9 @@ function normalizeOL(search: OLSearchResult, work: OLWork | null, edition: OLEdi
       pageCount: edition?.pageCount ?? null,
       isbn13: search.isbns.find((i) => i.length === 13) ?? null,
       isbn10: search.isbns.find((i) => i.length === 10) ?? null,
+      asin: null,
+      duration: null,
+      narrators: null,
     },
     raw: { search, work, edition },
   };
@@ -91,6 +124,9 @@ function normalizeGB(vol: GBVolume): SourceResult {
       pageCount: vol.pageCount,
       isbn13: vol.isbn13,
       isbn10: vol.isbn10,
+      asin: null,
+      duration: null,
+      narrators: null,
     },
     raw: vol,
   };
@@ -113,6 +149,9 @@ function normalizeHC(book: HCBook): SourceResult {
       pageCount: book.pageCount,
       isbn13: book.isbn13,
       isbn10: null,
+      asin: null,
+      duration: null,
+      narrators: null,
     },
     raw: book,
   };
@@ -128,10 +167,11 @@ export async function searchAllSources(
     return { status: "rate-limited", retryAfterMs: rateCheck.retryAfterMs };
   }
 
-  const [olResult, gbResult, hcResult] = await Promise.allSettled([
+  const [olResult, gbResult, hcResult, audibleResult] = await Promise.allSettled([
     deps.searchOL(title, author),
     deps.searchGB(title, author),
     deps.searchHC(title, author),
+    deps.searchAudible(title, author),
   ]);
 
   const results: SourceResult[] = [];
@@ -165,6 +205,11 @@ export async function searchAllSources(
   // Hardcover: take first result
   if (hcResult.status === "fulfilled" && hcResult.value && hcResult.value.length > 0) {
     results.push(normalizeHC(hcResult.value[0] as HCBook));
+  }
+
+  // Audible: take first result
+  if (audibleResult.status === "fulfilled" && audibleResult.value && audibleResult.value.length > 0) {
+    results.push(normalizeAudible(audibleResult.value[0] as AudibleProduct));
   }
 
   if (results.length === 0) return { status: "no-results" };

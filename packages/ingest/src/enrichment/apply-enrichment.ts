@@ -26,6 +26,8 @@ export interface ApplyEnrichmentDeps {
   findEditionIdsByWorkId: (workId: string) => Promise<string[]>;
   deleteAuthorContributors: (editionIds: string[]) => Promise<void>;
   createEditionContributors: (editionIds: string[], contributorIds: string[]) => Promise<void>;
+  deleteNarratorContributors: (editionId: string) => Promise<void>;
+  createNarratorContributors: (editionId: string, contributorIds: string[]) => Promise<void>;
   upsertExternalLink: (data: {
     workId: string;
     provider: string;
@@ -132,10 +134,30 @@ export async function applyEnrichmentFields(
       filteredFields.publishedAt = val ? new Date(val) : null;
     }
 
+    // Handle narrators separately (per-edition, not per-work)
+    const narrators = filteredFields.narrators as string[] | undefined;
+    delete filteredFields.narrators;
+
     if (Object.keys(filteredFields).length > 0) {
       await deps.updateEdition(input.editionId, filteredFields as UpdateData);
       appliedAnyFields = true;
       allAppliedFields.push(...Object.keys(filteredFields));
+    }
+
+    // Apply narrators via Contributor + EditionContributor (scoped to this edition only)
+    if (narrators && narrators.length > 0) {
+      const contributorIds: string[] = [];
+      for (const narratorName of narrators) {
+        const trimmed = narratorName.trim();
+        if (trimmed === "") continue;
+        const canonical = deps.canonicalizeContributorName(trimmed) ?? trimmed.toLowerCase();
+        const existing = await deps.findContributorByCanonical(canonical);
+        contributorIds.push(existing ?? await deps.createContributor(trimmed, canonical));
+      }
+      await deps.deleteNarratorContributors(input.editionId);
+      await deps.createNarratorContributors(input.editionId, contributorIds);
+      appliedAnyFields = true;
+      allAppliedFields.push("narrators");
     }
   }
 

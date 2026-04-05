@@ -74,6 +74,7 @@ let mockLoaderData: { work: MockWork; progress: MockProgress[]; trackingMode: st
         editedFields: [],
         contributors: [
           { role: "AUTHOR", contributor: { id: "contrib-1", nameDisplay: "Patrick Rothfuss" } },
+          { role: "NARRATOR", contributor: { id: "contrib-n1", nameDisplay: "Nick Podehl" } },
         ],
         editionFiles: [
           {
@@ -212,11 +213,11 @@ import { updateWorkServerFn, updateWorkAuthorsServerFn } from "~/lib/server-fns/
 const updateWorkServerFnMock = vi.mocked(updateWorkServerFn);
 const updateWorkAuthorsServerFnMock = vi.mocked(updateWorkAuthorsServerFn);
 
-let capturedEnrichmentProps: { onOpenChange?: (open: boolean) => void; onApplied?: () => void } = {};
+let capturedEnrichmentProps: { onOpenChange?: (open: boolean) => void; onApplied?: () => void; mode?: string; editionId?: string | null } = {};
 
 vi.mock("~/components/enrichment-dialog", () => ({
-  EnrichmentDialog: ({ workId, currentWork, onOpenChange, onApplied }: { workId: string; currentWork: { description: string | null }; onOpenChange: (open: boolean) => void; onApplied: () => void }) => {
-    capturedEnrichmentProps = { onOpenChange, onApplied };
+  EnrichmentDialog: ({ workId, currentWork, onOpenChange, onApplied, mode, editionId }: { workId: string; currentWork: { description: string | null }; onOpenChange: (open: boolean) => void; onApplied: () => void; mode?: string; editionId?: string | null }) => {
+    capturedEnrichmentProps = { onOpenChange, onApplied, mode, editionId };
     return <div data-testid="enrichment-dialog" data-work-id={workId} data-description={currentWork.description ?? ""} />;
   },
 }));
@@ -257,13 +258,16 @@ vi.mock("~/components/ui/tabs", () => ({
 
 let capturedEditionFieldSavedCallbacks: Record<string, () => void> = {};
 
-vi.mock("~/components/edition-tab-panel", () => ({
-  EditionTabPanel: ({ edition, onDeleteEdition, onEditionFieldSaved }: { edition: { id: string; formatFamily: string }; onDeleteEdition: () => void; onEditionFieldSaved: () => void; smtpConfigured: boolean; kindleConfigured: boolean }) => {
+vi.mock("~/components/edition-card", () => ({
+  EditionCard: ({ edition, onDeleteEdition, onEditionFieldSaved, onEnrichEdition }: { edition: { id: string; formatFamily: string }; onDeleteEdition: () => void; onEditionFieldSaved: () => void; onEnrichEdition: () => void; smtpConfigured: boolean; kindleConfigured: boolean }) => {
     capturedEditionFieldSavedCallbacks[edition.id] = onEditionFieldSaved;
     return (
       <div data-testid={`edition-panel-${edition.id}`} data-format={edition.formatFamily}>
         <button data-testid={`delete-edition-${edition.id}`} onClick={onDeleteEdition}>
           Delete Edition
+        </button>
+        <button data-testid={`enrich-edition-${edition.id}`} onClick={onEnrichEdition}>
+          Enrich Edition
         </button>
       </div>
     );
@@ -275,6 +279,15 @@ vi.mock("~/components/metadata-item", () => ({
     <div data-testid={`metadata-${label}`}><span>{label}</span>{children}</div>
   ),
 }));
+
+describe("WorkDetailSkeleton", () => {
+  it("renders skeleton placeholder", async () => {
+    const { Route } = await import("./library.$workId");
+    const Skeleton = Route.options.pendingComponent as React.ComponentType;
+    render(<Skeleton />);
+    expect(screen.getByTestId("work-detail-skeleton")).toBeTruthy();
+  });
+});
 
 describe("WorkDetailPage", () => {
   beforeEach(() => {
@@ -305,6 +318,7 @@ describe("WorkDetailPage", () => {
             editedFields: [],
             contributors: [
               { role: "AUTHOR", contributor: { id: "contrib-1", nameDisplay: "Patrick Rothfuss" } },
+              { role: "NARRATOR", contributor: { id: "contrib-n1", nameDisplay: "Nick Podehl" } },
             ],
             editionFiles: [
               {
@@ -502,12 +516,11 @@ describe("WorkDetailPage", () => {
     const { Route } = await import("./library.$workId");
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
-    // Tab triggers for each edition format
+    // Format tab triggers for each format family
     expect(screen.getAllByText("EBOOK").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("AUDIOBOOK").length).toBeGreaterThanOrEqual(1);
-    // Edition panels rendered via mocked EditionTabPanel
+    // Active format (EBOOK) edition is visible
     expect(screen.getByTestId("edition-panel-edition-1")).toBeTruthy();
-    expect(screen.getByTestId("edition-panel-edition-2")).toBeTruthy();
   });
 
   it("renders reading progress section heading", async () => {
@@ -893,20 +906,36 @@ describe("WorkDetailPage", () => {
     const { Route } = await import("./library.$workId");
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
-    expect(screen.getByRole("button", { name: /Enrich/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Enrich Work/ })).toBeTruthy();
   });
 
-  it("opens enrichment dialog when Enrich button is clicked", async () => {
+  it("opens enrichment dialog when Enrich Work button is clicked", async () => {
     const { Route } = await import("./library.$workId");
     const Page = Route.options.component as React.ComponentType;
     const { fireEvent } = await import("@testing-library/react");
     render(<Page />);
 
-    const enrichBtn = screen.getByRole("button", { name: /Enrich/ });
+    const enrichBtn = screen.getByRole("button", { name: /Enrich Work/ });
     fireEvent.click(enrichBtn);
 
     // The enrichment dialog mock should have received onOpenChange
     expect(capturedEnrichmentProps.onOpenChange).toBeDefined();
+  });
+
+  it("opens enrichment dialog in edition mode when Enrich Edition is clicked on a card", async () => {
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    render(<Page />);
+
+    const enrichEditionBtn = screen.getByTestId("enrich-edition-edition-1");
+    fireEvent.click(enrichEditionBtn);
+
+    // Enrichment dialog should receive edition mode and the correct editionId after re-render
+    await waitFor(() => {
+      expect(capturedEnrichmentProps.mode).toBe("edition");
+      expect(capturedEnrichmentProps.editionId).toBe("edition-1");
+    });
   });
 
   it("calls router.invalidate when enrichment onApplied is called", async () => {
@@ -1520,30 +1549,29 @@ describe("WorkDetailPage", () => {
     const { act } = await import("@testing-library/react");
     render(<Page />);
 
-    // Initially tabs value should be edition-1
-    expect(screen.getByTestId("tabs").getAttribute("data-value")).toBe("edition-1");
+    // Initially tabs value should be EBOOK (first format)
+    expect(screen.getByTestId("tabs").getAttribute("data-value")).toBe("EBOOK");
 
-    // Switch to edition-2 via onValueChange
+    // Switch to AUDIOBOOK via onValueChange
     expect(capturedTabsOnValueChange).toBeDefined();
-    act(() => { (capturedTabsOnValueChange as (val: string) => void)("edition-2"); });
+    act(() => { (capturedTabsOnValueChange as (val: string) => void)("AUDIOBOOK"); });
 
-    // After switching, tabs value should update
-    expect(screen.getByTestId("tabs").getAttribute("data-value")).toBe("edition-2");
+    // After switching, tabs value should update to AUDIOBOOK
+    expect(screen.getByTestId("tabs").getAttribute("data-value")).toBe("AUDIOBOOK");
   });
 
-  it("ignores onValueChange for non-existent edition id", async () => {
+  it("keeps tab value when switching to same format", async () => {
     const { Route } = await import("./library.$workId");
     const Page = Route.options.component as React.ComponentType;
     const { act } = await import("@testing-library/react");
     render(<Page />);
 
-    expect(screen.getByTestId("tabs").getAttribute("data-value")).toBe("edition-1");
+    expect(screen.getByTestId("tabs").getAttribute("data-value")).toBe("EBOOK");
 
-    // Call with a non-existent id — idx will be -1, so setActiveEditionIdx should not be called
-    act(() => { (capturedTabsOnValueChange as (val: string) => void)("non-existent-id"); });
+    // Switching to same format should keep value
+    act(() => { (capturedTabsOnValueChange as (val: string) => void)("EBOOK"); });
 
-    // Value should remain edition-1
-    expect(screen.getByTestId("tabs").getAttribute("data-value")).toBe("edition-1");
+    expect(screen.getByTestId("tabs").getAttribute("data-value")).toBe("EBOOK");
   });
 
   it("shows earliest publish year when multiple editions have dates", async () => {
@@ -1623,12 +1651,12 @@ describe("WorkDetailPage", () => {
     expect(mockInvalidate).toHaveBeenCalled();
   });
 
-  it("handles activeEditionIdx pointing beyond editions array", async () => {
-    // Start with 2 editions and switch to the second tab
+  it("sorts editions by publisher then filename within a format tab", async () => {
+    // Add a second EBOOK edition with a different publisher
     mockLoaderData.work.editions.push({
-      id: "edition-2",
-      formatFamily: "AUDIOBOOK",
-      publisher: null,
+      id: "edition-3",
+      formatFamily: "EBOOK",
+      publisher: "AAA Publisher",
       publishedAt: null,
       isbn13: null,
       isbn10: null,
@@ -1637,25 +1665,37 @@ describe("WorkDetailPage", () => {
       pageCount: null,
       editedFields: [],
       contributors: [],
-      editionFiles: [],
+      editionFiles: [{
+        id: "ef3",
+        role: "PRIMARY",
+        fileAsset: {
+          id: "fa3",
+          basename: "aaa.epub",
+          sizeBytes: 1000n,
+          mediaKind: "EPUB",
+          availabilityStatus: "PRESENT",
+        },
+      }],
     });
     const { Route } = await import("./library.$workId");
     const Page = Route.options.component as React.ComponentType;
-    const { act } = await import("@testing-library/react");
-    const { rerender } = render(<Page />);
+    render(<Page />);
 
-    // Switch to edition-2 (index 1)
-    act(() => { (capturedTabsOnValueChange as (val: string) => void)("edition-2"); });
-    expect(screen.getByTestId("tabs").getAttribute("data-value")).toBe("edition-2");
+    // Both EBOOK editions should be rendered (sorted: AAA Publisher first)
+    const panels = screen.getAllByTestId(/^edition-panel-/);
+    expect(panels.length).toBe(2);
+    // AAA Publisher sorts before DAW Books
+    expect((panels[0] as HTMLElement).getAttribute("data-testid")).toBe("edition-panel-edition-3");
+    expect((panels[1] as HTMLElement).getAttribute("data-testid")).toBe("edition-panel-edition-1");
+  });
 
-    // Now remove the second edition from mock data and rerender
-    mockLoaderData.work.editions = [mockLoaderData.work.editions[0] as (typeof mockLoaderData.work.editions)[number]];
-    rerender(<Page />);
+  it("defaults to first format family as active tab", async () => {
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
 
-    // activeEditionIdx is still 1, but editions only has 1 element
-    // This exercises the ?. and ?? "" fallback on line 316
     const tabs = screen.getByTestId("tabs");
-    expect(tabs.getAttribute("data-value")).toBe("");
+    expect(tabs.getAttribute("data-value")).toBe("EBOOK");
   });
 
   it("renders cover dropdown menu with upload and search options", async () => {

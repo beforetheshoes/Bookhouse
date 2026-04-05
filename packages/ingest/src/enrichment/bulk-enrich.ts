@@ -8,8 +8,11 @@ export interface BulkEnrichEditionData {
   publishedDate: string | null;
   isbn13: string | null;
   isbn10: string | null;
+  asin: string | null;
   language: string | null;
   pageCount: number | null;
+  duration: number | null;
+  narrators: string[];
   editedFields: string[];
   authors: string[];
 }
@@ -60,6 +63,16 @@ const EDITION_FIELDS: FieldDef[] = [
   { key: "isbn10", level: "edition" },
 ];
 
+const AUDIOBOOK_EDITION_FIELDS: FieldDef[] = [
+  { key: "publisher", level: "edition" },
+  { key: "publishedDate", level: "edition" },
+  { key: "isbn13", level: "edition" },
+  { key: "isbn10", level: "edition" },
+  { key: "asin", level: "edition" },
+  { key: "duration", level: "edition" },
+  { key: "narrators", level: "edition" },
+];
+
 const SOURCE_WORK_FIELDS: Record<string, (w: SourceResult["work"]) => ApplyFieldValue> = {
   title: (w) => w.title,
   authors: (w) => w.authors,
@@ -73,6 +86,9 @@ const SOURCE_EDITION_FIELDS: Record<string, (e: SourceResult["edition"]) => Appl
   pageCount: (e) => e.pageCount,
   isbn13: (e) => e.isbn13,
   isbn10: (e) => e.isbn10,
+  asin: (e) => e.asin,
+  duration: (e) => e.duration,
+  narrators: (e) => e.narrators,
 };
 
 function getSourceFieldValue(result: SourceResult, field: FieldDef): ApplyFieldValue {
@@ -101,6 +117,9 @@ const CURRENT_EDITION_FIELDS: Record<string, (e: BulkEnrichEditionData) => Apply
   pageCount: (e) => e.pageCount,
   isbn13: (e) => e.isbn13,
   isbn10: (e) => e.isbn10,
+  asin: (e) => e.asin,
+  duration: (e) => e.duration,
+  narrators: (e) => e.narrators,
 };
 
 function getCurrentEditionValue(edition: BulkEnrichEditionData, key: string): ApplyFieldValue {
@@ -315,9 +334,7 @@ export async function processBulkEnrichWork(
   // Determine winning source from work-level fields for provenance
   const allMerged = new Map(workMerged);
 
-  // Apply edition-level fields only to EBOOK editions.
-  // External sources (OL, Google Books, Hardcover) return print/ebook metadata
-  // — ISBNs, publishers, page counts are not meaningful for audiobook editions.
+  // Apply ebook edition fields (pageCount, ISBNs, publisher, etc.) to EBOOK editions only.
   const ebookEditions = work.editions.filter((e) => e.formatFamily === "EBOOK");
   const editionApplyPlan: Array<{ editionId: string; fields: Record<string, ApplyFieldValue> }> = [];
 
@@ -327,6 +344,28 @@ export async function processBulkEnrichWork(
 
     const fields: Record<string, ApplyFieldValue> = {};
     for (const field of EDITION_FIELDS) {
+      const m = editionMerged.get(field.key);
+      if (m) {
+        fields[field.key] = m.value;
+        allMerged.set(field.key, m);
+      }
+    }
+    editionApplyPlan.push({ editionId: edition.id, fields });
+  }
+
+  // Apply audiobook edition fields (ASIN, duration, publisher, ISBNs, etc.) to AUDIOBOOK editions.
+  // Only use audiobook-specific sources (Audible) — print-oriented sources (OL, GB, HC) return
+  // print ISBNs, publishers, and dates that are incorrect for audiobook editions.
+  const audiobookEditions = work.editions.filter((e) => e.formatFamily === "AUDIOBOOK");
+  const audiobookResults = filteredResults.filter((r) => r.provider === "audible");
+
+  for (const edition of audiobookEditions) {
+    if (audiobookResults.length === 0) break;
+    const editionMerged = mergeEditionFields(AUDIOBOOK_EDITION_FIELDS, audiobookResults, edition, strategy, sources);
+    if (editionMerged.size === 0) continue;
+
+    const fields: Record<string, ApplyFieldValue> = {};
+    for (const field of AUDIOBOOK_EDITION_FIELDS) {
       const m = editionMerged.get(field.key);
       if (m) {
         fields[field.key] = m.value;
@@ -351,14 +390,15 @@ export async function processBulkEnrichWork(
 
   // Apply work-level fields (once, shared across all editions)
   if (Object.keys(workFields).length > 0 || editionApplyPlan.length > 0) {
-    // Apply work fields with the first ebook edition (or first edition) for author linking
-    const primaryEdition = ebookEditions[0] ?? work.editions[0];
+    // Apply work fields with the first ebook edition (or first audiobook) for author linking.
+    // We know at least one edition exists (checked at the top of the function).
+    const primaryEdition = ebookEditions[0] ?? (audiobookEditions[0] as BulkEnrichEditionData);
     const applyResult = await deps.applyEnrichmentFields(
       {
         workId,
-        editionId: primaryEdition?.id,
+        editionId: primaryEdition.id,
         workFields,
-        editionFields: editionApplyPlan.find((p) => p.editionId === primaryEdition?.id)?.fields ?? {},
+        editionFields: editionApplyPlan.find((p) => p.editionId === primaryEdition.id)?.fields ?? {},
         source: winningSource,
       },
       {} as never,
@@ -367,7 +407,7 @@ export async function processBulkEnrichWork(
 
     // Apply edition fields to remaining ebook editions
     for (const plan of editionApplyPlan) {
-      if (plan.editionId === primaryEdition?.id) continue;
+      if (plan.editionId === primaryEdition.id) continue;
       const result = await deps.applyEnrichmentFields(
         {
           workId,

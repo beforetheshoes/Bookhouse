@@ -44,6 +44,7 @@ export const getIntegrationStatusServerFn = createServerFn({
 
   const results: Record<string, { configured: boolean; label: string }> = {
     openlibrary: { configured: true, label: "Open Library" },
+    audible: { configured: true, label: "Audible" },
   };
 
   for (const provider of INTEGRATION_PROVIDERS) {
@@ -56,6 +57,7 @@ export const getIntegrationStatusServerFn = createServerFn({
     openlibrary: { configured: boolean; label: string };
     googlebooks: { configured: boolean; label: string };
     hardcover: { configured: boolean; label: string };
+    audible: { configured: boolean; label: string };
   };
 });
 

@@ -260,6 +260,7 @@ model Edition {
   asin         String?
   language     String?
   pageCount    Int?
+  duration     Int?
   editedFields String[]     @default([])
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt

@@ -60,12 +60,10 @@ describe("useLibraryFilters", () => {
         format: ["EBOOK"],
         authorId: undefined,
         seriesId: undefined,
-        publisher: undefined,
         hasCover: true,
         enriched: undefined,
         hasDescription: undefined,
         inSeries: undefined,
-        hasIsbn: undefined,
       });
     });
     expect(mockNavigate).toHaveBeenCalled();
@@ -159,11 +157,9 @@ describe("useLibraryFilters", () => {
       hasCover: true,
       authorId: ["a1"],
       seriesId: undefined,
-      publisher: undefined,
       enriched: undefined,
       hasDescription: undefined,
       inSeries: undefined,
-      hasIsbn: undefined,
     };
     const { result } = renderHook(() =>
       useLibraryFilters({ search, navigate: mockNavigate }),

@@ -111,8 +111,6 @@ describe("COLUMN_PICKER_ITEMS", () => {
       { id: "authors", label: "Author(s)" },
       { id: "progress", label: "Progress" },
       { id: "formats", label: "Format" },
-      { id: "publisher", label: "Publisher" },
-      { id: "isbn", label: "ISBN" },
     ]);
   });
 });
@@ -130,9 +128,9 @@ describe("getColumns", () => {
     return c;
   }
 
-  it("returns 7 columns", () => {
+  it("returns 5 columns", () => {
     const cols = getColumns(false, false, router);
-    expect(cols).toHaveLength(7);
+    expect(cols).toHaveLength(5);
   });
 
   it("first column is select with checkboxes", () => {
@@ -165,19 +163,7 @@ describe("getColumns", () => {
   it("formats column has correct id and size", () => {
     const formatsCol = col(getColumns(false, false, router), 4);
     expect(formatsCol.id).toBe("formats");
-    expect(formatsCol.size).toBe(80);
-  });
-
-  it("publisher column has correct id and size", () => {
-    const publisherCol = col(getColumns(false, false, router), 5);
-    expect(publisherCol.id).toBe("publisher");
-    expect(publisherCol.size).toBe(150);
-  });
-
-  it("isbn column has correct id and size", () => {
-    const isbnCol = col(getColumns(false, false, router), 6);
-    expect(isbnCol.id).toBe("isbn");
-    expect(isbnCol.size).toBe(120);
+    expect(formatsCol.size).toBe(140);
   });
 
   it("progress column cell renders percentage when progressMap has entry", () => {

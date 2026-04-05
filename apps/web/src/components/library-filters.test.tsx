@@ -14,7 +14,6 @@ const defaultFacetCounts: FacetCounts = {
   enrichment: { enriched: 8, unenriched: 7 },
   description: { withDescription: 6, withoutDescription: 9 },
   series: { inSeries: 4, standalone: 11 },
-  isbn: { withIsbn: 10, withoutIsbn: 5 },
 };
 
 const defaultProps = {
@@ -130,7 +129,6 @@ describe("LibraryFilters", () => {
     expect(screen.getByText("Enrichment")).toBeTruthy();
     expect(screen.getByText("Description")).toBeTruthy();
     expect(screen.getByText("Series")).toBeTruthy();
-    expect(screen.getByText("ISBN")).toBeTruthy();
   });
 
   it("renders enrichment filter buttons with counts", () => {
@@ -207,28 +205,6 @@ describe("LibraryFilters", () => {
     expect(onFiltersChange).toHaveBeenCalledWith(expect.objectContaining({ inSeries: false }));
   });
 
-  it("renders ISBN filter buttons with counts", () => {
-    render(<LibraryFilters {...defaultProps} />);
-    expect(screen.getByText("Has ISBN (10)")).toBeTruthy();
-    expect(screen.getByText("No ISBN (5)")).toBeTruthy();
-  });
-
-  it("toggles hasIsbn filter", async () => {
-    const onFiltersChange = vi.fn();
-    const user = userEvent.setup();
-    render(<LibraryFilters {...defaultProps} onFiltersChange={onFiltersChange} />);
-    await user.click(screen.getByText("Has ISBN (10)"));
-    expect(onFiltersChange).toHaveBeenCalledWith(expect.objectContaining({ hasIsbn: true }));
-  });
-
-  it("toggles no ISBN filter", async () => {
-    const onFiltersChange = vi.fn();
-    const user = userEvent.setup();
-    render(<LibraryFilters {...defaultProps} onFiltersChange={onFiltersChange} />);
-    await user.click(screen.getByText("No ISBN (5)"));
-    expect(onFiltersChange).toHaveBeenCalledWith(expect.objectContaining({ hasIsbn: false }));
-  });
-
   it("shows clear all when new boolean filters are active", () => {
     render(<LibraryFilters {...defaultProps} filters={{ enriched: true }} />);
     expect(screen.getByText("Clear All")).toBeTruthy();
@@ -266,13 +242,8 @@ describe("LibraryFilters", () => {
     expect(screen.getByText("Clear All")).toBeTruthy();
   });
 
-  it("shows clear all when publisher filter is active", () => {
-    render(<LibraryFilters {...defaultProps} filters={{ publisher: ["Penguin"] }} />);
-    expect(screen.getByText("Clear All")).toBeTruthy();
-  });
-
   it("does not show clear all for empty arrays", () => {
-    render(<LibraryFilters {...defaultProps} filters={{ format: [], authorId: [], seriesId: [], publisher: [] }} />);
+    render(<LibraryFilters {...defaultProps} filters={{ format: [], authorId: [], seriesId: [] }} />);
     expect(screen.queryByText("Clear All")).toBeNull();
   });
 

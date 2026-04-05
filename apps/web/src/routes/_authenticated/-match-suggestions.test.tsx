@@ -527,10 +527,13 @@ describe("MatchSuggestionsPage", () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     const { Route } = await import("./match-suggestions");
     const MatchSuggestionsPage = (Route.options.component as React.ComponentType);
+    const { waitFor } = await import("@testing-library/react");
     render(<MatchSuggestionsPage />);
     await user.click(screen.getByRole("button", { name: /re-scan matches/i }));
-    // Button should change to "Scanning..." while polling
-    expect(screen.getByRole("button", { name: /scanning/i })).toBeTruthy();
+    // Button should change to "Scanning..." after the async handler resolves
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /scanning/i })).toBeTruthy();
+    });
     // Advance past one poll interval (3s) — router.invalidate should be called
     vi.advanceTimersByTime(3500);
     expect(invalidateMock).toHaveBeenCalled();
@@ -544,10 +547,13 @@ describe("MatchSuggestionsPage", () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     const { Route } = await import("./match-suggestions");
     const MatchSuggestionsPage = (Route.options.component as React.ComponentType);
+    const { waitFor } = await import("@testing-library/react");
     const { unmount } = render(<MatchSuggestionsPage />);
     // Click once to start polling
     await user.click(screen.getByRole("button", { name: /re-scan matches/i }));
-    expect(screen.getByRole("button", { name: /scanning/i })).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /scanning/i })).toBeTruthy();
+    });
     // Advance past timeout to clean up polling and re-enable button
     vi.advanceTimersByTime(61000);
     // Unmount to trigger cleanup effect

@@ -70,17 +70,10 @@ describe("COLUMN_SORT_MAP", () => {
     expect(COLUMN_SORT_MAP.authors).toEqual({ asc: "author-asc", desc: "author-desc" });
   });
 
-  it("maps publisher to publisher-asc/publisher-desc", () => {
-    expect(COLUMN_SORT_MAP.publisher).toEqual({ asc: "publisher-asc", desc: "publisher-desc" });
-  });
-
   it("maps formats to format-asc/format-desc", () => {
     expect(COLUMN_SORT_MAP.formats).toEqual({ asc: "format-asc", desc: "format-desc" });
   });
 
-  it("maps isbn to isbn-asc/isbn-desc", () => {
-    expect(COLUMN_SORT_MAP.isbn).toEqual({ asc: "isbn-asc", desc: "isbn-desc" });
-  });
 });
 
 describe("SORT_TO_COLUMN", () => {
@@ -97,18 +90,9 @@ describe("SORT_TO_COLUMN", () => {
     expect(SORT_TO_COLUMN["author-desc"]).toEqual({ id: "authors", desc: true });
   });
 
-  it("maps all publisher sort params", () => {
-    expect(SORT_TO_COLUMN["publisher-asc"]).toEqual({ id: "publisher", desc: false });
-    expect(SORT_TO_COLUMN["publisher-desc"]).toEqual({ id: "publisher", desc: true });
-  });
-
   it("maps all format sort params", () => {
     expect(SORT_TO_COLUMN["format-asc"]).toEqual({ id: "formats", desc: false });
     expect(SORT_TO_COLUMN["format-desc"]).toEqual({ id: "formats", desc: true });
   });
 
-  it("maps all isbn sort params", () => {
-    expect(SORT_TO_COLUMN["isbn-asc"]).toEqual({ id: "isbn", desc: false });
-    expect(SORT_TO_COLUMN["isbn-desc"]).toEqual({ id: "isbn", desc: true });
-  });
 });

@@ -62,6 +62,7 @@ import {
   updateWorkServerFn,
   updateEditionServerFn,
   updateWorkAuthorsServerFn,
+  updateEditionNarratorsServerFn,
   getContributorNamesServerFn,
 } from "./editing";
 
@@ -310,6 +311,66 @@ describe("updateEditionServerFn", () => {
       },
     });
   });
+
+  it("parses pageCount string to integer", async () => {
+    editionFindUniqueMock.mockResolvedValue({ id: "e1", editedFields: [] });
+    editionUpdateMock.mockResolvedValue({ id: "e1" });
+
+    await updateEditionServerFn({
+      data: {
+        editionId: "e1",
+        fields: { pageCount: "352" },
+      },
+    });
+
+    const call = editionUpdateMock.mock.calls[0] as [{ data: { pageCount: number } }];
+    expect(call[0].data.pageCount).toBe(352);
+  });
+
+  it("sets pageCount to null when null is passed", async () => {
+    editionFindUniqueMock.mockResolvedValue({ id: "e1", editedFields: [] });
+    editionUpdateMock.mockResolvedValue({ id: "e1" });
+
+    await updateEditionServerFn({
+      data: {
+        editionId: "e1",
+        fields: { pageCount: null },
+      },
+    });
+
+    const call = editionUpdateMock.mock.calls[0] as [{ data: { pageCount: null } }];
+    expect(call[0].data.pageCount).toBeNull();
+  });
+
+  it("parses duration string to integer", async () => {
+    editionFindUniqueMock.mockResolvedValue({ id: "e1", editedFields: [] });
+    editionUpdateMock.mockResolvedValue({ id: "e1" });
+
+    await updateEditionServerFn({
+      data: {
+        editionId: "e1",
+        fields: { duration: "43200" },
+      },
+    });
+
+    const call = editionUpdateMock.mock.calls[0] as [{ data: { duration: number } }];
+    expect(call[0].data.duration).toBe(43200);
+  });
+
+  it("sets duration to null when null is passed", async () => {
+    editionFindUniqueMock.mockResolvedValue({ id: "e1", editedFields: [] });
+    editionUpdateMock.mockResolvedValue({ id: "e1" });
+
+    await updateEditionServerFn({
+      data: {
+        editionId: "e1",
+        fields: { duration: null },
+      },
+    });
+
+    const call = editionUpdateMock.mock.calls[0] as [{ data: { duration: null } }];
+    expect(call[0].data.duration).toBeNull();
+  });
 });
 
 describe("updateWorkAuthorsServerFn", () => {
@@ -440,6 +501,100 @@ describe("updateWorkAuthorsServerFn", () => {
         },
       }),
     ).rejects.toThrow("At least one author is required");
+  });
+});
+
+describe("updateEditionNarratorsServerFn", () => {
+  it("replaces narrators on a single edition", async () => {
+    canonicalizeContributorNameMock.mockReturnValue("scott brick");
+    contributorFindFirstMock.mockResolvedValue({ id: "c1" });
+    editionContributorDeleteManyMock.mockResolvedValue({ count: 1 });
+    editionContributorCreateManyMock.mockResolvedValue({ count: 1 });
+    editionFindUniqueMock.mockResolvedValue({ id: "e1", editedFields: [] });
+    editionUpdateMock.mockResolvedValue({ id: "e1" });
+
+    const result = await updateEditionNarratorsServerFn({
+      data: { editionId: "e1", narrators: ["Scott Brick"] },
+    });
+
+    expect(editionContributorDeleteManyMock).toHaveBeenCalledWith({
+      where: { editionId: "e1", role: "NARRATOR" },
+    });
+    expect(editionContributorCreateManyMock).toHaveBeenCalledWith({
+      data: [{ editionId: "e1", contributorId: "c1", role: "NARRATOR" }],
+      skipDuplicates: true,
+    });
+    expect(editionUpdateMock).toHaveBeenCalledWith({
+      where: { id: "e1" },
+      data: { editedFields: ["narrators"] },
+    });
+    expect(result).toEqual({ success: true });
+  });
+
+  it("creates new contributors when not found", async () => {
+    canonicalizeContributorNameMock.mockReturnValue("new narrator");
+    contributorFindFirstMock.mockResolvedValue(null);
+    contributorCreateMock.mockResolvedValue({ id: "c-new" });
+    editionContributorDeleteManyMock.mockResolvedValue({ count: 0 });
+    editionContributorCreateManyMock.mockResolvedValue({ count: 1 });
+    editionFindUniqueMock.mockResolvedValue({ id: "e1", editedFields: [] });
+    editionUpdateMock.mockResolvedValue({ id: "e1" });
+
+    await updateEditionNarratorsServerFn({
+      data: { editionId: "e1", narrators: ["New Narrator"] },
+    });
+
+    expect(contributorCreateMock).toHaveBeenCalledWith({
+      data: { nameDisplay: "New Narrator", nameCanonical: "new narrator" },
+    });
+  });
+
+  it("falls back to lowercase when canonicalize returns undefined for narrator", async () => {
+    canonicalizeContributorNameMock.mockReturnValue(undefined);
+    contributorFindFirstMock.mockResolvedValue(null);
+    contributorCreateMock.mockResolvedValue({ id: "c-new" });
+    editionContributorDeleteManyMock.mockResolvedValue({ count: 0 });
+    editionContributorCreateManyMock.mockResolvedValue({ count: 1 });
+    editionFindUniqueMock.mockResolvedValue({ id: "e1", editedFields: [] });
+    editionUpdateMock.mockResolvedValue({ id: "e1" });
+
+    await updateEditionNarratorsServerFn({
+      data: { editionId: "e1", narrators: ["Some Narrator"] },
+    });
+
+    expect(contributorFindFirstMock).toHaveBeenCalledWith({
+      where: { nameCanonical: "some narrator" },
+    });
+  });
+
+  it("handles edition not found gracefully for editedFields", async () => {
+    editionContributorDeleteManyMock.mockResolvedValue({ count: 0 });
+    editionFindUniqueMock.mockResolvedValue(null);
+    editionUpdateMock.mockResolvedValue({ id: "e1" });
+
+    await updateEditionNarratorsServerFn({
+      data: { editionId: "e1", narrators: [] },
+    });
+
+    expect(editionUpdateMock).toHaveBeenCalledWith({
+      where: { id: "e1" },
+      data: { editedFields: ["narrators"] },
+    });
+  });
+
+  it("clears narrators when empty array provided", async () => {
+    editionContributorDeleteManyMock.mockResolvedValue({ count: 1 });
+    editionFindUniqueMock.mockResolvedValue({ id: "e1", editedFields: [] });
+    editionUpdateMock.mockResolvedValue({ id: "e1" });
+
+    await updateEditionNarratorsServerFn({
+      data: { editionId: "e1", narrators: [] },
+    });
+
+    expect(editionContributorDeleteManyMock).toHaveBeenCalledWith({
+      where: { editionId: "e1", role: "NARRATOR" },
+    });
+    expect(editionContributorCreateManyMock).not.toHaveBeenCalled();
   });
 });
 

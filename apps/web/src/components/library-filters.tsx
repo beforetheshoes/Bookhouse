@@ -7,19 +7,16 @@ export interface FacetCounts {
   enrichment: { enriched: number; unenriched: number };
   description: { withDescription: number; withoutDescription: number };
   series: { inSeries: number; standalone: number };
-  isbn: { withIsbn: number; withoutIsbn: number };
 }
 
 export interface LibraryFilterValues {
   format?: string[];
   authorId?: string[];
   seriesId?: string[];
-  publisher?: string[];
   hasCover?: boolean;
   enriched?: boolean;
   hasDescription?: boolean;
   inSeries?: boolean;
-  hasIsbn?: boolean;
 }
 
 interface LibraryFiltersProps {
@@ -40,10 +37,8 @@ function hasActiveFilters(filters: LibraryFilterValues): boolean {
     filters.enriched !== undefined ||
     filters.hasDescription !== undefined ||
     filters.inSeries !== undefined ||
-    filters.hasIsbn !== undefined ||
     (filters.authorId !== undefined && filters.authorId.length > 0) ||
-    (filters.seriesId !== undefined && filters.seriesId.length > 0) ||
-    (filters.publisher !== undefined && filters.publisher.length > 0)
+    (filters.seriesId !== undefined && filters.seriesId.length > 0)
   );
 }
 
@@ -210,31 +205,6 @@ export function LibraryFilters({
         </div>
       </div>
 
-      <div className="space-y-2">
-        <h3 className="text-sm font-medium">ISBN</h3>
-        <div className="flex flex-wrap gap-1">
-          <Button
-            variant="outline"
-            size="sm"
-            data-active={filters.hasIsbn === true}
-            data-empty={facetCounts.isbn.withIsbn === 0}
-            onClick={() => { toggleBoolean("hasIsbn", true); }}
-            className="data-[active=true]:bg-primary data-[active=true]:text-primary-foreground data-[active=true]:border-primary dark:data-[active=true]:bg-primary dark:data-[active=true]:text-primary-foreground data-[empty=true]:opacity-50"
-          >
-            Has ISBN ({formatCount(facetCounts.isbn.withIsbn, totalFacetCounts.isbn.withIsbn)})
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            data-active={filters.hasIsbn === false}
-            data-empty={facetCounts.isbn.withoutIsbn === 0}
-            onClick={() => { toggleBoolean("hasIsbn", false); }}
-            className="data-[active=true]:bg-primary data-[active=true]:text-primary-foreground data-[active=true]:border-primary dark:data-[active=true]:bg-primary dark:data-[active=true]:text-primary-foreground data-[empty=true]:opacity-50"
-          >
-            No ISBN ({formatCount(facetCounts.isbn.withoutIsbn, totalFacetCounts.isbn.withoutIsbn)})
-          </Button>
-        </div>
-      </div>
     </div>
   );
 }

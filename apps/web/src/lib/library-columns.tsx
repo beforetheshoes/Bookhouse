@@ -4,7 +4,7 @@ import { Badge } from "~/components/ui/badge";
 import { DataTableColumnHeader } from "~/components/data-table";
 import { EditableTableCell } from "~/components/editable-table-cell";
 import { ProgressBar } from "~/components/progress-bar";
-import { updateWorkServerFn, updateEditionServerFn, updateWorkAuthorsServerFn } from "~/lib/server-fns/editing";
+import { updateWorkServerFn, updateWorkAuthorsServerFn } from "~/lib/server-fns/editing";
 import { getAuthors } from "~/lib/sort-filter-works";
 import type { LibraryWork } from "~/lib/server-fns/library";
 
@@ -18,8 +18,6 @@ export const COLUMN_PICKER_ITEMS = [
   { id: "authors", label: "Author(s)" },
   { id: "progress", label: "Progress" },
   { id: "formats", label: "Format" },
-  { id: "publisher", label: "Publisher" },
-  { id: "isbn", label: "ISBN" },
 ];
 
 export function getColumns(scanActive: boolean, editMode: boolean, router: { invalidate: () => void }, progressMap?: Record<string, number>): ColumnDef<LibraryWork>[] {
@@ -106,15 +104,18 @@ export function getColumns(scanActive: boolean, editMode: boolean, router: { inv
   },
   {
     id: "progress",
-    header: "Progress",
+    header: () => <div className="w-full text-center">Progress</div>,
     cell: ({ row }) => {
       const percent = progressMap?.[row.original.id];
+      if (percent == null) {
+        return <div className="text-center text-xs text-muted-foreground">—</div>;
+      }
       return (
-        <div className="flex items-center gap-2">
-          <div className="flex-1">
+        <div className="flex w-full items-center justify-center gap-2">
+          <div className="w-14">
             <ProgressBar percent={percent} size="md" />
           </div>
-          <span className="text-xs text-muted-foreground">{percent != null ? `${String(percent)}%` : "—"}</span>
+          <span className="w-8 text-right text-xs text-muted-foreground">{String(percent)}%</span>
         </div>
       );
     },
@@ -129,61 +130,12 @@ export function getColumns(scanActive: boolean, editMode: boolean, router: { inv
     ),
     cell: ({ row }) =>
       getFormats(row.original).map((f) => (
-        <Badge key={f} variant="secondary" className="mr-1">
+        <Badge key={f} variant="secondary" className="mr-1 px-1.5 py-0 text-[10px]">
           {f}
         </Badge>
       )),
-    size: 80,
-  },
-  {
-    id: "publisher",
-    accessorFn: (row) => row.editions[0]?.publisher ?? "",
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="Publisher" />
-    ),
-    cell: ({ row }) => {
-      const pub = row.original.editions[0]?.publisher ?? "";
-      const editionId = row.original.editions[0]?.id;
-      if (editMode && editionId) {
-        return (
-          <EditableTableCell
-            value={pub}
-            editing={true}
-            onSave={async (val) => {
-              await updateEditionServerFn({ data: { editionId, fields: { publisher: val || null } } });
-              router.invalidate();
-            }}
-          />
-        );
-      }
-      return <span>{pub || "—"}</span>;
-    },
-    size: 150,
-  },
-  {
-    id: "isbn",
-    accessorFn: (row) => row.editions[0]?.isbn13 ?? row.editions[0]?.isbn10 ?? "",
-    header: ({ column }) => (
-      <DataTableColumnHeader column={column} title="ISBN" />
-    ),
-    cell: ({ row }) => {
-      const isbn = row.original.editions[0]?.isbn13 ?? row.original.editions[0]?.isbn10 ?? "";
-      const editionId = row.original.editions[0]?.id;
-      if (editMode && editionId) {
-        return (
-          <EditableTableCell
-            value={isbn}
-            editing={true}
-            onSave={async (val) => {
-              await updateEditionServerFn({ data: { editionId, fields: { isbn13: val || null } } });
-              router.invalidate();
-            }}
-          />
-        );
-      }
-      return <span>{isbn || "—"}</span>;
-    },
-    size: 120,
+    size: 140,
+    minSize: 140,
   },
   ];
 }

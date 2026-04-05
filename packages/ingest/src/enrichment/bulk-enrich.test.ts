@@ -27,6 +27,9 @@ function makeSourceResult(provider: EnrichmentProvider, overrides: Partial<{
       pageCount: provider === "hardcover" ? 500 : 300,
       isbn13: "9781234567890",
       isbn10: null,
+      asin: provider === "audible" ? "B08G9PRS1K" : null,
+      duration: provider === "audible" ? 58200 : null,
+      narrators: provider === "audible" ? ["Scott Brick"] : null,
       ...overrides.edition,
     },
     raw: { search: { title: "Test", olid: "OL1W", authors: [], isbns: [], firstPublishYear: null, coverId: null }, work: null, edition: null },
@@ -49,8 +52,11 @@ function makeDeps(overrides: Partial<BulkEnrichDeps> = {}): BulkEnrichDeps {
         publishedDate: null,
         isbn13: null,
         isbn10: null,
+        asin: null,
         language: null,
         pageCount: null,
+        duration: null,
+        narrators: [],
         editedFields: [],
         authors: [],
       }],
@@ -252,8 +258,10 @@ describe("processBulkEnrichWork", () => {
           publishedDate: null,
           isbn13: null,
           isbn10: null,
+          asin: null,
           language: null,
           pageCount: null,
+          duration: null,
           editedFields: [],
           authors: [],
         }],
@@ -331,8 +339,10 @@ describe("processBulkEnrichWork", () => {
           publishedDate: null,
           isbn13: null,
           isbn10: null,
+          asin: null,
           language: null,
           pageCount: null,
+          duration: null,
           editedFields: [],
           authors: [],
         }],
@@ -412,9 +422,12 @@ describe("processBulkEnrichWork", () => {
           publishedDate: "2020-01-01",
           isbn13: "9781234567890",
           isbn10: "1234567890",
+          asin: null,
           language: "en",
           pageCount: 300,
+          duration: null,
           editedFields: [],
+          narrators: [],
           authors: ["Author"],
         }],
       }),
@@ -442,8 +455,10 @@ describe("processBulkEnrichWork", () => {
           publishedDate: null,
           isbn13: null,
           isbn10: null,
+          asin: null,
           language: null,
           pageCount: null,
+          duration: null,
           editedFields: [],
           authors: [],
         }],
@@ -460,7 +475,47 @@ describe("processBulkEnrichWork", () => {
     expect(applyCall[0].workFields.description).toBeUndefined();
   });
 
-  it("skips edition-level fields for audiobook editions", async () => {
+  it("uses empty edition fields when primary edition has all fields populated", async () => {
+    deps = makeDeps({
+      loadWork: vi.fn().mockResolvedValue({
+        id: "w1",
+        titleDisplay: "Title",
+        description: null,
+        coverPath: null,
+        editedFields: [],
+        tags: [],
+        editions: [{
+          id: "e-audio",
+          formatFamily: "AUDIOBOOK" as const,
+          publisher: "Already Set",
+          publishedDate: "2020-01-01",
+          isbn13: "9781234567890",
+          isbn10: null,
+          asin: "B08G9PRS1K",
+          language: null,
+          pageCount: null,
+          duration: 58200,
+          editedFields: [],
+          narrators: ["Nick Podehl"],
+          authors: ["Author"],
+        }],
+      }),
+      searchAllSources: vi.fn().mockResolvedValue({
+        status: "success",
+        results: [makeSourceResult("audible", {
+          edition: { publisher: "Audible Studios", publishedDate: "2021-01-01", asin: "B000AUDIBLE", duration: 36000, isbn13: "9780000000000", isbn10: null, pageCount: null, narrators: ["Scott Brick"] },
+        })],
+      }),
+    });
+
+    await processBulkEnrichWork("w1", ["audible"], "fullest", deps);
+
+    const applyCall = (deps.applyEnrichmentFields as ReturnType<typeof vi.fn>).mock.calls[0] as [{ editionFields: Record<string, string | string[] | number | null> }];
+    // Primary edition has all audiobook fields populated (including narrators), so editionFields should be empty
+    expect(Object.keys(applyCall[0].editionFields)).toHaveLength(0);
+  });
+
+  it("skips ebook edition fields for audiobook editions when only non-Audible sources", async () => {
     deps = makeDeps({
       loadWork: vi.fn().mockResolvedValue({
         id: "w1",
@@ -476,9 +531,12 @@ describe("processBulkEnrichWork", () => {
           publishedDate: null,
           isbn13: null,
           isbn10: null,
+          asin: null,
           language: null,
           pageCount: null,
+          duration: null,
           editedFields: [],
+          narrators: [],
           authors: ["Author"],
         }],
       }),
@@ -486,9 +544,160 @@ describe("processBulkEnrichWork", () => {
 
     await processBulkEnrichWork("w1", ["openlibrary"], "fullest", deps);
 
-    // Should apply work fields but NOT edition fields (no ebook editions)
+    // Audiobook editions should not get pageCount from non-Audible sources
     const applyCall = (deps.applyEnrichmentFields as ReturnType<typeof vi.fn>).mock.calls[0] as [{ editionFields: Record<string, string | string[] | number | null> }];
-    expect(Object.keys(applyCall[0].editionFields)).toHaveLength(0);
+    expect(applyCall[0].editionFields.pageCount).toBeUndefined();
+  });
+
+  it("skips audiobook edition enrichment when all fields are already populated", async () => {
+    deps = makeDeps({
+      loadWork: vi.fn().mockResolvedValue({
+        id: "w1",
+        titleDisplay: "Title",
+        description: "Desc",
+        coverPath: "has/cover",
+        editedFields: [],
+        tags: ["Fiction"],
+        editions: [{
+          id: "e-audio",
+          formatFamily: "AUDIOBOOK" as const,
+          publisher: "Existing Publisher",
+          publishedDate: "2020-01-01",
+          isbn13: "9781234567890",
+          isbn10: "1234567890",
+          asin: "B08G9PRS1K",
+          language: "en",
+          pageCount: null,
+          duration: 58200,
+          editedFields: [],
+          narrators: [],
+          authors: ["Author"],
+        }],
+      }),
+      searchAllSources: vi.fn().mockResolvedValue({
+        status: "success",
+        results: [makeSourceResult("audible", {
+          edition: { publisher: "Audible Studios", publishedDate: "2021-01-01", asin: "B000AUDIBLE", duration: 36000, isbn13: "9780000000000", isbn10: null, pageCount: null },
+        })],
+      }),
+      applyEnrichmentFields: vi.fn().mockResolvedValue({ success: true, skippedAll: true }),
+    });
+
+    const result = await processBulkEnrichWork("w1", ["audible"], "fullest", deps);
+
+    expect(result).toEqual({ status: "skipped-all" });
+  });
+
+  it("enriches audiobook editions with audiobook-specific fields from Audible", async () => {
+    deps = makeDeps({
+      loadWork: vi.fn().mockResolvedValue({
+        id: "w1",
+        titleDisplay: "Title",
+        description: null,
+        coverPath: null,
+        editedFields: [],
+        tags: [],
+        editions: [{
+          id: "e-audio",
+          formatFamily: "AUDIOBOOK" as const,
+          publisher: null,
+          publishedDate: null,
+          isbn13: null,
+          isbn10: null,
+          asin: null,
+          language: null,
+          pageCount: null,
+          duration: null,
+          editedFields: [],
+          narrators: [],
+          authors: ["Author"],
+        }],
+      }),
+      searchAllSources: vi.fn().mockResolvedValue({
+        status: "success",
+        results: [makeSourceResult("audible", {
+          edition: {
+            publisher: "Audible Studios",
+            publishedDate: "2021-05-04",
+            asin: "B08G9PRS1K",
+            duration: 58200,
+            isbn13: null,
+            isbn10: null,
+            pageCount: null,
+          },
+        })],
+      }),
+    });
+
+    await processBulkEnrichWork("w1", ["audible"], "fullest", deps);
+
+    const applyCall = (deps.applyEnrichmentFields as ReturnType<typeof vi.fn>).mock.calls[0] as [{ editionFields: Record<string, string | string[] | number | null>; editionId: string }];
+    expect(applyCall[0].editionId).toBe("e-audio");
+    expect(applyCall[0].editionFields.publisher).toBe("Audible Studios");
+    expect(applyCall[0].editionFields.publishedDate).toBe("2021-05-04");
+    expect(applyCall[0].editionFields.asin).toBe("B08G9PRS1K");
+    expect(applyCall[0].editionFields.duration).toBe(58200);
+    expect(applyCall[0].editionFields.pageCount).toBeUndefined();
+  });
+
+  it("enriches both ebook and audiobook editions independently", async () => {
+    deps = makeDeps({
+      loadWork: vi.fn().mockResolvedValue({
+        id: "w1",
+        titleDisplay: "Title",
+        description: null,
+        coverPath: null,
+        editedFields: [],
+        tags: [],
+        editions: [
+          {
+            id: "e-ebook",
+            formatFamily: "EBOOK" as const,
+            publisher: null, publishedDate: null, isbn13: null, isbn10: null, asin: null, language: null, pageCount: null, duration: null,
+            editedFields: [],
+            narrators: [],
+          authors: ["Author"],
+          },
+          {
+            id: "e-audio",
+            formatFamily: "AUDIOBOOK" as const,
+            publisher: null, publishedDate: null, isbn13: null, isbn10: null, asin: null, language: null, pageCount: null, duration: null,
+            editedFields: [],
+            authors: [],
+          },
+        ],
+      }),
+      searchAllSources: vi.fn().mockResolvedValue({
+        status: "success",
+        results: [
+          makeSourceResult("openlibrary"),
+          makeSourceResult("audible", {
+            edition: { publisher: "Audible Studios", asin: "B000AUDIBLE", duration: 36000, isbn13: null, isbn10: null, pageCount: null, publishedDate: "2021-01-01" },
+          }),
+        ],
+      }),
+      applyEnrichmentFields: vi.fn()
+        .mockResolvedValueOnce({ success: true, appliedFields: ["publisher", "isbn13"] })
+        .mockResolvedValueOnce({ success: true, appliedFields: ["publisher", "asin", "duration"] }),
+    });
+
+    const result = await processBulkEnrichWork("w1", ["openlibrary", "audible"], "fullest", deps);
+
+    expect(deps.applyEnrichmentFields).toHaveBeenCalledTimes(2);
+    const call1 = (deps.applyEnrichmentFields as ReturnType<typeof vi.fn>).mock.calls[0] as [{ editionId: string; editionFields: Record<string, string | string[] | number | null> }];
+    const call2 = (deps.applyEnrichmentFields as ReturnType<typeof vi.fn>).mock.calls[1] as [{ editionId: string; editionFields: Record<string, string | string[] | number | null> }];
+    // Ebook gets ebook fields
+    expect(call1[0].editionId).toBe("e-ebook");
+    expect(call1[0].editionFields.pageCount).toBeDefined();
+    expect(call1[0].editionFields.asin).toBeUndefined();
+    expect(call1[0].editionFields.duration).toBeUndefined();
+    // Audiobook gets audiobook fields
+    expect(call2[0].editionId).toBe("e-audio");
+    expect(call2[0].editionFields.asin).toBe("B000AUDIBLE");
+    expect(call2[0].editionFields.duration).toBe(36000);
+    expect(call2[0].editionFields.pageCount).toBeUndefined();
+    // Combined result
+    expect((result as { appliedFields: string[] }).appliedFields).toEqual(["publisher", "isbn13", "asin", "duration"]);
   });
 
   it("applies edition fields to each ebook edition independently", async () => {
@@ -504,21 +713,22 @@ describe("processBulkEnrichWork", () => {
           {
             id: "e1",
             formatFamily: "EBOOK" as const,
-            publisher: null, publishedDate: null, isbn13: null, isbn10: null, language: null, pageCount: null,
+            publisher: null, publishedDate: null, isbn13: null, isbn10: null, asin: null, language: null, pageCount: null, duration: null,
             editedFields: [],
-            authors: ["Author"],
+            narrators: [],
+          authors: ["Author"],
           },
           {
             id: "e2",
             formatFamily: "EBOOK" as const,
-            publisher: null, publishedDate: null, isbn13: null, isbn10: null, language: null, pageCount: null,
+            publisher: null, publishedDate: null, isbn13: null, isbn10: null, asin: null, language: null, pageCount: null, duration: null,
             editedFields: [],
             authors: [],
           },
           {
             id: "e-audio",
             formatFamily: "AUDIOBOOK" as const,
-            publisher: null, publishedDate: null, isbn13: null, isbn10: null, language: null, pageCount: null,
+            publisher: null, publishedDate: null, isbn13: null, isbn10: null, asin: null, language: null, pageCount: null, duration: null,
             editedFields: [],
             authors: [],
           },
@@ -531,8 +741,8 @@ describe("processBulkEnrichWork", () => {
 
     const result = await processBulkEnrichWork("w1", ["openlibrary"], "fullest", deps);
 
-    // Should be called twice: once for e1 (primary ebook), once for e2 (second ebook)
-    // Audiobook e-audio should be skipped for edition fields
+    // Called twice: e1 (primary ebook), e2 (second ebook)
+    // Audiobook e-audio is NOT enriched because no Audible source is in results
     expect(deps.applyEnrichmentFields).toHaveBeenCalledTimes(2);
     const call1 = (deps.applyEnrichmentFields as ReturnType<typeof vi.fn>).mock.calls[0] as [{ editionId: string }];
     const call2 = (deps.applyEnrichmentFields as ReturnType<typeof vi.fn>).mock.calls[1] as [{ editionId: string }];
@@ -555,14 +765,15 @@ describe("processBulkEnrichWork", () => {
           {
             id: "e1",
             formatFamily: "EBOOK" as const,
-            publisher: null, publishedDate: null, isbn13: null, isbn10: null, language: null, pageCount: null,
+            publisher: null, publishedDate: null, isbn13: null, isbn10: null, asin: null, language: null, pageCount: null, duration: null,
             editedFields: [],
-            authors: ["Author"],
+            narrators: [],
+          authors: ["Author"],
           },
           {
             id: "e2",
             formatFamily: "EBOOK" as const,
-            publisher: null, publishedDate: null, isbn13: null, isbn10: null, language: null, pageCount: null,
+            publisher: null, publishedDate: null, isbn13: null, isbn10: null, asin: null, language: null, pageCount: null, duration: null,
             editedFields: [],
             authors: [],
           },

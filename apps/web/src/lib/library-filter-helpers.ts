@@ -35,9 +35,7 @@ export function columnSortToParam(
 export const COLUMN_SORT_MAP: Record<string, { asc: LibrarySearchParams["sort"]; desc: LibrarySearchParams["sort"] }> = {
   titleDisplay: { asc: "title-asc", desc: "title-desc" },
   authors: { asc: "author-asc", desc: "author-desc" },
-  publisher: { asc: "publisher-asc", desc: "publisher-desc" },
   formats: { asc: "format-asc", desc: "format-desc" },
-  isbn: { asc: "isbn-asc", desc: "isbn-desc" },
 };
 
 export const SORT_TO_COLUMN: Record<string, { id: string; desc: boolean }> = {
@@ -45,10 +43,6 @@ export const SORT_TO_COLUMN: Record<string, { id: string; desc: boolean }> = {
   "title-desc": { id: "titleDisplay", desc: true },
   "author-asc": { id: "authors", desc: false },
   "author-desc": { id: "authors", desc: true },
-  "publisher-asc": { id: "publisher", desc: false },
-  "publisher-desc": { id: "publisher", desc: true },
   "format-asc": { id: "formats", desc: false },
   "format-desc": { id: "formats", desc: true },
-  "isbn-asc": { id: "isbn", desc: false },
-  "isbn-desc": { id: "isbn", desc: true },
 };

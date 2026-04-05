@@ -32,6 +32,7 @@ beforeEach(() => {
     openlibrary: { configured: true, label: "Open Library" },
     googlebooks: { configured: true, label: "Google Books" },
     hardcover: { configured: false, label: "Hardcover" },
+    audible: { configured: true, label: "Audible" },
   });
 });
 
@@ -96,11 +97,11 @@ describe("BulkEnrichDialog", () => {
     const startBtn = screen.getByRole("button", { name: /Start Enrichment/i });
     await user.click(startBtn);
 
-    // Both OL and GB are configured, so both are pre-selected
+    // OL, GB, and Audible are configured, so all are pre-selected
     expect(bulkEnrichMock).toHaveBeenCalledWith({
       data: {
         workIds: ["w1", "w2", "w3", "w4", "w5"],
-        sources: ["openlibrary", "googlebooks"],
+        sources: ["openlibrary", "googlebooks", "audible"],
         strategy: "fullest",
       },
     });
@@ -113,11 +114,13 @@ describe("BulkEnrichDialog", () => {
     render(<BulkEnrichDialog {...baseProps} />);
     await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
 
-    // Uncheck both pre-selected sources (OL and GB)
+    // Uncheck all pre-selected sources (OL, GB, and Audible)
     const olCheckbox = screen.getByLabelText("Open Library");
     await user.click(olCheckbox);
     const gbCheckbox = screen.getByLabelText("Google Books");
     await user.click(gbCheckbox);
+    const audibleCheckbox = screen.getByLabelText("Audible");
+    await user.click(audibleCheckbox);
 
     const startBtn = screen.getByRole("button", { name: /Start Enrichment/i });
     expect(startBtn.hasAttribute("disabled")).toBe(true);
@@ -214,7 +217,7 @@ describe("BulkEnrichDialog", () => {
 
     expect(bulkEnrichMock).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        sources: ["openlibrary", "googlebooks"],
+        sources: ["openlibrary", "googlebooks", "audible"],
       }) as object,
     });
   });
