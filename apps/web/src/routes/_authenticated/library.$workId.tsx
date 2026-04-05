@@ -107,7 +107,7 @@ function WorkDetailPage() {
   const [enrichEditionId, setEnrichEditionId] = useState<string | null>(null);
   const [coverSearchOpen, setCoverSearchOpen] = useState(false);
   const formatFamilies = [...new Set(work.editions.map((e) => e.formatFamily))];
-  const [activeFormat, setActiveFormat] = useState(formatFamilies[0] ?? "EBOOK");
+  const [activeFormat, setActiveFormat] = useState<string>(formatFamilies[0] ?? "EBOOK");
   const authors = getAuthors(work);
   const coverColors = work.coverColors as string[] | null;
   const { setBookColors } = useAppColor();

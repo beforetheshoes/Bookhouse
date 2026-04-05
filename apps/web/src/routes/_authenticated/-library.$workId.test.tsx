@@ -286,7 +286,7 @@ describe("editionSortKey", () => {
     const edition = {
       publisher: "DAW Books",
       editionFiles: [{ fileAsset: { basename: "wind.epub" } }],
-    } as Parameters<typeof editionSortKey>[0];
+    } as unknown as Parameters<typeof editionSortKey>[0];
     expect(editionSortKey(edition)).toBe("daw books\0wind.epub");
   });
 
@@ -295,7 +295,7 @@ describe("editionSortKey", () => {
     const edition = {
       publisher: null,
       editionFiles: [],
-    } as Parameters<typeof editionSortKey>[0];
+    } as unknown as Parameters<typeof editionSortKey>[0];
     expect(editionSortKey(edition)).toBe("\0");
   });
 });
@@ -1677,28 +1677,13 @@ describe("WorkDetailPage", () => {
       contributors: [],
       editionFiles: [{
         id: "ef3",
-        editionId: "edition-3",
-        fileAssetId: "fa3",
         role: "PRIMARY",
         fileAsset: {
           id: "fa3",
-          libraryRootId: "lr1",
-          absolutePath: "/books/aaa.epub",
-          relativePath: "aaa.epub",
           basename: "aaa.epub",
-          extension: "epub",
-          mimeType: "application/epub+zip",
-          sizeBytes: BigInt(1000),
-          ctime: new Date(),
-          mtime: new Date(),
-          partialHash: null,
-          fullHash: null,
-          metadata: null,
+          sizeBytes: 1000n,
           mediaKind: "EPUB",
           availabilityStatus: "PRESENT",
-          lastSeenAt: new Date(),
-          createdAt: new Date(),
-          updatedAt: new Date(),
         },
       }],
     });

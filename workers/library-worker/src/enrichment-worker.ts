@@ -248,6 +248,17 @@ function buildBulkEnrichDeps(
           );
           await db.editionContributor.createMany({ data, skipDuplicates: true });
         },
+        deleteNarratorContributors: async (editionId) => {
+          await db.editionContributor.deleteMany({ where: { editionId, role: "NARRATOR" } });
+        },
+        createNarratorContributors: async (editionId, contributorIds) => {
+          const data = contributorIds.map((contributorId) => ({
+            editionId,
+            contributorId,
+            role: "NARRATOR" as const,
+          }));
+          await db.editionContributor.createMany({ data, skipDuplicates: true });
+        },
         upsertExternalLink: async (linkData) => {
           await db.externalLink.upsert({
             where: {
