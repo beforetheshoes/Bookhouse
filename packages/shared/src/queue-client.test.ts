@@ -687,7 +687,7 @@ describe("getImportJobLiveActivity", () => {
 describe("getActiveJobCountByName", () => {
   it("counts jobs matching the given name across all live states", async () => {
     getJobsMock
-      .mockResolvedValueOnce([{ name: "enrich-contributor" }, { name: "refresh-metadata" }])
+      .mockResolvedValueOnce([{ name: "enrich-contributor" }, { name: "detect-duplicates" }])
       .mockResolvedValueOnce([{ name: "enrich-contributor" }])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])

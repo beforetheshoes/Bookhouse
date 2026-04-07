@@ -35,34 +35,6 @@ export function buildSearchDeps(
   };
 }
 
-const triggerSchema = z.object({
-  workId: z.string(),
-});
-
-export const triggerEnrichmentServerFn = createServerFn({
-  method: "POST",
-})
-  .inputValidator(triggerSchema)
-  .handler(async ({ data }) => {
-    const { db } = await import("@bookhouse/db");
-    const { enqueueLibraryJob } = await import("@bookhouse/shared");
-
-    const importJob = await db.importJob.create({
-      data: {
-        kind: "REFRESH_METADATA",
-        status: "QUEUED",
-        payload: { workId: data.workId },
-      },
-    });
-
-    const queueJobId = await enqueueLibraryJob("refresh-metadata", {
-      workId: data.workId,
-      importJobId: importJob.id,
-    });
-
-    return { importJobId: importJob.id, queueJobId };
-  });
-
 const searchSchema = z.object({
   workId: z.string(),
   editionId: z.string().optional(),

@@ -4,7 +4,6 @@ import type {
   MatchSuggestionsJobPayload,
   MatchFileAssetToEditionJobPayload,
   ParseFileAssetMetadataJobPayload,
-  RefreshMetadataJobPayload,
   ScanLibraryRootJobPayload,
 } from "./index";
 import {
@@ -33,7 +32,6 @@ describe("shared queue helpers", () => {
     expect(LIBRARY_JOB_NAMES.HASH_FILE_ASSET).toBe("hash-file-asset");
     expect(LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA).toBe("parse-file-asset-metadata");
     expect(LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION).toBe("match-file-asset-to-edition");
-    expect(LIBRARY_JOB_NAMES.REFRESH_METADATA).toBe("refresh-metadata");
     expect(LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS).toBe("match-suggestions");
   });
 
@@ -134,14 +132,10 @@ describe("shared queue helpers", () => {
       fileAssetId: "file-1",
     };
 
-    const refreshPayload: RefreshMetadataJobPayload = {
-      workId: "work-1",
-    };
     const matchSuggestionsPayload: MatchSuggestionsJobPayload = {
       fileAssetId: "file-1",
     };
     expect(matchSuggestionsPayload).toEqual({ fileAssetId: "file-1" });
-    expect(refreshPayload).toEqual({ workId: "work-1" });
     expect(scanPayload).toEqual({ libraryRootId: "root-1" });
     expect(scanWithTrigger).toEqual({ libraryRootId: "root-2", scanMode: "FULL", scanTrigger: "manual" });
     expect(hashPayload).toEqual({
