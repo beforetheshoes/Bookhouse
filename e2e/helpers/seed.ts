@@ -135,7 +135,7 @@ export async function seedWork(overrides: { title?: string } = {}) {
 export async function seedImportJob(
   libraryRootId: string,
   overrides: {
-    kind?: "SCAN_ROOT" | "HASH_FILE" | "PARSE_FILE" | "REFRESH_METADATA" | "DETECT_DUPLICATES" | "MATCH_SUGGESTIONS";
+    kind?: "SCAN_ROOT" | "HASH_FILE" | "PARSE_FILE" | "DETECT_DUPLICATES" | "MATCH_SUGGESTIONS";
     status?: "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED";
   } = {},
 ) {

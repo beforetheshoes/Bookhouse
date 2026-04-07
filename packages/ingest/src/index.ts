@@ -90,8 +90,6 @@ export { applyEnrichmentFields } from "./enrichment/apply-enrichment";
 export type { ApplyEnrichmentInput, ApplyEnrichmentDeps, ApplyEnrichmentResult, ApplyFieldValue } from "./enrichment/apply-enrichment";
 export { processBulkEnrichWork } from "./enrichment/bulk-enrich";
 export type { BulkEnrichDeps, BulkEnrichResult, BulkEnrichWorkData, BulkEnrichEditionData } from "./enrichment/bulk-enrich";
-export { enrichWork } from "./enrichment/enrich-work";
-export type { EnrichWorkDeps, EnrichWorkResult } from "./enrichment/enrich-work";
 export { enrichContributor } from "./enrichment/enrich-contributor";
 export type { EnrichContributorDeps, EnrichContributorResult } from "./enrichment/enrich-contributor";
 export { TokenBucketLimiter } from "./enrichment/token-bucket";

@@ -14,7 +14,6 @@ vi.mock("@tanstack/react-start", () => ({
   },
 }));
 
-const importJobCreateMock = vi.fn();
 const workUpdateMock = vi.fn();
 const editionUpdateMock = vi.fn();
 const workFindUniqueMock = vi.fn();
@@ -29,13 +28,11 @@ const contributorFindFirstMock = vi.fn();
 const contributorCreateMock = vi.fn();
 const editionContributorDeleteManyMock = vi.fn();
 const editionContributorCreateManyMock = vi.fn();
-const enqueueLibraryJobMock = vi.fn();
 const searchAllSourcesMock = vi.fn();
 const getDecryptedApiKeyMock = vi.fn();
 
 vi.mock("@bookhouse/db", () => ({
   db: {
-    importJob: { create: importJobCreateMock },
     work: {
       update: workUpdateMock,
       findUnique: workFindUniqueMock,
@@ -65,10 +62,6 @@ vi.mock("@bookhouse/db", () => ({
       createMany: editionContributorCreateManyMock,
     },
   },
-}));
-
-vi.mock("@bookhouse/shared", () => ({
-  enqueueLibraryJob: enqueueLibraryJobMock,
 }));
 
 const applyCoverFromUrlMock = vi.fn();
@@ -102,7 +95,6 @@ vi.mock("./integrations", () => ({
 }));
 
 import {
-  triggerEnrichmentServerFn,
   getEnrichmentDataServerFn,
   applyEnrichmentServerFn,
   applyCoverFromUrlServerFn,
@@ -201,30 +193,6 @@ describe("buildSearchDeps", () => {
     const result = deps.checkRateLimit();
 
     expect(result).toEqual({ allowed: true });
-  });
-});
-
-describe("triggerEnrichmentServerFn", () => {
-  it("creates an import job and enqueues a refresh-metadata job", async () => {
-    importJobCreateMock.mockResolvedValue({ id: "ij-1" });
-    enqueueLibraryJobMock.mockResolvedValue("job-1");
-
-    const result = await triggerEnrichmentServerFn({
-      data: { workId: "w1" },
-    });
-
-    expect(importJobCreateMock).toHaveBeenCalledWith({
-      data: {
-        kind: "REFRESH_METADATA",
-        status: "QUEUED",
-        payload: { workId: "w1" },
-      },
-    });
-    expect(enqueueLibraryJobMock).toHaveBeenCalledWith("refresh-metadata", {
-      workId: "w1",
-      importJobId: "ij-1",
-    });
-    expect(result).toEqual({ importJobId: "ij-1", queueJobId: "job-1" });
   });
 });
 

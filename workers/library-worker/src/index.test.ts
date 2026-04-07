@@ -5,14 +5,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type WrappedEnqueue = (name: string, payload: Record<string, string | undefined>) => Promise<void>;
 type IngestServicesConfig = { enqueueLibraryJob: WrappedEnqueue };
-type EnrichDeps = {
-  findWork: (id: string) => Promise<object | null>;
-  searchOL: (title: string, author: string) => Promise<object | null>;
-  getOLWork: (olid: string) => Promise<object | null>;
-  upsertExternalLink: (data: { editionId: string; provider: string; externalId: string; metadata: Record<string, string | number | boolean | null> }) => Promise<object>;
-  acquireOLToken: () => Promise<void>;
-};
-
 const loggerInfoMock = vi.fn();
 const loggerWarnMock = vi.fn();
 const loggerErrorMock = vi.fn();
@@ -31,7 +23,6 @@ const matchFileAssetToEditionMock = vi.fn();
 const parseFileAssetMetadataMock = vi.fn();
 const processCoverForWorkMock = vi.fn();
 const scanLibraryRootMock = vi.fn();
-const enrichWorkMock = vi.fn();
 const detectDuplicatesMock = vi.fn();
 const matchSuggestionsMock = vi.fn();
 const importJobUpdateMock = vi.fn();
@@ -76,9 +67,6 @@ vi.mock("bullmq", () => ({
 
 const createIngestServicesMock = vi.fn();
 
-const workFindUniqueMock = vi.fn();
-const externalLinkUpsertMock = vi.fn();
-
 vi.mock("@bookhouse/db", () => ({
   db: {
     appSetting: {
@@ -87,12 +75,6 @@ vi.mock("@bookhouse/db", () => ({
     importJob: {
       update: importJobUpdateMock,
       updateMany: importJobUpdateManyMock,
-    },
-    work: {
-      findUnique: workFindUniqueMock,
-    },
-    externalLink: {
-      upsert: externalLinkUpsertMock,
     },
   },
 }));
@@ -114,14 +96,9 @@ vi.mock("@bookhouse/ingest", () => ({
   parseFileAssetMetadata: parseFileAssetMetadataMock,
   processCoverForWorkDefault: () => processCoverForWorkMock,
   scanLibraryRoot: scanLibraryRootMock,
-  enrichWork: enrichWorkMock,
   detectDuplicates: detectDuplicatesMock,
   matchSuggestions: matchSuggestionsMock,
-  searchOpenLibrary: vi.fn(),
-  getOpenLibraryWork: vi.fn(),
-  TokenBucketLimiter: class { acquire = () => Promise.resolve(); },
   cascadeCleanupOrphans: cascadeCleanupOrphansMock,
-  createOLFetcher: () => fetch,
   enrichContributor: vi.fn(),
   searchOpenLibraryAuthors: vi.fn(),
   searchHardcoverAuthors: vi.fn(),
@@ -167,7 +144,6 @@ beforeEach(() => {
   createIngestServicesMock.mockReset();
   detectDuplicatesMock.mockReset();
   matchSuggestionsMock.mockReset();
-  enrichWorkMock.mockReset();
   hashFileAssetMock.mockReset();
   importJobUpdateMock.mockReset();
   importJobUpdateMock.mockResolvedValue({});
@@ -182,8 +158,6 @@ beforeEach(() => {
   queueConnectionConfigMock.mockClear();
   redisConstructorMock.mockClear();
   scanLibraryRootMock.mockReset();
-  workFindUniqueMock.mockReset();
-  externalLinkUpsertMock.mockReset();
   workerCloseMock.mockReset();
   workerConstructorMock.mockClear();
   moveToWaitingChildrenMock.mockReset();
@@ -203,7 +177,6 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
       matchSuggestions: matchSuggestionsMock,
     });
@@ -245,14 +218,6 @@ describe("library worker", () => {
       }) as never),
     ).resolves.toBe("cover-result");
 
-    enrichWorkMock.mockResolvedValueOnce("enrich-result");
-    await expect(
-      processor(createMockJob({
-        data: { workId: "work-1" },
-        name: "refresh-metadata",
-      }) as never),
-    ).resolves.toBe("enrich-result");
-
     detectDuplicatesMock.mockResolvedValueOnce("detect-result");
     await expect(
       processor(createMockJob({
@@ -290,7 +255,6 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
       matchSuggestions: matchSuggestionsMock,
     });
@@ -318,7 +282,6 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
       matchSuggestions: matchSuggestionsMock,
     });
@@ -349,7 +312,6 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
       matchSuggestions: matchSuggestionsMock,
     });
@@ -378,7 +340,6 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
       matchSuggestions: matchSuggestionsMock,
     });
@@ -410,7 +371,6 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
       matchSuggestions: matchSuggestionsMock,
     });
@@ -434,7 +394,6 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
       matchSuggestions: matchSuggestionsMock,
     });
@@ -457,7 +416,6 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
       matchSuggestions: matchSuggestionsMock,
     });
@@ -494,7 +452,6 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
       matchSuggestions: matchSuggestionsMock,
     });
@@ -530,7 +487,6 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
       matchSuggestions: matchSuggestionsMock,
     });
@@ -554,7 +510,6 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
       matchSuggestions: matchSuggestionsMock,
     });
@@ -601,7 +556,6 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
       matchSuggestions: matchSuggestionsMock,
     });
@@ -633,7 +587,6 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
       matchSuggestions: matchSuggestionsMock,
     });
@@ -650,86 +603,6 @@ describe("library worker", () => {
     expect(scanLibraryRootMock).toHaveBeenCalledWith({ libraryRootId: "root-1" });
   });
 
-  it("dispatches refresh-metadata jobs to enrichWork handler and wires deps", async () => {
-    const { createLibraryWorkerProcessor } = await import("./index");
-    const processor = createLibraryWorkerProcessor({
-      hashFileAsset: hashFileAssetMock,
-      matchFileAssetToEdition: matchFileAssetToEditionMock,
-      parseFileAssetMetadata: parseFileAssetMetadataMock,
-      processCoverForWork: processCoverForWorkMock,
-      scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
-      detectDuplicates: detectDuplicatesMock,
-      matchSuggestions: matchSuggestionsMock,
-    });
-
-    enrichWorkMock.mockResolvedValueOnce({ status: "enriched", workOlid: "OL123W" });
-
-    const result = await processor(createMockJob({
-      data: { workId: "work-1" },
-      name: "refresh-metadata",
-    }) as never);
-
-    expect(result).toEqual({ status: "enriched", workOlid: "OL123W" });
-    expect(enrichWorkMock).toHaveBeenCalledWith("work-1", expect.objectContaining({
-      findWork: expect.any(Function) as (() => void),
-      searchOL: expect.any(Function) as (() => void),
-      getOLWork: expect.any(Function) as (() => void),
-      upsertExternalLink: expect.any(Function) as (() => void),
-      acquireOLToken: expect.any(Function) as (() => void),
-    }));
-
-    // Exercise the deps callbacks for coverage
-    const [[, deps]] = enrichWorkMock.mock.calls as object as [[string, EnrichDeps]];
-
-    workFindUniqueMock.mockResolvedValueOnce({ id: "w1" });
-    await deps.findWork("w1");
-    expect(workFindUniqueMock).toHaveBeenCalledWith({
-      where: { id: "w1" },
-      include: {
-        editions: {
-          include: {
-            contributors: { include: { contributor: true } },
-            externalLinks: true,
-          },
-        },
-      },
-    });
-
-    void deps.searchOL("title", "author");
-    void deps.getOLWork("OL1W");
-
-    externalLinkUpsertMock.mockResolvedValueOnce({ id: "el1" });
-    await deps.upsertExternalLink({
-      editionId: "e1",
-      provider: "openlibrary",
-      externalId: "OL1W",
-      metadata: { title: "Test" },
-    });
-    expect(externalLinkUpsertMock).toHaveBeenCalledWith({
-      where: {
-        editionId_provider_externalId: {
-          editionId: "e1",
-          provider: "openlibrary",
-          externalId: "OL1W",
-        },
-      },
-      create: {
-        editionId: "e1",
-        provider: "openlibrary",
-        externalId: "OL1W",
-        metadata: { title: "Test" },
-        lastSyncedAt: expect.any(Date) as Date,
-      },
-      update: {
-        metadata: { title: "Test" },
-        lastSyncedAt: expect.any(Date) as Date,
-      },
-    });
-
-    await deps.acquireOLToken();
-  });
-
   it("fails unknown jobs", async () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
@@ -738,7 +611,6 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
       matchSuggestions: matchSuggestionsMock,
     });
@@ -854,7 +726,6 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
       matchSuggestions: matchSuggestionsMock,
     });
@@ -889,7 +760,6 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
       matchSuggestions: matchSuggestionsMock,
     });
@@ -919,7 +789,6 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
       matchSuggestions: matchSuggestionsMock,
     });
@@ -944,7 +813,6 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
       matchSuggestions: matchSuggestionsMock,
     });
@@ -967,7 +835,6 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
       matchSuggestions: matchSuggestionsMock,
     });
@@ -992,7 +859,6 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
       matchSuggestions: matchSuggestionsMock,
     });
@@ -1020,7 +886,6 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
       matchSuggestions: matchSuggestionsMock,
     });
@@ -1046,7 +911,6 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
       matchSuggestions: matchSuggestionsMock,
     });
@@ -1068,7 +932,6 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
       matchSuggestions: matchSuggestionsMock,
     });
@@ -1090,7 +953,6 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
       matchSuggestions: matchSuggestionsMock,
     });
@@ -1121,7 +983,6 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
       matchSuggestions: matchSuggestionsMock,
     });
@@ -1150,7 +1011,6 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
       matchSuggestions: matchSuggestionsMock,
     });
@@ -1185,7 +1045,6 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
       matchSuggestions: matchSuggestionsMock,
     });
@@ -1220,7 +1079,6 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
       matchSuggestions: matchSuggestionsMock,
     });
@@ -1255,7 +1113,6 @@ describe("library worker", () => {
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
       scanLibraryRoot: scanLibraryRootMock,
-      enrichWork: enrichWorkMock,
       detectDuplicates: detectDuplicatesMock,
       matchSuggestions: matchSuggestionsMock,
     });
