@@ -38,6 +38,7 @@ COPY --from=build /app/apps/web/.output .output
 COPY --from=build /app/packages/db/prisma packages/db/prisma
 COPY --from=build /app/packages/db/prisma.config.ts packages/db/prisma.config.ts
 COPY --from=build /app/packages/db/package.json packages/db/package.json
+COPY --from=build /app/packages/db/node_modules packages/db/node_modules
 COPY scripts/web-entrypoint.sh /usr/local/bin/web-entrypoint.sh
 RUN chmod +x /usr/local/bin/web-entrypoint.sh
 CMD ["/usr/local/bin/web-entrypoint.sh"]
