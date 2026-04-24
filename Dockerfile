@@ -21,8 +21,14 @@ RUN pnpm build
 
 FROM base AS web
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
-  && ARCH=$(dpkg --print-architecture) \
-  && curl -fsSL "https://github.com/pgaskin/kepubify/releases/latest/download/kepubify-linux-${ARCH}" -o /usr/local/bin/kepubify \
+  && case "$(dpkg --print-architecture)" in \
+       amd64) KEPUBIFY_ARCH=64bit ;; \
+       arm64) KEPUBIFY_ARCH=arm64 ;; \
+       armhf) KEPUBIFY_ARCH=armv6 ;; \
+       i386)  KEPUBIFY_ARCH=32bit ;; \
+       *) echo "unsupported arch: $(dpkg --print-architecture)" >&2; exit 1 ;; \
+     esac \
+  && curl -fsSL "https://github.com/pgaskin/kepubify/releases/latest/download/kepubify-linux-${KEPUBIFY_ARCH}" -o /usr/local/bin/kepubify \
   && chmod +x /usr/local/bin/kepubify \
   && apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/node_modules node_modules
