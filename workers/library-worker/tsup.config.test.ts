@@ -7,7 +7,7 @@ describe("library worker tsup config", () => {
 
     expect(config.entry).toEqual(["src/index.ts"]);
     expect(config.format).toBe("esm");
-    expect(config.noExternal).toEqual([/.*/]);
+    expect(config.noExternal).toEqual([/^@bookhouse\//]);
     expect(config.external).toContain("node:fs");
     expect(config.banner?.js).toContain("__bundleCreateRequire");
   });

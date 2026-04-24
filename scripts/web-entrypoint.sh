@@ -8,7 +8,7 @@ if [ -z "$PRISMA_CLI" ]; then
 fi
 
 echo "web-entrypoint: applying database migrations"
-node "$PRISMA_CLI" migrate deploy --schema=/app/packages/db/prisma/schema.prisma
+(cd /app/packages/db && node "$PRISMA_CLI" migrate deploy)
 
 echo "web-entrypoint: starting server"
 exec node /app/.output/server/index.mjs
