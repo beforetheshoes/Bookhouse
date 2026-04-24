@@ -22,6 +22,7 @@ const editionFindManyMock = vi.fn();
 const contributorFindFirstMock = vi.fn();
 const contributorCreateMock = vi.fn();
 const contributorFindManyMock = vi.fn();
+const contributorUpdateMock = vi.fn();
 const editionContributorDeleteManyMock = vi.fn();
 const editionContributorCreateManyMock = vi.fn();
 const transactionMock = vi.fn();
@@ -41,6 +42,7 @@ vi.mock("@bookhouse/db", () => ({
       findFirst: contributorFindFirstMock,
       findMany: contributorFindManyMock,
       create: contributorCreateMock,
+      update: contributorUpdateMock,
     },
     editionContributor: {
       deleteMany: editionContributorDeleteManyMock,
@@ -52,10 +54,12 @@ vi.mock("@bookhouse/db", () => ({
 
 const canonicalizeBookTitleMock = vi.fn();
 const canonicalizeContributorNameMock = vi.fn();
+const generateNameSortMock = vi.fn();
 
 vi.mock("@bookhouse/ingest", () => ({
   canonicalizeBookTitle: canonicalizeBookTitleMock,
   canonicalizeContributorName: canonicalizeContributorNameMock,
+  generateNameSort: generateNameSortMock,
 }));
 
 import {
@@ -63,6 +67,7 @@ import {
   updateEditionServerFn,
   updateWorkAuthorsServerFn,
   updateEditionNarratorsServerFn,
+  updateContributorServerFn,
   getContributorNamesServerFn,
 } from "./editing";
 
@@ -74,11 +79,13 @@ beforeEach(() => {
   editionFindManyMock.mockReset();
   contributorFindFirstMock.mockReset();
   contributorCreateMock.mockReset();
+  contributorUpdateMock.mockReset();
   editionContributorDeleteManyMock.mockReset();
   editionContributorCreateManyMock.mockReset();
   transactionMock.mockReset();
   canonicalizeBookTitleMock.mockReset();
   canonicalizeContributorNameMock.mockReset();
+  generateNameSortMock.mockReset();
 });
 
 describe("updateWorkServerFn", () => {
@@ -423,6 +430,7 @@ describe("updateWorkAuthorsServerFn", () => {
     workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: [] });
     editionFindManyMock.mockResolvedValue([{ id: "e1" }]);
     canonicalizeContributorNameMock.mockReturnValue("new author");
+    generateNameSortMock.mockReturnValue("author, new");
     contributorFindFirstMock.mockResolvedValue(null);
     contributorCreateMock.mockResolvedValue({ id: "c-new" });
     transactionMock.mockImplementation(async (fn: () => Promise<object>) => fn());
@@ -441,6 +449,7 @@ describe("updateWorkAuthorsServerFn", () => {
       data: {
         nameDisplay: "New Author",
         nameCanonical: "new author",
+        nameSort: "author, new",
       },
     });
     expect(editionContributorCreateManyMock).toHaveBeenCalledWith({
@@ -533,6 +542,7 @@ describe("updateEditionNarratorsServerFn", () => {
 
   it("creates new contributors when not found", async () => {
     canonicalizeContributorNameMock.mockReturnValue("new narrator");
+    generateNameSortMock.mockReturnValue("narrator, new");
     contributorFindFirstMock.mockResolvedValue(null);
     contributorCreateMock.mockResolvedValue({ id: "c-new" });
     editionContributorDeleteManyMock.mockResolvedValue({ count: 0 });
@@ -545,7 +555,7 @@ describe("updateEditionNarratorsServerFn", () => {
     });
 
     expect(contributorCreateMock).toHaveBeenCalledWith({
-      data: { nameDisplay: "New Narrator", nameCanonical: "new narrator" },
+      data: { nameDisplay: "New Narrator", nameCanonical: "new narrator", nameSort: "narrator, new" },
     });
   });
 
@@ -595,6 +605,22 @@ describe("updateEditionNarratorsServerFn", () => {
       where: { editionId: "e1", role: "NARRATOR" },
     });
     expect(editionContributorCreateManyMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("updateContributorServerFn", () => {
+  it("updates nameSort on a contributor", async () => {
+    contributorUpdateMock.mockResolvedValue({ id: "c1" });
+
+    const result = await updateContributorServerFn({
+      data: { contributorId: "c1", nameSort: "le guin, ursula k." },
+    });
+
+    expect(contributorUpdateMock).toHaveBeenCalledWith({
+      where: { id: "c1" },
+      data: { nameSort: "le guin, ursula k." },
+    });
+    expect(result).toEqual({ success: true });
   });
 });
 

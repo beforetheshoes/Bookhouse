@@ -1,4 +1,5 @@
 import path from "node:path";
+import { generateSortTitle, generateNameSort } from "./sort-keys";
 import type { Dirent, Stats } from "node:fs";
 import { lstat, readdir } from "node:fs/promises";
 import {
@@ -113,6 +114,7 @@ interface FileAssetCreateInput {
 
 interface FileAssetUpdateInput extends Omit<FileAssetCreateInput, "absolutePath" | "libraryRootId"> {
   fullHash?: string | null;
+  koreaderHash?: string | null;
   partialHash?: string | null;
 }
 
@@ -402,6 +404,7 @@ export interface HashFileAssetResult {
   availabilityStatus: AvailabilityStatus;
   fileAssetId: string;
   fullHash?: string;
+  koreaderHash?: string;
   movedFromFileAssetId?: string;
   partialHash?: string;
 }
@@ -1027,9 +1030,10 @@ async function ensureContributors(
     .map((nameDisplay) => ({
       nameCanonical: canonicalizeContributorName(nameDisplay),
       nameDisplay,
+      nameSort: generateNameSort(nameDisplay),
     }))
     .filter(
-      (entry): entry is { nameCanonical: string; nameDisplay: string } =>
+      (entry): entry is { nameCanonical: string; nameDisplay: string; nameSort: string } =>
         entry.nameCanonical !== undefined,
     );
 
@@ -1996,7 +2000,7 @@ export function createIngestServices(
                 const stubWork = await ingestDb.work.create({
                   data: {
                     enrichmentStatus: "STUB",
-                    sortTitle: null,
+                    sortTitle: generateSortTitle(title),
                     titleCanonical,
                     titleDisplay: title,
                   },
@@ -2054,7 +2058,7 @@ export function createIngestServices(
                 const stubWork = await ingestDb.work.create({
                   data: {
                     enrichmentStatus: "STUB",
-                    sortTitle: null,
+                    sortTitle: generateSortTitle(title),
                     titleCanonical,
                     titleDisplay: title,
                   },
@@ -2163,6 +2167,7 @@ export function createIngestServices(
         data: {
           availabilityStatus: AvailabilityStatus.PRESENT,
           fullHash: hashes.fullHash,
+          koreaderHash: hashes.koreaderHash,
           lastSeenAt: now,
           mtime: hashes.mtime,
           partialHash: hashes.partialHash,
@@ -2209,6 +2214,7 @@ export function createIngestServices(
                   availabilityStatus: AvailabilityStatus.PRESENT,
                   fileAssetId: fileAsset.id,
                   fullHash: hashes.fullHash,
+                  koreaderHash: hashes.koreaderHash,
                   movedFromFileAssetId: missingMatch.id,
                   partialHash: hashes.partialHash,
                 };
@@ -2235,6 +2241,7 @@ export function createIngestServices(
         availabilityStatus: AvailabilityStatus.PRESENT,
         fileAssetId: fileAsset.id,
         fullHash: hashes.fullHash,
+        koreaderHash: hashes.koreaderHash,
         partialHash: hashes.partialHash,
       };
     } catch (error) {
@@ -2928,7 +2935,7 @@ export function createIngestServices(
                 data: {
                   description: storedMeta.normalized?.description ?? null,
                   enrichmentStatus: "ENRICHED",
-                  sortTitle: null,
+                  sortTitle: generateSortTitle(matchableMeta.title),
                   titleCanonical: matchableMeta.titleCanonical,
                   titleDisplay: matchableMeta.title,
                 },
@@ -3076,7 +3083,7 @@ export function createIngestServices(
           data: {
             description: ctx.storedMetadata.normalized?.description ?? null,
             enrichmentStatus: "ENRICHED",
-            sortTitle: null,
+            sortTitle: generateSortTitle(ctx.matchableMetadata.title),
             titleCanonical: ctx.matchableMetadata.titleCanonical,
             titleDisplay: ctx.matchableMetadata.title,
           },
@@ -3308,7 +3315,7 @@ export function createIngestServices(
     if (matchingWork === undefined) {
       const createdWorkRecord = await ingestDb.work.create({
         data: {
-          sortTitle: null,
+          sortTitle: generateSortTitle(ctx.matchableMetadata.title),
           titleCanonical: ctx.matchableMetadata.titleCanonical,
           titleDisplay: ctx.matchableMetadata.title,
         },
@@ -3354,7 +3361,7 @@ export function createIngestServices(
         data: {
           description: ctx.storedMetadata.normalized?.description ?? null,
           enrichmentStatus: "ENRICHED",
-          sortTitle: null,
+          sortTitle: generateSortTitle(ctx.matchableMetadata.title),
           titleCanonical: ctx.matchableMetadata.titleCanonical,
           titleDisplay: ctx.matchableMetadata.title,
         },

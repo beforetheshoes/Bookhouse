@@ -92,7 +92,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
       expect.objectContaining({
         skip: 0,
         take: 50,
-        orderBy: { titleCanonical: "asc" },
+        orderBy: { sortTitle: { sort: "asc", nulls: "last" } },
       }),
     );
     expect(countMock).toHaveBeenCalled();
@@ -140,7 +140,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
 
     expect(findManyMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        orderBy: { titleCanonical: "desc" },
+        orderBy: { sortTitle: { sort: "desc", nulls: "last" } },
       }),
     );
   });
@@ -938,7 +938,7 @@ describe("getFilteredLibraryEditionsServerFn", () => {
       expect.objectContaining({
         skip: 0,
         take: 50,
-        orderBy: { work: { titleCanonical: "asc" } },
+        orderBy: { work: { sortTitle: { sort: "asc", nulls: "last" } } },
       }),
     );
     expect(result).toEqual({ editions: [], totalCount: 0 });
@@ -960,7 +960,7 @@ describe("getFilteredLibraryEditionsServerFn", () => {
     await getFilteredLibraryEditionsServerFn({ data: { sort: "title-desc" } });
 
     expect(editionFindManyMock).toHaveBeenCalledWith(
-      expect.objectContaining({ orderBy: { work: { titleCanonical: "desc" } } }),
+      expect.objectContaining({ orderBy: { work: { sortTitle: { sort: "desc", nulls: "last" } } } }),
     );
   });
 

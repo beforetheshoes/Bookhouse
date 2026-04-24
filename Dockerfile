@@ -29,7 +29,10 @@ COPY --from=build /app/node_modules node_modules
 RUN PRISMA_DIR="$(find /app/node_modules/.pnpm -path '*/node_modules/@prisma' | head -n1)" \
   && ln -s "$PRISMA_DIR" /app/node_modules/@prisma
 COPY --from=build /app/apps/web/.output .output
-CMD ["node", ".output/server/index.mjs"]
+COPY --from=build /app/packages/db/prisma packages/db/prisma
+COPY scripts/web-entrypoint.sh /usr/local/bin/web-entrypoint.sh
+RUN chmod +x /usr/local/bin/web-entrypoint.sh
+CMD ["/usr/local/bin/web-entrypoint.sh"]
 
 FROM base AS worker
 COPY --from=build /app/workers/library-worker/dist dist

@@ -34,9 +34,11 @@ describe("hashFileContents", () => {
       .update(":")
       .update(fileContents.length.toString())
       .digest("hex");
+    const expectedKoreaderHash = createHash("md5").update(fileContents).digest("hex");
 
     expect(result.fullHash).toBe(expectedFullHash);
     expect(result.partialHash).toBe(expectedPartialHash);
+    expect(result.koreaderHash).toBe(expectedKoreaderHash);
     expect(result.sizeBytes).toBe(BigInt(fileContents.length));
     expect(result.mtime).toBeInstanceOf(Date);
   });

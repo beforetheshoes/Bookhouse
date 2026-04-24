@@ -8,6 +8,7 @@ let mockLoaderData: {
     id: string;
     nameDisplay: string;
     nameCanonical: string;
+    nameSort: string | null;
     imagePath: string | null;
     works: {
       id: string;
@@ -23,7 +24,7 @@ let mockLoaderData: {
     }[];
   };
 } = {
-  author: { id: "a1", nameDisplay: "Patrick Rothfuss", nameCanonical: "patrick rothfuss", imagePath: null, works: [] },
+  author: { id: "a1", nameDisplay: "Patrick Rothfuss", nameCanonical: "patrick rothfuss", nameSort: "rothfuss, patrick", imagePath: null, works: [] },
 };
 
 vi.mock("sonner", () => ({
@@ -68,6 +69,11 @@ vi.mock("~/lib/server-fns/authors", () => ({
   fetchAuthorPhotoFromUrlServerFn: fetchAuthorPhotoFromUrlServerFnMock,
 }));
 
+const updateContributorServerFnMock = vi.fn().mockResolvedValue({ success: true });
+vi.mock("~/lib/server-fns/editing", () => ({
+  updateContributorServerFn: updateContributorServerFnMock,
+}));
+
 vi.mock("~/lib/mutation", () => ({
   runMutation: async (fn: () => Promise<object>) => fn(),
 }));
@@ -88,7 +94,7 @@ const makeWork = (title: string, formats: string[] = ["EBOOK"]) => ({
 describe("AuthorDetailPage", () => {
   beforeEach(() => {
     mockLoaderData = {
-      author: { id: "a1", nameDisplay: "Patrick Rothfuss", nameCanonical: "patrick rothfuss", imagePath: null, works: [] },
+      author: { id: "a1", nameDisplay: "Patrick Rothfuss", nameCanonical: "patrick rothfuss", nameSort: "rothfuss, patrick", imagePath: null, works: [] },
     };
     vi.clearAllMocks();
   });
@@ -110,6 +116,33 @@ describe("AuthorDetailPage", () => {
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Patrick Rothfuss");
+  });
+
+  it("renders nameSort editable field and saves on edit", async () => {
+    const { Route } = await import("./authors.$authorId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    // Click the "Sort as" display text to enter edit mode
+    const sortDisplay = screen.getByText("rothfuss, patrick");
+    fireEvent.click(sortDisplay);
+    // Now an input should be visible with the current value
+    const input = screen.getByDisplayValue("rothfuss, patrick");
+    fireEvent.change(input, { target: { value: "rothfuss, patrick j." } });
+    fireEvent.blur(input);
+    await vi.waitFor(() => {
+      expect(updateContributorServerFnMock).toHaveBeenCalledWith({
+        data: { contributorId: "a1", nameSort: "rothfuss, patrick j." },
+      });
+    });
+  });
+
+  it("renders empty string when nameSort is null", async () => {
+    mockLoaderData.author.nameSort = null;
+    const { Route } = await import("./authors.$authorId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    // When nameSort is null, the EditableField shows placeholder "auto"
+    expect(screen.getByText("auto")).toBeTruthy();
   });
 
   it("renders breadcrumb with link to authors list", async () => {

@@ -87,7 +87,7 @@ describe("getAuthorsListServerFn", () => {
           include: { edition: { select: { workId: true } } },
         },
       },
-      orderBy: { nameDisplay: "asc" },
+      orderBy: { nameSort: "asc" },
     });
     expect(result).toEqual([
       { id: "c1", nameDisplay: "Author One", workCount: 2, imagePath: null },
@@ -112,6 +112,7 @@ describe("getAuthorDetailServerFn", () => {
       id: "c1",
       nameDisplay: "Author One",
       nameCanonical: "author one",
+      nameSort: "one, author",
       imagePath: "c1",
       editions: [
         { edition: { workId: "w1" } },
@@ -135,6 +136,7 @@ describe("getAuthorDetailServerFn", () => {
         id: true,
         nameDisplay: true,
         nameCanonical: true,
+        nameSort: true,
         imagePath: true,
         editions: {
           where: { role: "AUTHOR" },
@@ -157,6 +159,7 @@ describe("getAuthorDetailServerFn", () => {
       id: "c1",
       nameDisplay: "Author One",
       nameCanonical: "author one",
+      nameSort: "one, author",
       imagePath: "c1",
       works: fakeWorks,
     });

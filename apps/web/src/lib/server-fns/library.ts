@@ -149,11 +149,11 @@ function buildWhere(data: z.infer<typeof filterSchema>): Prisma.WorkWhereInput {
 function buildOrderBy(sort: string): Prisma.WorkOrderByWithRelationInput {
   switch (sort) {
     case "title-desc":
-      return { titleCanonical: "desc" as const };
+      return { sortTitle: { sort: "desc" as const, nulls: "last" as const } };
     case "recent":
       return { createdAt: "desc" as const };
     default:
-      return { titleCanonical: "asc" as const };
+      return { sortTitle: { sort: "asc" as const, nulls: "last" as const } };
   }
 }
 
@@ -174,7 +174,7 @@ const EDITION_SORT_SELECT = {
       formatFamily: true,
       contributors: {
         where: { role: "AUTHOR" as const },
-        select: { contributor: { select: { nameCanonical: true } } },
+        select: { contributor: { select: { nameSort: true, nameCanonical: true } } },
       },
     },
   },
@@ -184,7 +184,7 @@ type LightweightEditionWork = {
   id: string;
   editions: {
     formatFamily: string;
-    contributors: { contributor: { nameCanonical: string } }[];
+    contributors: { contributor: { nameSort: string | null; nameCanonical: string } }[];
   }[];
 };
 
@@ -196,7 +196,7 @@ function extractSortKey(work: LightweightEditionWork, sort: EditionSortOption): 
     case "author-desc":
       return work.editions
         .flatMap((e) => e.contributors)
-        .map((c) => c.contributor.nameCanonical)
+        .map((c) => c.contributor.nameSort ?? c.contributor.nameCanonical)
         .sort()[0] ?? "\uffff";
     case "format-asc":
     case "format-desc":
@@ -461,7 +461,7 @@ type EditionOrderBy = Prisma.EditionOrderByWithRelationInput;
 function buildEditionOrderBy(sort: string): EditionOrderBy {
   switch (sort) {
     case "title-desc":
-      return { work: { titleCanonical: "desc" } };
+      return { work: { sortTitle: { sort: "desc", nulls: "last" } } };
     case "publisher-asc":
       return { publisher: "asc" };
     case "publisher-desc":
@@ -497,7 +497,7 @@ function buildEditionOrderBy(sort: string): EditionOrderBy {
     case "recent":
       return { createdAt: "desc" };
     default:
-      return { work: { titleCanonical: "asc" } };
+      return { work: { sortTitle: { sort: "asc", nulls: "last" } } };
   }
 }
 
@@ -509,20 +509,20 @@ const EDITION_CONTRIBUTOR_SORT_OPTIONS = new Set([
 const EDITION_CONTRIBUTOR_SORT_SELECT = {
   id: true,
   contributors: {
-    select: { contributor: { select: { nameCanonical: true } } },
+    select: { contributor: { select: { nameSort: true, nameCanonical: true } } },
   },
 } as const;
 
 type LightweightEditionContributor = {
   id: string;
-  contributors: { contributor: { nameCanonical: string } }[];
+  contributors: { contributor: { nameSort: string | null; nameCanonical: string } }[];
 };
 
 type EditionContributorSortOption = "author-asc" | "author-desc" | "narrator-asc" | "narrator-desc";
 
 function extractEditionContributorSortKey(edition: LightweightEditionContributor): string {
   return edition.contributors
-    .map((c) => c.contributor.nameCanonical)
+    .map((c) => c.contributor.nameSort ?? c.contributor.nameCanonical)
     .sort()[0] ?? "\uffff";
 }
 

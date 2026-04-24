@@ -8,6 +8,8 @@ import { WorkCard } from "~/components/work-card";
 import { AuthorAvatar } from "~/components/author-avatar";
 import { GridPageSkeleton } from "~/components/skeletons/grid-page-skeleton";
 import { getAuthorDetailServerFn, fetchAuthorPhotoFromUrlServerFn } from "~/lib/server-fns/authors";
+import { updateContributorServerFn } from "~/lib/server-fns/editing";
+import { EditableField } from "~/components/editable-field";
 import { runMutation } from "~/lib/mutation";
 
 export const Route = createFileRoute("/_authenticated/authors/$authorId")({
@@ -125,6 +127,19 @@ function AuthorDetailPage() {
         />
         <div>
           <h1 className="text-2xl font-bold">{author.nameDisplay}</h1>
+          <div className="mt-0.5 text-xs text-muted-foreground">
+            <span className="mr-1">Sort as:</span>
+            <EditableField
+              value={author.nameSort ?? ""}
+              onSave={async (val) => {
+                await updateContributorServerFn({ data: { contributorId: author.id, nameSort: val } });
+                void router.invalidate();
+              }}
+              placeholder="auto"
+              className="text-xs"
+              required
+            />
+          </div>
           <button
             type="button"
             className="mt-1 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"

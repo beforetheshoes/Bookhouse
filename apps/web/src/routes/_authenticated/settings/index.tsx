@@ -87,6 +87,12 @@ import {
   deleteOpdsCredentialServerFn,
   type OpdsCredentialRow,
 } from "~/lib/server-fns/opds-credentials";
+import {
+  getKoreaderCredentialServerFn,
+  saveKoreaderCredentialServerFn,
+  toggleKoreaderCredentialServerFn,
+  type KoreaderCredentialRow,
+} from "~/lib/server-fns/koreader-credentials";
 import { getShelvesServerFn, type ShelfRow } from "~/lib/server-fns/shelves";
 import {
   getImportJobsServerFn,
@@ -106,7 +112,7 @@ export interface LibraryRootWithExtras extends LibraryRootRow {
 
 export const Route = createFileRoute("/_authenticated/settings/")({
   loader: async () => {
-    const [roots, missingFileBehavior, jobsResult, concurrencies, integrations, backupHistory, smtpStatus, kindleStatus, koboDevices, shelves, opdsCredentials] = await Promise.all([
+    const [roots, missingFileBehavior, jobsResult, concurrencies, integrations, backupHistory, smtpStatus, kindleStatus, koboDevices, shelves, opdsCredentials, koreaderCredential] = await Promise.all([
       getLibraryRootsServerFn(),
       getMissingFileBehaviorServerFn(),
       getImportJobsServerFn({ data: { page: 1, pageSize: 100 } }),
@@ -118,6 +124,7 @@ export const Route = createFileRoute("/_authenticated/settings/")({
       getKoboDevicesServerFn(),
       getShelvesServerFn(),
       getOpdsCredentialsServerFn(),
+      getKoreaderCredentialServerFn(),
     ]);
     const rootsWithExtras: LibraryRootWithExtras[] = await Promise.all(
       roots.map(async (root) => {
@@ -141,6 +148,7 @@ export const Route = createFileRoute("/_authenticated/settings/")({
       koboDevices,
       shelves,
       opdsCredentials,
+      koreaderCredential,
     };
   },
   pendingComponent: SettingsSkeleton,
@@ -160,7 +168,7 @@ function SettingsSkeleton() {
 }
 
 function SettingsPage() {
-  const { roots, missingFileBehavior, jobs, totalCount, concurrencies, integrations, backupHistory: initialBackupHistory, smtpStatus, kindleStatus, koboDevices, shelves, opdsCredentials } = Route.useLoaderData();
+  const { roots, missingFileBehavior, jobs, totalCount, concurrencies, integrations, backupHistory: initialBackupHistory, smtpStatus, kindleStatus, koboDevices, shelves, opdsCredentials, koreaderCredential } = Route.useLoaderData();
   const [backupHistory, setBackupHistory] = useState(initialBackupHistory);
 
   const handleBackupComplete = async (manifest: BackupManifest) => {
@@ -214,11 +222,110 @@ function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="devices" forceMount className="space-y-6 data-[state=inactive]:hidden">
+          <KoreaderSyncCard credential={koreaderCredential} />
           <OpdsCredentialsCard credentials={opdsCredentials} />
           <KoboDevicesTab devices={koboDevices} shelves={shelves} />
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+function KoreaderSyncCard({ credential }: { credential: KoreaderCredentialRow }) {
+  const router = useRouter();
+  const [saving, setSaving] = useState(false);
+  const [toggling, setToggling] = useState(false);
+  const [username, setUsername] = useState(credential?.username ?? "");
+  const [password, setPassword] = useState("");
+  const [apiUrl, setApiUrl] = useState("/api/koreader");
+
+  useEffect(() => { setApiUrl(`${window.location.origin}/api/koreader`); }, []);
+  useEffect(() => { setUsername(credential?.username ?? ""); }, [credential?.username]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await saveKoreaderCredentialServerFn({ data: { username, password } });
+      setPassword("");
+      toast.success("KOReader credentials saved");
+      void router.invalidate();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggle = async (currentCredential: NonNullable<KoreaderCredentialRow>) => {
+    setToggling(true);
+    try {
+      await toggleKoreaderCredentialServerFn({ data: { isEnabled: !currentCredential.isEnabled } });
+      toast.success(currentCredential.isEnabled ? "KOReader sync disabled" : "KOReader sync enabled");
+      void router.invalidate();
+    } finally {
+      setToggling(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>KOReader Progress Sync</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-900 dark:bg-emerald-950">
+          <p className="text-sm font-medium">Custom Sync Server URL</p>
+          <code className="mt-1 block break-all rounded bg-white p-2 text-xs dark:bg-gray-900" data-testid="koreader-api-url">
+            {apiUrl}
+          </code>
+          <p className="mt-2 text-xs text-muted-foreground">
+            In KOReader, use Progress sync, choose Custom sync server, and select Binary document matching.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 text-sm">
+          <Badge variant={credential?.isEnabled ? "default" : "secondary"}>
+            {credential?.isEnabled ? "Enabled" : "Disabled"}
+          </Badge>
+          {credential?.username && <span className="text-muted-foreground">Username: {credential.username}</span>}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            placeholder="KOReader username"
+            value={username}
+            onChange={(e) => { setUsername(e.target.value); }}
+            className="max-w-xs"
+            data-testid="koreader-username-input"
+          />
+          <Input
+            type="password"
+            placeholder="Password (min 8 chars)"
+            value={password}
+            onChange={(e) => { setPassword(e.target.value); }}
+            className="max-w-xs"
+            data-testid="koreader-password-input"
+          />
+          <Button
+            onClick={() => { void handleSave(); }}
+            disabled={saving || !username.trim() || password.length < 8}
+            data-testid="save-koreader-credential-btn"
+          >
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : credential ? "Update Credentials" : "Save Credentials"}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={credential ? () => { void handleToggle(credential); } : undefined}
+            disabled={toggling || !credential}
+            data-testid="toggle-koreader-credential-btn"
+          >
+            {toggling ? <Loader2 className="h-4 w-4 animate-spin" /> : credential?.isEnabled ? "Disable" : "Enable"}
+          </Button>
+        </div>
+
+        {!credential && (
+          <p className="text-sm text-muted-foreground">Save KOReader credentials before enabling sync.</p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

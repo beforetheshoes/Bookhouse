@@ -112,6 +112,7 @@ interface TestContributor {
   id: string;
   nameCanonical: string;
   nameDisplay: string;
+  nameSort: string | null;
 }
 
 interface TestEditionFile {
@@ -454,9 +455,11 @@ function createTestDb(state: TestState): IngestDb {
       async create({ data }) {
         await Promise.resolve();
         contributorSequence += 1;
+        const input = data as typeof data & { nameSort?: string | null };
         const created: TestContributor = {
           id: `contributor-${String(contributorSequence)}`,
-          ...data,
+          nameSort: input.nameSort ?? null,
+          ...input,
         };
         state.contributors.set(created.id, created);
         state.contributorsByCanonical.set(created.nameCanonical, created);
@@ -626,6 +629,7 @@ function addContributor(state: TestState, overrides: Partial<TestContributor> = 
     id: "contributor-1",
     nameCanonical: "n k jemisin",
     nameDisplay: "N. K. Jemisin",
+    nameSort: "jemisin, n. k.",
     ...overrides,
   };
   state.contributors.set(contributor.id, contributor);
@@ -2875,6 +2879,7 @@ describe("ingest services", () => {
         await Promise.resolve();
         return {
           fullHash: "next-full",
+          koreaderHash: "next-koreader",
           mtime: new Date("2025-01-01T00:00:00.000Z"),
           partialHash: "next-partial",
           sizeBytes: 12n,
@@ -2891,6 +2896,7 @@ describe("ingest services", () => {
       availabilityStatus: AvailabilityStatus.PRESENT,
       fileAssetId: "file-1",
       fullHash: "next-full",
+      koreaderHash: "next-koreader",
       partialHash: "next-partial",
     });
     expect(state.fileAssetsById.get("file-1")).toMatchObject({
@@ -3051,6 +3057,7 @@ describe("ingest services", () => {
         await Promise.resolve();
         return {
           fullHash: "next-full",
+          koreaderHash: "next-koreader",
           mtime: new Date("2025-01-01T00:00:00.000Z"),
           partialHash: "next-partial",
           sizeBytes: 12n,
@@ -3095,6 +3102,7 @@ describe("ingest services", () => {
         await Promise.resolve();
         return {
           fullHash: "next-full",
+          koreaderHash: "next-koreader",
           mtime: new Date("2025-01-01T00:00:00.000Z"),
           partialHash: "next-partial",
           sizeBytes: 12n,
@@ -3139,6 +3147,7 @@ describe("ingest services", () => {
         await Promise.resolve();
         return {
           fullHash: "next-full",
+          koreaderHash: "next-koreader",
           mtime: new Date("2025-01-01T00:00:00.000Z"),
           partialHash: "next-partial",
           sizeBytes: 12n,
@@ -3216,6 +3225,7 @@ describe("ingest services", () => {
         await Promise.resolve();
         return {
           fullHash: "same-hash-abc",
+          koreaderHash: "same-koreader-hash-abc",
           mtime: new Date("2025-01-01T00:00:00.000Z"),
           partialHash: "partial-abc",
           sizeBytes: 100n,
@@ -3233,6 +3243,7 @@ describe("ingest services", () => {
       availabilityStatus: AvailabilityStatus.PRESENT,
       fileAssetId: "new-file",
       fullHash: "same-hash-abc",
+      koreaderHash: "same-koreader-hash-abc",
       movedFromFileAssetId: "old-file",
       partialHash: "partial-abc",
     });
@@ -3276,6 +3287,7 @@ describe("ingest services", () => {
         await Promise.resolve();
         return {
           fullHash: "hash-abc",
+          koreaderHash: "koreader-hash-abc",
           mtime: new Date("2025-01-01T00:00:00.000Z"),
           partialHash: "partial-abc",
           sizeBytes: 100n,
@@ -3316,6 +3328,7 @@ describe("ingest services", () => {
         await Promise.resolve();
         return {
           fullHash: "hash-abc",
+          koreaderHash: "koreader-hash-abc",
           mtime: new Date("2025-01-01T00:00:00.000Z"),
           partialHash: "partial-abc",
           sizeBytes: 100n,
@@ -3380,6 +3393,7 @@ describe("ingest services", () => {
         await Promise.resolve();
         return {
           fullHash: "hash-xyz",
+          koreaderHash: "koreader-hash-xyz",
           mtime: new Date("2025-01-01T00:00:00.000Z"),
           partialHash: "partial-xyz",
           sizeBytes: 100n,
@@ -3394,6 +3408,7 @@ describe("ingest services", () => {
       availabilityStatus: AvailabilityStatus.PRESENT,
       fileAssetId: "new-file",
       fullHash: "hash-xyz",
+      koreaderHash: "koreader-hash-xyz",
       movedFromFileAssetId: "old-file",
       partialHash: "partial-xyz",
     });
@@ -3438,6 +3453,7 @@ describe("ingest services", () => {
         await Promise.resolve();
         return {
           fullHash: "unique-hash",
+          koreaderHash: "koreader-unique-hash",
           mtime: new Date("2025-01-01T00:00:00.000Z"),
           partialHash: "partial",
           sizeBytes: 100n,
@@ -3487,6 +3503,7 @@ describe("ingest services", () => {
         await Promise.resolve();
         return {
           fullHash: "same-hash",
+          koreaderHash: "koreader-same-hash",
           mtime: new Date("2025-01-01T00:00:00.000Z"),
           partialHash: "partial",
           sizeBytes: 100n,
@@ -5518,7 +5535,7 @@ describe("ingest services", () => {
       id: "work-1",
       seriesId: null,
       seriesPosition: null,
-      sortTitle: null,
+      sortTitle: "fifth season, the",
       titleCanonical: "the fifth season",
       titleDisplay: "The Fifth Season",
     });
@@ -5533,6 +5550,7 @@ describe("ingest services", () => {
         id: "contributor-1",
         nameCanonical: "n k jemisin",
         nameDisplay: "N. K. Jemisin",
+        nameSort: "jemisin, n. k.",
       },
     ]);
     expect([...state.editionFiles.values()]).toHaveLength(1);
@@ -6193,6 +6211,7 @@ describe("ingest services", () => {
         await Promise.resolve();
         return {
           fullHash: "hash",
+          koreaderHash: "koreader-hash",
           mtime: new Date("2025-01-01T00:00:00.000Z"),
           partialHash: "phash",
           sizeBytes: 2n,
@@ -6237,6 +6256,7 @@ describe("ingest services", () => {
         await Promise.resolve();
         return {
           fullHash: "hash",
+          koreaderHash: "koreader-hash",
           mtime: new Date("2025-01-01T00:00:00.000Z"),
           partialHash: "phash",
           sizeBytes: 2n,
@@ -7395,6 +7415,7 @@ describe("ingest services", () => {
         await Promise.resolve();
         return {
           fullHash: "hash",
+          koreaderHash: "koreader-hash",
           mtime: new Date("2025-01-01T00:00:00.000Z"),
           partialHash: "phash",
           sizeBytes: 4n,
@@ -7439,6 +7460,7 @@ describe("ingest services", () => {
         await Promise.resolve();
         return {
           fullHash: "hash",
+          koreaderHash: "koreader-hash",
           mtime: new Date("2025-01-01T00:00:00.000Z"),
           partialHash: "phash",
           sizeBytes: 2n,
@@ -7483,6 +7505,7 @@ describe("ingest services", () => {
         await Promise.resolve();
         return {
           fullHash: "hash",
+          koreaderHash: "koreader-hash",
           mtime: new Date("2025-01-01T00:00:00.000Z"),
           partialHash: "phash",
           sizeBytes: 2n,
@@ -11169,7 +11192,7 @@ describe("detectDuplicates", () => {
   }
 
   function addDetectContributor(state: TestState, id: string, name: string) {
-    const c: TestContributor = { id, nameCanonical: name.toLowerCase(), nameDisplay: name };
+    const c: TestContributor = { id, nameCanonical: name.toLowerCase(), nameDisplay: name, nameSort: name.toLowerCase() };
     state.contributors.set(id, c);
     state.contributorsByCanonical.set(c.nameCanonical, c);
     return c;
@@ -11871,7 +11894,7 @@ describe("matchSuggestions", () => {
   }
 
   function addAudioContributor(state: TestState, id: string, name: string) {
-    const c: TestContributor = { id, nameCanonical: name.toLowerCase(), nameDisplay: name };
+    const c: TestContributor = { id, nameCanonical: name.toLowerCase(), nameDisplay: name, nameSort: name.toLowerCase() };
     state.contributors.set(id, c);
     state.contributorsByCanonical.set(c.nameCanonical, c);
     return c;

@@ -59,6 +59,7 @@ export const updateReadingProgressServerFn = createServerFn({
         userId: user.id,
         editionId: data.editionId,
         progressKind: data.progressKind,
+        OR: [{ source: "manual" }, { source: null }],
       },
     });
 

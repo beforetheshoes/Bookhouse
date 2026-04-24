@@ -119,7 +119,7 @@ export const updateWorkAuthorsServerFn = createServerFn({
   .inputValidator(updateWorkAuthorsSchema)
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
-    const { canonicalizeContributorName } = await import("@bookhouse/ingest");
+    const { canonicalizeContributorName, generateNameSort } = await import("@bookhouse/ingest");
 
     if (data.authors.length === 0) {
       throw new Error("At least one author is required");
@@ -152,6 +152,7 @@ export const updateWorkAuthorsServerFn = createServerFn({
           data: {
             nameDisplay: authorName,
             nameCanonical: canonical,
+            nameSort: generateNameSort(authorName),
           },
         });
         contributorIds.push(created.id);
@@ -205,7 +206,7 @@ export const updateEditionNarratorsServerFn = createServerFn({
   .inputValidator(updateEditionNarratorsSchema)
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
-    const { canonicalizeContributorName } = await import("@bookhouse/ingest");
+    const { canonicalizeContributorName, generateNameSort } = await import("@bookhouse/ingest");
 
     // Resolve or create contributors
     const contributorIds: string[] = [];
@@ -222,6 +223,7 @@ export const updateEditionNarratorsServerFn = createServerFn({
           data: {
             nameDisplay: narratorName,
             nameCanonical: canonical,
+            nameSort: generateNameSort(narratorName),
           },
         });
         contributorIds.push(created.id);
@@ -255,6 +257,26 @@ export const updateEditionNarratorsServerFn = createServerFn({
     await db.edition.update({
       where: { id: data.editionId },
       data: { editedFields: mergedEdited },
+    });
+
+    return { success: true };
+  });
+
+const updateContributorSchema = z.object({
+  contributorId: z.string().min(1),
+  nameSort: z.string().min(1),
+});
+
+export const updateContributorServerFn = createServerFn({
+  method: "POST",
+})
+  .inputValidator(updateContributorSchema)
+  .handler(async ({ data }) => {
+    const { db } = await import("@bookhouse/db");
+
+    await db.contributor.update({
+      where: { id: data.contributorId },
+      data: { nameSort: data.nameSort },
     });
 
     return { success: true };
