@@ -36,10 +36,15 @@ RUN PRISMA_DIR="$(find /app/node_modules/.pnpm -path '*/node_modules/@prisma' | 
   && ln -s "$PRISMA_DIR" /app/node_modules/@prisma
 COPY --from=build /app/apps/web/.output .output
 COPY --from=build /app/packages/db/prisma packages/db/prisma
+COPY --from=build /app/packages/db/prisma.config.ts packages/db/prisma.config.ts
+COPY --from=build /app/packages/db/package.json packages/db/package.json
 COPY scripts/web-entrypoint.sh /usr/local/bin/web-entrypoint.sh
 RUN chmod +x /usr/local/bin/web-entrypoint.sh
 CMD ["/usr/local/bin/web-entrypoint.sh"]
 
 FROM base AS worker
+WORKDIR /app/workers/library-worker
+COPY --from=build /app/node_modules /app/node_modules
+COPY --from=build /app/workers/library-worker/node_modules node_modules
 COPY --from=build /app/workers/library-worker/dist dist
 CMD ["node", "dist/index.js"]
