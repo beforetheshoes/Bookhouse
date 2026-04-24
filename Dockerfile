@@ -20,7 +20,7 @@ RUN DATABASE_URL="postgresql://build:build@localhost:5432/build" pnpm db:generat
 RUN pnpm build
 
 FROM base AS web
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
   && ARCH=$(dpkg --print-architecture) \
   && curl -fsSL "https://github.com/pgaskin/kepubify/releases/latest/download/kepubify-linux-${ARCH}" -o /usr/local/bin/kepubify \
   && chmod +x /usr/local/bin/kepubify \
