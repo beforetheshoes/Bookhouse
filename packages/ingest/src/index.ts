@@ -100,5 +100,6 @@ export type { WDAuthor } from "./enrichment/wikidata";
 export { applyAuthorPhotoFromUrl } from "./author-photo";
 export type { AuthorPhotoDeps, AuthorPhotoDbDeps, AuthorPhotoInput, AuthorPhotoResult } from "./author-photo";
 export { levenshteinDistance, normalizedSimilarity, normalizeForTitleMatching, stripSubtitleForMatching } from "./similarity";
+export { generateSortTitle, generateNameSort } from "./sort-keys";
 export { cascadeCleanupOrphans, cleanupOrphanedFileAssets } from "./cascade-cleanup";
 export type { CascadeCleanupInput, CascadeCleanupResult } from "./cascade-cleanup";

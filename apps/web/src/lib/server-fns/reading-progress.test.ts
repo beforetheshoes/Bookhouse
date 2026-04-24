@@ -133,7 +133,12 @@ describe("updateReadingProgressServerFn", () => {
     });
 
     expect(readingProgressFindFirstMock).toHaveBeenCalledWith({
-      where: { userId: "user-1", editionId: "e1", progressKind: "EBOOK" },
+      where: {
+        userId: "user-1",
+        editionId: "e1",
+        progressKind: "EBOOK",
+        OR: [{ source: "manual" }, { source: null }],
+      },
     });
     expect(readingProgressUpdateMock).toHaveBeenCalledWith({
       where: { id: "rp1" },
@@ -163,6 +168,35 @@ describe("updateReadingProgressServerFn", () => {
       },
     });
     expect(result).toBe(created);
+  });
+
+  it("does not overwrite a koreader progress record when saving manual progress", async () => {
+    getCurrentUserMock.mockResolvedValue({ id: "user-1" });
+    readingProgressFindFirstMock.mockResolvedValue(null);
+    readingProgressCreateMock.mockResolvedValue({ id: "rp-manual", percent: 60 });
+
+    await updateReadingProgressServerFn({
+      data: { editionId: "e1", percent: 60, progressKind: "EBOOK" },
+    });
+
+    expect(readingProgressFindFirstMock).toHaveBeenCalledWith({
+      where: {
+        userId: "user-1",
+        editionId: "e1",
+        progressKind: "EBOOK",
+        OR: [{ source: "manual" }, { source: null }],
+      },
+    });
+    expect(readingProgressCreateMock).toHaveBeenCalledWith({
+      data: {
+        userId: "user-1",
+        editionId: "e1",
+        progressKind: "EBOOK",
+        percent: 60,
+        locator: {},
+        source: "manual",
+      },
+    });
   });
 });
 

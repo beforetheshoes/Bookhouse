@@ -15,7 +15,7 @@ export const getAuthorsListServerFn = createServerFn({
         include: { edition: { select: { workId: true } } },
       },
     },
-    orderBy: { nameDisplay: "asc" },
+    orderBy: { nameSort: "asc" },
   });
   return contributors.map((c) => ({
     id: c.id,
@@ -46,6 +46,7 @@ export const getAuthorDetailServerFn = createServerFn({
         id: true,
         nameDisplay: true,
         nameCanonical: true,
+        nameSort: true,
         imagePath: true,
         editions: {
           where: { role: "AUTHOR" },
@@ -72,6 +73,7 @@ export const getAuthorDetailServerFn = createServerFn({
       id: contributor.id,
       nameDisplay: contributor.nameDisplay,
       nameCanonical: contributor.nameCanonical,
+      nameSort: contributor.nameSort,
       imagePath: contributor.imagePath,
       works,
     };

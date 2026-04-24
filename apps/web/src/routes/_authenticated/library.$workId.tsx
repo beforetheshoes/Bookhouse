@@ -285,6 +285,18 @@ function WorkDetailPage() {
                 <Trash2 className="size-4" />
               </Button>
             </div>
+            <div className="mt-0.5 text-xs text-muted-foreground">
+              <span className="mr-1">Sort as:</span>
+              <EditableField
+                value={work.sortTitle ?? ""}
+                onSave={async (val) => {
+                  await updateWorkServerFn({ data: { workId: work.id, fields: { sortTitle: val || null } } });
+                  void router.invalidate();
+                }}
+                placeholder="auto"
+                className="text-xs"
+              />
+            </div>
             <div className="mt-1 text-lg text-muted-foreground">
               <EditableTagField
                 values={authors.map((a) => a.name)}

@@ -27,4 +27,20 @@ describe("WorkProgress", () => {
     const bar = screen.getByTestId("progress-bar");
     expect(bar.getAttribute("data-percent")).toBe("30");
   });
+
+  it("renders separate rows when multiple sources exist", () => {
+    render(
+      <WorkProgress
+        progress={[
+          { percent: 40, source: "manual" },
+          { percent: 60, source: "koreader" },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText(/via\s+manual/i)).toBeTruthy();
+    expect(screen.getByText(/via\s+koreader/i)).toBeTruthy();
+    expect(screen.getByText("40%")).toBeTruthy();
+    expect(screen.getByText("60%")).toBeTruthy();
+  });
 });

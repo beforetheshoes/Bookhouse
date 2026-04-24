@@ -35,7 +35,8 @@ let mockLoaderData: {
   koboDevices: { id: string; deviceId: string; status: string; lastSyncAt: string | null; createdAt: string; authToken: string; collections: { collection: { id: string; name: string } }[] }[];
   shelves: { id: string; name: string; kind: string; formatFilter: string; ownerUserId: string | null; _count: { items: number } }[];
   opdsCredentials: { id: string; username: string; isEnabled: boolean; createdAt: string }[];
-} = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false }, koboDevices: [], shelves: [], opdsCredentials: [] };
+  koreaderCredential: { id: string; username: string; isEnabled: boolean; createdAt: string; updatedAt: string } | null;
+} = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false }, koboDevices: [], shelves: [], opdsCredentials: [], koreaderCredential: null };
 
 const getLibraryRootsServerFnMock = vi.fn();
 const scanLibraryRootServerFnMock = vi.fn();
@@ -120,6 +121,12 @@ vi.mock("~/lib/server-fns/opds-credentials", () => ({
   createOpdsCredentialServerFn: vi.fn().mockResolvedValue({ id: "c1", username: "reader", isEnabled: true, createdAt: new Date().toISOString() }),
   toggleOpdsCredentialServerFn: vi.fn().mockResolvedValue({}),
   deleteOpdsCredentialServerFn: vi.fn().mockResolvedValue({}),
+}));
+
+vi.mock("~/lib/server-fns/koreader-credentials", () => ({
+  getKoreaderCredentialServerFn: vi.fn().mockResolvedValue(null),
+  saveKoreaderCredentialServerFn: vi.fn().mockResolvedValue({ id: "kc1", username: "reader", isEnabled: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }),
+  toggleKoreaderCredentialServerFn: vi.fn().mockResolvedValue({}),
 }));
 
 vi.mock("~/lib/mutation", () => ({
@@ -243,7 +250,7 @@ const makeJob = (overrides: Partial<{
 describe("SettingsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false }, koboDevices: [], shelves: [], opdsCredentials: [] };
+    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false }, koboDevices: [], shelves: [], opdsCredentials: [], koreaderCredential: null };
     mockTheme = "system";
     mockColorMode = "book";
     mockAccentColor = null;
@@ -293,7 +300,7 @@ describe("SettingsPage", () => {
     const { Route } = await import("./index");
     const SettingsPage = (Route.options.component as React.ComponentType);
     render(<SettingsPage />);
-    expect(screen.getByText("Disabled")).toBeTruthy();
+    expect(screen.getAllByText("Disabled").length).toBeGreaterThanOrEqual(2);
   });
 
   it("does not show 'Disabled' badge when root.isEnabled is true", async () => {
@@ -301,7 +308,7 @@ describe("SettingsPage", () => {
     const { Route } = await import("./index");
     const SettingsPage = (Route.options.component as React.ComponentType);
     render(<SettingsPage />);
-    expect(screen.queryByText("Disabled")).toBeNull();
+    expect(screen.getAllByText("Disabled")).toHaveLength(1);
   });
 
   it("shows 'Never' when lastScannedAt is null", async () => {
@@ -563,6 +570,7 @@ describe("SettingsPage", () => {
       koboDevices: [],
       shelves: [],
       opdsCredentials: [],
+      koreaderCredential: null,
     });
   });
 
@@ -816,7 +824,7 @@ describe("SettingsPage", () => {
 describe("AppearanceCard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false }, koboDevices: [], shelves: [], opdsCredentials: [] };
+    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false }, koboDevices: [], shelves: [], opdsCredentials: [], koreaderCredential: null };
     mockTheme = "system";
     mockColorMode = "book";
     mockAccentColor = null;
@@ -885,7 +893,7 @@ describe("AppearanceCard", () => {
 describe("ColorCard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false }, koboDevices: [], shelves: [], opdsCredentials: [] };
+    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false }, koboDevices: [], shelves: [], opdsCredentials: [], koreaderCredential: null };
     mockTheme = "system";
     mockColorMode = "book";
     mockAccentColor = null;
@@ -1062,7 +1070,7 @@ describe("ColorCard", () => {
 describe("JobsTab", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false }, koboDevices: [], shelves: [], opdsCredentials: [] };
+    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false }, koboDevices: [], shelves: [], opdsCredentials: [], koreaderCredential: null };
     mockTheme = "system";
     mockColorMode = "book";
     mockAccentColor = null;
@@ -2104,6 +2112,195 @@ describe("Kobo Devices Tab", () => {
     expect(screen.getByTestId("opds-catalog-url").textContent).toContain("/opds/catalog");
   });
 
+  it("renders KOReader sync URL on devices tab", async () => {
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+
+    expect(screen.getByTestId("koreader-api-url").textContent).toContain("/api/koreader");
+  });
+
+  it("saves KOReader credentials", async () => {
+    const { saveKoreaderCredentialServerFn } = await import("~/lib/server-fns/koreader-credentials");
+    const saveMock = vi.mocked(saveKoreaderCredentialServerFn);
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+    fireEvent.change(screen.getByTestId("koreader-username-input"), { target: { value: "koreader" } });
+    fireEvent.change(screen.getByTestId("koreader-password-input"), { target: { value: "password123" } });
+    fireEvent.click(screen.getByTestId("save-koreader-credential-btn"));
+
+    await waitFor(() => {
+      expect(saveMock).toHaveBeenCalledWith({ data: { username: "koreader", password: "password123" } });
+    });
+  });
+
+  it("toggles KOReader sync state", async () => {
+    mockLoaderData.koreaderCredential = {
+      id: "kc1",
+      username: "koreader",
+      isEnabled: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const { toggleKoreaderCredentialServerFn } = await import("~/lib/server-fns/koreader-credentials");
+    const toggleMock = vi.mocked(toggleKoreaderCredentialServerFn);
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+    fireEvent.click(screen.getByTestId("toggle-koreader-credential-btn"));
+
+    await waitFor(() => {
+      expect(toggleMock).toHaveBeenCalledWith({ data: { isEnabled: true } });
+    });
+  });
+
+  it("toggles KOReader sync off when the credential is enabled", async () => {
+    mockLoaderData.koreaderCredential = {
+      id: "kc1",
+      username: "koreader",
+      isEnabled: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const { toggleKoreaderCredentialServerFn } = await import("~/lib/server-fns/koreader-credentials");
+    const toggleMock = vi.mocked(toggleKoreaderCredentialServerFn);
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+    fireEvent.click(screen.getByTestId("toggle-koreader-credential-btn"));
+
+    await waitFor(() => {
+      expect(toggleMock).toHaveBeenCalledWith({ data: { isEnabled: false } });
+    });
+  });
+
+  it("renders enabled KOReader credential details and update actions", async () => {
+    mockLoaderData.koreaderCredential = {
+      id: "kc1",
+      username: "koreader",
+      isEnabled: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+
+    expect(screen.getByText("Enabled")).toBeTruthy();
+    expect(screen.getByText("Username: koreader")).toBeTruthy();
+    expect(screen.getByText("Update Credentials")).toBeTruthy();
+    expect(screen.getByText("Disable")).toBeTruthy();
+  });
+
+  it("shows KOReader save loading state while credentials are saving", async () => {
+    let resolveSave!: (value: {
+      id: string;
+      username: string;
+      isEnabled: boolean;
+      createdAt: string;
+      updatedAt: string;
+    }) => void;
+    const { saveKoreaderCredentialServerFn } = await import("~/lib/server-fns/koreader-credentials");
+    const saveMock = vi.mocked(saveKoreaderCredentialServerFn);
+    saveMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveSave = resolve as typeof resolveSave;
+      }) as never,
+    );
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+    fireEvent.change(screen.getByTestId("koreader-username-input"), { target: { value: "reader" } });
+    fireEvent.change(screen.getByTestId("koreader-password-input"), { target: { value: "password123" } });
+    fireEvent.click(screen.getByTestId("save-koreader-credential-btn"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("save-koreader-credential-btn").textContent).toBe("");
+    });
+
+    resolveSave({
+      id: "kc1",
+      username: "reader",
+      isEnabled: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    await waitFor(() => {
+      expect(saveMock).toHaveBeenCalled();
+    });
+  });
+
+  it("shows KOReader toggle loading state while enablement is updating", async () => {
+    mockLoaderData.koreaderCredential = {
+      id: "kc1",
+      username: "koreader",
+      isEnabled: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    let resolveToggle!: () => void;
+    const { toggleKoreaderCredentialServerFn } = await import("~/lib/server-fns/koreader-credentials");
+    const toggleMock = vi.mocked(toggleKoreaderCredentialServerFn);
+    toggleMock.mockReturnValueOnce(
+      new Promise<object>((resolve) => {
+        resolveToggle = () => {
+          resolve({});
+        };
+      }) as never,
+    );
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+    fireEvent.click(screen.getByTestId("toggle-koreader-credential-btn"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("toggle-koreader-credential-btn").textContent).toBe("");
+    });
+
+    resolveToggle();
+
+    await waitFor(() => {
+      expect(toggleMock).toHaveBeenCalled();
+    });
+  });
+
+  it("disables KOReader save button when password is too short", async () => {
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+    fireEvent.change(screen.getByTestId("koreader-username-input"), { target: { value: "reader" } });
+    fireEvent.change(screen.getByTestId("koreader-password-input"), { target: { value: "short" } });
+
+    expect(screen.getByTestId("save-koreader-credential-btn").getAttribute("disabled")).not.toBeNull();
+  });
+
   it("shows empty state when no OPDS credentials exist", async () => {
     const { Route } = await import("./index");
     const SettingsPage = (Route.options.component as React.ComponentType);
@@ -2140,8 +2337,8 @@ describe("Kobo Devices Tab", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
 
-    expect(screen.getByText("Disabled")).toBeTruthy();
-    expect(screen.getByText("Enable")).toBeTruthy();
+    expect(screen.getAllByText("Disabled").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("Enable").length).toBeGreaterThanOrEqual(1);
   });
 
   it("creates a new OPDS credential", async () => {

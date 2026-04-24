@@ -11,6 +11,14 @@ export function getAuthors(work: LibraryWork): string {
   return [...new Set(authors)].join(", ") || "—";
 }
 
+function getAuthorSortKey(work: LibraryWork): string {
+  const keys = work.editions
+    .flatMap((e) => e.contributors)
+    .filter((c) => c.role === "AUTHOR")
+    .map((c) => c.contributor.nameSort ?? c.contributor.nameCanonical);
+  return [...new Set(keys)].sort()[0] ?? "\uffff";
+}
+
 export function sortAndFilterWorks(
   works: LibraryWork[],
   search: string,
@@ -51,9 +59,9 @@ export function sortAndFilterWorks(
       case "title-desc":
         return (b.sortTitle ?? b.titleCanonical).localeCompare(a.sortTitle ?? a.titleCanonical);
       case "author-asc":
-        return getAuthors(a).localeCompare(getAuthors(b));
+        return getAuthorSortKey(a).localeCompare(getAuthorSortKey(b));
       case "author-desc":
-        return getAuthors(b).localeCompare(getAuthors(a));
+        return getAuthorSortKey(b).localeCompare(getAuthorSortKey(a));
       case "format-asc":
       case "format-desc":
       case "recent":

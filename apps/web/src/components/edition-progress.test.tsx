@@ -59,17 +59,17 @@ describe("EditionProgress", () => {
 
   it("renders progress bar for each edition", () => {
     render(<EditionProgress progress={progress} editions={editions} onUpdate={mockOnUpdate} />);
-    expect(screen.getByTestId("progress-bar")).toBeTruthy();
+    expect(screen.getAllByTestId("progress-bar").length).toBeGreaterThan(0);
   });
 
   it("renders format badge", () => {
     render(<EditionProgress progress={progress} editions={editions} onUpdate={mockOnUpdate} />);
-    expect(screen.getByText("EBOOK")).toBeTruthy();
+    expect(screen.getAllByText("EBOOK").length).toBeGreaterThan(0);
   });
 
   it("renders source badge", () => {
     render(<EditionProgress progress={progress} editions={editions} onUpdate={mockOnUpdate} />);
-    expect(screen.getByText("via Kobo")).toBeTruthy();
+    expect(screen.getByText(/via\s+kobo/i)).toBeTruthy();
   });
 
   it("does not render source badge when source is null", () => {
@@ -167,5 +167,19 @@ describe("EditionProgress", () => {
     }]);
     render(<EditionProgress progress={[]} editions={audioEditions} onUpdate={mockOnUpdate} />);
     expect(screen.getByText("AUDIOBOOK")).toBeTruthy();
+  });
+
+  it("renders separate rows for multiple sources on the same edition", () => {
+    const multiSourceProgress = [
+      { editionId: "e1", progressKind: "EBOOK", percent: 42, source: "manual" as string | null },
+      { editionId: "e1", progressKind: "EBOOK", percent: 65, source: "koreader" as string | null },
+    ];
+
+    render(<EditionProgress progress={multiSourceProgress} editions={editions} onUpdate={mockOnUpdate} />);
+
+    expect(screen.getByText(/via\s+manual/i)).toBeTruthy();
+    expect(screen.getByText(/via\s+koreader/i)).toBeTruthy();
+    expect(screen.getByText("42%")).toBeTruthy();
+    expect(screen.getByText("65%")).toBeTruthy();
   });
 });

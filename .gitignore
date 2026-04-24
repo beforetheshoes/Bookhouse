@@ -45,3 +45,4 @@ test-results/
 playwright-report/
 coverage-json/
 coverage-json2/
+apps/guide

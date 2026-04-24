@@ -9,7 +9,7 @@ interface MockWork {
   createdAt: Date;
   editions: {
     formatFamily: string;
-    contributors: { role: string; contributor: { nameDisplay: string } }[];
+    contributors: { role: string; contributor: { nameDisplay: string; nameSort: string | null; nameCanonical: string } }[];
   }[];
   [key: string]: string | number | boolean | null | object;
 }
@@ -29,7 +29,7 @@ const makeWork = (
       formatFamily: "EBOOK",
       contributors: authors.map((name) => ({
         role: "AUTHOR",
-        contributor: { nameDisplay: name },
+        contributor: { nameDisplay: name, nameSort: name.toLowerCase(), nameCanonical: name.toLowerCase() },
       })),
     },
   ],
@@ -103,8 +103,21 @@ describe("sortAndFilterWorks", () => {
     const noAuthor = makeWork("NoAuthor", []);
     const result = sortAndFilterWorks([noAuthor, alpha] as never[], "", "author-asc");
     const titles = result.map((w) => (w as MockWork).titleDisplay);
-    // "—" sorts before "Zara"
-    expect(titles).toEqual(["NoAuthor", "Alpha"]);
+    // Works with no authors sort last
+    expect(titles).toEqual(["Alpha", "NoAuthor"]);
+  });
+
+  it("falls back to nameCanonical when nameSort is null for author sort", () => {
+    const nullSort: MockWork = {
+      ...makeWork("FallbackAuthor", ["Zara"]),
+      editions: [{
+        formatFamily: "EBOOK",
+        contributors: [{ role: "AUTHOR", contributor: { nameDisplay: "Zara", nameSort: null, nameCanonical: "zara" } }],
+      }],
+    };
+    const result = sortAndFilterWorks([nullSort, bravo] as never[], "", "author-asc");
+    const titles = result.map((w) => (w as MockWork).titleDisplay);
+    expect(titles).toEqual(["Bravo", "FallbackAuthor"]); // alice < zara
   });
 
   it("sorts by format-asc (falls through to createdAt descending)", () => {

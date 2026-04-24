@@ -6,6 +6,7 @@ export const PARTIAL_HASH_BYTES = 64 * 1024;
 
 export interface FileHashes {
   fullHash: string;
+  koreaderHash: string;
   mtime: Date;
   partialHash: string;
   sizeBytes: bigint;
@@ -15,6 +16,7 @@ export async function hashFileContents(absolutePath: string): Promise<FileHashes
   const fileStats = await stat(absolutePath);
   const sizeBytes = BigInt(fileStats.size);
   const fullHash = createHash("sha256");
+  const koreaderHash = createHash("md5");
   const partialHash = createHash("sha256");
   let partialBytesRead = 0;
 
@@ -23,6 +25,7 @@ export async function hashFileContents(absolutePath: string): Promise<FileHashes
 
     stream.on("data", (chunk: Buffer) => {
       fullHash.update(chunk);
+      koreaderHash.update(chunk);
 
       if (partialBytesRead < PARTIAL_HASH_BYTES) {
         const remainingBytes = PARTIAL_HASH_BYTES - partialBytesRead;
@@ -41,6 +44,7 @@ export async function hashFileContents(absolutePath: string): Promise<FileHashes
 
   return {
     fullHash: fullHash.digest("hex"),
+    koreaderHash: koreaderHash.digest("hex"),
     mtime: fileStats.mtime,
     partialHash: partialHash.digest("hex"),
     sizeBytes,

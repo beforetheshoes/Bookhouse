@@ -149,6 +149,7 @@ model User {
   readingProgress ReadingProgress[]
   workProgressPreferences WorkProgressPreference[]
   koboDevices     KoboDevice[]
+  koreaderCredential KoreaderCredential?
   opdsCredentials OpdsCredential[]
 }
 
@@ -202,6 +203,7 @@ model FileAsset {
   mtime              DateTime?
   partialHash        String?
   fullHash           String?
+  koreaderHash       String?
   metadata           Json?
   mediaKind          MediaKind
   availabilityStatus AvailabilityStatus @default(PRESENT)
@@ -219,6 +221,7 @@ model FileAsset {
   @@index([libraryRootId, availabilityStatus])
   @@index([partialHash])
   @@index([fullHash])
+  @@index([koreaderHash])
 }
 
 model Work {
@@ -300,6 +303,7 @@ model Contributor {
   id            String   @id @default(cuid())
   nameDisplay   String
   nameCanonical String
+  nameSort      String?
   imagePath     String?
   createdAt     DateTime @default(now())
 
@@ -545,4 +549,16 @@ model OpdsCredential {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+model KoreaderCredential {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  username     String   @unique
+  passwordHash String
+  isEnabled    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
