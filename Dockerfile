@@ -3,14 +3,15 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
 
 FROM base AS deps
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY .npmrc pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/web/package.json apps/web/
+COPY packages/auth/package.json packages/auth/
 COPY packages/db/package.json packages/db/
 COPY packages/domain/package.json packages/domain/
 COPY packages/ingest/package.json packages/ingest/
 COPY packages/kobo/package.json packages/kobo/
+COPY packages/opds/package.json packages/opds/
 COPY packages/shared/package.json packages/shared/
-COPY packages/auth/package.json packages/auth/
 COPY workers/library-worker/package.json workers/library-worker/
 RUN pnpm install --frozen-lockfile
 
@@ -32,8 +33,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
   && chmod +x /usr/local/bin/kepubify \
   && apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/node_modules node_modules
-RUN PRISMA_DIR="$(find /app/node_modules/.pnpm -path '*/node_modules/@prisma' | head -n1)" \
-  && ln -s "$PRISMA_DIR" /app/node_modules/@prisma
 COPY --from=build /app/apps/web/.output .output
 COPY --from=build /app/packages/db/prisma packages/db/prisma
 COPY --from=build /app/packages/db/prisma.config.ts packages/db/prisma.config.ts
