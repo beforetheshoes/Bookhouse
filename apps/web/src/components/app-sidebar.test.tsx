@@ -4,6 +4,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { SidebarProvider } from "./ui/sidebar";
 import { AppSidebar } from "./app-sidebar";
+import { PALETTES } from "./branding/palettes";
 
 vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
@@ -14,6 +15,12 @@ vi.mock("@tanstack/react-router", async () => {
     useRouterState: () => ({ location: { pathname: "/library" } }),
   };
 });
+
+let mockBrandPalette: "shelf" | "vivid" | "sunset" | "forest" = "shelf";
+
+vi.mock("~/hooks/use-app-color", () => ({
+  useAppColor: () => ({ brandPalette: mockBrandPalette }),
+}));
 
 const mockUser = { name: "John Doe", email: "john@example.com", image: null };
 
@@ -62,5 +69,15 @@ describe("AppSidebar", () => {
   it("renders Bookhouse brand link", () => {
     renderSidebar();
     expect(screen.getByText("Bookhouse")).toBeTruthy();
+  });
+
+  it("renders the spine-and-waveform mark using the active brand palette", () => {
+    mockBrandPalette = "vivid";
+    renderSidebar();
+    const mark = screen.getByLabelText("Bookhouse");
+    const rects = Array.from(mark.querySelectorAll("rect"));
+    // bar fills come after the anchor spine + 2 title bands
+    expect(rects[3]?.getAttribute("fill")).toBe(PALETTES.vivid.bars[0]);
+    mockBrandPalette = "shelf";
   });
 });

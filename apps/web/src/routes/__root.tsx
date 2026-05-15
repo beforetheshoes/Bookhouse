@@ -16,7 +16,12 @@ export const Route = createRootRoute({
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "Bookhouse" },
     ],
-    links: [{ rel: "stylesheet", href: appCss }],
+    links: [
+      { rel: "stylesheet", href: appCss },
+      { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.svg" },
+      { rel: "mask-icon", href: "/favicon-mono.svg", color: "#15140f" },
+    ],
   }),
   component: RootComponent,
 });

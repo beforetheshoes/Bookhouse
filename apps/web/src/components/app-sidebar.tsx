@@ -11,6 +11,8 @@ import {
   Settings,
   Users,
 } from "lucide-react";
+import { BookhouseMark } from "~/components/branding/bookhouse-mark";
+import { useAppColor } from "~/hooks/use-app-color";
 import {
   Sidebar,
   SidebarContent,
@@ -60,6 +62,7 @@ function getInitials(name: string | null, email: string | null): string {
 export function AppSidebar({ user }: { user: AuthenticatedUser }) {
   const routerState = useRouterState();
   const currentPath = routerState.location.pathname;
+  const { brandPalette } = useAppColor();
 
   return (
     <Sidebar>
@@ -68,11 +71,11 @@ export function AppSidebar({ user }: { user: AuthenticatedUser }) {
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
               <Link to="/library" search={{ page: 1, pageSize: 50, sort: "title-asc" as const, view: "works" as const }}>
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                  <BookOpen className="size-4" />
+                <div className="flex aspect-square size-8 items-center justify-center">
+                  <BookhouseMark size={28} paletteKey={brandPalette} dark title="Bookhouse" />
                 </div>
-                <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-semibold">Bookhouse</span>
+                <div className="grid flex-1 text-left leading-tight">
+                  <span className="truncate font-display text-base font-medium tracking-tight">Bookhouse</span>
                 </div>
               </Link>
             </SidebarMenuButton>

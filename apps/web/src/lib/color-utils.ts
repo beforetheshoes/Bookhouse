@@ -114,3 +114,50 @@ export function generateAccentTheme(
     "--cover-text": `oklch(0.90 ${Math.min(c, 0.04).toFixed(4)} ${color.h.toFixed(1)})`,
   };
 }
+
+export interface CoverSignature {
+  bg: string;
+  glow: string;
+  accent: string;
+  chip: string;
+  chipText: string;
+  text: string;
+  side: string;
+}
+
+export function deriveCoverSignature(
+  colors: string[] | null,
+  mode: "light" | "dark",
+): CoverSignature | null {
+  if (!colors || colors.length === 0) return null;
+
+  const dominant = hexToOklch(colors[0] as string);
+  const accent = colors.length > 1 ? hexToOklch(colors[1] as string) : dominant;
+  const tertiary = colors.length > 2 ? hexToOklch(colors[2] as string) : accent;
+
+  const dC = Math.max(dominant.c, 0.04);
+  const aC = Math.max(accent.c, 0.04);
+  const tC = Math.max(tertiary.c, 0.04);
+
+  if (mode === "light") {
+    return {
+      bg: `oklch(0.94 ${Math.min(dC, 0.06).toFixed(4)} ${dominant.h.toFixed(1)})`,
+      glow: `oklch(0.78 ${Math.min(aC, 0.18).toFixed(4)} ${accent.h.toFixed(1)})`,
+      accent: `oklch(0.55 ${Math.min(aC, 0.22).toFixed(4)} ${accent.h.toFixed(1)})`,
+      chip: `oklch(0.88 ${Math.min(dC, 0.08).toFixed(4)} ${dominant.h.toFixed(1)})`,
+      chipText: `oklch(0.25 ${Math.min(dC, 0.06).toFixed(4)} ${dominant.h.toFixed(1)})`,
+      text: `oklch(0.42 ${Math.min(tC, 0.20).toFixed(4)} ${tertiary.h.toFixed(1)})`,
+      side: `oklch(0.97 ${Math.min(dC, 0.04).toFixed(4)} ${dominant.h.toFixed(1)})`,
+    };
+  }
+
+  return {
+    bg: `oklch(0.18 ${Math.min(dC, 0.06).toFixed(4)} ${dominant.h.toFixed(1)})`,
+    glow: `oklch(0.55 ${Math.min(aC, 0.20).toFixed(4)} ${accent.h.toFixed(1)})`,
+    accent: `oklch(0.72 ${Math.min(aC, 0.22).toFixed(4)} ${accent.h.toFixed(1)})`,
+    chip: `oklch(0.28 ${Math.min(dC, 0.08).toFixed(4)} ${dominant.h.toFixed(1)})`,
+    chipText: `oklch(0.88 ${Math.min(dC, 0.06).toFixed(4)} ${dominant.h.toFixed(1)})`,
+    text: `oklch(0.78 ${Math.min(tC, 0.20).toFixed(4)} ${tertiary.h.toFixed(1)})`,
+    side: `oklch(0.12 ${Math.min(dC, 0.04).toFixed(4)} ${dominant.h.toFixed(1)})`,
+  };
+}

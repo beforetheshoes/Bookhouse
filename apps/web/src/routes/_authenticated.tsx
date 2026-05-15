@@ -8,7 +8,12 @@ import { AppSidebar } from "~/components/app-sidebar";
 import { AppHeader } from "~/components/app-header";
 import { ThemeProvider } from "~/hooks/use-theme";
 import { AppColorProvider } from "~/hooks/use-app-color";
-import { getThemeServerFn, getColorModeServerFn, getAccentColorServerFn } from "~/lib/server-fns/app-settings";
+import {
+  getThemeServerFn,
+  getColorModeServerFn,
+  getAccentColorServerFn,
+  getBrandPaletteServerFn,
+} from "~/lib/server-fns/app-settings";
 
 export const Route = createFileRoute("/_authenticated")({
   beforeLoad: async ({ context }) => {
@@ -26,23 +31,28 @@ export const Route = createFileRoute("/_authenticated")({
       throw redirect({ href: "/auth/login" });
     }
 
-    const [theme, colorMode, accentColor] = await Promise.all([
+    const [theme, colorMode, accentColor, brandPalette] = await Promise.all([
       getThemeServerFn(),
       getColorModeServerFn(),
       getAccentColorServerFn(),
+      getBrandPaletteServerFn(),
     ]);
 
-    return { user, theme, colorMode, accentColor };
+    return { user, theme, colorMode, accentColor, brandPalette };
   },
   component: AuthenticatedLayout,
 });
 
 function AuthenticatedLayout() {
-  const { user, theme, colorMode, accentColor } = Route.useRouteContext();
+  const { user, theme, colorMode, accentColor, brandPalette } = Route.useRouteContext();
 
   return (
     <ThemeProvider initialTheme={theme}>
-      <AppColorProvider initialColorMode={colorMode} initialAccentColor={accentColor}>
+      <AppColorProvider
+        initialColorMode={colorMode}
+        initialAccentColor={accentColor}
+        initialBrandPalette={brandPalette}
+      >
         <SidebarProvider>
           <AppSidebar user={user} />
           <SidebarInset>

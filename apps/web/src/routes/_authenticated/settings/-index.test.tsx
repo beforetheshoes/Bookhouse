@@ -145,8 +145,10 @@ vi.mock("~/hooks/use-theme", () => ({
 
 const mockSetColorMode = vi.fn();
 const mockSetAccentColor = vi.fn();
+const mockSetBrandPalette = vi.fn();
 let mockColorMode = "book";
 let mockAccentColor: string | null = null;
+let mockBrandPaletteKey: "shelf" | "sunset" | "forest" | "vivid" = "shelf";
 
 vi.mock("~/hooks/use-app-color", () => ({
   useAppColor: () => ({
@@ -155,6 +157,8 @@ vi.mock("~/hooks/use-app-color", () => ({
     accentColor: mockAccentColor,
     setAccentColor: mockSetAccentColor,
     setBookColors: vi.fn(),
+    brandPalette: mockBrandPaletteKey,
+    setBrandPalette: mockSetBrandPalette,
   }),
 }));
 
@@ -887,6 +891,41 @@ describe("AppearanceCard", () => {
     render(<SettingsPage />);
     fireEvent.click(screen.getByRole("radio", { name: "System" }));
     expect(mockSetTheme).toHaveBeenCalledWith("system");
+  });
+});
+
+describe("BrandPaletteCard", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false }, koboDevices: [], shelves: [], opdsCredentials: [], koreaderCredential: null };
+    mockBrandPaletteKey = "shelf";
+  });
+
+  it("renders all four palette options", async () => {
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+    expect(screen.getByRole("radio", { name: "Shelf" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Sunset" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Forest" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Vivid" })).toBeTruthy();
+  });
+
+  it("marks the active palette as checked", async () => {
+    mockBrandPaletteKey = "forest";
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+    expect(screen.getByRole("radio", { name: "Forest" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("radio", { name: "Shelf" }).getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("calls setBrandPalette when clicking a palette option", async () => {
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+    fireEvent.click(screen.getByRole("radio", { name: "Vivid" }));
+    expect(mockSetBrandPalette).toHaveBeenCalledWith("vivid");
   });
 });
 

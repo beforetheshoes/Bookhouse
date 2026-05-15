@@ -39,6 +39,7 @@ vi.mock("~/lib/server-fns/app-settings", () => ({
   getThemeServerFn: vi.fn().mockResolvedValue("system"),
   getColorModeServerFn: vi.fn().mockResolvedValue("book"),
   getAccentColorServerFn: vi.fn().mockResolvedValue(null),
+  getBrandPaletteServerFn: vi.fn().mockResolvedValue("shelf"),
 }));
 
 vi.mock("@tanstack/react-router", async () => {
@@ -92,7 +93,7 @@ describe("_authenticated route", () => {
 
     const beforeLoad2 = asBeforeLoad<Record<string, string | object>, object>(Route.options.beforeLoad as object);
     const result = await beforeLoad2({ context: {} });
-    expect(result).toEqual({ user, theme: "system", colorMode: "book", accentColor: null });
+    expect(result).toEqual({ user, theme: "system", colorMode: "book", accentColor: null, brandPalette: "shelf" });
   });
 
   it("AuthenticatedLayout renders ThemeProvider", async () => {

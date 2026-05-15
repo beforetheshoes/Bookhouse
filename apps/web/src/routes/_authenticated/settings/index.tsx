@@ -20,6 +20,8 @@ import {
 import { useSSE } from "~/hooks/use-sse";
 import { useTheme } from "~/hooks/use-theme";
 import { useAppColor } from "~/hooks/use-app-color";
+import { BookhouseMark } from "~/components/branding/bookhouse-mark";
+import { PALETTE_KEYS, PALETTES } from "~/components/branding/palettes";
 import { VirtualizedDataTable, DataTableColumnHeader } from "~/components/data-table";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -206,6 +208,7 @@ function SettingsPage() {
 
         <TabsContent value="appearance" forceMount className="space-y-6 data-[state=inactive]:hidden">
           <AppearanceCard />
+          <BrandPaletteCard />
           <ColorCard />
         </TabsContent>
 
@@ -410,6 +413,48 @@ function AppearanceCard() {
                 <option.icon className="size-4" />
                 {option.label}
               </Button>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function BrandPaletteCard() {
+  const { brandPalette, setBrandPalette } = useAppColor();
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Brand palette</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          Choose the colors used in the Bookhouse logo across the sidebar, favicon, and lockups.
+        </p>
+        <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Brand palette">
+          {PALETTE_KEYS.map((key) => {
+            const palette = PALETTES[key];
+            const isActive = brandPalette === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                role="radio"
+                aria-checked={isActive}
+                aria-label={palette.name}
+                onClick={() => { setBrandPalette(key); }}
+                className={`flex items-center gap-3 rounded-md border p-3 text-left transition-colors ${isActive ? "border-primary bg-accent" : "border-border hover:bg-accent/50"}`}
+                data-testid={`brand-palette-option-${key}`}
+              >
+                <div className="flex size-10 items-center justify-center rounded-md bg-[#0f0d0a]">
+                  <BookhouseMark size={32} paletteKey={key} dark />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">{palette.name}</p>
+                  <p className="truncate text-xs text-muted-foreground">{palette.note}</p>
+                </div>
+              </button>
             );
           })}
         </div>

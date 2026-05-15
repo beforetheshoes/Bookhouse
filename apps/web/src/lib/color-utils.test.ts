@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { hexToOklch, generateCoverTheme, generateAccentTheme } from "./color-utils";
+import {
+  hexToOklch,
+  generateCoverTheme,
+  generateAccentTheme,
+  deriveCoverSignature,
+} from "./color-utils";
 
 describe("hexToOklch", () => {
   it("converts pure black", () => {
@@ -137,5 +142,64 @@ describe("generateAccentTheme", () => {
     const lightResult = generateAccentTheme("#3366cc", "light");
     const darkResult = generateAccentTheme("#3366cc", "dark");
     expect(lightResult["--cover-primary"]).not.toBe(darkResult["--cover-primary"]);
+  });
+});
+
+describe("deriveCoverSignature", () => {
+  it("returns null for null colors", () => {
+    expect(deriveCoverSignature(null, "dark")).toBeNull();
+  });
+
+  it("returns null for empty colors array", () => {
+    expect(deriveCoverSignature([], "light")).toBeNull();
+  });
+
+  it("returns all signature fields for valid colors in dark mode", () => {
+    const sig = deriveCoverSignature(["#1a2b3c", "#4d5e6f", "#a0b1c2"], "dark");
+    expect(sig).not.toBeNull();
+    expect(sig?.bg).toContain("oklch(0.18");
+    expect(sig?.glow).toContain("oklch(0.55");
+    expect(sig?.accent).toContain("oklch(0.72");
+    expect(sig?.chip).toContain("oklch(0.28");
+    expect(sig?.chipText).toContain("oklch(0.88");
+    expect(sig?.text).toContain("oklch(0.78");
+    expect(sig?.side).toContain("oklch(0.12");
+  });
+
+  it("returns all signature fields for valid colors in light mode", () => {
+    const sig = deriveCoverSignature(["#1a2b3c", "#4d5e6f", "#a0b1c2"], "light");
+    expect(sig).not.toBeNull();
+    expect(sig?.bg).toContain("oklch(0.94");
+    expect(sig?.glow).toContain("oklch(0.78");
+    expect(sig?.accent).toContain("oklch(0.55");
+    expect(sig?.chip).toContain("oklch(0.88");
+    expect(sig?.chipText).toContain("oklch(0.25");
+    expect(sig?.text).toContain("oklch(0.42");
+    expect(sig?.side).toContain("oklch(0.97");
+  });
+
+  it("falls back to dominant when only one color provided", () => {
+    const sig = deriveCoverSignature(["#3366cc"], "dark");
+    expect(sig).not.toBeNull();
+    // bg uses dominant hue, glow uses accent (= dominant since only one)
+    const bgHue = sig?.bg.match(/oklch\([^ ]+ [^ ]+ ([^)]+)\)/)?.[1];
+    const glowHue = sig?.glow.match(/oklch\([^ ]+ [^ ]+ ([^)]+)\)/)?.[1];
+    const textHue = sig?.text.match(/oklch\([^ ]+ [^ ]+ ([^)]+)\)/)?.[1];
+    expect(bgHue).toBe(glowHue);
+    expect(glowHue).toBe(textHue);
+  });
+
+  it("falls back to accent for tertiary when only two colors provided", () => {
+    const sig = deriveCoverSignature(["#1a2b3c", "#cc6633"], "dark");
+    expect(sig).not.toBeNull();
+    const glowHue = sig?.glow.match(/oklch\([^ ]+ [^ ]+ ([^)]+)\)/)?.[1];
+    const textHue = sig?.text.match(/oklch\([^ ]+ [^ ]+ ([^)]+)\)/)?.[1];
+    expect(glowHue).toBe(textHue);
+  });
+
+  it("enforces minimum chroma for low-chroma inputs", () => {
+    const sig = deriveCoverSignature(["#808080", "#808080", "#808080"], "dark");
+    expect(sig).not.toBeNull();
+    expect(sig?.bg).toContain("0.04");
   });
 });

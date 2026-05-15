@@ -2214,4 +2214,61 @@ describe("WorkDetailPage", () => {
       expect(true).toBe(true);
     });
   });
+
+  describe("immersive treatment", () => {
+    it("mounts the cover ambience layer behind the page", async () => {
+      const { Route } = await import("./library.$workId");
+      const Page = Route.options.component as React.ComponentType;
+      render(<Page />);
+      expect(screen.getByTestId("cover-ambience")).toBeTruthy();
+    });
+
+    it("wraps the cover in a halo", async () => {
+      const { Route } = await import("./library.$workId");
+      const Page = Route.options.component as React.ComponentType;
+      render(<Page />);
+      expect(screen.getByTestId("cover-halo")).toBeTruthy();
+    });
+
+    it("renders a format pill for each edition format family", async () => {
+      mockLoaderData.work.editions.push({
+        id: "edition-audio",
+        formatFamily: "AUDIOBOOK",
+        publisher: "Audio Inc",
+        publishedAt: "2008-01-01T00:00:00.000Z",
+        isbn13: null,
+        isbn10: null,
+        asin: null,
+        language: "en",
+        pageCount: null,
+        editedFields: [],
+        contributors: [],
+        editionFiles: [],
+      });
+      const { Route } = await import("./library.$workId");
+      const Page = Route.options.component as React.ComponentType;
+      render(<Page />);
+      const pills = screen.getByTestId("format-pills");
+      expect(pills.textContent).toContain("EBOOK");
+      expect(pills.textContent).toContain("AUDIOBOOK");
+    });
+
+    it("renders the reading progress strip with the percentage when progress is recorded", async () => {
+      mockLoaderData.progress = [
+        { id: "prog-1", editionId: "edition-1", percent: 42, progressKind: "EBOOK" },
+      ];
+      const { Route } = await import("./library.$workId");
+      const Page = Route.options.component as React.ComponentType;
+      render(<Page />);
+      const strip = screen.getByTestId("reading-progress-strip");
+      expect(strip.textContent).toContain("42%");
+    });
+
+    it("renders the reading progress strip even with no progress", async () => {
+      const { Route } = await import("./library.$workId");
+      const Page = Route.options.component as React.ComponentType;
+      render(<Page />);
+      expect(screen.getByTestId("reading-progress-strip")).toBeTruthy();
+    });
+  });
 });
