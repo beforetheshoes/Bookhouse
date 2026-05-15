@@ -11,9 +11,13 @@ export interface AuthMiddlewareDeps {
   ) => Promise<AuthenticatedUser | null>;
 }
 
+function requiresSessionAuth(path: string): boolean {
+  return path.startsWith("/api/") || path.startsWith("/_serverFn/");
+}
+
 export function createAuthMiddleware(deps: AuthMiddlewareDeps) {
   return async (event: H3Event) => {
-    if (!event.path.startsWith("/api/")) {
+    if (!requiresSessionAuth(event.path)) {
       return;
     }
 
@@ -23,7 +27,20 @@ export function createAuthMiddleware(deps: AuthMiddlewareDeps) {
     if (!user) {
       throw createError({ statusCode: 401, statusMessage: "Unauthorized" });
     }
+
+    (event.context as { user?: AuthenticatedUser }).user = user;
   };
+}
+
+export function requireOwnerFromEvent(event: H3Event): AuthenticatedUser {
+  const user = (event.context as { user?: AuthenticatedUser }).user;
+  if (!user) {
+    throw createError({ statusCode: 401, statusMessage: "Unauthorized" });
+  }
+  if (!user.roles.includes("OWNER")) {
+    throw createError({ statusCode: 403, statusMessage: "Forbidden" });
+  }
+  return user;
 }
 
 /* c8 ignore start — runtime wiring, tested via unit tests on createAuthMiddleware */
@@ -46,7 +63,7 @@ export default defineEventHandler(async (event) => {
     },
   });
 
-  if (!event.path.startsWith("/api/")) {
+  if (!requiresSessionAuth(event.path)) {
     return;
   }
 
@@ -55,5 +72,7 @@ export default defineEventHandler(async (event) => {
   if (!user) {
     throw createError({ statusCode: 401, statusMessage: "Unauthorized" });
   }
+
+  (event.context as { user?: typeof user }).user = user;
 });
 /* c8 ignore stop */

@@ -16,6 +16,7 @@ export const updateWorkServerFn = createServerFn({
 })
   .inputValidator(updateWorkSchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
     const { canonicalizeBookTitle } = await import("@bookhouse/ingest");
 
@@ -71,6 +72,7 @@ export const updateEditionServerFn = createServerFn({
 })
   .inputValidator(updateEditionSchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
 
     const edition = await db.edition.findUnique({
@@ -118,6 +120,7 @@ export const updateWorkAuthorsServerFn = createServerFn({
 })
   .inputValidator(updateWorkAuthorsSchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
     const { canonicalizeContributorName, generateNameSort } = await import("@bookhouse/ingest");
 
@@ -205,6 +208,7 @@ export const updateEditionNarratorsServerFn = createServerFn({
 })
   .inputValidator(updateEditionNarratorsSchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
     const { canonicalizeContributorName, generateNameSort } = await import("@bookhouse/ingest");
 
@@ -272,6 +276,7 @@ export const updateContributorServerFn = createServerFn({
 })
   .inputValidator(updateContributorSchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
 
     await db.contributor.update({

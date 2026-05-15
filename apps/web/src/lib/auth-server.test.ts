@@ -12,7 +12,18 @@ const getRequestMock = vi.fn();
 const getRequestUrlMock = vi.fn();
 const useSessionMock = vi.fn();
 
+class MockAuthAccessDeniedError extends Error {
+  constructor(message = "denied") {
+    super(message);
+    this.name = "AuthAccessDeniedError";
+  }
+}
+
 vi.mock("@bookhouse/auth", () => ({
+  AuthAccessDeniedError: MockAuthAccessDeniedError,
+  OWNER_ROLE: "OWNER",
+  VIEWER_ROLE: "VIEWER",
+  isOwner: (roles: string[]) => roles.includes("OWNER"),
   createAuthenticatedSession: createAuthenticatedSessionMock,
   createAuthorizationRequest: createAuthorizationRequestMock,
   clearSession: clearSessionMock,
@@ -252,5 +263,111 @@ describe("auth server helpers", () => {
     await expect(getCurrentUser()).resolves.toEqual({
       id: "user-1",
     });
+  });
+
+  it("redirects to /auth/denied when upsertOidcUser throws AuthAccessDeniedError", async () => {
+    const update = vi.fn();
+    useSessionMock.mockResolvedValue({
+      data: {
+        login: {
+          state: "state",
+          nonce: "nonce",
+          codeVerifier: "verifier",
+          returnTo: "/books",
+        },
+      },
+      update,
+    });
+    getRequestMock.mockReturnValue({
+      url: "http://localhost:3000/auth/callback?code=abc&state=state",
+    });
+    exchangeAuthorizationCodeMock.mockResolvedValue({
+      claims: { sub: "subject-x", email: "noone@example.com" },
+    });
+    clearSessionMock.mockReturnValue({ cleared: true });
+    upsertOidcUserMock.mockRejectedValue(new MockAuthAccessDeniedError("nope"));
+
+    const { handleCallbackRequest } = await import("./auth-server");
+    const response = await handleCallbackRequest();
+
+    expect(response.headers.get("location")).toBe(
+      "http://localhost:3000/auth/denied",
+    );
+    expect(update).toHaveBeenCalledWith({ cleared: true });
+    expect(createAuthenticatedSessionMock).not.toHaveBeenCalled();
+  });
+
+  it("propagates non-AuthAccessDeniedError failures from upsertOidcUser", async () => {
+    useSessionMock.mockResolvedValue({
+      data: {
+        login: {
+          state: "state",
+          nonce: "nonce",
+          codeVerifier: "verifier",
+          returnTo: "/",
+        },
+      },
+      update: vi.fn(),
+    });
+    getRequestMock.mockReturnValue({
+      url: "http://localhost:3000/auth/callback?code=abc&state=state",
+    });
+    exchangeAuthorizationCodeMock.mockResolvedValue({
+      claims: { sub: "subject-x" },
+    });
+    upsertOidcUserMock.mockRejectedValue(new Error("db down"));
+
+    const { handleCallbackRequest } = await import("./auth-server");
+    await expect(handleCallbackRequest()).rejects.toThrow("db down");
+  });
+
+  it("requireAuthenticated returns the current user or throws", async () => {
+    useSessionMock.mockResolvedValue({
+      data: {
+        userId: "user-1",
+        issuer: "https://issuer.example.com",
+        subject: "subject-1",
+      },
+    });
+    resolveAuthenticatedUserMock.mockResolvedValueOnce({
+      id: "user-1",
+      roles: ["VIEWER"],
+    });
+    const { requireAuthenticated, UnauthorizedError } = await import(
+      "./auth-server"
+    );
+    await expect(requireAuthenticated()).resolves.toMatchObject({
+      id: "user-1",
+    });
+
+    resolveAuthenticatedUserMock.mockResolvedValueOnce(null);
+    await expect(requireAuthenticated()).rejects.toBeInstanceOf(
+      UnauthorizedError,
+    );
+  });
+
+  it("requireOwner returns the owner user or throws ForbiddenError for non-owners", async () => {
+    useSessionMock.mockResolvedValue({
+      data: {
+        userId: "user-1",
+        issuer: "https://issuer.example.com",
+        subject: "subject-1",
+      },
+    });
+    resolveAuthenticatedUserMock.mockResolvedValueOnce({
+      id: "user-1",
+      roles: ["OWNER"],
+    });
+    const { requireOwner, ForbiddenError } = await import("./auth-server");
+    await expect(requireOwner()).resolves.toMatchObject({
+      id: "user-1",
+      roles: ["OWNER"],
+    });
+
+    resolveAuthenticatedUserMock.mockResolvedValueOnce({
+      id: "user-2",
+      roles: ["VIEWER"],
+    });
+    await expect(requireOwner()).rejects.toBeInstanceOf(ForbiddenError);
   });
 });

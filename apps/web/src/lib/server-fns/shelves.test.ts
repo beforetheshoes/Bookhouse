@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+vi.mock("./_guards", () => ({
+  ownerOnly: vi.fn().mockResolvedValue(undefined),
+  authenticatedOnly: vi
+    .fn()
+    .mockResolvedValue({ id: "user-1", roles: ["OWNER"] }),
+}));
+
 vi.mock("@tanstack/react-start", () => ({
   createServerFn: () => {
     type Builder = {
@@ -15,7 +22,8 @@ vi.mock("@tanstack/react-start", () => ({
 }));
 
 const collectionFindManyMock = vi.fn();
-const collectionFindUniqueOrThrowMock = vi.fn();
+const collectionFindUniqueMock = vi.fn();
+const collectionFindFirstOrThrowMock = vi.fn();
 const collectionCreateMock = vi.fn();
 const collectionUpdateMock = vi.fn();
 const collectionDeleteMock = vi.fn();
@@ -30,7 +38,8 @@ vi.mock("@bookhouse/db", () => ({
   db: {
     collection: {
       findMany: collectionFindManyMock,
-      findUniqueOrThrow: collectionFindUniqueOrThrowMock,
+      findUnique: collectionFindUniqueMock,
+      findFirstOrThrow: collectionFindFirstOrThrowMock,
       create: collectionCreateMock,
       update: collectionUpdateMock,
       delete: collectionDeleteMock,
@@ -70,11 +79,12 @@ describe("shelves server functions", () => {
   });
 
   describe("getShelvesServerFn", () => {
-    it("returns all shelves with item counts", async () => {
+    it("returns only shelves owned by the current user", async () => {
       const shelves = [{ id: "1", name: "Fiction", _count: { items: 5 } }];
       collectionFindManyMock.mockResolvedValue(shelves);
       const result = await getShelvesServerFn();
       expect(collectionFindManyMock).toHaveBeenCalledWith({
+        where: { ownerUserId: "user-1" },
         include: { _count: { select: { items: true } } },
         orderBy: { name: "asc" },
       });
@@ -83,24 +93,26 @@ describe("shelves server functions", () => {
   });
 
   describe("getShelfDetailServerFn", () => {
-    it("returns shelf with edition-based items", async () => {
+    it("returns shelf scoped to current user", async () => {
       const detail = {
         id: "s1",
         name: "Fiction",
         formatFilter: "ALL",
         items: [{ edition: { id: "e1", work: { id: "w1", titleDisplay: "Book" } } }],
       };
-      collectionFindUniqueOrThrowMock.mockResolvedValue(detail);
+      collectionFindFirstOrThrowMock.mockResolvedValue(detail);
       const result = await getShelfDetailServerFn({ data: { shelfId: "s1" } } as never);
-      expect(collectionFindUniqueOrThrowMock).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: "s1" } }),
+      expect(collectionFindFirstOrThrowMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "s1", ownerUserId: "user-1" },
+        }),
       );
       expect(result).toBe(detail);
     });
   });
 
   describe("getShelvesForEditionServerFn", () => {
-    it("returns collection IDs for an edition", async () => {
+    it("returns collection IDs for an edition scoped to current user", async () => {
       collectionItemFindManyMock.mockResolvedValue([
         { collectionId: "s1" },
         { collectionId: "s2" },
@@ -109,7 +121,10 @@ describe("shelves server functions", () => {
         data: { editionId: "e1" },
       } as never);
       expect(collectionItemFindManyMock).toHaveBeenCalledWith({
-        where: { editionId: "e1" },
+        where: {
+          editionId: "e1",
+          collection: { ownerUserId: "user-1" },
+        },
         select: { collectionId: true },
       });
       expect(result).toEqual(["s1", "s2"]);
@@ -125,7 +140,7 @@ describe("shelves server functions", () => {
   });
 
   describe("getShelvesForWorkServerFn", () => {
-    it("returns all shelves annotated with membership via editions", async () => {
+    it("returns user shelves annotated with membership via editions", async () => {
       editionFindManyMock.mockResolvedValue([{ id: "e1" }, { id: "e2" }]);
       collectionFindManyMock.mockResolvedValue([
         { id: "s1", name: "Fiction" },
@@ -142,6 +157,10 @@ describe("shelves server functions", () => {
       expect(editionFindManyMock).toHaveBeenCalledWith({
         where: { workId: "w1" },
         select: { id: true },
+      });
+      expect(collectionFindManyMock).toHaveBeenCalledWith({
+        where: { ownerUserId: "user-1" },
+        orderBy: { name: "asc" },
       });
       expect(result).toEqual([
         { id: "s1", name: "Fiction", isMember: true },
@@ -167,7 +186,7 @@ describe("shelves server functions", () => {
   });
 
   describe("createShelfServerFn", () => {
-    it("creates a shelf with MANUAL kind and ALL format filter", async () => {
+    it("creates a shelf with ownerUserId set to current user", async () => {
       const created = { id: "s1", name: "New Shelf", kind: "MANUAL", formatFilter: "ALL" };
       collectionCreateMock.mockResolvedValue(created);
 
@@ -176,7 +195,12 @@ describe("shelves server functions", () => {
       } as never);
 
       expect(collectionCreateMock).toHaveBeenCalledWith({
-        data: { name: "New Shelf", kind: "MANUAL", formatFilter: "ALL" },
+        data: {
+          name: "New Shelf",
+          kind: "MANUAL",
+          formatFilter: "ALL",
+          ownerUserId: "user-1",
+        },
       });
       expect(result).toBe(created);
     });
@@ -190,14 +214,20 @@ describe("shelves server functions", () => {
       } as never);
 
       expect(collectionCreateMock).toHaveBeenCalledWith({
-        data: { name: "Ebooks", kind: "MANUAL", formatFilter: "EBOOK" },
+        data: {
+          name: "Ebooks",
+          kind: "MANUAL",
+          formatFilter: "EBOOK",
+          ownerUserId: "user-1",
+        },
       });
       expect(result).toBe(created);
     });
   });
 
   describe("renameShelfServerFn", () => {
-    it("updates the shelf name", async () => {
+    it("updates the shelf name when current user owns it", async () => {
+      collectionFindUniqueMock.mockResolvedValue({ ownerUserId: "user-1" });
       const updated = { id: "s1", name: "Renamed" };
       collectionUpdateMock.mockResolvedValue(updated);
 
@@ -211,10 +241,32 @@ describe("shelves server functions", () => {
       });
       expect(result).toBe(updated);
     });
+
+    it("rejects when the shelf is owned by another user", async () => {
+      collectionFindUniqueMock.mockResolvedValue({ ownerUserId: "other-user" });
+
+      await expect(
+        renameShelfServerFn({
+          data: { shelfId: "s1", name: "Renamed" },
+        } as never),
+      ).rejects.toThrow("Shelf not found");
+      expect(collectionUpdateMock).not.toHaveBeenCalled();
+    });
+
+    it("rejects when the shelf does not exist", async () => {
+      collectionFindUniqueMock.mockResolvedValue(null);
+
+      await expect(
+        renameShelfServerFn({
+          data: { shelfId: "s1", name: "Renamed" },
+        } as never),
+      ).rejects.toThrow("Shelf not found");
+    });
   });
 
   describe("deleteShelfServerFn", () => {
-    it("deletes the shelf", async () => {
+    it("deletes the shelf when current user owns it", async () => {
+      collectionFindUniqueMock.mockResolvedValue({ ownerUserId: "user-1" });
       collectionDeleteMock.mockResolvedValue({ id: "s1" });
 
       await deleteShelfServerFn({
@@ -229,6 +281,7 @@ describe("shelves server functions", () => {
 
   describe("addEditionToShelfServerFn", () => {
     it("creates a collection item with editionId", async () => {
+      collectionFindUniqueMock.mockResolvedValue({ ownerUserId: "user-1" });
       const item = { id: "ci1", collectionId: "s1", editionId: "e1" };
       collectionItemCreateMock.mockResolvedValue(item);
 
@@ -245,7 +298,7 @@ describe("shelves server functions", () => {
 
   describe("addEditionsForWorkToShelfServerFn", () => {
     it("adds matching editions for a work to a shelf with ALL format filter", async () => {
-      collectionFindUniqueOrThrowMock.mockResolvedValue({ formatFilter: "ALL" });
+      collectionFindFirstOrThrowMock.mockResolvedValue({ formatFilter: "ALL" });
       editionFindManyMock.mockResolvedValue([{ id: "e1" }, { id: "e2" }]);
       collectionItemFindManyMock.mockResolvedValue([]);
       collectionItemCreateManyMock.mockResolvedValue({ count: 2 });
@@ -254,8 +307,8 @@ describe("shelves server functions", () => {
         data: { shelfId: "s1", workId: "w1" },
       } as never);
 
-      expect(collectionFindUniqueOrThrowMock).toHaveBeenCalledWith({
-        where: { id: "s1" },
+      expect(collectionFindFirstOrThrowMock).toHaveBeenCalledWith({
+        where: { id: "s1", ownerUserId: "user-1" },
         select: { formatFilter: true },
       });
       expect(editionFindManyMock).toHaveBeenCalledWith({
@@ -272,7 +325,7 @@ describe("shelves server functions", () => {
     });
 
     it("filters editions by EBOOK format when shelf has EBOOK filter", async () => {
-      collectionFindUniqueOrThrowMock.mockResolvedValue({ formatFilter: "EBOOK" });
+      collectionFindFirstOrThrowMock.mockResolvedValue({ formatFilter: "EBOOK" });
       editionFindManyMock.mockResolvedValue([{ id: "e1" }]);
       collectionItemFindManyMock.mockResolvedValue([]);
       collectionItemCreateManyMock.mockResolvedValue({ count: 1 });
@@ -289,7 +342,7 @@ describe("shelves server functions", () => {
     });
 
     it("skips existing editions", async () => {
-      collectionFindUniqueOrThrowMock.mockResolvedValue({ formatFilter: "ALL" });
+      collectionFindFirstOrThrowMock.mockResolvedValue({ formatFilter: "ALL" });
       editionFindManyMock.mockResolvedValue([{ id: "e1" }, { id: "e2" }]);
       collectionItemFindManyMock.mockResolvedValue([{ editionId: "e1" }]);
       collectionItemCreateManyMock.mockResolvedValue({ count: 1 });
@@ -305,7 +358,7 @@ describe("shelves server functions", () => {
     });
 
     it("returns zero when no matching editions exist", async () => {
-      collectionFindUniqueOrThrowMock.mockResolvedValue({ formatFilter: "AUDIOBOOK" });
+      collectionFindFirstOrThrowMock.mockResolvedValue({ formatFilter: "AUDIOBOOK" });
       editionFindManyMock.mockResolvedValue([]);
 
       const result = await addEditionsForWorkToShelfServerFn({
@@ -317,7 +370,7 @@ describe("shelves server functions", () => {
     });
 
     it("returns zero when all editions already exist on shelf", async () => {
-      collectionFindUniqueOrThrowMock.mockResolvedValue({ formatFilter: "ALL" });
+      collectionFindFirstOrThrowMock.mockResolvedValue({ formatFilter: "ALL" });
       editionFindManyMock.mockResolvedValue([{ id: "e1" }]);
       collectionItemFindManyMock.mockResolvedValue([{ editionId: "e1" }]);
 
@@ -332,7 +385,7 @@ describe("shelves server functions", () => {
 
   describe("bulkAddToShelfServerFn", () => {
     it("adds editions for multiple works respecting format filter", async () => {
-      collectionFindUniqueOrThrowMock.mockResolvedValue({ formatFilter: "ALL" });
+      collectionFindFirstOrThrowMock.mockResolvedValue({ formatFilter: "ALL" });
       editionFindManyMock.mockResolvedValue([{ id: "e1" }, { id: "e2" }]);
       collectionItemFindManyMock.mockResolvedValue([{ editionId: "e1" }]);
       collectionItemCreateManyMock.mockResolvedValue({ count: 1 });
@@ -341,8 +394,8 @@ describe("shelves server functions", () => {
         data: { shelfId: "s1", workIds: ["w1", "w2"] },
       } as never);
 
-      expect(collectionFindUniqueOrThrowMock).toHaveBeenCalledWith({
-        where: { id: "s1" },
+      expect(collectionFindFirstOrThrowMock).toHaveBeenCalledWith({
+        where: { id: "s1", ownerUserId: "user-1" },
         select: { formatFilter: true },
       });
       expect(editionFindManyMock).toHaveBeenCalledWith({
@@ -356,7 +409,7 @@ describe("shelves server functions", () => {
     });
 
     it("skips createMany when all editions already exist", async () => {
-      collectionFindUniqueOrThrowMock.mockResolvedValue({ formatFilter: "ALL" });
+      collectionFindFirstOrThrowMock.mockResolvedValue({ formatFilter: "ALL" });
       editionFindManyMock.mockResolvedValue([{ id: "e1" }]);
       collectionItemFindManyMock.mockResolvedValue([{ editionId: "e1" }]);
 
@@ -369,7 +422,7 @@ describe("shelves server functions", () => {
     });
 
     it("returns zero when no editions match format filter", async () => {
-      collectionFindUniqueOrThrowMock.mockResolvedValue({ formatFilter: "EBOOK" });
+      collectionFindFirstOrThrowMock.mockResolvedValue({ formatFilter: "EBOOK" });
       editionFindManyMock.mockResolvedValue([]);
 
       const result = await bulkAddToShelfServerFn({
@@ -381,7 +434,7 @@ describe("shelves server functions", () => {
     });
 
     it("applies AUDIOBOOK format filter when shelf has AUDIOBOOK filter", async () => {
-      collectionFindUniqueOrThrowMock.mockResolvedValue({ formatFilter: "AUDIOBOOK" });
+      collectionFindFirstOrThrowMock.mockResolvedValue({ formatFilter: "AUDIOBOOK" });
       editionFindManyMock.mockResolvedValue([{ id: "e3" }]);
       collectionItemFindManyMock.mockResolvedValue([]);
       collectionItemCreateManyMock.mockResolvedValue({ count: 1 });
@@ -400,6 +453,7 @@ describe("shelves server functions", () => {
 
   describe("removeEditionFromShelfServerFn", () => {
     it("deletes the collection item by compound key", async () => {
+      collectionFindUniqueMock.mockResolvedValue({ ownerUserId: "user-1" });
       collectionItemDeleteMock.mockResolvedValue({ id: "ci1" });
 
       await removeEditionFromShelfServerFn({
@@ -419,6 +473,7 @@ describe("shelves server functions", () => {
 
   describe("removeWorkEditionsFromShelfServerFn", () => {
     it("removes all editions of a work from a shelf", async () => {
+      collectionFindUniqueMock.mockResolvedValue({ ownerUserId: "user-1" });
       editionFindManyMock.mockResolvedValue([{ id: "e1" }, { id: "e2" }]);
       collectionItemDeleteManyMock.mockResolvedValue({ count: 2 });
 
@@ -437,6 +492,7 @@ describe("shelves server functions", () => {
     });
 
     it("returns zero when work has no editions", async () => {
+      collectionFindUniqueMock.mockResolvedValue({ ownerUserId: "user-1" });
       editionFindManyMock.mockResolvedValue([]);
 
       const result = await removeWorkEditionsFromShelfServerFn({
@@ -450,15 +506,15 @@ describe("shelves server functions", () => {
 
   describe("getAvailableEditionsServerFn", () => {
     it("returns editions not already on the shelf matching format filter", async () => {
-      collectionFindUniqueOrThrowMock.mockResolvedValue({ formatFilter: "EBOOK" });
+      collectionFindFirstOrThrowMock.mockResolvedValue({ formatFilter: "EBOOK" });
       collectionItemFindManyMock.mockResolvedValue([{ editionId: "e1" }]);
       const available = [{ id: "e2", formatFamily: "EBOOK", work: { titleDisplay: "Book" } }];
       editionFindManyMock.mockResolvedValue(available);
 
       const result = await getAvailableEditionsServerFn({ data: { shelfId: "s1" } } as never);
 
-      expect(collectionFindUniqueOrThrowMock).toHaveBeenCalledWith({
-        where: { id: "s1" },
+      expect(collectionFindFirstOrThrowMock).toHaveBeenCalledWith({
+        where: { id: "s1", ownerUserId: "user-1" },
         select: { formatFilter: true },
       });
       expect(editionFindManyMock).toHaveBeenCalledWith(
@@ -472,7 +528,7 @@ describe("shelves server functions", () => {
     });
 
     it("returns all formats when shelf filter is ALL", async () => {
-      collectionFindUniqueOrThrowMock.mockResolvedValue({ formatFilter: "ALL" });
+      collectionFindFirstOrThrowMock.mockResolvedValue({ formatFilter: "ALL" });
       collectionItemFindManyMock.mockResolvedValue([]);
       editionFindManyMock.mockResolvedValue([]);
 

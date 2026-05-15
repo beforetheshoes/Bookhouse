@@ -15,6 +15,7 @@ export const getKindleStatusServerFn = createServerFn({
 export const getKindleConfigServerFn = createServerFn({
   method: "GET",
 }).handler(async () => {
+  await (await import("./_guards")).ownerOnly();
   const { db } = await import("@bookhouse/db");
   const setting = await db.appSetting.findUnique({ where: { key: "kindle:email" } });
   if (!setting) return { configured: false as const };
@@ -34,6 +35,7 @@ export const saveKindleConfigServerFn = createServerFn({
 })
   .inputValidator(saveKindleConfigSchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
 
     await db.appSetting.upsert({
@@ -48,6 +50,7 @@ export const saveKindleConfigServerFn = createServerFn({
 export const removeKindleConfigServerFn = createServerFn({
   method: "POST",
 }).handler(async () => {
+  await (await import("./_guards")).ownerOnly();
   const { db } = await import("@bookhouse/db");
   await db.appSetting.deleteMany({
     where: { key: { in: ["kindle:email"] } },
@@ -64,6 +67,7 @@ export const sendToKindleServerFn = createServerFn({
 })
   .inputValidator(sendToKindleSchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
 
     const editionFile = await db.editionFile.findUnique({

@@ -94,6 +94,7 @@ export const getEnrichAuthorPhotosProgressServerFn = createServerFn({
 export const enrichAuthorPhotosServerFn = createServerFn({
   method: "POST",
 }).handler(async () => {
+  await (await import("./_guards")).ownerOnly();
   const { db } = await import("@bookhouse/db");
   const { enqueueEnrichmentJob } = await import("@bookhouse/shared");
 
@@ -136,6 +137,7 @@ export const fetchAuthorPhotoFromUrlServerFn = createServerFn({
 })
   .inputValidator(fetchAuthorPhotoSchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { applyAuthorPhotoFromUrl, resizeAndSaveCover } = await import("@bookhouse/ingest");
     const { db } = await import("@bookhouse/db");
 

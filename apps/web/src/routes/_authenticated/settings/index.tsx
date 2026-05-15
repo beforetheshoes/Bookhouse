@@ -113,8 +113,57 @@ export interface LibraryRootWithExtras extends LibraryRootRow {
 }
 
 export const Route = createFileRoute("/_authenticated/settings/")({
-  loader: async () => {
-    const [roots, missingFileBehavior, jobsResult, concurrencies, integrations, backupHistory, smtpStatus, kindleStatus, koboDevices, shelves, opdsCredentials, koreaderCredential] = await Promise.all([
+  loader: async ({ context }) => {
+    const ctx = context as { user?: { roles?: string[] } };
+    const isOwner = ctx.user?.roles?.includes("OWNER") ?? false;
+
+    const [koboDevices, shelves, opdsCredentials, koreaderCredential] =
+      await Promise.all([
+        getKoboDevicesServerFn(),
+        getShelvesServerFn(),
+        getOpdsCredentialsServerFn(),
+        getKoreaderCredentialServerFn(),
+      ]);
+
+    if (!isOwner) {
+      return {
+        roots: [] as LibraryRootWithExtras[],
+        missingFileBehavior: "manual" as const,
+        jobs: [] as Awaited<ReturnType<typeof getImportJobsServerFn>>["jobs"],
+        totalCount: 0,
+        concurrencies: {
+          full: 8,
+          onDemand: 5,
+          incremental: 3,
+        } satisfies Awaited<ReturnType<typeof getAllScanConcurrenciesServerFn>>,
+        integrations: {
+          openlibrary: { configured: false, label: "Open Library" },
+          googlebooks: { configured: false, label: "Google Books" },
+          hardcover: { configured: false, label: "Hardcover" },
+          audible: { configured: false, label: "Audible" },
+        } satisfies Awaited<ReturnType<typeof getIntegrationStatusServerFn>>,
+        backupHistory: [] as Awaited<
+          ReturnType<typeof getBackupHistoryServerFn>
+        >,
+        smtpStatus: { configured: false },
+        kindleStatus: { configured: false },
+        koboDevices,
+        shelves,
+        opdsCredentials,
+        koreaderCredential,
+      };
+    }
+
+    const [
+      roots,
+      missingFileBehavior,
+      jobsResult,
+      concurrencies,
+      integrations,
+      backupHistory,
+      smtpStatus,
+      kindleStatus,
+    ] = await Promise.all([
       getLibraryRootsServerFn(),
       getMissingFileBehaviorServerFn(),
       getImportJobsServerFn({ data: { page: 1, pageSize: 100 } }),
@@ -123,10 +172,6 @@ export const Route = createFileRoute("/_authenticated/settings/")({
       getBackupHistoryServerFn(),
       getSmtpStatusServerFn(),
       getKindleStatusServerFn(),
-      getKoboDevicesServerFn(),
-      getShelvesServerFn(),
-      getOpdsCredentialsServerFn(),
-      getKoreaderCredentialServerFn(),
     ]);
     const rootsWithExtras: LibraryRootWithExtras[] = await Promise.all(
       roots.map(async (root) => {
@@ -171,6 +216,8 @@ function SettingsSkeleton() {
 
 function SettingsPage() {
   const { roots, missingFileBehavior, jobs, totalCount, concurrencies, integrations, backupHistory: initialBackupHistory, smtpStatus, kindleStatus, koboDevices, shelves, opdsCredentials, koreaderCredential } = Route.useLoaderData();
+  const routeContext: { user?: { roles?: string[] } } = Route.useRouteContext();
+  const isOwner = routeContext.user?.roles?.includes("OWNER") ?? false;
   const [backupHistory, setBackupHistory] = useState(initialBackupHistory);
 
   const handleBackupComplete = async (manifest: BackupManifest) => {
@@ -192,43 +239,72 @@ function SettingsPage() {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Settings</h1>
 
-      <Tabs defaultValue="library">
+      <Tabs defaultValue={isOwner ? "library" : "devices"}>
         <TabsList className="h-10">
-          <TabsTrigger value="library" className="px-4 py-1.5">Library</TabsTrigger>
-          <TabsTrigger value="appearance" className="px-4 py-1.5">Appearance</TabsTrigger>
-          <TabsTrigger value="jobs" className="px-4 py-1.5">Jobs</TabsTrigger>
-          <TabsTrigger value="integrations" className="px-4 py-1.5">Integrations</TabsTrigger>
-          <TabsTrigger value="backup" className="px-4 py-1.5">Backup</TabsTrigger>
+          {isOwner && <TabsTrigger value="library" className="px-4 py-1.5">Library</TabsTrigger>}
+          {isOwner && <TabsTrigger value="appearance" className="px-4 py-1.5">Appearance</TabsTrigger>}
+          {isOwner && <TabsTrigger value="jobs" className="px-4 py-1.5">Jobs</TabsTrigger>}
+          {isOwner && <TabsTrigger value="integrations" className="px-4 py-1.5">Integrations</TabsTrigger>}
+          {isOwner && <TabsTrigger value="backup" className="px-4 py-1.5">Backup</TabsTrigger>}
           <TabsTrigger value="devices" className="px-4 py-1.5">Devices</TabsTrigger>
+          {isOwner && <TabsTrigger value="users" className="px-4 py-1.5">Users</TabsTrigger>}
         </TabsList>
 
-        <TabsContent value="library" forceMount className="space-y-6 data-[state=inactive]:hidden">
-          <LibraryTab roots={roots} missingFileBehavior={missingFileBehavior} />
-        </TabsContent>
+        {isOwner && (
+          <TabsContent value="library" forceMount className="space-y-6 data-[state=inactive]:hidden">
+            <LibraryTab roots={roots} missingFileBehavior={missingFileBehavior} />
+          </TabsContent>
+        )}
 
-        <TabsContent value="appearance" forceMount className="space-y-6 data-[state=inactive]:hidden">
-          <AppearanceCard />
-          <BrandPaletteCard />
-          <ColorCard />
-        </TabsContent>
+        {isOwner && (
+          <TabsContent value="appearance" forceMount className="space-y-6 data-[state=inactive]:hidden">
+            <AppearanceCard />
+            <BrandPaletteCard />
+            <ColorCard />
+          </TabsContent>
+        )}
 
-        <TabsContent value="jobs" forceMount className="space-y-6 data-[state=inactive]:hidden">
-          <JobsTab jobs={jobs} totalCount={totalCount} initialConcurrencies={concurrencies} />
-        </TabsContent>
+        {isOwner && (
+          <TabsContent value="jobs" forceMount className="space-y-6 data-[state=inactive]:hidden">
+            <JobsTab jobs={jobs} totalCount={totalCount} initialConcurrencies={concurrencies} />
+          </TabsContent>
+        )}
 
-        <TabsContent value="integrations" forceMount className="space-y-6 data-[state=inactive]:hidden">
-          <IntegrationsTab integrations={integrations} smtpConfigured={smtpStatus.configured} kindleConfigured={kindleStatus.configured} />
-        </TabsContent>
+        {isOwner && (
+          <TabsContent value="integrations" forceMount className="space-y-6 data-[state=inactive]:hidden">
+            <IntegrationsTab integrations={integrations} smtpConfigured={smtpStatus.configured} kindleConfigured={kindleStatus.configured} />
+          </TabsContent>
+        )}
 
-        <TabsContent value="backup" forceMount className="space-y-6 data-[state=inactive]:hidden">
-          <BackupTab history={backupHistory} onBackupComplete={(manifest) => { void handleBackupComplete(manifest); }} />
-        </TabsContent>
+        {isOwner && (
+          <TabsContent value="backup" forceMount className="space-y-6 data-[state=inactive]:hidden">
+            <BackupTab history={backupHistory} onBackupComplete={(manifest) => { void handleBackupComplete(manifest); }} />
+          </TabsContent>
+        )}
 
         <TabsContent value="devices" forceMount className="space-y-6 data-[state=inactive]:hidden">
           <KoreaderSyncCard credential={koreaderCredential} />
           <OpdsCredentialsCard credentials={opdsCredentials} />
           <KoboDevicesTab devices={koboDevices} shelves={shelves} />
         </TabsContent>
+
+        {isOwner && (
+          <TabsContent value="users" forceMount className="space-y-6 data-[state=inactive]:hidden">
+            <div className="rounded-lg border p-6">
+              <h2 className="mb-2 text-lg font-semibold">Manage users</h2>
+              <p className="mb-4 text-sm text-muted-foreground">
+                Add allow-listed emails so other people can sign in to your library
+                as viewers.
+              </p>
+              <Link
+                to="/settings/users"
+                className="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              >
+                Open Users page
+              </Link>
+            </div>
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );

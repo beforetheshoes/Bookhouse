@@ -15,16 +15,19 @@ vi.mock("@tanstack/react-start", () => ({
 }));
 
 const mockFindMany = vi.fn();
+const mockFindUnique = vi.fn();
 const mockCreate = vi.fn();
 const mockUpdate = vi.fn();
 const mockDelete = vi.fn();
 const mockGetCurrentUser = vi.fn();
+const mockAuthenticatedOnly = vi.fn();
 const mockHashPassword = vi.fn().mockResolvedValue("salt:hash");
 
 vi.mock("@bookhouse/db", () => ({
   db: {
     opdsCredential: {
       findMany: mockFindMany,
+      findUnique: mockFindUnique,
       create: mockCreate,
       update: mockUpdate,
       delete: mockDelete,
@@ -34,6 +37,11 @@ vi.mock("@bookhouse/db", () => ({
 
 vi.mock("~/lib/auth-server", () => ({
   getCurrentUser: mockGetCurrentUser,
+}));
+
+vi.mock("./_guards", () => ({
+  ownerOnly: vi.fn().mockResolvedValue({ id: "u1", roles: ["OWNER"] }),
+  authenticatedOnly: mockAuthenticatedOnly,
 }));
 
 vi.mock("@bookhouse/opds", () => ({
@@ -51,6 +59,7 @@ describe("opds-credentials server functions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetCurrentUser.mockResolvedValue({ id: "u1" });
+    mockAuthenticatedOnly.mockResolvedValue({ id: "u1", roles: ["VIEWER"] });
   });
 
   describe("getOpdsCredentialsServerFn", () => {
@@ -129,7 +138,8 @@ describe("opds-credentials server functions", () => {
   });
 
   describe("toggleOpdsCredentialServerFn", () => {
-    it("updates the isEnabled flag", async () => {
+    it("updates the isEnabled flag when current user owns the credential", async () => {
+      mockFindUnique.mockResolvedValue({ userId: "u1" });
       mockUpdate.mockResolvedValue({
         id: "c1",
         username: "reader",
@@ -153,10 +163,30 @@ describe("opds-credentials server functions", () => {
         },
       });
     });
+
+    it("rejects when current user does not own the credential", async () => {
+      mockFindUnique.mockResolvedValue({ userId: "other" });
+      await expect(
+        toggleOpdsCredentialServerFn({
+          data: { credentialId: "c1", isEnabled: false },
+        }),
+      ).rejects.toThrow("Credential not found");
+      expect(mockUpdate).not.toHaveBeenCalled();
+    });
+
+    it("rejects when the credential does not exist", async () => {
+      mockFindUnique.mockResolvedValue(null);
+      await expect(
+        toggleOpdsCredentialServerFn({
+          data: { credentialId: "c1", isEnabled: false },
+        }),
+      ).rejects.toThrow("Credential not found");
+    });
   });
 
   describe("deleteOpdsCredentialServerFn", () => {
-    it("deletes the credential", async () => {
+    it("deletes the credential when current user owns it", async () => {
+      mockFindUnique.mockResolvedValue({ userId: "u1" });
       mockDelete.mockResolvedValue({ id: "c1" });
 
       const result = await deleteOpdsCredentialServerFn({
@@ -167,6 +197,14 @@ describe("opds-credentials server functions", () => {
       expect(mockDelete).toHaveBeenCalledWith({
         where: { id: "c1" },
       });
+    });
+
+    it("rejects when current user does not own the credential", async () => {
+      mockFindUnique.mockResolvedValue({ userId: "other" });
+      await expect(
+        deleteOpdsCredentialServerFn({ data: { credentialId: "c1" } }),
+      ).rejects.toThrow("Credential not found");
+      expect(mockDelete).not.toHaveBeenCalled();
     });
   });
 });

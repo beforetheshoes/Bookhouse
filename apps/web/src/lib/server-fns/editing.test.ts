@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+vi.mock("./_guards", () => ({
+  ownerOnly: vi.fn().mockResolvedValue(undefined),
+  authenticatedOnly: vi
+    .fn()
+    .mockResolvedValue({ id: "owner-1", roles: ["OWNER"] }),
+}));
+
 vi.mock("@tanstack/react-start", () => ({
   createServerFn: () => {
     type Builder = {

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuthSessionData, AuthenticatedUser } from "@bookhouse/auth";
 import type { H3Event } from "h3";
-import { createAuthMiddleware, type AuthMiddlewareDeps } from "./auth";
+import { createAuthMiddleware, requireOwnerFromEvent, type AuthMiddlewareDeps } from "./auth";
 
 function createMockDeps(
   overrides: Partial<AuthMiddlewareDeps> = {},
@@ -16,7 +16,8 @@ function createMockDeps(
 function createMockEvent(pathname: string): H3Event {
   return {
     path: pathname,
-  } as H3Event;
+    context: {},
+  } as unknown as H3Event;
 }
 
 const validUser: AuthenticatedUser = {
@@ -26,6 +27,7 @@ const validUser: AuthenticatedUser = {
   image: null,
   issuer: "https://issuer.example.com",
   subject: "sub-123",
+  roles: ["OWNER"],
 };
 
 const validSessionData: Partial<AuthSessionData> = {
@@ -99,6 +101,31 @@ describe("createAuthMiddleware", () => {
     expect(deps.resolveUser).not.toHaveBeenCalled();
   });
 
+  it("requires auth for /_serverFn/ paths", async () => {
+    const deps = createMockDeps();
+    const middleware = createAuthMiddleware(deps);
+
+    await expect(
+      middleware(createMockEvent("/_serverFn/getLibraryWorks")),
+    ).rejects.toMatchObject({
+      statusCode: 401,
+      statusMessage: "Unauthorized",
+    });
+  });
+
+  it("attaches user to event.context for /_serverFn/ paths when authenticated", async () => {
+    const deps = createMockDeps({
+      getSession: vi.fn().mockResolvedValue({ data: validSessionData }),
+      resolveUser: vi.fn().mockResolvedValue(validUser),
+    });
+    const middleware = createAuthMiddleware(deps);
+    const event = createMockEvent("/_serverFn/getLibraryWorks");
+
+    await middleware(event);
+
+    expect((event.context as { user?: AuthenticatedUser }).user).toBe(validUser);
+  });
+
   it("skips auth for root path", async () => {
     const deps = createMockDeps();
     const middleware = createAuthMiddleware(deps);
@@ -122,5 +149,44 @@ describe("createAuthMiddleware", () => {
     await middleware(event);
 
     expect(getSession).toHaveBeenCalledWith(event);
+  });
+
+  it("attaches the user to event.context after successful auth", async () => {
+    const deps = createMockDeps({
+      getSession: vi.fn().mockResolvedValue({ data: validSessionData }),
+      resolveUser: vi.fn().mockResolvedValue(validUser),
+    });
+    const middleware = createAuthMiddleware(deps);
+    const event = createMockEvent("/api/events");
+
+    await middleware(event);
+
+    expect((event.context as { user?: AuthenticatedUser }).user).toBe(validUser);
+  });
+});
+
+describe("requireOwnerFromEvent", () => {
+  it("returns the user when they are an owner", () => {
+    const event = {
+      context: { user: { id: "u1", roles: ["OWNER"] } },
+    } as unknown as H3Event;
+    const user = requireOwnerFromEvent(event);
+    expect(user.id).toBe("u1");
+  });
+
+  it("throws 403 when the user is not an owner", () => {
+    const event = {
+      context: { user: { id: "u1", roles: ["VIEWER"] } },
+    } as unknown as H3Event;
+    expect(() => requireOwnerFromEvent(event)).toThrowError(
+      expect.objectContaining({ statusCode: 403 }),
+    );
+  });
+
+  it("throws 401 when no user is attached", () => {
+    const event = { context: {} } as unknown as H3Event;
+    expect(() => requireOwnerFromEvent(event)).toThrowError(
+      expect.objectContaining({ statusCode: 401 }),
+    );
   });
 });

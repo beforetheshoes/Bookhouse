@@ -10,10 +10,12 @@ export interface UploadRestoreHandlerDeps {
   readFormData: (event: H3Event) => Promise<{ name?: string; data: Uint8Array; type?: string }[] | undefined>;
   restoreBackup: (archiveBuffer: Buffer) => Promise<{ manifest: BackupManifest }>;
   maxFileSize: number;
+  requireOwner: (event: H3Event) => void;
 }
 
 export function createUploadRestoreHandler(deps: UploadRestoreHandlerDeps) {
   return async (event: H3Event) => {
+    deps.requireOwner(event);
     const formData = await deps.readFormData(event);
     const fileField = formData?.find((f) => f.name === "file");
 
@@ -54,10 +56,13 @@ export default defineEventHandler(async (event) => {
     psqlBin,
   };
 
+  const { requireOwnerFromEvent } = await import("../../../middleware/auth");
+
   const handler = createUploadRestoreHandler({
     readFormData: readMultipartFormData as unknown as UploadRestoreHandlerDeps["readFormData"],
     restoreBackup: (buf) => restoreBackupImpl(restoreDeps, buf),
     maxFileSize: MAX_FILE_SIZE,
+    requireOwner: (e) => { requireOwnerFromEvent(e); },
   });
 
   return handler(event);

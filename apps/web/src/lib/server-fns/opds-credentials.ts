@@ -70,7 +70,16 @@ export const toggleOpdsCredentialServerFn = createServerFn({
 })
   .inputValidator(toggleCredentialSchema)
   .handler(async ({ data }) => {
+    const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
+
+    const existing = await db.opdsCredential.findUnique({
+      where: { id: data.credentialId },
+      select: { userId: true },
+    });
+    if (!existing || existing.userId !== user.id) {
+      throw new Error("Credential not found");
+    }
 
     return db.opdsCredential.update({
       where: { id: data.credentialId },
@@ -93,7 +102,16 @@ export const deleteOpdsCredentialServerFn = createServerFn({
 })
   .inputValidator(deleteCredentialSchema)
   .handler(async ({ data }) => {
+    const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
+
+    const existing = await db.opdsCredential.findUnique({
+      where: { id: data.credentialId },
+      select: { userId: true },
+    });
+    if (!existing || existing.userId !== user.id) {
+      throw new Error("Credential not found");
+    }
 
     return db.opdsCredential.delete({
       where: { id: data.credentialId },

@@ -17,6 +17,7 @@ function createMockDeps(overrides: Partial<UploadHandlerDeps> = {}): UploadHandl
       findWork: vi.fn().mockResolvedValue({ editedFields: [] }),
       updateWork: vi.fn().mockResolvedValue(undefined),
     },
+    requireOwner: vi.fn(),
     ...overrides,
   };
 }
@@ -199,5 +200,18 @@ describe("cover upload handler", () => {
       statusCode: 404,
       statusMessage: "Work not found",
     });
+  });
+
+  it("calls requireOwner before doing any upload work", async () => {
+    const requireOwner = vi.fn().mockImplementation(() => {
+      throw Object.assign(new Error("Forbidden"), { statusCode: 403 });
+    });
+    deps = createMockDeps({ requireOwner });
+    const handler = createUploadHandler(deps);
+    await expect(handler(createMockEvent("work-1") as never)).rejects.toMatchObject({
+      statusCode: 403,
+    });
+    expect(deps.resizeAndSave).not.toHaveBeenCalled();
+    expect(deps.db.updateWork).not.toHaveBeenCalled();
   });
 });

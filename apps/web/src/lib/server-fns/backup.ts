@@ -7,6 +7,7 @@ const MAX_HISTORY = 20;
 export const getBackupHistoryServerFn = createServerFn({
   method: "GET",
 }).handler(async () => {
+  await (await import("./_guards")).ownerOnly();
   const { db } = await import("@bookhouse/db");
 
   const setting = await db.appSetting.findUnique({
@@ -28,6 +29,7 @@ export const recordBackupServerFn = createServerFn({
 })
   .inputValidator(backupManifestSchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
 
     const setting = await db.appSetting.findUnique({

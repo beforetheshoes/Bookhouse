@@ -86,7 +86,7 @@ describe("_authenticated route", () => {
 
   it("beforeLoad returns user when authenticated", async () => {
     const { getCurrentUserServerFn } = await import("~/lib/auth-client");
-    const user = { id: "u1", name: "Test", email: "t@t.com", image: null, issuer: "test", subject: "s1" };
+    const user = { id: "u1", name: "Test", email: "t@t.com", image: null, issuer: "test", subject: "s1", roles: ["OWNER"] };
     (vi.mocked(getCurrentUserServerFn)).mockResolvedValue(user);
 
     const { Route } = await import("./_authenticated");

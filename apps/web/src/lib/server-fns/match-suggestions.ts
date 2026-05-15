@@ -65,6 +65,7 @@ export const acceptMatchSuggestionServerFn = createServerFn({
 })
   .inputValidator(acceptSchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
 
     const link = await db.matchSuggestion.findUniqueOrThrow({
@@ -126,6 +127,7 @@ export const declineMatchSuggestionServerFn = createServerFn({
 })
   .inputValidator(idSchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
     await db.matchSuggestion.update({
       where: { id: data.id },
@@ -137,6 +139,7 @@ export const declineMatchSuggestionServerFn = createServerFn({
 export const rematchAllServerFn = createServerFn({
   method: "POST",
 }).handler(async () => {
+  await (await import("./_guards")).ownerOnly();
   const { db } = await import("@bookhouse/db");
   const { enqueueLibraryJob, LIBRARY_JOB_NAMES } = await import(
     "@bookhouse/shared"

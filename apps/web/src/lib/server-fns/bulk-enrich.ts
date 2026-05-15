@@ -12,6 +12,7 @@ export const bulkEnrichServerFn = createServerFn({
 })
   .inputValidator(bulkEnrichSchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
     const { enqueueEnrichmentJob } = await import("@bookhouse/shared");
 

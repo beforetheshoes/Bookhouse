@@ -68,6 +68,7 @@ export const addLibraryRootServerFn = createServerFn({
 })
   .inputValidator(addLibraryRootSchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
     return db.libraryRoot.create({
       data: {
@@ -88,6 +89,7 @@ export const removeLibraryRootServerFn = createServerFn({
 })
   .inputValidator(removeLibraryRootSchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
     const { cascadeCleanupOrphans } = await import("@bookhouse/ingest");
 
@@ -297,6 +299,7 @@ export const scanLibraryRootServerFn = createServerFn({
 })
   .inputValidator(scanLibraryRootSchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
     const { enqueueLibraryJob, LIBRARY_JOB_NAMES } = await import(
       "@bookhouse/shared"
@@ -334,6 +337,7 @@ export const retryLibraryIssuesServerFn = createServerFn({
 })
   .inputValidator(libraryRootIdSchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
     const { createIngestServices } = await import("@bookhouse/ingest");
     const { enqueueLibraryJob } = await import("@bookhouse/shared");

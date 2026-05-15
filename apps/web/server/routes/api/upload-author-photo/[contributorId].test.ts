@@ -14,6 +14,7 @@ function createMockDeps(overrides: Partial<AuthorPhotoUploadDeps> = {}): AuthorP
       findContributor: vi.fn().mockResolvedValue({ id: "c1" }),
       updateContributor: vi.fn().mockResolvedValue(undefined),
     },
+    requireOwner: vi.fn(),
     ...overrides,
   };
 }
@@ -120,5 +121,18 @@ describe("author photo upload handler", () => {
     const handler = createAuthorPhotoUploadHandler(deps);
     const result = await handler(createMockEvent("c1") as never);
     expect(result).toEqual({ success: true });
+  });
+
+  it("calls requireOwner before doing any upload work", async () => {
+    const requireOwner = vi.fn().mockImplementation(() => {
+      throw Object.assign(new Error("Forbidden"), { statusCode: 403 });
+    });
+    deps = createMockDeps({ requireOwner });
+    const handler = createAuthorPhotoUploadHandler(deps);
+    await expect(handler(createMockEvent("c1") as never)).rejects.toMatchObject({
+      statusCode: 403,
+    });
+    expect(deps.resizeAndSave).not.toHaveBeenCalled();
+    expect(deps.db.updateContributor).not.toHaveBeenCalled();
   });
 });

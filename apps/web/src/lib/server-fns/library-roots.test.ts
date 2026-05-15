@@ -2,6 +2,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type * as SharedModule from "@bookhouse/shared";
 import type { ZodType } from "zod";
 
+vi.mock("./_guards", () => ({
+  ownerOnly: vi.fn().mockResolvedValue(undefined),
+  authenticatedOnly: vi
+    .fn()
+    .mockResolvedValue({ id: "owner-1", roles: ["OWNER"] }),
+}));
+
 vi.mock("@tanstack/react-start", () => ({
   createServerFn: () => {
     type ServerFnInput = Record<string, string | number | boolean | null | string[] | Date | undefined | object>;

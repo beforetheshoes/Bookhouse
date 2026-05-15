@@ -42,6 +42,7 @@ export const setScanConcurrencyServerFn = createServerFn({
     concurrency: z.number().int().min(1).max(20),
   }))
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
     const key = SCAN_CONCURRENCY_KEYS[data.scanType as ScanType];
 
@@ -70,6 +71,7 @@ export const setMissingFileBehaviorServerFn = createServerFn({
 })
   .inputValidator(z.object({ behavior: z.enum(["auto-cleanup", "manual"]) }))
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
 
     await db.appSetting.upsert({
@@ -97,6 +99,7 @@ export const setThemeServerFn = createServerFn({
 })
   .inputValidator(z.object({ theme: z.enum(["light", "dark", "system"]) }))
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
 
     await db.appSetting.upsert({
@@ -124,6 +127,7 @@ export const setColorModeServerFn = createServerFn({
 })
   .inputValidator(z.object({ mode: z.enum(["off", "book", "page", "accent"]) }))
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
 
     await db.appSetting.upsert({
@@ -149,6 +153,7 @@ export const setAccentColorServerFn = createServerFn({
 })
   .inputValidator(z.object({ color: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable() }))
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
 
     if (data.color === null) {
@@ -189,6 +194,7 @@ export const setBrandPaletteServerFn = createServerFn({
 })
   .inputValidator(z.object({ palette: paletteSchema }))
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
 
     await db.appSetting.upsert({

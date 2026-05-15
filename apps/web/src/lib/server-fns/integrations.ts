@@ -71,6 +71,7 @@ export const setApiKeyServerFn = createServerFn({
 })
   .inputValidator(setApiKeySchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
     const secret = await getSecret();
 
@@ -95,6 +96,7 @@ export const removeApiKeyServerFn = createServerFn({
 })
   .inputValidator(removeApiKeySchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
     const key = `apiKey:${data.provider}`;
 
@@ -121,6 +123,7 @@ export const validateApiKeyServerFn = createServerFn({
 })
   .inputValidator(validateApiKeySchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { searchGoogleBooks, searchHardcover } = await import("@bookhouse/ingest");
 
     try {

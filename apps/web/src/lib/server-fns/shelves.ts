@@ -1,11 +1,36 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+type ShelfOwnershipDb = {
+  collection: {
+    findUnique: (args: {
+      where: { id: string };
+      select: { ownerUserId: true };
+    }) => Promise<{ ownerUserId: string | null } | null>;
+  };
+};
+
+async function requireOwnedShelf(
+  db: ShelfOwnershipDb,
+  shelfId: string,
+  userId: string,
+): Promise<void> {
+  const shelf = await db.collection.findUnique({
+    where: { id: shelfId },
+    select: { ownerUserId: true },
+  });
+  if (!shelf || shelf.ownerUserId !== userId) {
+    throw new Error("Shelf not found");
+  }
+}
+
 export const getShelvesServerFn = createServerFn({
   method: "GET",
 }).handler(async () => {
+  const user = await (await import("./_guards")).authenticatedOnly();
   const { db } = await import("@bookhouse/db");
   return db.collection.findMany({
+    where: { ownerUserId: user.id },
     include: {
       _count: {
         select: { items: true },
@@ -24,9 +49,10 @@ export const getShelfDetailServerFn = createServerFn({
 })
   .inputValidator(z.object({ shelfId: z.string().min(1) }))
   .handler(async ({ data }) => {
+    const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
-    return db.collection.findUniqueOrThrow({
-      where: { id: data.shelfId },
+    return db.collection.findFirstOrThrow({
+      where: { id: data.shelfId, ownerUserId: user.id },
       include: {
         items: {
           include: {
@@ -59,9 +85,13 @@ export const getShelvesForEditionServerFn = createServerFn({
 })
   .inputValidator(z.object({ editionId: z.string().min(1) }))
   .handler(async ({ data }) => {
+    const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
     const memberships = await db.collectionItem.findMany({
-      where: { editionId: data.editionId },
+      where: {
+        editionId: data.editionId,
+        collection: { ownerUserId: user.id },
+      },
       select: { collectionId: true },
     });
     return memberships.map((m) => m.collectionId);
@@ -72,6 +102,7 @@ export const getShelvesForWorkServerFn = createServerFn({
 })
   .inputValidator(z.object({ workId: z.string().min(1) }))
   .handler(async ({ data }) => {
+    const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
     const editions = await db.edition.findMany({
       where: { workId: data.workId },
@@ -79,9 +110,15 @@ export const getShelvesForWorkServerFn = createServerFn({
     });
     const editionIds = editions.map((e) => e.id);
     const [shelves, memberships] = await Promise.all([
-      db.collection.findMany({ orderBy: { name: "asc" } }),
+      db.collection.findMany({
+        where: { ownerUserId: user.id },
+        orderBy: { name: "asc" },
+      }),
       db.collectionItem.findMany({
-        where: { editionId: { in: editionIds } },
+        where: {
+          editionId: { in: editionIds },
+          collection: { ownerUserId: user.id },
+        },
         select: { collectionId: true },
       }),
     ]);
@@ -101,9 +138,15 @@ export const createShelfServerFn = createServerFn({
     formatFilter: z.enum(["ALL", "EBOOK", "AUDIOBOOK"]).default("ALL"),
   }))
   .handler(async ({ data }) => {
+    const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
     return db.collection.create({
-      data: { name: data.name, kind: "MANUAL", formatFilter: data.formatFilter },
+      data: {
+        name: data.name,
+        kind: "MANUAL",
+        formatFilter: data.formatFilter,
+        ownerUserId: user.id,
+      },
     });
   });
 
@@ -112,9 +155,10 @@ export const getAvailableEditionsServerFn = createServerFn({
 })
   .inputValidator(z.object({ shelfId: z.string().min(1) }))
   .handler(async ({ data }) => {
+    const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
-    const shelf = await db.collection.findUniqueOrThrow({
-      where: { id: data.shelfId },
+    const shelf = await db.collection.findFirstOrThrow({
+      where: { id: data.shelfId, ownerUserId: user.id },
       select: { formatFilter: true },
     });
     const existing = await db.collectionItem.findMany({
@@ -151,7 +195,9 @@ export const renameShelfServerFn = createServerFn({
 })
   .inputValidator(z.object({ shelfId: z.string().min(1), name: z.string().min(1) }))
   .handler(async ({ data }) => {
+    const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
+    await requireOwnedShelf(db, data.shelfId, user.id);
     return db.collection.update({
       where: { id: data.shelfId },
       data: { name: data.name },
@@ -163,7 +209,9 @@ export const deleteShelfServerFn = createServerFn({
 })
   .inputValidator(z.object({ shelfId: z.string().min(1) }))
   .handler(async ({ data }) => {
+    const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
+    await requireOwnedShelf(db, data.shelfId, user.id);
     return db.collection.delete({
       where: { id: data.shelfId },
     });
@@ -174,7 +222,9 @@ export const addEditionToShelfServerFn = createServerFn({
 })
   .inputValidator(z.object({ shelfId: z.string().min(1), editionId: z.string().min(1) }))
   .handler(async ({ data }) => {
+    const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
+    await requireOwnedShelf(db, data.shelfId, user.id);
     return db.collectionItem.create({
       data: { collectionId: data.shelfId, editionId: data.editionId },
     });
@@ -185,9 +235,10 @@ export const addEditionsForWorkToShelfServerFn = createServerFn({
 })
   .inputValidator(z.object({ shelfId: z.string().min(1), workId: z.string().min(1) }))
   .handler(async ({ data }) => {
+    const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
-    const shelf = await db.collection.findUniqueOrThrow({
-      where: { id: data.shelfId },
+    const shelf = await db.collection.findFirstOrThrow({
+      where: { id: data.shelfId, ownerUserId: user.id },
       select: { formatFilter: true },
     });
     const formatWhere = shelf.formatFilter === "ALL"
@@ -218,9 +269,10 @@ export const bulkAddToShelfServerFn = createServerFn({
 })
   .inputValidator(z.object({ shelfId: z.string().min(1), workIds: z.array(z.string().min(1)).min(1) }))
   .handler(async ({ data }) => {
+    const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
-    const shelf = await db.collection.findUniqueOrThrow({
-      where: { id: data.shelfId },
+    const shelf = await db.collection.findFirstOrThrow({
+      where: { id: data.shelfId, ownerUserId: user.id },
       select: { formatFilter: true },
     });
     const formatWhere = shelf.formatFilter === "ALL"
@@ -251,7 +303,9 @@ export const removeEditionFromShelfServerFn = createServerFn({
 })
   .inputValidator(z.object({ shelfId: z.string().min(1), editionId: z.string().min(1) }))
   .handler(async ({ data }) => {
+    const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
+    await requireOwnedShelf(db, data.shelfId, user.id);
     return db.collectionItem.delete({
       where: {
         collectionId_editionId: {
@@ -267,7 +321,9 @@ export const removeWorkEditionsFromShelfServerFn = createServerFn({
 })
   .inputValidator(z.object({ shelfId: z.string().min(1), workId: z.string().min(1) }))
   .handler(async ({ data }) => {
+    const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
+    await requireOwnedShelf(db, data.shelfId, user.id);
     const editions = await db.edition.findMany({
       where: { workId: data.workId },
       select: { id: true },

@@ -56,6 +56,7 @@ export const ignoreDuplicateServerFn = createServerFn({
 })
   .inputValidator(idSchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
     await db.duplicateCandidate.update({
       where: { id: data.id },
@@ -69,6 +70,7 @@ export const confirmDuplicateServerFn = createServerFn({
 })
   .inputValidator(idSchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
     await db.duplicateCandidate.update({
       where: { id: data.id },
@@ -87,6 +89,7 @@ export const mergeDuplicateServerFn = createServerFn({
 })
   .inputValidator(mergeSchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
 
     const candidate = await db.duplicateCandidate.findUnique({
