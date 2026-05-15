@@ -34,14 +34,14 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 
 const navItems = [
-  { title: "Library", href: "/library", icon: BookOpen },
-  { title: "Series", href: "/series", icon: BookCopy },
-  { title: "Authors", href: "/authors", icon: Users },
-  { title: "Shelves", href: "/shelves", icon: FolderOpen },
-  { title: "Duplicates", href: "/duplicates", icon: Copy },
-  { title: "Match Suggestions", href: "/match-suggestions", icon: Headphones },
-  { title: "Library Health", href: "/health", icon: Activity },
-  { title: "Settings", href: "/settings", icon: Settings },
+  { title: "Library", href: "/library", icon: BookOpen, ownerOnly: false },
+  { title: "Series", href: "/series", icon: BookCopy, ownerOnly: false },
+  { title: "Authors", href: "/authors", icon: Users, ownerOnly: false },
+  { title: "Shelves", href: "/shelves", icon: FolderOpen, ownerOnly: false },
+  { title: "Duplicates", href: "/duplicates", icon: Copy, ownerOnly: true },
+  { title: "Match Suggestions", href: "/match-suggestions", icon: Headphones, ownerOnly: true },
+  { title: "Library Health", href: "/health", icon: Activity, ownerOnly: true },
+  { title: "Settings", href: "/settings", icon: Settings, ownerOnly: false },
 ] as const;
 
 function getInitials(name: string | null, email: string | null): string {
@@ -63,6 +63,8 @@ export function AppSidebar({ user }: { user: AuthenticatedUser }) {
   const routerState = useRouterState();
   const currentPath = routerState.location.pathname;
   const { brandPalette } = useAppColor();
+  const isOwner = user.roles.includes("OWNER");
+  const visibleNavItems = navItems.filter((item) => !item.ownerOnly || isOwner);
 
   return (
     <Sidebar>
@@ -87,7 +89,7 @@ export function AppSidebar({ user }: { user: AuthenticatedUser }) {
           <SidebarGroupLabel>Navigation</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.map((item) => (
+              {visibleNavItems.map((item) => (
                 <SidebarMenuItem key={item.href}>
                   <SidebarMenuButton
                     asChild

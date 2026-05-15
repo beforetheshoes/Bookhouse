@@ -22,18 +22,32 @@ vi.mock("~/hooks/use-app-color", () => ({
   useAppColor: () => ({ brandPalette: mockBrandPalette }),
 }));
 
-const mockUser = { name: "John Doe", email: "john@example.com", image: null };
+const mockUser = {
+  name: "John Doe",
+  email: "john@example.com",
+  image: null,
+  roles: ["OWNER"],
+};
 
-function renderSidebar(user: { name: string | null; email: string | null; image: string | null } = mockUser) {
+function renderSidebar(
+  user: {
+    name: string | null;
+    email: string | null;
+    image: string | null;
+    roles?: string[];
+  } = mockUser,
+) {
   return render(
     <SidebarProvider>
-      <AppSidebar user={user as Parameters<typeof AppSidebar>[0]["user"]} />
+      <AppSidebar
+        user={{ ...user, roles: user.roles ?? ["OWNER"] } as Parameters<typeof AppSidebar>[0]["user"]}
+      />
     </SidebarProvider>
   );
 }
 
 describe("AppSidebar", () => {
-  it("renders navigation items", () => {
+  it("renders all navigation items for owners", () => {
     renderSidebar();
     expect(screen.getByText("Library")).toBeTruthy();
     expect(screen.getByText("Series")).toBeTruthy();
@@ -43,6 +57,24 @@ describe("AppSidebar", () => {
     expect(screen.getByText("Match Suggestions")).toBeTruthy();
     expect(screen.getByText("Library Health")).toBeTruthy();
     expect(screen.getByText("Settings")).toBeTruthy();
+  });
+
+  it("hides owner-only nav items for viewers", () => {
+    renderSidebar({
+      name: "Viewer",
+      email: "v@example.com",
+      image: null,
+      roles: ["VIEWER"],
+    });
+    expect(screen.getByText("Library")).toBeTruthy();
+    expect(screen.getByText("Series")).toBeTruthy();
+    expect(screen.getByText("Authors")).toBeTruthy();
+    expect(screen.getByText("Shelves")).toBeTruthy();
+    // Settings remains visible — viewers need it to manage their own devices.
+    expect(screen.getByText("Settings")).toBeTruthy();
+    expect(screen.queryByText("Duplicates")).toBeNull();
+    expect(screen.queryByText("Match Suggestions")).toBeNull();
+    expect(screen.queryByText("Library Health")).toBeNull();
   });
 
   it("shows user name and email", () => {

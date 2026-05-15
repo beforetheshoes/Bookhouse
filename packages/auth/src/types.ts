@@ -42,6 +42,7 @@ export interface AuthenticatedUser {
   image: string | null;
   issuer: string;
   subject: string;
+  roles: string[];
 }
 
 export interface AuthorizationRequestResult {

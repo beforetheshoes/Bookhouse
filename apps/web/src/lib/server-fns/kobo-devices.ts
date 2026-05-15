@@ -4,8 +4,10 @@ import { z } from "zod";
 export const getKoboDevicesServerFn = createServerFn({
   method: "GET",
 }).handler(async () => {
+  const user = await (await import("./_guards")).authenticatedOnly();
   const { db } = await import("@bookhouse/db");
   return db.koboDevice.findMany({
+    where: { userId: user.id },
     include: {
       collections: {
         include: { collection: { select: { id: true, name: true } } },
@@ -28,12 +30,9 @@ export const addKoboDeviceServerFn = createServerFn({
 })
   .inputValidator(addDeviceSchema)
   .handler(async ({ data }) => {
+    const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
     const { generateAuthToken, generateUserKey } = await import("@bookhouse/kobo");
-    const { getCurrentUser } = await import("~/lib/auth-server");
-
-    const user = await getCurrentUser();
-    if (!user) throw new Error("Not authenticated");
 
     const authToken = generateAuthToken();
     const userKey = generateUserKey(user.id, data.deviceName);
@@ -52,12 +51,28 @@ const revokeDeviceSchema = z.object({
   deviceId: z.string().min(1),
 });
 
+async function requireOwnedKoboDevice(
+  db: { koboDevice: { findUnique: (args: { where: { id: string }; select: { userId: true } }) => Promise<{ userId: string } | null> } },
+  deviceId: string,
+  userId: string,
+): Promise<void> {
+  const device = await db.koboDevice.findUnique({
+    where: { id: deviceId },
+    select: { userId: true },
+  });
+  if (!device || device.userId !== userId) {
+    throw new Error("Device not found");
+  }
+}
+
 export const revokeKoboDeviceServerFn = createServerFn({
   method: "POST",
 })
   .inputValidator(revokeDeviceSchema)
   .handler(async ({ data }) => {
+    const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
+    await requireOwnedKoboDevice(db, data.deviceId, user.id);
     return db.koboDevice.update({
       where: { id: data.deviceId },
       data: { status: "REVOKED" },
@@ -73,7 +88,9 @@ export const removeKoboDeviceServerFn = createServerFn({
 })
   .inputValidator(removeDeviceSchema)
   .handler(async ({ data }) => {
+    const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
+    await requireOwnedKoboDevice(db, data.deviceId, user.id);
     return db.koboDevice.delete({
       where: { id: data.deviceId },
     });
@@ -89,7 +106,20 @@ export const updateDeviceCollectionsServerFn = createServerFn({
 })
   .inputValidator(updateDeviceCollectionsSchema)
   .handler(async ({ data }) => {
+    const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
+    await requireOwnedKoboDevice(db, data.deviceId, user.id);
+
+    // Verify all referenced collections are owned by the user.
+    if (data.collectionIds.length > 0) {
+      const owned = await db.collection.findMany({
+        where: { id: { in: data.collectionIds }, ownerUserId: user.id },
+        select: { id: true },
+      });
+      if (owned.length !== data.collectionIds.length) {
+        throw new Error("One or more shelves not found");
+      }
+    }
 
     await db.koboDeviceCollection.deleteMany({
       where: { koboDeviceId: data.deviceId },
@@ -109,4 +139,3 @@ export const updateDeviceCollectionsServerFn = createServerFn({
       include: { collection: { select: { id: true, name: true } } },
     });
   });
-

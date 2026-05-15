@@ -17,6 +17,7 @@ function createMockDeps(overrides: Partial<UploadRestoreHandlerDeps> = {}): Uplo
     ]),
     restoreBackup: vi.fn().mockResolvedValue({ manifest: MOCK_MANIFEST }),
     maxFileSize: 2 * 1024 * 1024 * 1024,
+    requireOwner: vi.fn(),
     ...overrides,
   };
 }
@@ -104,5 +105,18 @@ describe("backup upload/restore handler", () => {
     const handler = createUploadRestoreHandler(deps);
 
     await expect(handler(createMockEvent() as never)).rejects.toThrow("invalid archive");
+  });
+
+  it("calls requireOwner before reading or restoring", async () => {
+    const requireOwner = vi.fn().mockImplementation(() => {
+      throw Object.assign(new Error("Forbidden"), { statusCode: 403 });
+    });
+    const deps = createMockDeps({ requireOwner });
+    const handler = createUploadRestoreHandler(deps);
+    await expect(handler(createMockEvent() as never)).rejects.toMatchObject({
+      statusCode: 403,
+    });
+    expect(deps.readFormData).not.toHaveBeenCalled();
+    expect(deps.restoreBackup).not.toHaveBeenCalled();
   });
 });

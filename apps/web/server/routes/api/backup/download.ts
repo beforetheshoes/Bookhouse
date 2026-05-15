@@ -9,10 +9,12 @@ export interface DownloadHandlerDeps {
   createBackup: () => Promise<{ stream: Readable; manifest: BackupManifest }>;
   setResponseHeader: (event: H3Event, name: string, value: string) => void;
   sendStream: (event: H3Event, stream: Readable) => unknown;
+  requireOwner: (event: H3Event) => void;
 }
 
 export function createDownloadHandler(deps: DownloadHandlerDeps) {
   return async (event: H3Event) => {
+    deps.requireOwner(event);
     const { stream, manifest } = await deps.createBackup();
 
     const filename = `bookhouse-backup-${manifest.timestamp}.tar.gz`;
@@ -34,6 +36,7 @@ export default defineEventHandler(async (event) => {
   const { execFile: execFileCallback } = await import("node:child_process");
   const { promisify } = await import("node:util");
   const execFile = promisify(execFileCallback);
+  const { requireOwnerFromEvent } = await import("../../../middleware/auth");
 
   const handler = createDownloadHandler({
     createBackup: () =>
@@ -48,6 +51,7 @@ export default defineEventHandler(async (event) => {
       }),
     setResponseHeader,
     sendStream: sendStream as unknown as DownloadHandlerDeps["sendStream"],
+    requireOwner: (e) => { requireOwnerFromEvent(e); },
   });
   return handler(event);
 });

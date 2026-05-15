@@ -45,6 +45,7 @@ export const searchEnrichmentServerFn = createServerFn({
 })
   .inputValidator(searchSchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
     const {
       searchAllSources,
@@ -159,6 +160,7 @@ export const applyEnrichmentServerFn = createServerFn({
 })
   .inputValidator(applySchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
 
     let appliedAnyFields = false;
@@ -387,6 +389,7 @@ export const applyCoverFromUrlServerFn = createServerFn({
 })
   .inputValidator(coverUrlSchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
     const { applyCoverFromUrl } = await import("@bookhouse/ingest");
     const { mkdir, writeFile } = await import("node:fs/promises");

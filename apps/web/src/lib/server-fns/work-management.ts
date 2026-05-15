@@ -11,6 +11,7 @@ export const mergeWorksServerFn = createServerFn({
     }),
   )
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     if (data.sourceWorkIds.includes(data.targetWorkId)) {
       throw new Error("Target work cannot be in source works");
     }
@@ -26,6 +27,7 @@ export const splitEditionToWorkServerFn = createServerFn({
 })
   .inputValidator(z.object({ editionId: z.string().min(1) }))
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
 
     const edition = await db.edition.findUnique({
@@ -69,6 +71,7 @@ export const splitEditionFilesServerFn = createServerFn({
     }),
   )
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
 
     const edition = await db.edition.findUnique({

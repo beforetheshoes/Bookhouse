@@ -14,10 +14,12 @@ export interface AuthorPhotoUploadDeps {
     findContributor: (id: string) => Promise<{ id: string } | null>;
     updateContributor: (id: string, data: { imagePath: string }) => Promise<void>;
   };
+  requireOwner: (event: H3Event) => void;
 }
 
 export function createAuthorPhotoUploadHandler(deps: AuthorPhotoUploadDeps) {
   return async (event: H3Event) => {
+    deps.requireOwner(event);
     const params = event.context.params as { contributorId: string };
     const { contributorId } = params;
 
@@ -65,6 +67,8 @@ export default defineEventHandler(async (event) => {
   const { resizeCoverImage } = await import("@bookhouse/ingest");
   const sharpModule = await import("sharp");
 
+  const { requireOwnerFromEvent } = await import("../../../middleware/auth");
+
   const handler = createAuthorPhotoUploadHandler({
     coverCacheDir: COVER_CACHE_DIR,
     readFormData: readMultipartFormData,
@@ -79,6 +83,7 @@ export default defineEventHandler(async (event) => {
       findContributor: (id) => db.contributor.findUnique({ where: { id }, select: { id: true } }),
       updateContributor: async (id, data) => { await db.contributor.update({ where: { id }, data }); },
     },
+    requireOwner: (e) => { requireOwnerFromEvent(e); },
   });
   return handler(event);
 });

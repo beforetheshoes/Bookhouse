@@ -19,6 +19,7 @@ function createMockDeps(overrides: Partial<DownloadHandlerDeps> = {}): DownloadH
     }) as DownloadHandlerDeps["createBackup"],
     setResponseHeader: vi.fn(),
     sendStream: vi.fn().mockReturnValue(undefined),
+    requireOwner: vi.fn(),
     ...overrides,
   };
 }
@@ -102,5 +103,17 @@ describe("backup download handler", () => {
     const handler = createDownloadHandler(deps);
 
     await expect(handler(createMockEvent() as never)).rejects.toThrow("pg_dump failed");
+  });
+
+  it("calls requireOwner before doing any backup work", async () => {
+    const requireOwner = vi.fn().mockImplementation(() => {
+      throw new Error("Forbidden");
+    });
+    const createBackup = vi.fn();
+    const deps = createMockDeps({ requireOwner, createBackup });
+    const handler = createDownloadHandler(deps);
+
+    await expect(handler(createMockEvent() as never)).rejects.toThrow("Forbidden");
+    expect(createBackup).not.toHaveBeenCalled();
   });
 });

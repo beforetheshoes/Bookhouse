@@ -164,6 +164,9 @@ vi.mock("~/hooks/use-app-color", () => ({
 
 const mockNavigate = vi.fn();
 const mockInvalidate = vi.fn();
+let mockRouteContext: { user?: { id: string; roles?: string[] } } = {
+  user: { id: "owner-1", roles: ["OWNER"] },
+};
 
 vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
@@ -183,7 +186,7 @@ vi.mock("@tanstack/react-router", async () => {
       ...opts,
       options: opts,
       useLoaderData: () => mockLoaderData,
-      useRouteContext: () => ({}),
+      useRouteContext: () => mockRouteContext,
     }),
   };
 });
@@ -254,6 +257,7 @@ const makeJob = (overrides: Partial<{
 describe("SettingsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockRouteContext = { user: { id: "owner-1", roles: ["OWNER"] } };
     mockLoaderData = { roots: [], missingFileBehavior: "manual", jobs: [], totalCount: 0, concurrencies: { full: 8, onDemand: 5, incremental: 3 }, integrations: { openlibrary: { configured: true, label: "Open Library" }, googlebooks: { configured: false, label: "Google Books" }, hardcover: { configured: false, label: "Hardcover" } }, backupHistory: [], smtpStatus: { configured: false }, kindleStatus: { configured: false }, koboDevices: [], shelves: [], opdsCredentials: [], koreaderCredential: null };
     mockTheme = "system";
     mockColorMode = "book";
@@ -265,6 +269,31 @@ describe("SettingsPage", () => {
     const SettingsPage = (Route.options.component as React.ComponentType);
     render(<SettingsPage />);
     expect(screen.getByText("Settings")).toBeTruthy();
+  });
+
+  it("shows only the Devices tab for viewers", async () => {
+    mockRouteContext = { user: { id: "viewer-1", roles: ["VIEWER"] } };
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+    expect(screen.getByRole("tab", { name: "Devices" })).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: "Library" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Appearance" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Jobs" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Integrations" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Backup" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Users" })).toBeNull();
+    // The Devices tab is the default for viewers.
+    expect(screen.getByRole("tab", { name: "Devices" }).getAttribute("data-state")).toBe("active");
+  });
+
+  it("treats a user with no roles array as a viewer", async () => {
+    mockRouteContext = {};
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+    expect(screen.queryByRole("tab", { name: "Library" })).toBeNull();
+    expect(screen.getByRole("tab", { name: "Devices" })).toBeTruthy();
   });
 
   it("renders three tabs: Library, Appearance, Jobs", async () => {
@@ -542,6 +571,40 @@ describe("SettingsPage", () => {
     });
   });
 
+  it("loader skips owner-only fetches when the user is not an owner", async () => {
+    getLibraryRootsServerFnMock.mockClear();
+
+    const { Route } = await import("./index");
+    const loader = Route.options.loader as (args: {
+      context: { user?: { id: string; roles?: string[] } };
+    }) => Promise<{
+      roots: object[];
+      smtpStatus: { configured: boolean };
+      backupHistory: object[];
+      jobs: object[];
+    }>;
+    const result = await loader({
+      context: { user: { id: "viewer-1", roles: ["VIEWER"] } },
+    });
+
+    expect(getLibraryRootsServerFnMock).not.toHaveBeenCalled();
+    expect(result.roots).toEqual([]);
+    expect(result.smtpStatus).toEqual({ configured: false });
+    expect(result.backupHistory).toEqual([]);
+    expect(result.jobs).toEqual([]);
+  });
+
+  it("loader falls back to no-OWNER role gracefully when context has no user", async () => {
+    getLibraryRootsServerFnMock.mockClear();
+    const { Route } = await import("./index");
+    const loader = Route.options.loader as (args: {
+      context: object;
+    }) => Promise<{ roots: object[] }>;
+    const result = await loader({ context: {} });
+    expect(getLibraryRootsServerFnMock).not.toHaveBeenCalled();
+    expect(result.roots).toEqual([]);
+  });
+
   it("loader calls all server functions including jobs and concurrency", async () => {
     const mockRoots = [{ id: "root-1", name: "Loader Root", path: "/books", kind: "EBOOKS", scanMode: "INCREMENTAL", isEnabled: true, lastScannedAt: null }];
     getLibraryRootsServerFnMock.mockResolvedValueOnce(mockRoots);
@@ -551,7 +614,12 @@ describe("SettingsPage", () => {
     getScanProgressServerFnMock.mockResolvedValueOnce(null);
     getLibraryIssueCountServerFnMock.mockResolvedValueOnce(0);
     const { Route } = await import("./index");
-    const result = await (Route.options.loader as (args: Record<string, string | object>) => Promise<object>)({});
+    type LoaderArgs = { context: { user?: { id: string; roles?: string[] } } };
+    const loaderUntyped = Route.options.loader as object;
+    const loader = loaderUntyped as (args: LoaderArgs) => Promise<object>;
+    const result = await loader({
+      context: { user: { id: "owner-1", roles: ["OWNER"] } },
+    });
     expect(getLibraryRootsServerFnMock).toHaveBeenCalled();
     expect(getImportJobsServerFnMock).toHaveBeenCalledWith({ data: { page: 1, pageSize: 100 } });
     expect(getAllScanConcurrenciesServerFnMock).toHaveBeenCalled();

@@ -228,6 +228,7 @@ export const getActiveJobCountServerFn = createServerFn({
 export const stopAllJobsServerFn = createServerFn({
   method: "POST",
 }).handler(async () => {
+  await (await import("./_guards")).ownerOnly();
   const { db } = await import("@bookhouse/db");
   const { obliterateLibraryQueue } = await import("@bookhouse/shared");
 

@@ -14,6 +14,7 @@ import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
 import { Route as AuthLogoutRouteImport } from './routes/auth/logout'
 import { Route as AuthLoginRouteImport } from './routes/auth/login'
+import { Route as AuthDeniedRouteImport } from './routes/auth/denied'
 import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
 import { Route as AuthenticatedShelvesRouteImport } from './routes/_authenticated/shelves'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
@@ -29,6 +30,7 @@ import { Route as AuthenticatedSeriesIndexRouteImport } from './routes/_authenti
 import { Route as AuthenticatedLibraryIndexRouteImport } from './routes/_authenticated/library.index'
 import { Route as AuthenticatedAuthorsIndexRouteImport } from './routes/_authenticated/authors.index'
 import { Route as AuthenticatedShelvesShelfIdRouteImport } from './routes/_authenticated/shelves.$shelfId'
+import { Route as AuthenticatedSettingsUsersRouteImport } from './routes/_authenticated/settings/users'
 import { Route as AuthenticatedSettingsMissingFilesRouteImport } from './routes/_authenticated/settings/missing-files'
 import { Route as AuthenticatedSettingsLibrariesRouteImport } from './routes/_authenticated/settings/libraries'
 import { Route as AuthenticatedSettingsJobsRouteImport } from './routes/_authenticated/settings/jobs'
@@ -61,6 +63,11 @@ const AuthLogoutRoute = AuthLogoutRouteImport.update({
 const AuthLoginRoute = AuthLoginRouteImport.update({
   id: '/auth/login',
   path: '/auth/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthDeniedRoute = AuthDeniedRouteImport.update({
+  id: '/auth/denied',
+  path: '/auth/denied',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthCallbackRoute = AuthCallbackRouteImport.update({
@@ -145,6 +152,12 @@ const AuthenticatedShelvesShelfIdRoute =
     path: '/$shelfId',
     getParentRoute: () => AuthenticatedShelvesRoute,
   } as any)
+const AuthenticatedSettingsUsersRoute =
+  AuthenticatedSettingsUsersRouteImport.update({
+    id: '/users',
+    path: '/users',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
 const AuthenticatedSettingsMissingFilesRoute =
   AuthenticatedSettingsMissingFilesRouteImport.update({
     id: '/missing-files',
@@ -212,6 +225,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthenticatedSettingsRouteWithChildren
   '/shelves': typeof AuthenticatedShelvesRouteWithChildren
   '/auth/callback': typeof AuthCallbackRoute
+  '/auth/denied': typeof AuthDeniedRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/logout': typeof AuthLogoutRoute
   '/authors/$authorId': typeof AuthenticatedAuthorsAuthorIdRoute
@@ -220,6 +234,7 @@ export interface FileRoutesByFullPath {
   '/settings/jobs': typeof AuthenticatedSettingsJobsRouteWithChildren
   '/settings/libraries': typeof AuthenticatedSettingsLibrariesRoute
   '/settings/missing-files': typeof AuthenticatedSettingsMissingFilesRoute
+  '/settings/users': typeof AuthenticatedSettingsUsersRoute
   '/shelves/$shelfId': typeof AuthenticatedShelvesShelfIdRoute
   '/authors/': typeof AuthenticatedAuthorsIndexRoute
   '/library/': typeof AuthenticatedLibraryIndexRoute
@@ -236,6 +251,7 @@ export interface FileRoutesByTo {
   '/health': typeof AuthenticatedHealthRoute
   '/match-suggestions': typeof AuthenticatedMatchSuggestionsRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/auth/denied': typeof AuthDeniedRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/logout': typeof AuthLogoutRoute
   '/': typeof AuthenticatedIndexRoute
@@ -244,6 +260,7 @@ export interface FileRoutesByTo {
   '/series/$seriesId': typeof AuthenticatedSeriesSeriesIdRoute
   '/settings/libraries': typeof AuthenticatedSettingsLibrariesRoute
   '/settings/missing-files': typeof AuthenticatedSettingsMissingFilesRoute
+  '/settings/users': typeof AuthenticatedSettingsUsersRoute
   '/shelves/$shelfId': typeof AuthenticatedShelvesShelfIdRoute
   '/authors': typeof AuthenticatedAuthorsIndexRoute
   '/library': typeof AuthenticatedLibraryIndexRoute
@@ -267,6 +284,7 @@ export interface FileRoutesById {
   '/_authenticated/settings': typeof AuthenticatedSettingsRouteWithChildren
   '/_authenticated/shelves': typeof AuthenticatedShelvesRouteWithChildren
   '/auth/callback': typeof AuthCallbackRoute
+  '/auth/denied': typeof AuthDeniedRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/logout': typeof AuthLogoutRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
@@ -276,6 +294,7 @@ export interface FileRoutesById {
   '/_authenticated/settings/jobs': typeof AuthenticatedSettingsJobsRouteWithChildren
   '/_authenticated/settings/libraries': typeof AuthenticatedSettingsLibrariesRoute
   '/_authenticated/settings/missing-files': typeof AuthenticatedSettingsMissingFilesRoute
+  '/_authenticated/settings/users': typeof AuthenticatedSettingsUsersRoute
   '/_authenticated/shelves/$shelfId': typeof AuthenticatedShelvesShelfIdRoute
   '/_authenticated/authors/': typeof AuthenticatedAuthorsIndexRoute
   '/_authenticated/library/': typeof AuthenticatedLibraryIndexRoute
@@ -300,6 +319,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/shelves'
     | '/auth/callback'
+    | '/auth/denied'
     | '/auth/login'
     | '/auth/logout'
     | '/authors/$authorId'
@@ -308,6 +328,7 @@ export interface FileRouteTypes {
     | '/settings/jobs'
     | '/settings/libraries'
     | '/settings/missing-files'
+    | '/settings/users'
     | '/shelves/$shelfId'
     | '/authors/'
     | '/library/'
@@ -324,6 +345,7 @@ export interface FileRouteTypes {
     | '/health'
     | '/match-suggestions'
     | '/auth/callback'
+    | '/auth/denied'
     | '/auth/login'
     | '/auth/logout'
     | '/'
@@ -332,6 +354,7 @@ export interface FileRouteTypes {
     | '/series/$seriesId'
     | '/settings/libraries'
     | '/settings/missing-files'
+    | '/settings/users'
     | '/shelves/$shelfId'
     | '/authors'
     | '/library'
@@ -354,6 +377,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings'
     | '/_authenticated/shelves'
     | '/auth/callback'
+    | '/auth/denied'
     | '/auth/login'
     | '/auth/logout'
     | '/_authenticated/'
@@ -363,6 +387,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/jobs'
     | '/_authenticated/settings/libraries'
     | '/_authenticated/settings/missing-files'
+    | '/_authenticated/settings/users'
     | '/_authenticated/shelves/$shelfId'
     | '/_authenticated/authors/'
     | '/_authenticated/library/'
@@ -378,6 +403,7 @@ export interface RootRouteChildren {
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   LoggedOutRoute: typeof LoggedOutRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
+  AuthDeniedRoute: typeof AuthDeniedRoute
   AuthLoginRoute: typeof AuthLoginRoute
   AuthLogoutRoute: typeof AuthLogoutRoute
 }
@@ -417,6 +443,13 @@ declare module '@tanstack/react-router' {
       path: '/auth/login'
       fullPath: '/auth/login'
       preLoaderRoute: typeof AuthLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/denied': {
+      id: '/auth/denied'
+      path: '/auth/denied'
+      fullPath: '/auth/denied'
+      preLoaderRoute: typeof AuthDeniedRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth/callback': {
@@ -523,6 +556,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/shelves/$shelfId'
       preLoaderRoute: typeof AuthenticatedShelvesShelfIdRouteImport
       parentRoute: typeof AuthenticatedShelvesRoute
+    }
+    '/_authenticated/settings/users': {
+      id: '/_authenticated/settings/users'
+      path: '/users'
+      fullPath: '/settings/users'
+      preLoaderRoute: typeof AuthenticatedSettingsUsersRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
     }
     '/_authenticated/settings/missing-files': {
       id: '/_authenticated/settings/missing-files'
@@ -649,6 +689,7 @@ interface AuthenticatedSettingsRouteChildren {
   AuthenticatedSettingsJobsRoute: typeof AuthenticatedSettingsJobsRouteWithChildren
   AuthenticatedSettingsLibrariesRoute: typeof AuthenticatedSettingsLibrariesRoute
   AuthenticatedSettingsMissingFilesRoute: typeof AuthenticatedSettingsMissingFilesRoute
+  AuthenticatedSettingsUsersRoute: typeof AuthenticatedSettingsUsersRoute
   AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute
   AuthenticatedSettingsLibraryIssuesLibraryRootIdRoute: typeof AuthenticatedSettingsLibraryIssuesLibraryRootIdRoute
 }
@@ -658,6 +699,7 @@ const AuthenticatedSettingsRouteChildren: AuthenticatedSettingsRouteChildren = {
   AuthenticatedSettingsLibrariesRoute: AuthenticatedSettingsLibrariesRoute,
   AuthenticatedSettingsMissingFilesRoute:
     AuthenticatedSettingsMissingFilesRoute,
+  AuthenticatedSettingsUsersRoute: AuthenticatedSettingsUsersRoute,
   AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,
   AuthenticatedSettingsLibraryIssuesLibraryRootIdRoute:
     AuthenticatedSettingsLibraryIssuesLibraryRootIdRoute,
@@ -713,6 +755,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   LoggedOutRoute: LoggedOutRoute,
   AuthCallbackRoute: AuthCallbackRoute,
+  AuthDeniedRoute: AuthDeniedRoute,
   AuthLoginRoute: AuthLoginRoute,
   AuthLogoutRoute: AuthLogoutRoute,
 }

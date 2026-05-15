@@ -48,4 +48,11 @@ describe("auth routes", () => {
     await expect(handlers.POST()).resolves.toBeInstanceOf(Response);
     expect(handleLogoutRequestMock).toHaveBeenCalledTimes(2);
   });
+
+  it("renders the access-denied page", async () => {
+    const { Route } = await import("./denied");
+    const Component = Route.options.component as () => React.ReactElement;
+    const element = Component();
+    expect(React.isValidElement(element)).toBe(true);
+  });
 });

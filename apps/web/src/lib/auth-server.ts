@@ -1,8 +1,11 @@
 import {
+  AuthAccessDeniedError,
+  OWNER_ROLE,
   createAuthenticatedSession,
   createAuthorizationRequest,
   clearSession,
   exchangeAuthorizationCode,
+  isOwner,
   loadAuthConfig,
   resolveAuthenticatedUser,
   upsertOidcUser,
@@ -64,6 +67,40 @@ export const getCurrentUserServerFn = createServerFn({ method: "GET" }).handler(
   async () => getCurrentUser(),
 );
 
+export class UnauthorizedError extends Error {
+  readonly statusCode = 401;
+  constructor(message = "Unauthorized") {
+    super(message);
+    this.name = "UnauthorizedError";
+  }
+}
+
+export class ForbiddenError extends Error {
+  readonly statusCode = 403;
+  constructor(message = "Forbidden") {
+    super(message);
+    this.name = "ForbiddenError";
+  }
+}
+
+export async function requireAuthenticated(): Promise<AuthenticatedUser> {
+  const user = await getCurrentUser();
+  if (!user) {
+    throw new UnauthorizedError();
+  }
+  return user;
+}
+
+export async function requireOwner(): Promise<AuthenticatedUser> {
+  const user = await requireAuthenticated();
+  if (!isOwner(user.roles)) {
+    throw new ForbiddenError("Owner role required");
+  }
+  return user;
+}
+
+export { OWNER_ROLE };
+
 function normalizeReturnTo(input: string | null | undefined): string {
   if (!input) {
     return "/";
@@ -109,11 +146,20 @@ export async function handleCallbackRequest(): Promise<Response> {
     expectedNonce: login.nonce,
   });
 
-  const user = await upsertOidcUser({
-    db,
-    config: authConfig,
-    claims,
-  });
+  let user: AuthenticatedUser;
+  try {
+    user = await upsertOidcUser({
+      db,
+      config: authConfig,
+      claims,
+    });
+  } catch (error) {
+    if (error instanceof AuthAccessDeniedError) {
+      await session.update(clearSession());
+      return redirectResponse(appUrl("/auth/denied"));
+    }
+    throw error;
+  }
 
   await session.update(
     createAuthenticatedSession({

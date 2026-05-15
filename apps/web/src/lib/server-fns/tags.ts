@@ -11,6 +11,7 @@ export const updateWorkTagsServerFn = createServerFn({
 })
   .inputValidator(updateWorkTagsSchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
 
     const work = await db.work.findUnique({

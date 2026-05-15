@@ -106,6 +106,7 @@ export const deleteOrphanedFileServerFn = createServerFn({
 })
   .inputValidator(z.object({ fileAssetId: z.string().min(1) }))
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
     const fileAsset = await db.fileAsset.findUnique({
       where: { id: data.fileAssetId },
@@ -137,6 +138,7 @@ export type EmptyWork = Awaited<
 export const deleteEmptyWorksServerFn = createServerFn({
   method: "POST",
 }).handler(async () => {
+  await (await import("./_guards")).ownerOnly();
   const { db } = await import("@bookhouse/db");
   const { cleanupOrphanedFileAssets } = await import("@bookhouse/ingest");
   const emptyWorks = await db.work.findMany({

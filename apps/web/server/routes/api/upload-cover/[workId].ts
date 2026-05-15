@@ -15,10 +15,12 @@ export interface UploadHandlerDeps {
     findWork: (id: string) => Promise<{ editedFields: string[] } | null>;
     updateWork: (id: string, data: { coverPath: string; editedFields: string[]; coverColors?: string[] }) => Promise<void>;
   };
+  requireOwner: (event: H3Event) => void;
 }
 
 export function createUploadHandler(deps: UploadHandlerDeps) {
   return async (event: H3Event) => {
+    deps.requireOwner(event);
     const params = event.context.params as { workId: string };
     const { workId } = params;
 
@@ -75,6 +77,8 @@ export default defineEventHandler(async (event) => {
   const { resizeCoverImage, extractDominantColors } = await import("@bookhouse/ingest");
   const sharpModule = await import("sharp");
 
+  const { requireOwnerFromEvent } = await import("../../../middleware/auth");
+
   const handler = createUploadHandler({
     coverCacheDir: COVER_CACHE_DIR,
     readFormData: readMultipartFormData,
@@ -90,6 +94,7 @@ export default defineEventHandler(async (event) => {
       findWork: (id) => db.work.findUnique({ where: { id }, select: { editedFields: true } }),
       updateWork: async (id, data) => { await db.work.update({ where: { id }, data }); },
     },
+    requireOwner: (e) => { requireOwnerFromEvent(e); },
   });
   return handler(event);
 });

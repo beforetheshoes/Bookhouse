@@ -27,6 +27,7 @@ export const deleteWorkServerFn = createServerFn({
 })
   .inputValidator(z.object({ workId: z.string().min(1) }))
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
     const fileAssetIds = await collectFileAssetIds(db, { edition: { workId: data.workId } });
     await db.work.delete({ where: { id: data.workId } });
@@ -39,6 +40,7 @@ export const deleteEditionServerFn = createServerFn({
 })
   .inputValidator(z.object({ editionId: z.string().min(1) }))
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
 
     const edition = await db.edition.findUnique({ where: { id: data.editionId } });
@@ -64,6 +66,7 @@ export const bulkDeleteWorksServerFn = createServerFn({
 })
   .inputValidator(z.object({ workIds: z.array(z.string().min(1)).max(100) }))
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     if (data.workIds.length === 0) {
       return { deletedWorkIds: [] as string[] };
     }
@@ -80,6 +83,7 @@ export const bulkDeleteEditionsServerFn = createServerFn({
 })
   .inputValidator(z.object({ editionIds: z.array(z.string().min(1)).max(100) }))
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     if (data.editionIds.length === 0) {
       return { deletedEditionIds: [] as string[], deletedWorkIds: [] as string[] };
     }
@@ -119,6 +123,7 @@ export const bulkDeleteEditionsByFormatForWorksServerFn = createServerFn({
     format: z.enum(["EBOOK", "AUDIOBOOK"]),
   }))
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     if (data.workIds.length === 0) {
       return { deletedEditionIds: [] as string[], deletedWorkIds: [] as string[] };
     }
@@ -163,6 +168,7 @@ export const deleteAllEditionsByFormatServerFn = createServerFn({
     format: z.enum(["EBOOK", "AUDIOBOOK"]),
   }))
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
 
     const editions = await db.edition.findMany({
@@ -245,6 +251,7 @@ export const cleanupMissingFilesServerFn = createServerFn({
 })
   .inputValidator(z.object({ fileAssetIds: z.array(z.string().min(1)) }))
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
     const { cascadeCleanupOrphans } = await import("@bookhouse/ingest");
 

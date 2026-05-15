@@ -41,6 +41,7 @@ export const getSmtpStatusServerFn = createServerFn({
 export const getSmtpConfigServerFn = createServerFn({
   method: "GET",
 }).handler(async () => {
+  await (await import("./_guards")).ownerOnly();
   const { db } = await import("@bookhouse/db");
   const settings = await db.appSetting.findMany({
     where: { key: { in: [...SMTP_KEYS] } },
@@ -74,6 +75,7 @@ export const saveSmtpConfigServerFn = createServerFn({
 })
   .inputValidator(saveSmtpConfigSchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
     const { encryptValue } = await import("./integrations");
     const secret = await getSecret();
@@ -105,6 +107,7 @@ export const saveSmtpConfigServerFn = createServerFn({
 export const removeSmtpConfigServerFn = createServerFn({
   method: "POST",
 }).handler(async () => {
+  await (await import("./_guards")).ownerOnly();
   const { db } = await import("@bookhouse/db");
   await db.appSetting.deleteMany({
     where: { key: { in: [...SMTP_KEYS] } },
@@ -121,6 +124,7 @@ export const testSmtpConnectionServerFn = createServerFn({
 })
   .inputValidator(testSmtpConnectionSchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const config = await getDecryptedSmtpConfig();
     if (!config) return { success: false, error: "SMTP is not configured" };
 
