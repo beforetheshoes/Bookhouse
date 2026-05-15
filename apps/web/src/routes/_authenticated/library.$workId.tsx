@@ -39,6 +39,7 @@ import { getKindleStatusServerFn } from "~/lib/server-fns/kindle";
 import { updateWorkTagsServerFn } from "~/lib/server-fns/tags";
 import { useAppColor } from "~/hooks/use-app-color";
 import { sortEditionsByKey } from "~/lib/edition-sort";
+import { CoverAmbience } from "~/components/branding/cover-ambience";
 
 export const Route = createFileRoute("/_authenticated/library/$workId")({
   loader: async ({ params }) => {
@@ -243,7 +244,8 @@ function WorkDetailPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="relative space-y-6">
+      <CoverAmbience />
       <nav className="flex items-center gap-1 text-sm text-muted-foreground">
         <Link to="/library" search={{ page: 1, pageSize: 50, sort: "title-asc" as const, view: "works" as const }} className="hover:text-foreground">
           Library
@@ -253,20 +255,35 @@ function WorkDetailPage() {
       </nav>
 
       <div className="flex gap-8">
-        <WorkCover
-          workId={work.id}
-          coverPath={work.coverPath}
-          titleDisplay={work.titleDisplay}
-          maxPercent={maxPercent}
-          coverVersion={coverVersion}
-          onCoverUpdated={handleCoverUpdated}
-          onCoverSearchOpen={() => { setCoverSearchOpen(true); }}
-        />
+        <div className="relative flex-none" data-testid="cover-halo">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -inset-5 blur-md"
+            style={{
+              background:
+                "radial-gradient(ellipse, var(--bh-glow, transparent) 0%, transparent 70%)",
+            }}
+          />
+          <div className="relative">
+            <WorkCover
+              workId={work.id}
+              coverPath={work.coverPath}
+              titleDisplay={work.titleDisplay}
+              maxPercent={maxPercent}
+              coverVersion={coverVersion}
+              onCoverUpdated={handleCoverUpdated}
+              onCoverSearchOpen={() => { setCoverSearchOpen(true); }}
+            />
+          </div>
+        </div>
 
         <div className="flex-1 space-y-4">
           <div>
             <div className="flex items-start gap-3">
-              <h1 className="flex-1 text-2xl font-bold">
+              <h1
+                className="flex-1 font-display text-3xl font-medium tracking-tight"
+                style={{ color: "var(--bh-text, inherit)" }}
+              >
                 <EditableField
                   value={work.titleDisplay}
                   onSave={async (val) => {
@@ -274,7 +291,7 @@ function WorkDetailPage() {
                     void router.invalidate();
                   }}
                   required
-                  className="text-2xl font-bold"
+                  className="font-display text-3xl font-medium"
                 />
               </h1>
               <Button variant="outline" size="sm" onClick={() => { setEnrichMode("work"); setEnrichOpen(true); }}>
@@ -285,6 +302,27 @@ function WorkDetailPage() {
                 <Trash2 className="size-4" />
               </Button>
             </div>
+            {formatFamilies.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2" data-testid="format-pills">
+                {formatFamilies.map((fmt) => (
+                  <span
+                    key={fmt}
+                    className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider"
+                    style={{
+                      background: "var(--bh-chip, var(--muted))",
+                      color: "var(--bh-chip-text, var(--muted-foreground))",
+                    }}
+                  >
+                    <span
+                      className="size-1.5 rounded-full"
+                      style={{ background: "var(--bh-accent, currentColor)" }}
+                    />
+                    {fmt === "AUDIOBOOK" ? <Headphones className="size-3" /> : <BookOpen className="size-3" />}
+                    {fmt}
+                  </span>
+                ))}
+              </div>
+            )}
             <div className="mt-0.5 text-xs text-muted-foreground">
               <span className="mr-1">Sort as:</span>
               <EditableField
@@ -396,8 +434,37 @@ function WorkDetailPage() {
         onApplied={handleCoverUpdated}
       />
 
-      <div className="space-y-4">
-        <h2 className="text-lg font-semibold">Reading Progress</h2>
+      <div
+        className="space-y-3 rounded-lg border p-4"
+        data-testid="reading-progress-strip"
+        style={{
+          background: "color-mix(in oklch, var(--bh-bg, transparent) 18%, transparent)",
+          borderColor: "color-mix(in oklch, var(--bh-accent, var(--border)) 30%, var(--border))",
+        }}
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+            Reading Progress
+          </h2>
+          {maxPercent !== null && (
+            <span
+              className="font-display text-sm font-medium"
+              style={{ color: "var(--bh-accent, var(--foreground))" }}
+            >
+              {maxPercent}%
+            </span>
+          )}
+        </div>
+        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full transition-[width]"
+            style={{
+              width: `${String(maxPercent ?? 0)}%`,
+              background:
+                "linear-gradient(90deg, var(--bh-glow, var(--primary)), var(--bh-accent, var(--primary)))",
+            }}
+          />
+        </div>
         {trackingMode === "BY_WORK" ? (
           progress.length === 0 ? (
             <p className="text-sm text-muted-foreground">No reading progress yet</p>

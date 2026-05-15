@@ -9,6 +9,7 @@ const getCurrentUserServerFnMock = vi.fn();
 const getThemeServerFnMock = vi.fn().mockResolvedValue("system");
 const getColorModeServerFnMock = vi.fn().mockResolvedValue("book");
 const getAccentColorServerFnMock = vi.fn().mockResolvedValue(null);
+const getBrandPaletteServerFnMock = vi.fn().mockResolvedValue("shelf");
 
 vi.mock("../lib/auth-client", () => ({
   getCurrentUserServerFn: getCurrentUserServerFnMock,
@@ -18,6 +19,7 @@ vi.mock("~/lib/server-fns/app-settings", () => ({
   getThemeServerFn: getThemeServerFnMock,
   getColorModeServerFn: getColorModeServerFnMock,
   getAccentColorServerFn: getAccentColorServerFnMock,
+  getBrandPaletteServerFn: getBrandPaletteServerFnMock,
 }));
 
 describe("_authenticated layout route", () => {
@@ -51,7 +53,7 @@ describe("_authenticated layout route", () => {
       context: { auth: { user } },
     });
 
-    expect(result).toEqual({ user, theme: "system", colorMode: "book", accentColor: null });
+    expect(result).toEqual({ user, theme: "system", colorMode: "book", accentColor: null, brandPalette: "shelf" });
   });
 
   it("falls back to getCurrentUserServerFn when server context is empty", async () => {
@@ -69,7 +71,7 @@ describe("_authenticated layout route", () => {
 
     const result = await beforeLoad({ context: {} });
 
-    expect(result).toEqual({ user, theme: "system", colorMode: "book", accentColor: null });
+    expect(result).toEqual({ user, theme: "system", colorMode: "book", accentColor: null, brandPalette: "shelf" });
   });
 
   it("returns stored theme preference", async () => {
@@ -88,6 +90,25 @@ describe("_authenticated layout route", () => {
 
     const result = await beforeLoad({ context: {} });
 
-    expect(result).toEqual({ user, theme: "dark", colorMode: "book", accentColor: null });
+    expect(result).toEqual({ user, theme: "dark", colorMode: "book", accentColor: null, brandPalette: "shelf" });
+  });
+
+  it("returns stored brand palette preference", async () => {
+    const { Route } = await import("./_authenticated");
+    const user = {
+      id: "user-4",
+      email: "palette@example.com",
+      name: "Palette",
+      image: null,
+      issuer: "https://issuer.example.com",
+      subject: "subject-4",
+    };
+    getCurrentUserServerFnMock.mockResolvedValueOnce(user);
+    getBrandPaletteServerFnMock.mockResolvedValueOnce("vivid");
+    const beforeLoad = asBeforeLoad<object>(Route.options.beforeLoad as object);
+
+    const result = await beforeLoad({ context: {} });
+
+    expect(result).toEqual({ user, theme: "system", colorMode: "book", accentColor: null, brandPalette: "vivid" });
   });
 });

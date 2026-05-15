@@ -3,14 +3,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import type { ReactNode } from "react";
 
-const { setColorModeServerFnMock, setAccentColorServerFnMock } = vi.hoisted(() => ({
-  setColorModeServerFnMock: vi.fn(),
-  setAccentColorServerFnMock: vi.fn(),
-}));
+const { setColorModeServerFnMock, setAccentColorServerFnMock, setBrandPaletteServerFnMock } =
+  vi.hoisted(() => ({
+    setColorModeServerFnMock: vi.fn(),
+    setAccentColorServerFnMock: vi.fn(),
+    setBrandPaletteServerFnMock: vi.fn(),
+  }));
 
 vi.mock("~/lib/server-fns/app-settings", () => ({
   setColorModeServerFn: setColorModeServerFnMock,
   setAccentColorServerFn: setAccentColorServerFnMock,
+  setBrandPaletteServerFn: setBrandPaletteServerFnMock,
 }));
 
 let mockResolvedTheme = "light";
@@ -43,15 +46,37 @@ vi.mock("~/lib/color-utils", () => ({
     "--cover-accent": `accent-accent-${hex}-${mode}`,
     "--cover-text": `accent-text-${hex}-${mode}`,
   }),
+  deriveCoverSignature: (colors: string[] | null, mode: string) => {
+    if (!colors || colors.length === 0) return null;
+    return {
+      bg: `sig-bg-${mode}`,
+      glow: `sig-glow-${mode}`,
+      accent: `sig-accent-${mode}`,
+      chip: `sig-chip-${mode}`,
+      chipText: `sig-chip-text-${mode}`,
+      text: `sig-text-${mode}`,
+      side: `sig-side-${mode}`,
+    };
+  },
 }));
 
 import { AppColorProvider, useAppColor } from "./use-app-color";
 import { toast } from "sonner";
 import type { ColorMode } from "~/lib/server-fns/app-settings";
+import type { PaletteKey } from "~/components/branding/palettes";
 
-function wrapper(initialColorMode: ColorMode = "book", initialAccentColor: string | null = null) {
+function wrapper(
+  initialColorMode: ColorMode = "book",
+  initialAccentColor: string | null = null,
+  initialBrandPalette: PaletteKey = "shelf",
+) {
   return function Wrapper({ children }: { children: ReactNode }) {
-    return AppColorProvider({ initialColorMode, initialAccentColor, children });
+    return AppColorProvider({
+      initialColorMode,
+      initialAccentColor,
+      initialBrandPalette,
+      children,
+    });
   };
 }
 
@@ -59,6 +84,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   setColorModeServerFnMock.mockResolvedValue({ mode: "book" });
   setAccentColorServerFnMock.mockResolvedValue({ color: null });
+  setBrandPaletteServerFnMock.mockResolvedValue({ palette: "shelf" });
   mockResolvedTheme = "light";
   mockPathname = "/library";
 
@@ -127,6 +153,36 @@ describe("useAppColor", () => {
     act(() => { result.current.setAccentColor("#ff0000"); });
     await vi.waitFor(() => {
       expect((toast.error as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith("Failed to save accent color");
+    });
+  });
+
+  it("returns initial brand palette and exposes its full palette object", () => {
+    const { result } = renderHook(() => useAppColor(), { wrapper: wrapper("book", null, "vivid") });
+    expect(result.current.brandPalette).toBe("vivid");
+    expect(result.current.palette.name).toBe("Vivid");
+  });
+
+  it("falls back to shelf when initial brand palette is not a known key", () => {
+    const { result } = renderHook(() => useAppColor(), {
+      wrapper: wrapper("book", null, "rainbow" as PaletteKey),
+    });
+    expect(result.current.brandPalette).toBe("shelf");
+  });
+
+  it("setBrandPalette updates state and calls server fn", () => {
+    const { result } = renderHook(() => useAppColor(), { wrapper: wrapper("book") });
+    act(() => { result.current.setBrandPalette("forest"); });
+    expect(result.current.brandPalette).toBe("forest");
+    expect(result.current.palette.name).toBe("Forest");
+    expect(setBrandPaletteServerFnMock).toHaveBeenCalledWith({ data: { palette: "forest" } });
+  });
+
+  it("shows toast when setBrandPalette server fn fails", async () => {
+    setBrandPaletteServerFnMock.mockRejectedValue(new Error("network error"));
+    const { result } = renderHook(() => useAppColor(), { wrapper: wrapper("book") });
+    act(() => { result.current.setBrandPalette("sunset"); });
+    await vi.waitFor(() => {
+      expect((toast.error as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith("Failed to save brand palette");
     });
   });
 });
@@ -300,5 +356,58 @@ describe("AppColorProvider gradient application", () => {
     unmount();
     // After unmount, cleanup should restore original styles
     // The cleanup function in the useEffect restores the previous cssText
+  });
+});
+
+describe("AppColorProvider cover signature", () => {
+  function setupInset() {
+    const wrapperEl = document.createElement("div");
+    wrapperEl.setAttribute("data-slot", "sidebar-wrapper");
+    const insetEl = document.createElement("div");
+    insetEl.setAttribute("data-slot", "sidebar-inset");
+    wrapperEl.appendChild(insetEl);
+    document.body.appendChild(wrapperEl);
+    return insetEl;
+  }
+
+  it("publishes signature CSS custom properties on the inset when on a work page", () => {
+    mockPathname = "/library/work-1";
+    const insetEl = setupInset();
+    const { result } = renderHook(() => useAppColor(), { wrapper: wrapper("book") });
+    act(() => { result.current.setBookColors(["#1a2b3c", "#4d5e6f"]); });
+    expect(insetEl.style.getPropertyValue("--bh-bg")).toBe("sig-bg-light");
+    expect(insetEl.style.getPropertyValue("--bh-glow")).toBe("sig-glow-light");
+    expect(insetEl.style.getPropertyValue("--bh-accent")).toBe("sig-accent-light");
+    expect(insetEl.style.getPropertyValue("--bh-side")).toBe("sig-side-light");
+    expect(result.current.coverSignature?.bg).toBe("sig-bg-light");
+  });
+
+  it("clears signature properties when leaving work page or clearing colors", () => {
+    mockPathname = "/library/work-1";
+    const insetEl = setupInset();
+    const { result } = renderHook(() => useAppColor(), { wrapper: wrapper("book") });
+    act(() => { result.current.setBookColors(["#1a2b3c"]); });
+    expect(insetEl.style.getPropertyValue("--bh-bg")).not.toBe("");
+    act(() => { result.current.setBookColors(null); });
+    expect(insetEl.style.getPropertyValue("--bh-bg")).toBe("");
+    expect(result.current.coverSignature).toBeNull();
+  });
+
+  it("does not produce signature on non-work pages even with book colors set", () => {
+    mockPathname = "/library";
+    const insetEl = setupInset();
+    const { result } = renderHook(() => useAppColor(), { wrapper: wrapper("book") });
+    act(() => { result.current.setBookColors(["#1a2b3c"]); });
+    expect(insetEl.style.getPropertyValue("--bh-bg")).toBe("");
+    expect(result.current.coverSignature).toBeNull();
+  });
+
+  it("handles missing inset element gracefully when signature would apply", () => {
+    mockPathname = "/library/work-1";
+    // no inset in DOM
+    const { result } = renderHook(() => useAppColor(), { wrapper: wrapper("book") });
+    act(() => { result.current.setBookColors(["#1a2b3c"]); });
+    // No error
+    expect(result.current.coverSignature?.bg).toBe("sig-bg-light");
   });
 });

@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { DEFAULT_PALETTE_KEY, PALETTE_KEYS, type PaletteKey } from "~/components/branding/palettes";
 
 export type ScanType = "full" | "onDemand" | "incremental";
 
@@ -169,4 +170,32 @@ export const setAccentColorServerFn = createServerFn({
     });
 
     return { color: data.color };
+  });
+
+const paletteSchema = z.enum(PALETTE_KEYS as [PaletteKey, ...PaletteKey[]]);
+
+export const getBrandPaletteServerFn = createServerFn({
+  method: "GET",
+}).handler(async (): Promise<PaletteKey> => {
+  const { db } = await import("@bookhouse/db");
+
+  const setting = await db.appSetting.findUnique({ where: { key: "brandPalette" } });
+  const parsed = paletteSchema.safeParse(setting?.value);
+  return parsed.success ? parsed.data : DEFAULT_PALETTE_KEY;
+});
+
+export const setBrandPaletteServerFn = createServerFn({
+  method: "POST",
+})
+  .inputValidator(z.object({ palette: paletteSchema }))
+  .handler(async ({ data }) => {
+    const { db } = await import("@bookhouse/db");
+
+    await db.appSetting.upsert({
+      where: { key: "brandPalette" },
+      create: { key: "brandPalette", value: data.palette },
+      update: { value: data.palette },
+    });
+
+    return { palette: data.palette };
   });

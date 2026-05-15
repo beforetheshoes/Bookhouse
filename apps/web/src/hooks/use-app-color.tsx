@@ -3,12 +3,25 @@ import type { ReactNode } from "react";
 import { useLocation } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useTheme } from "./use-theme";
-import { generateCoverTheme, generateAccentTheme } from "~/lib/color-utils";
 import {
+  deriveCoverSignature,
+  generateAccentTheme,
+  generateCoverTheme,
+  type CoverSignature,
+} from "~/lib/color-utils";
+import {
+  setBrandPaletteServerFn,
   setColorModeServerFn,
   setAccentColorServerFn,
   type ColorMode,
 } from "~/lib/server-fns/app-settings";
+import {
+  DEFAULT_PALETTE_KEY,
+  isPaletteKey,
+  PALETTES,
+  type BookhousePalette,
+  type PaletteKey,
+} from "~/components/branding/palettes";
 
 // Fixed page accent colors — tasteful defaults per route
 const PAGE_ACCENTS: Record<string, string> = {
@@ -27,6 +40,10 @@ interface AppColorContextValue {
   accentColor: string | null;
   setAccentColor: (hex: string | null) => void;
   setBookColors: (colors: string[] | null) => void;
+  brandPalette: PaletteKey;
+  setBrandPalette: (key: PaletteKey) => void;
+  palette: BookhousePalette;
+  coverSignature: CoverSignature | null;
 }
 
 const AppColorContext = createContext<AppColorContextValue | null>(null);
@@ -42,10 +59,12 @@ function getPageAccent(pathname: string): string | null {
 export function AppColorProvider({
   initialColorMode,
   initialAccentColor,
+  initialBrandPalette,
   children,
 }: {
   initialColorMode: ColorMode;
   initialAccentColor: string | null;
+  initialBrandPalette: PaletteKey;
   children: ReactNode;
 }) {
   const { resolvedTheme } = useTheme();
@@ -53,6 +72,9 @@ export function AppColorProvider({
   const [colorMode, setColorModeState] = useState<ColorMode>(initialColorMode);
   const [accentColor, setAccentColorState] = useState<string | null>(initialAccentColor);
   const [bookColors, setBookColorsState] = useState<string[] | null>(null);
+  const [brandPalette, setBrandPaletteState] = useState<PaletteKey>(
+    isPaletteKey(initialBrandPalette) ? initialBrandPalette : DEFAULT_PALETTE_KEY,
+  );
 
   // Check if we're on a work detail page (the work page itself applies book colors via setBookColors)
   const isWorkPage = location.pathname.startsWith("/library/");
@@ -87,6 +109,12 @@ export function AppColorProvider({
         return null;
     }
   }, [colorMode, bookColors, accentColor, resolvedTheme, location.pathname, isWorkPage]);
+
+  // Compute the immersive cover signature when on a work page with colors
+  const coverSignature = useMemo(
+    () => (isWorkPage && bookColors ? deriveCoverSignature(bookColors, resolvedTheme) : null),
+    [isWorkPage, bookColors, resolvedTheme],
+  );
 
   // Apply gradient to sidebar-wrapper
   useEffect(() => {
@@ -124,6 +152,32 @@ export function AppColorProvider({
     };
   }, [activeTheme]);
 
+  // Publish cover signature as CSS custom properties on the sidebar inset.
+  // Components inside the inset can then reference --bh-bg, --bh-glow, etc.
+  useEffect(() => {
+    const inset = document.querySelector<HTMLElement>("[data-slot='sidebar-inset']");
+    if (!inset) return;
+
+    const vars = ["--bh-bg", "--bh-glow", "--bh-accent", "--bh-chip", "--bh-chip-text", "--bh-text", "--bh-side"];
+
+    if (!coverSignature) {
+      for (const v of vars) inset.style.removeProperty(v);
+      return;
+    }
+
+    inset.style.setProperty("--bh-bg", coverSignature.bg);
+    inset.style.setProperty("--bh-glow", coverSignature.glow);
+    inset.style.setProperty("--bh-accent", coverSignature.accent);
+    inset.style.setProperty("--bh-chip", coverSignature.chip);
+    inset.style.setProperty("--bh-chip-text", coverSignature.chipText);
+    inset.style.setProperty("--bh-text", coverSignature.text);
+    inset.style.setProperty("--bh-side", coverSignature.side);
+
+    return () => {
+      for (const v of vars) inset.style.removeProperty(v);
+    };
+  }, [coverSignature]);
+
   const setColorMode = useCallback((mode: ColorMode) => {
     setColorModeState(mode);
     setColorModeServerFn({ data: { mode } }).catch(() => {
@@ -142,9 +196,35 @@ export function AppColorProvider({
     setBookColorsState(colors);
   }, []);
 
+  const setBrandPalette = useCallback((key: PaletteKey) => {
+    setBrandPaletteState(key);
+    setBrandPaletteServerFn({ data: { palette: key } }).catch(() => {
+      toast.error("Failed to save brand palette");
+    });
+  }, []);
+
   const value = useMemo(
-    () => ({ colorMode, setColorMode, accentColor, setAccentColor, setBookColors }),
-    [colorMode, setColorMode, accentColor, setAccentColor, setBookColors],
+    () => ({
+      colorMode,
+      setColorMode,
+      accentColor,
+      setAccentColor,
+      setBookColors,
+      brandPalette,
+      setBrandPalette,
+      palette: PALETTES[brandPalette],
+      coverSignature,
+    }),
+    [
+      colorMode,
+      setColorMode,
+      accentColor,
+      setAccentColor,
+      setBookColors,
+      brandPalette,
+      setBrandPalette,
+      coverSignature,
+    ],
   );
 
   return <AppColorContext value={value}>{children}</AppColorContext>;

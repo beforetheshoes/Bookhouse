@@ -41,6 +41,8 @@ import {
   setColorModeServerFn,
   getAccentColorServerFn,
   setAccentColorServerFn,
+  getBrandPaletteServerFn,
+  setBrandPaletteServerFn,
   SCAN_CONCURRENCY_DEFAULTS,
 } from "./app-settings";
 
@@ -286,5 +288,47 @@ describe("setAccentColorServerFn", () => {
     appSettingDeleteMock.mockRejectedValue(genericError);
 
     await expect(setAccentColorServerFn({ data: { color: null } })).rejects.toThrow("Database connection lost");
+  });
+});
+
+describe("getBrandPaletteServerFn", () => {
+  it("returns the stored palette key", async () => {
+    appSettingFindUniqueMock.mockResolvedValue({ key: "brandPalette", value: "vivid" });
+
+    const result = await getBrandPaletteServerFn({} as never);
+
+    expect(appSettingFindUniqueMock).toHaveBeenCalledWith({ where: { key: "brandPalette" } });
+    expect(result).toBe("vivid");
+  });
+
+  it("falls back to shelf when no palette is stored", async () => {
+    appSettingFindUniqueMock.mockResolvedValue(null);
+
+    const result = await getBrandPaletteServerFn({} as never);
+
+    expect(result).toBe("shelf");
+  });
+
+  it("falls back to shelf when stored value is not a known palette", async () => {
+    appSettingFindUniqueMock.mockResolvedValue({ key: "brandPalette", value: "rainbow" });
+
+    const result = await getBrandPaletteServerFn({} as never);
+
+    expect(result).toBe("shelf");
+  });
+});
+
+describe("setBrandPaletteServerFn", () => {
+  it("upserts the palette and returns the value", async () => {
+    appSettingUpsertMock.mockResolvedValue({ key: "brandPalette", value: "forest" });
+
+    const result = await setBrandPaletteServerFn({ data: { palette: "forest" } });
+
+    expect(appSettingUpsertMock).toHaveBeenCalledWith({
+      where: { key: "brandPalette" },
+      create: { key: "brandPalette", value: "forest" },
+      update: { value: "forest" },
+    });
+    expect(result).toEqual({ palette: "forest" });
   });
 });
