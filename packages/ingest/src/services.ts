@@ -265,6 +265,14 @@ interface ContributorCreateArgs {
   data: Pick<ContributorRecord, "nameCanonical" | "nameDisplay">;
 }
 
+interface ContributorUpsertArgs {
+  where: { nameCanonical: string };
+  create: Pick<ContributorRecord, "nameCanonical" | "nameDisplay"> & {
+    nameSort?: string;
+  };
+  update: Record<string, never>;
+}
+
 interface EditionContributorFindFirstArgs {
   where: Pick<EditionContributorRecord, "contributorId" | "editionId" | "role">;
 }
@@ -320,6 +328,7 @@ export interface IngestDb {
   contributor: {
     create(args: ContributorCreateArgs): Promise<ContributorRecord>;
     findMany(args: ContributorFindManyArgs): Promise<ContributorRecord[]>;
+    upsert(args: ContributorUpsertArgs): Promise<ContributorRecord>;
   };
   editionContributor: {
     create(args: EditionContributorCreateArgs): Promise<EditionContributorRecord>;
@@ -1048,27 +1057,16 @@ async function ensureContributors(
         entry.nameCanonical !== undefined,
     );
 
-  const contributorsByCanonical = new Map(
-    (
-      await ingestDb.contributor.findMany({
-        where: {
-          nameCanonical: {
-            in: [...new Set(normalizedNames.map((entry) => entry.nameCanonical))],
-          },
-        },
-      })
-    ).map((contributor) => [contributor.nameCanonical, contributor]),
-  );
-
+  // Upsert keyed on nameCanonical (unique) so two concurrent ingests for
+  // works by the same author can't race-create duplicate Contributor rows.
+  // The empty `update` is intentional — we never want to overwrite the
+  // existing display name or sort key from a re-ingest.
   for (const entry of normalizedNames) {
-    let contributor = contributorsByCanonical.get(entry.nameCanonical);
-
-    if (contributor === undefined) {
-      contributor = await ingestDb.contributor.create({
-        data: entry,
-      });
-      contributorsByCanonical.set(contributor.nameCanonical, contributor);
-    }
+    const contributor = await ingestDb.contributor.upsert({
+      where: { nameCanonical: entry.nameCanonical },
+      create: entry,
+      update: {},
+    });
 
     const existingLink = await ingestDb.editionContributor.findFirst({
       where: {

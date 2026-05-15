@@ -482,6 +482,22 @@ function createTestDb(state: TestState): IngestDb {
           .map((nameCanonical) => state.contributorsByCanonical.get(nameCanonical))
           .filter((contributor): contributor is TestContributor => contributor !== undefined);
       },
+      async upsert({ where, create }) {
+        await Promise.resolve();
+        const existing = state.contributorsByCanonical.get(where.nameCanonical);
+        if (existing !== undefined) {
+          return existing;
+        }
+        contributorSequence += 1;
+        const created: TestContributor = {
+          id: `contributor-${String(contributorSequence)}`,
+          nameSort: create.nameSort ?? null,
+          ...create,
+        };
+        state.contributors.set(created.id, created);
+        state.contributorsByCanonical.set(created.nameCanonical, created);
+        return created;
+      },
     },
     editionContributor: {
       async create({ data }) {

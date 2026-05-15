@@ -310,14 +310,12 @@ model EditionFile {
 model Contributor {
   id            String   @id @default(cuid())
   nameDisplay   String
-  nameCanonical String
+  nameCanonical String   @unique
   nameSort      String?
   imagePath     String?
   createdAt     DateTime @default(now())
 
   editions EditionContributor[]
-
-  @@index([nameCanonical])
 }
 
 model EditionContributor {

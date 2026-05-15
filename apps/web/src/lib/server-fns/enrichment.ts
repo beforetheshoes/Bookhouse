@@ -242,15 +242,12 @@ export const applyEnrichmentServerFn = createServerFn({
           const trimmed = authorName.trim();
           if (trimmed === "") continue;
           const canonical = canonicalizeContributorName(trimmed) ?? trimmed.toLowerCase();
-          const existing = await db.contributor.findFirst({ where: { nameCanonical: canonical } });
-          if (existing) {
-            contributorIds.push(existing.id);
-          } else {
-            const created = await db.contributor.create({
-              data: { nameDisplay: trimmed, nameCanonical: canonical },
-            });
-            contributorIds.push(created.id);
-          }
+          const contributor = await db.contributor.upsert({
+            where: { nameCanonical: canonical },
+            create: { nameDisplay: trimmed, nameCanonical: canonical },
+            update: {},
+          });
+          contributorIds.push(contributor.id);
         }
 
         // Replace AUTHOR contributors on all editions
@@ -311,15 +308,12 @@ export const applyEnrichmentServerFn = createServerFn({
           const trimmed = narratorName.trim();
           if (trimmed === "") continue;
           const canonical = canonicalizeContributorName(trimmed) ?? trimmed.toLowerCase();
-          const existing = await db.contributor.findFirst({ where: { nameCanonical: canonical } });
-          if (existing) {
-            contributorIds.push(existing.id);
-          } else {
-            const created = await db.contributor.create({
-              data: { nameDisplay: trimmed, nameCanonical: canonical },
-            });
-            contributorIds.push(created.id);
-          }
+          const contributor = await db.contributor.upsert({
+            where: { nameCanonical: canonical },
+            create: { nameDisplay: trimmed, nameCanonical: canonical },
+            update: {},
+          });
+          contributorIds.push(contributor.id);
         }
 
         // Replace NARRATOR contributors on this edition only

@@ -140,26 +140,21 @@ export const updateWorkAuthorsServerFn = createServerFn({
 
     const editionIds = editions.map((e: { id: string }) => e.id);
 
-    // Resolve or create contributors
+    // Resolve or create contributors. nameCanonical is UNIQUE; upsert
+    // collapses two concurrent edits of the same author to a single row.
     const contributorIds: string[] = [];
     for (const authorName of data.authors) {
       const canonical = canonicalizeContributorName(authorName) ?? authorName.toLowerCase();
-      const existing = await db.contributor.findFirst({
+      const contributor = await db.contributor.upsert({
         where: { nameCanonical: canonical },
+        create: {
+          nameDisplay: authorName,
+          nameCanonical: canonical,
+          nameSort: generateNameSort(authorName),
+        },
+        update: {},
       });
-
-      if (existing) {
-        contributorIds.push(existing.id);
-      } else {
-        const created = await db.contributor.create({
-          data: {
-            nameDisplay: authorName,
-            nameCanonical: canonical,
-            nameSort: generateNameSort(authorName),
-          },
-        });
-        contributorIds.push(created.id);
-      }
+      contributorIds.push(contributor.id);
     }
 
     await db.$transaction(async () => {
@@ -212,26 +207,21 @@ export const updateEditionNarratorsServerFn = createServerFn({
     const { db } = await import("@bookhouse/db");
     const { canonicalizeContributorName, generateNameSort } = await import("@bookhouse/ingest");
 
-    // Resolve or create contributors
+    // Resolve or create contributors. nameCanonical is UNIQUE; upsert
+    // collapses two concurrent edits of the same narrator to a single row.
     const contributorIds: string[] = [];
     for (const narratorName of data.narrators) {
       const canonical = canonicalizeContributorName(narratorName) ?? narratorName.toLowerCase();
-      const existing = await db.contributor.findFirst({
+      const contributor = await db.contributor.upsert({
         where: { nameCanonical: canonical },
+        create: {
+          nameDisplay: narratorName,
+          nameCanonical: canonical,
+          nameSort: generateNameSort(narratorName),
+        },
+        update: {},
       });
-
-      if (existing) {
-        contributorIds.push(existing.id);
-      } else {
-        const created = await db.contributor.create({
-          data: {
-            nameDisplay: narratorName,
-            nameCanonical: canonical,
-            nameSort: generateNameSort(narratorName),
-          },
-        });
-        contributorIds.push(created.id);
-      }
+      contributorIds.push(contributor.id);
     }
 
     // Replace NARRATOR contributors on this edition only
