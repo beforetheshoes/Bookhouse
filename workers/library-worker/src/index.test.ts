@@ -27,6 +27,7 @@ const detectDuplicatesMock = vi.fn();
 const matchSuggestionsMock = vi.fn();
 const importJobUpdateMock = vi.fn();
 const importJobUpdateManyMock = vi.fn();
+const importJobFindUniqueMock = vi.fn();
 const appSettingFindUniqueMock = vi.fn();
 const enqueueLibraryJobMock = vi.fn();
 
@@ -75,6 +76,7 @@ vi.mock("@bookhouse/db", () => ({
     importJob: {
       update: importJobUpdateMock,
       updateMany: importJobUpdateManyMock,
+      findUnique: importJobFindUniqueMock,
     },
   },
 }));
@@ -149,6 +151,8 @@ beforeEach(() => {
   importJobUpdateMock.mockResolvedValue({});
   importJobUpdateManyMock.mockReset();
   importJobUpdateManyMock.mockResolvedValue({ count: 0 });
+  importJobFindUniqueMock.mockReset();
+  importJobFindUniqueMock.mockResolvedValue(null);
   enqueueLibraryJobMock.mockReset();
   matchFileAssetToEditionMock.mockReset();
   onMock.mockReset();
@@ -363,7 +367,7 @@ describe("library worker", () => {
     });
   });
 
-  it("does not set RUNNING or update parent progress for child jobs with importJobId", async () => {
+  it("does not set RUNNING or update parent progress for scan-child jobs with importJobId", async () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
@@ -377,7 +381,7 @@ describe("library worker", () => {
 
     hashFileAssetMock.mockResolvedValueOnce("hash-result");
     const mockJob = createMockJob({
-      data: { fileAssetId: "file-1", importJobId: "ij-child" },
+      data: { fileAssetId: "file-1", importJobId: "ij-child", scanJobId: "scan-1", scanQueueName: "bull:library" },
       name: "hash-file-asset",
     });
     await processor(mockJob as never);
@@ -1003,7 +1007,7 @@ describe("library worker", () => {
     }));
   });
 
-  it("marks the parent scan FAILED when a child job exhausts retries", async () => {
+  it("marks the parent scan FAILED when a scan-child job exhausts retries", async () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
@@ -1019,7 +1023,7 @@ describe("library worker", () => {
 
     await expect(
       processor(createMockJob({
-        data: { fileAssetId: "file-1", importJobId: "ij-child-fail" },
+        data: { fileAssetId: "file-1", importJobId: "ij-child-fail", scanJobId: "scan-1", scanQueueName: "bull:library" },
         opts: { attempts: 1 },
         name: "hash-file-asset",
       }) as never),
@@ -1037,7 +1041,7 @@ describe("library worker", () => {
     });
   });
 
-  it("records String(error) for final child job failures when opts are missing", async () => {
+  it("records String(error) for final scan-child job failures when opts are missing", async () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
@@ -1053,7 +1057,7 @@ describe("library worker", () => {
 
     await expect(
       processor(createMockJob({
-        data: { fileAssetId: "file-1", importJobId: "ij-child-string-fail" },
+        data: { fileAssetId: "file-1", importJobId: "ij-child-string-fail", scanJobId: "scan-1", scanQueueName: "bull:library" },
         name: "hash-file-asset",
         opts: {},
       }) as never),
@@ -1071,7 +1075,7 @@ describe("library worker", () => {
     });
   });
 
-  it("marks ImportJob FAILED for final child failure", async () => {
+  it("marks ImportJob FAILED for final scan-child failure", async () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
@@ -1087,7 +1091,7 @@ describe("library worker", () => {
 
     await expect(
       processor(createMockJob({
-        data: { fileAssetId: "file-1", importJobId: "ij-child-no-parent" },
+        data: { fileAssetId: "file-1", importJobId: "ij-child-no-parent", scanJobId: "scan-1", scanQueueName: "bull:library" },
         opts: { attempts: 1 },
         name: "hash-file-asset",
       }) as never),
@@ -1121,7 +1125,7 @@ describe("library worker", () => {
 
     await expect(
       processor(createMockJob({
-        data: { fileAssetId: "file-1", importJobId: "ij-child-retry" },
+        data: { fileAssetId: "file-1", importJobId: "ij-child-retry", scanJobId: "scan-1", scanQueueName: "bull:library" },
         opts: { attempts: 3 },
         attemptsMade: 0,
         name: "hash-file-asset",
@@ -1131,6 +1135,99 @@ describe("library worker", () => {
     expect(importJobUpdateMock).not.toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ id: "ij-child-retry" }) as object,
     }));
+  });
+
+  it("increments processedFiles and sets RUNNING for standalone batch job on success", async () => {
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor({
+      hashFileAsset: hashFileAssetMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
+      parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
+      scanLibraryRoot: scanLibraryRootMock,
+      detectDuplicates: detectDuplicatesMock,
+      matchSuggestions: matchSuggestionsMock,
+    });
+
+    matchSuggestionsMock.mockResolvedValueOnce({ fileAssetId: "file-1", skipped: false, linksCreated: 0 });
+    importJobFindUniqueMock.mockResolvedValue({ totalFiles: 5, processedFiles: 1 });
+
+    await processor(createMockJob({
+      data: { fileAssetId: "file-1", importJobId: "ij-batch" },
+      name: "match-suggestions",
+    }) as never);
+
+    expect(importJobUpdateMock).toHaveBeenCalledTimes(1);
+    expect(importJobUpdateMock).toHaveBeenCalledWith({
+      where: { id: "ij-batch" },
+      data: {
+        status: "RUNNING",
+        startedAt: expect.any(Date) as Date,
+        processedFiles: { increment: 1 },
+      },
+    });
+  });
+
+  it("marks standalone batch ImportJob SUCCEEDED when last job completes", async () => {
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor({
+      hashFileAsset: hashFileAssetMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
+      parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
+      scanLibraryRoot: scanLibraryRootMock,
+      detectDuplicates: detectDuplicatesMock,
+      matchSuggestions: matchSuggestionsMock,
+    });
+
+    matchSuggestionsMock.mockResolvedValueOnce({ fileAssetId: "file-1", skipped: false, linksCreated: 0 });
+    importJobFindUniqueMock.mockResolvedValue({ totalFiles: 1, processedFiles: 1 });
+
+    await processor(createMockJob({
+      data: { fileAssetId: "file-1", importJobId: "ij-batch-done" },
+      name: "match-suggestions",
+    }) as never);
+
+    expect(importJobUpdateMock).toHaveBeenCalledTimes(2);
+    expect(importJobUpdateMock).toHaveBeenLastCalledWith({
+      where: { id: "ij-batch-done" },
+      data: { status: "SUCCEEDED", finishedAt: expect.any(Date) as Date },
+    });
+  });
+
+  it("soft-fails standalone batch ImportJob on final-attempt failure (errorCount, not FAILED)", async () => {
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor({
+      hashFileAsset: hashFileAssetMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
+      parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
+      scanLibraryRoot: scanLibraryRootMock,
+      detectDuplicates: detectDuplicatesMock,
+      matchSuggestions: matchSuggestionsMock,
+    });
+
+    matchSuggestionsMock.mockRejectedValueOnce(new Error("suggestion boom"));
+    importJobFindUniqueMock.mockResolvedValue({ totalFiles: 5, processedFiles: 1 });
+
+    await expect(
+      processor(createMockJob({
+        data: { fileAssetId: "file-1", importJobId: "ij-batch-fail" },
+        opts: { attempts: 1 },
+        name: "match-suggestions",
+      }) as never),
+    ).rejects.toThrow("suggestion boom");
+
+    expect(importJobUpdateManyMock).not.toHaveBeenCalled();
+    expect(importJobUpdateMock).toHaveBeenCalledWith({
+      where: { id: "ij-batch-fail" },
+      data: {
+        status: "RUNNING",
+        startedAt: expect.any(Date) as Date,
+        processedFiles: { increment: 1 },
+        errorCount: { increment: 1 },
+      },
+    });
   });
 
   it("creates and shuts down a redis-backed worker", async () => {
@@ -1165,10 +1262,12 @@ describe("library worker", () => {
 
     bootstrapLibraryWorker();
 
-    expect(onMock).toHaveBeenCalledTimes(3);
+    expect(onMock).toHaveBeenCalledTimes(5);
     expect(onMock).toHaveBeenNthCalledWith(1, "ready", expect.any(Function));
-    expect(onMock).toHaveBeenNthCalledWith(2, "completed", expect.any(Function));
-    expect(onMock).toHaveBeenNthCalledWith(3, "failed", expect.any(Function));
+    expect(onMock).toHaveBeenNthCalledWith(2, "active", expect.any(Function));
+    expect(onMock).toHaveBeenNthCalledWith(3, "completed", expect.any(Function));
+    expect(onMock).toHaveBeenNthCalledWith(4, "failed", expect.any(Function));
+    expect(onMock).toHaveBeenNthCalledWith(5, "stalled", expect.any(Function));
     expect(processOnSpy).toHaveBeenCalledWith("SIGINT", expect.any(Function));
     expect(processOnSpy).toHaveBeenCalledWith("SIGTERM", expect.any(Function));
 
@@ -1187,12 +1286,18 @@ describe("library worker", () => {
     const readyCallback = onMock.mock.calls.find(([e]) => e === "ready")?.[1] as () => void;
     readyCallback();
 
+    const activeCallback = onMock.mock.calls.find(([e]) => e === "active")?.[1] as (job: { id?: string; name?: string }) => void;
+    activeCallback({ id: "job-1", name: "scan-library-root" });
+
     const completedCallback = onMock.mock.calls.find(([e]) => e === "completed")?.[1] as (job: { id?: string; name?: string } | undefined) => void;
     completedCallback({ id: "job-1", name: "scan-library-root" });
 
     const failedCallback = onMock.mock.calls.find(([e]) => e === "failed")?.[1] as (job: { id?: string; name?: string } | undefined, err: Error) => void;
     failedCallback({ id: "job-1", name: "scan-library-root" }, new Error("disk full"));
     failedCallback(undefined, new Error("no job ref"));
+
+    const stalledCallback = onMock.mock.calls.find(([e]) => e === "stalled")?.[1] as (jobId: string) => void;
+    stalledCallback("stalled-job-1");
 
     processOnSpy.mockRestore();
     processExitSpy.mockRestore();
