@@ -20,6 +20,7 @@ import {
   enqueueLibraryJob,
   getQueueConnectionConfig,
 } from "@bookhouse/shared";
+import { recordBatchJobProgress } from "./import-job-progress.js";
 
 const logger = createLogger("library-worker");
 
@@ -188,8 +189,13 @@ export function createLibraryWorkerProcessor(
     job: Job<LibraryJobPayload<LibraryJobName>, LibraryJobResult, LibraryJobName>,
     token?: string,
   ) => {
-  const importJobId = (job.data as BaseJobPayload).importJobId;
+  const basePayload = job.data as BaseJobPayload;
+  const importJobId = basePayload.importJobId;
   const isScanJob = job.name === LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT;
+  // A standalone batch job is a non-scan job with its own ImportJob (e.g. re-match,
+  // bulk enrich) — it has no scanJobId because it wasn't enqueued under a scan root.
+  // Scan-children carry scanJobId via the wrapped enqueue in createJobHandlers.
+  const isStandaloneBatch = !isScanJob && importJobId !== undefined && basePayload.scanJobId === undefined;
   const totalAttempts = job.opts.attempts ?? 1;
   const finalAttempt = job.attemptsMade + 1 >= totalAttempts;
 
@@ -282,6 +288,10 @@ export function createLibraryWorkerProcessor(
         activeScanType = null;
       }
 
+      if (isStandaloneBatch) {
+        await recordBatchJobProgress(importJobId, false);
+      }
+
       return result;
     } catch (error) {
       if (error instanceof WaitingChildrenError) {
@@ -301,16 +311,24 @@ export function createLibraryWorkerProcessor(
         });
       }
       if (importJobId && !isScanJob && finalAttempt) {
-        await db.importJob.updateMany({
-          where: { id: importJobId, status: { in: ["QUEUED", "RUNNING"] } },
-          data: {
-            status: "FAILED",
-            finishedAt: new Date(),
-            error: `Child job ${job.name} failed: ${error instanceof Error ? error.message : String(error)}`,
-            scanStage: null,
-            bullmqJobId: null,
-          },
-        });
+        if (isStandaloneBatch) {
+          // Soft-fail: one bad file shouldn't kill the whole batch. Bump the
+          // ImportJob's errorCount and let recordBatchJobProgress mark SUCCEEDED
+          // once all jobs have terminated.
+          await recordBatchJobProgress(importJobId, true);
+        } else {
+          // Scan-child failure: hard-fail the parent scan's ImportJob.
+          await db.importJob.updateMany({
+            where: { id: importJobId, status: { in: ["QUEUED", "RUNNING"] } },
+            data: {
+              status: "FAILED",
+              finishedAt: new Date(),
+              error: `Child job ${job.name} failed: ${error instanceof Error ? error.message : String(error)}`,
+              scanStage: null,
+              bullmqJobId: null,
+            },
+          });
+        }
       }
       if (isScanJob) activeScanType = null;
       throw error;
@@ -408,10 +426,14 @@ export function bootstrapLibraryWorker(): void {
   const { connection, pollInterval, worker } = createLibraryWorker();
 
   worker.on("ready", () => { logger.info("Worker ready, waiting for jobs"); });
+  worker.on("active", (job) => { logger.info({ jobId: job.id, jobName: job.name }, "Job started"); });
   worker.on("completed", (job) => { logger.info({ jobId: job.id, jobName: job.name }, "Job completed"); });
   worker.on("failed", (job, error) => {
     logger.error({ jobId: job?.id, jobName: job?.name, err: error }, "Job failed");
   });
+  worker.on("stalled", (jobId) => { logger.warn({ jobId }, "Job stalled — will be retried"); });
+
+  logger.info({ concurrency: worker.concurrency }, "Worker concurrency at startup");
 
   const shutdown = async () => {
     logger.info("Shutting down worker");

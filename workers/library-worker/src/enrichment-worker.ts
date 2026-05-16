@@ -41,6 +41,7 @@ import {
   getQueueConnectionConfig,
 } from "@bookhouse/shared";
 import { fileURLToPath } from "node:url";
+import { recordBatchJobProgress } from "./import-job-progress.js";
 
 const logger = createLogger("enrichment-worker");
 
@@ -373,20 +374,6 @@ const defaultHandlers: EnrichmentWorkerHandlers = {
   processBulkEnrichWork,
 };
 
-async function checkBatchCompletion(importJobId: string): Promise<void> {
-  const job = await db.importJob.findUnique({
-    where: { id: importJobId },
-    select: { totalFiles: true, processedFiles: true },
-  });
-  if (job && job.totalFiles !== null && job.processedFiles !== null && job.processedFiles >= job.totalFiles) {
-    await db.importJob.update({
-      where: { id: importJobId },
-      data: { status: "SUCCEEDED", finishedAt: new Date() },
-    });
-    logger.info({ importJobId }, "Author photo enrichment batch completed");
-  }
-}
-
 const ENRICHMENT_ERROR_STATUSES = new Set(["no-results", "no-photo", "not-found", "no-editions"]);
 
 export function createEnrichmentWorkerProcessor(
@@ -403,29 +390,15 @@ export function createEnrichmentWorkerProcessor(
       logger.info({ jobId: job.id, jobName: job.name, status: result.status, ...extra }, "Enrichment job completed");
       if (importJobId) {
         const isError = ENRICHMENT_ERROR_STATUSES.has(result.status);
-        await db.importJob.update({
-          where: { id: importJobId },
-          data: {
-            status: "RUNNING",
-            startedAt: new Date(),
-            processedFiles: { increment: 1 },
-            ...(isError ? { errorCount: { increment: 1 } } : {}),
-          },
-        });
-        await checkBatchCompletion(importJobId);
+        await recordBatchJobProgress(importJobId, isError);
       }
       return result;
     } catch (error) {
       logger.error({ jobId: job.id, jobName: job.name, err: error }, "Enrichment job failed");
       if (importJobId) {
-        await db.importJob.update({
-          where: { id: importJobId },
-          data: {
-            status: "RUNNING",
-            processedFiles: { increment: 1 },
-            errorCount: { increment: 1 },
-          },
-        }).catch(() => { /* ImportJob update is best-effort */ });
+        await recordBatchJobProgress(importJobId, true).catch(() => {
+          /* ImportJob update is best-effort */
+        });
       }
       throw error;
     }
