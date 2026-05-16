@@ -35,7 +35,7 @@ services:
       KEPUB_CACHE_DIR: /data/kepub-cache
       KOBO_API_BASE_URL: ${KOBO_API_BASE_URL:-http://localhost:3000/kobo}
     volumes:
-      - covers:/data/covers:ro
+      - covers:/data/covers
       - kepub-cache:/data/kepub-cache
     depends_on:
       - db
