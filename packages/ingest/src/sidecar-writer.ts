@@ -4,8 +4,10 @@ import nodeSharp from "sharp";
 import type { ParsedAudiobookMetadataJsonRaw } from "./audiobook";
 import type { ParsedOpfMetadataRaw } from "./opf";
 
+type SidecarValue = string | number | boolean | null | SidecarValue[] | { [key: string]: SidecarValue };
+
 export interface SidecarWriterDeps {
-  mkdir: (p: string, opts: { recursive: true }) => Promise<unknown>;
+  mkdir: (p: string, opts: { recursive: true }) => Promise<string | undefined>;
   writeFile: (p: string, data: string | Buffer) => Promise<void>;
 }
 
@@ -30,7 +32,7 @@ export function buildAudiobookMetadataJson(
 ): string {
   // Build an object that omits undefined optional fields so the on-disk
   // sidecar matches what the user supplied (and what the parser expects).
-  const out: Record<string, unknown> = {
+  const out: Record<string, SidecarValue> = {
     title: data.title,
     authors: data.authors,
     narrators: data.narrators,

@@ -2,11 +2,13 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import IORedis from "ioredis";
 import { type Job, WaitingChildrenError, Worker } from "bullmq";
 import { db } from "@bookhouse/db";
-import { cascadeCleanupOrphans, createIngestServices, matchSuggestions, matchFileAssetToEdition, parseFileAssetMetadata, processCoverForWorkDefault, scanLibraryRoot, detectDuplicates, hashFileAsset, type ScanProgressData, type ScanLibraryRootResult, type ProcessCoverResult, type HashFileAssetResult, type ParseFileAssetMetadataResult, type MatchFileAssetToEditionResult, type DetectDuplicatesResult, type MatchSuggestionsResult } from "@bookhouse/ingest";
+import { cascadeCleanupOrphans, createIngestServices, ingestUploadedBook, matchSuggestions, matchFileAssetToEdition, parseFileAssetMetadata, processCoverForWorkDefault, scanLibraryRoot, detectDuplicates, hashFileAsset, type IngestUploadedBookResult, type ScanProgressData, type ScanLibraryRootResult, type ProcessCoverResult, type HashFileAssetResult, type ParseFileAssetMetadataResult, type MatchFileAssetToEditionResult, type DetectDuplicatesResult, type MatchSuggestionsResult } from "@bookhouse/ingest";
 import {
+  ENRICHMENT_JOB_NAMES,
   LIBRARY_JOB_NAMES,
   type BaseJobPayload,
   type DetectDuplicatesJobPayload,
+  type IngestUploadedBookJobPayload,
   type MatchSuggestionsJobPayload,
   type HashFileAssetJobPayload,
   type LibraryJobName,
@@ -17,6 +19,7 @@ import {
   QUEUES,
   type ScanLibraryRootJobPayload,
   createLogger,
+  enqueueEnrichmentJob,
   enqueueLibraryJob,
   getQueueConnectionConfig,
 } from "@bookhouse/shared";
@@ -34,6 +37,7 @@ export type LibraryJobResult =
   | ProcessCoverResult
   | DetectDuplicatesResult
   | MatchSuggestionsResult
+  | IngestUploadedBookResult
   | undefined;
 
 export type ScanType = "full" | "onDemand" | "incremental";
@@ -72,6 +76,7 @@ function getCoverCacheDir(): string {
 
 export interface LibraryWorkerHandlers {
   hashFileAsset: typeof hashFileAsset;
+  ingestUploadedBook: typeof ingestUploadedBook;
   matchFileAssetToEdition: typeof matchFileAssetToEdition;
   parseFileAssetMetadata: typeof parseFileAssetMetadata;
   processCoverForWork: (input: { workId: string; fileAssetId: string; coverCacheDir: string }) => Promise<ProcessCoverResult>;
@@ -109,6 +114,7 @@ function createJobHandlers(
 
   return {
     hashFileAsset: services.hashFileAsset,
+    ingestUploadedBook: services.ingestUploadedBook,
     matchFileAssetToEdition: services.matchFileAssetToEdition,
     parseFileAssetMetadata: services.parseFileAssetMetadata,
     processCoverForWork,
@@ -177,6 +183,21 @@ async function dispatch(
       return handlers.detectDuplicates(job.data as DetectDuplicatesJobPayload);
     case LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS:
       return handlers.matchSuggestions(job.data as MatchSuggestionsJobPayload);
+    case LIBRARY_JOB_NAMES.INGEST_UPLOADED_BOOK: {
+      const uploadPayload = job.data as IngestUploadedBookJobPayload;
+      const ingestResult = await handlers.ingestUploadedBook({
+        libraryRootId: uploadPayload.libraryRootId,
+        absolutePaths: uploadPayload.absolutePaths,
+      });
+      for (const workId of ingestResult.createdWorkIds) {
+        await enqueueEnrichmentJob(ENRICHMENT_JOB_NAMES.BULK_ENRICH_METADATA, {
+          workId,
+          sources: ["openlibrary", "googlebooks", "hardcover", "audible"],
+          strategy: "fullest",
+        });
+      }
+      return ingestResult;
+    }
     default:
       throw new Error(`Unsupported library job: ${String(job.name)}`);
   }
@@ -338,6 +359,7 @@ export function createLibraryWorkerProcessor(
 
 const defaultHandlers: LibraryWorkerHandlers = {
   hashFileAsset,
+  ingestUploadedBook,
   matchFileAssetToEdition,
   parseFileAssetMetadata,
   processCoverForWork,

@@ -53,6 +53,7 @@ describe("AppSidebar", () => {
     expect(screen.getByText("Series")).toBeTruthy();
     expect(screen.getByText("Authors")).toBeTruthy();
     expect(screen.getByText("Shelves")).toBeTruthy();
+    expect(screen.getByText("Upload")).toBeTruthy();
     expect(screen.getByText("Duplicates")).toBeTruthy();
     expect(screen.getByText("Match Suggestions")).toBeTruthy();
     expect(screen.getByText("Library Health")).toBeTruthy();
@@ -72,6 +73,7 @@ describe("AppSidebar", () => {
     expect(screen.getByText("Shelves")).toBeTruthy();
     // Settings remains visible — viewers need it to manage their own devices.
     expect(screen.getByText("Settings")).toBeTruthy();
+    expect(screen.queryByText("Upload")).toBeNull();
     expect(screen.queryByText("Duplicates")).toBeNull();
     expect(screen.queryByText("Match Suggestions")).toBeNull();
     expect(screen.queryByText("Library Health")).toBeNull();

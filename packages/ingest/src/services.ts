@@ -396,6 +396,17 @@ export interface ScanLibraryRootResult {
   scannedFileAssetIds: string[];
 }
 
+export interface IngestUploadedBookInput {
+  libraryRootId: string;
+  absolutePaths: string[];
+  now?: Date;
+}
+
+export interface IngestUploadedBookResult {
+  fileAssetIds: string[];
+  createdWorkIds: string[];
+}
+
 export interface HashFileAssetInput extends HashFileAssetJobPayload {
   now?: Date;
 }
@@ -3618,9 +3629,195 @@ export function createIngestServices(
     await mergeWorks(ingestDb, survivingWork, losingWork);
   }
 
+  async function ingestUploadedBook(
+    input: IngestUploadedBookInput,
+  ): Promise<IngestUploadedBookResult> {
+    const now = input.now ?? new Date();
+    const libraryRoot = await getExistingLibraryRootOrThrow(ingestDb, input.libraryRootId);
+    const normalizedRoot = normalizeRootPath(libraryRoot.path);
+
+    const fileAssetIds: string[] = [];
+    const createdWorkIds: string[] = [];
+    const audioDirToEdition = new Map<string, { workId: string; editionId: string }>();
+    const ebookVariantDirToEdition = new Map<string, { workId: string; editionId: string }>();
+
+    for (const absolutePath of input.absolutePaths) {
+      const stats = await readStats(absolutePath);
+      if (!stats.isFile() || stats.isSymbolicLink()) {
+        continue;
+      }
+
+      const relativePath = normalizeRelativePath(normalizedRoot, absolutePath);
+      const mediaKind = classifyMediaKind(absolutePath);
+      const basename = path.basename(absolutePath);
+      const extension = getFileExtension(absolutePath);
+
+      const upsertedFileAsset = await ingestDb.fileAsset.upsert({
+        where: { absolutePath },
+        create: {
+          absolutePath,
+          availabilityStatus: AvailabilityStatus.PRESENT,
+          basename,
+          ctime: stats.ctime,
+          extension,
+          lastSeenAt: now,
+          libraryRootId: libraryRoot.id,
+          mediaKind,
+          mtime: stats.mtime,
+          relativePath,
+          sizeBytes: BigInt(stats.size),
+        },
+        update: {
+          availabilityStatus: AvailabilityStatus.PRESENT,
+          basename,
+          ctime: stats.ctime,
+          extension,
+          lastSeenAt: now,
+          mediaKind,
+          mtime: stats.mtime,
+          relativePath,
+          sizeBytes: BigInt(stats.size),
+        },
+      });
+
+      fileAssetIds.push(upsertedFileAsset.id);
+
+      const formatFamily = deriveFormatFamily(mediaKind);
+      if (formatFamily === null) {
+        // Sidecar / cover / other — no hash or stub Work needed; these get
+        // picked up when their sibling book file is processed.
+        continue;
+      }
+
+      await enqueueJob(LIBRARY_JOB_NAMES.HASH_FILE_ASSET, {
+        fileAssetId: upsertedFileAsset.id,
+      });
+
+      const existingLink = await ingestDb.editionFile.findFirst({
+        where: { fileAssetId: upsertedFileAsset.id },
+      });
+      if (existingLink !== null) {
+        // Re-upload of a path that already has an Edition link — leave the
+        // existing graph; the HASH job above re-validates the file.
+        continue;
+      }
+
+      if (mediaKind === MediaKind.AUDIO) {
+        const audioDir = path.dirname(relativePath);
+        const existingGroup = audioDirToEdition.get(audioDir);
+        if (existingGroup !== undefined) {
+          await ingestDb.editionFile.create({
+            data: {
+              editionId: existingGroup.editionId,
+              fileAssetId: upsertedFileAsset.id,
+              role: EditionFileRole.AUDIO_TRACK,
+            },
+          });
+        } else {
+          const { title, titleCanonical } = deriveTitleFromPath(relativePath, mediaKind);
+          const stubWork = await ingestDb.work.create({
+            data: {
+              enrichmentStatus: "STUB",
+              sortTitle: generateSortTitle(title),
+              titleCanonical,
+              titleDisplay: title,
+            },
+          });
+          const stubEdition = await ingestDb.edition.create({
+            data: {
+              asin: null,
+              formatFamily,
+              isbn10: null,
+              isbn13: null,
+              language: null,
+              publishedAt: null,
+              publisher: null,
+              workId: stubWork.id,
+            },
+          });
+          await ingestDb.editionFile.create({
+            data: {
+              editionId: stubEdition.id,
+              fileAssetId: upsertedFileAsset.id,
+              role: EditionFileRole.AUDIO_TRACK,
+            },
+          });
+          audioDirToEdition.set(audioDir, { workId: stubWork.id, editionId: stubEdition.id });
+          createdWorkIds.push(stubWork.id);
+          await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
+            workId: stubWork.id,
+            fileAssetId: upsertedFileAsset.id,
+          });
+        }
+      } else {
+        const ebookVariantMetadata = usesPathDerivedEbookMetadata(mediaKind)
+          ? deriveEbookVariantMetadataFromPath(relativePath)
+          : null;
+        const title = ebookVariantMetadata?.title
+          ?? deriveTitleFromPath(relativePath, mediaKind).title;
+        const titleCanonical = canonicalizeBookTitle(title) ?? title.toLowerCase();
+
+        const variantKey = path.dirname(relativePath);
+        const existingVariant = groupsWithSiblingEbookVariants(mediaKind)
+          ? ebookVariantDirToEdition.get(variantKey)
+          : undefined;
+
+        if (existingVariant !== undefined) {
+          await ingestDb.editionFile.create({
+            data: {
+              editionId: existingVariant.editionId,
+              fileAssetId: upsertedFileAsset.id,
+              role: EditionFileRole.ALTERNATE_FORMAT,
+            },
+          });
+          await reconcileEditionFileRoles(ingestDb, existingVariant.editionId);
+        } else {
+          const stubWork = await ingestDb.work.create({
+            data: {
+              enrichmentStatus: "STUB",
+              sortTitle: generateSortTitle(title),
+              titleCanonical,
+              titleDisplay: title,
+            },
+          });
+          const stubEdition = await ingestDb.edition.create({
+            data: {
+              asin: null,
+              formatFamily,
+              isbn10: null,
+              isbn13: null,
+              language: null,
+              publishedAt: null,
+              publisher: null,
+              workId: stubWork.id,
+            },
+          });
+          await ingestDb.editionFile.create({
+            data: {
+              editionId: stubEdition.id,
+              fileAssetId: upsertedFileAsset.id,
+              role: EditionFileRole.PRIMARY,
+            },
+          });
+          if (groupsWithSiblingEbookVariants(mediaKind)) {
+            ebookVariantDirToEdition.set(variantKey, { workId: stubWork.id, editionId: stubEdition.id });
+          }
+          createdWorkIds.push(stubWork.id);
+          await enqueueJob(LIBRARY_JOB_NAMES.PROCESS_COVER, {
+            workId: stubWork.id,
+            fileAssetId: upsertedFileAsset.id,
+          });
+        }
+      }
+    }
+
+    return { fileAssetIds, createdWorkIds };
+  }
+
   return {
     detectDuplicates,
     hashFileAsset,
+    ingestUploadedBook,
     matchSuggestions,
     matchFileAssetToEdition,
     mergeWorksById,
@@ -3638,6 +3835,7 @@ export const matchFileAssetToEdition = services.matchFileAssetToEdition;
 export const parseFileAssetMetadata = services.parseFileAssetMetadata;
 export const detectDuplicates = services.detectDuplicates;
 export const mergeWorksById = services.mergeWorksById;
+export const ingestUploadedBook = services.ingestUploadedBook;
 export { classifyMediaKind, deriveFormatFamily, getFileExtension, hashFileContents, IGNORED_BASENAMES, isFileChanged, isIgnoredBasename, normalizeRelativePath, normalizeRootPath, walkRegularFiles };
 export { parseEpubMetadata } from "./epub";
 export { parseOpfSidecar } from "./opf";

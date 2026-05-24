@@ -25,11 +25,13 @@ const processCoverForWorkMock = vi.fn();
 const scanLibraryRootMock = vi.fn();
 const detectDuplicatesMock = vi.fn();
 const matchSuggestionsMock = vi.fn();
+const ingestUploadedBookMock = vi.fn();
 const importJobUpdateMock = vi.fn();
 const importJobUpdateManyMock = vi.fn();
 const importJobFindUniqueMock = vi.fn();
 const appSettingFindUniqueMock = vi.fn();
 const enqueueLibraryJobMock = vi.fn();
+const enqueueEnrichmentJobMock = vi.fn();
 
 vi.mock("ioredis", () => ({
   default: class FakeRedis {
@@ -86,6 +88,7 @@ vi.mock("@bookhouse/ingest", () => ({
     createIngestServicesMock(deps);
     return {
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       scanLibraryRoot: scanLibraryRootMock,
@@ -94,6 +97,7 @@ vi.mock("@bookhouse/ingest", () => ({
     };
   },
   hashFileAsset: hashFileAssetMock,
+  ingestUploadedBook: ingestUploadedBookMock,
   matchFileAssetToEdition: matchFileAssetToEditionMock,
   parseFileAssetMetadata: parseFileAssetMetadataMock,
   processCoverForWorkDefault: () => processCoverForWorkMock,
@@ -119,6 +123,7 @@ vi.mock("@bookhouse/shared", async () => {
     createLogger: () => mockLogger,
     getQueueConnectionConfig: queueConnectionConfigMock,
     enqueueLibraryJob: enqueueLibraryJobMock,
+    enqueueEnrichmentJob: enqueueEnrichmentJobMock,
   };
 });
 
@@ -147,6 +152,8 @@ beforeEach(() => {
   detectDuplicatesMock.mockReset();
   matchSuggestionsMock.mockReset();
   hashFileAssetMock.mockReset();
+  ingestUploadedBookMock.mockReset();
+  enqueueEnrichmentJobMock.mockReset();
   importJobUpdateMock.mockReset();
   importJobUpdateMock.mockResolvedValue({});
   importJobUpdateManyMock.mockReset();
@@ -177,6 +184,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -251,10 +259,85 @@ describe("library worker", () => {
     });
   });
 
+  it("dispatches ingest-uploaded-book and enqueues BULK_ENRICH_METADATA for each created work", async () => {
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor({
+      hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
+      parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
+      scanLibraryRoot: scanLibraryRootMock,
+      detectDuplicates: detectDuplicatesMock,
+      matchSuggestions: matchSuggestionsMock,
+    });
+
+    ingestUploadedBookMock.mockResolvedValueOnce({
+      fileAssetIds: ["file-1", "file-2"],
+      createdWorkIds: ["work-1", "work-2"],
+    });
+    enqueueEnrichmentJobMock.mockResolvedValue(undefined);
+
+    const result = await processor(createMockJob({
+      data: {
+        libraryRootId: "root-1",
+        absolutePaths: ["/data/ebooks/A/T/book.epub", "/data/ebooks/B/T/book.epub"],
+      },
+      name: "ingest-uploaded-book",
+    }) as never);
+
+    expect(result).toEqual({
+      fileAssetIds: ["file-1", "file-2"],
+      createdWorkIds: ["work-1", "work-2"],
+    });
+    expect(ingestUploadedBookMock).toHaveBeenCalledWith({
+      libraryRootId: "root-1",
+      absolutePaths: ["/data/ebooks/A/T/book.epub", "/data/ebooks/B/T/book.epub"],
+    });
+    expect(enqueueEnrichmentJobMock).toHaveBeenCalledTimes(2);
+    expect(enqueueEnrichmentJobMock).toHaveBeenNthCalledWith(1, "bulk-enrich-metadata", {
+      workId: "work-1",
+      sources: ["openlibrary", "googlebooks", "hardcover", "audible"],
+      strategy: "fullest",
+    });
+    expect(enqueueEnrichmentJobMock).toHaveBeenNthCalledWith(2, "bulk-enrich-metadata", {
+      workId: "work-2",
+      sources: ["openlibrary", "googlebooks", "hardcover", "audible"],
+      strategy: "fullest",
+    });
+  });
+
+  it("does not enqueue enrichment jobs when ingest-uploaded-book creates no works", async () => {
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor({
+      hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
+      parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
+      scanLibraryRoot: scanLibraryRootMock,
+      detectDuplicates: detectDuplicatesMock,
+      matchSuggestions: matchSuggestionsMock,
+    });
+
+    ingestUploadedBookMock.mockResolvedValueOnce({
+      fileAssetIds: [],
+      createdWorkIds: [],
+    });
+
+    await processor(createMockJob({
+      data: { libraryRootId: "root-1", absolutePaths: [] },
+      name: "ingest-uploaded-book",
+    }) as never);
+
+    expect(enqueueEnrichmentJobMock).not.toHaveBeenCalled();
+  });
+
   it("passes a scan mode override through to ingest scanLibraryRoot", async () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -282,6 +365,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -312,6 +396,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -340,6 +425,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -371,6 +457,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -394,6 +481,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -416,6 +504,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -452,6 +541,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -487,6 +577,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -510,6 +601,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -556,6 +648,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -587,6 +680,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -611,6 +705,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -726,6 +821,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -760,6 +856,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -789,6 +886,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -813,6 +911,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -835,6 +934,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -859,6 +959,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -886,6 +987,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -911,6 +1013,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -932,6 +1035,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -953,6 +1057,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -983,6 +1088,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -1011,6 +1117,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -1045,6 +1152,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -1079,6 +1187,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -1113,6 +1222,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -1141,6 +1251,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -1172,6 +1283,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,
@@ -1199,6 +1311,7 @@ describe("library worker", () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
       hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
       matchFileAssetToEdition: matchFileAssetToEditionMock,
       parseFileAssetMetadata: parseFileAssetMetadataMock,
       processCoverForWork: processCoverForWorkMock,

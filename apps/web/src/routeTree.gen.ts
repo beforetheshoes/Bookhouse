@@ -16,6 +16,7 @@ import { Route as AuthLogoutRouteImport } from './routes/auth/logout'
 import { Route as AuthLoginRouteImport } from './routes/auth/login'
 import { Route as AuthDeniedRouteImport } from './routes/auth/denied'
 import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
+import { Route as AuthenticatedUploadRouteImport } from './routes/_authenticated/upload'
 import { Route as AuthenticatedShelvesRouteImport } from './routes/_authenticated/shelves'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedSeriesRouteImport } from './routes/_authenticated/series'
@@ -74,6 +75,11 @@ const AuthCallbackRoute = AuthCallbackRouteImport.update({
   id: '/auth/callback',
   path: '/auth/callback',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedUploadRoute = AuthenticatedUploadRouteImport.update({
+  id: '/upload',
+  path: '/upload',
+  getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedShelvesRoute = AuthenticatedShelvesRouteImport.update({
   id: '/shelves',
@@ -224,6 +230,7 @@ export interface FileRoutesByFullPath {
   '/series': typeof AuthenticatedSeriesRouteWithChildren
   '/settings': typeof AuthenticatedSettingsRouteWithChildren
   '/shelves': typeof AuthenticatedShelvesRouteWithChildren
+  '/upload': typeof AuthenticatedUploadRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/denied': typeof AuthDeniedRoute
   '/auth/login': typeof AuthLoginRoute
@@ -250,6 +257,7 @@ export interface FileRoutesByTo {
   '/duplicates': typeof AuthenticatedDuplicatesRoute
   '/health': typeof AuthenticatedHealthRoute
   '/match-suggestions': typeof AuthenticatedMatchSuggestionsRoute
+  '/upload': typeof AuthenticatedUploadRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/denied': typeof AuthDeniedRoute
   '/auth/login': typeof AuthLoginRoute
@@ -283,6 +291,7 @@ export interface FileRoutesById {
   '/_authenticated/series': typeof AuthenticatedSeriesRouteWithChildren
   '/_authenticated/settings': typeof AuthenticatedSettingsRouteWithChildren
   '/_authenticated/shelves': typeof AuthenticatedShelvesRouteWithChildren
+  '/_authenticated/upload': typeof AuthenticatedUploadRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/denied': typeof AuthDeniedRoute
   '/auth/login': typeof AuthLoginRoute
@@ -318,6 +327,7 @@ export interface FileRouteTypes {
     | '/series'
     | '/settings'
     | '/shelves'
+    | '/upload'
     | '/auth/callback'
     | '/auth/denied'
     | '/auth/login'
@@ -344,6 +354,7 @@ export interface FileRouteTypes {
     | '/duplicates'
     | '/health'
     | '/match-suggestions'
+    | '/upload'
     | '/auth/callback'
     | '/auth/denied'
     | '/auth/login'
@@ -376,6 +387,7 @@ export interface FileRouteTypes {
     | '/_authenticated/series'
     | '/_authenticated/settings'
     | '/_authenticated/shelves'
+    | '/_authenticated/upload'
     | '/auth/callback'
     | '/auth/denied'
     | '/auth/login'
@@ -458,6 +470,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/auth/callback'
       preLoaderRoute: typeof AuthCallbackRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/upload': {
+      id: '/_authenticated/upload'
+      path: '/upload'
+      fullPath: '/upload'
+      preLoaderRoute: typeof AuthenticatedUploadRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/shelves': {
       id: '/_authenticated/shelves'
@@ -732,6 +751,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedSeriesRoute: typeof AuthenticatedSeriesRouteWithChildren
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRouteWithChildren
   AuthenticatedShelvesRoute: typeof AuthenticatedShelvesRouteWithChildren
+  AuthenticatedUploadRoute: typeof AuthenticatedUploadRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
 }
 
@@ -744,6 +764,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedSeriesRoute: AuthenticatedSeriesRouteWithChildren,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRouteWithChildren,
   AuthenticatedShelvesRoute: AuthenticatedShelvesRouteWithChildren,
+  AuthenticatedUploadRoute: AuthenticatedUploadRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
 }
 

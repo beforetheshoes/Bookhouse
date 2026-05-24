@@ -6,6 +6,7 @@ import {
   writeAudiobookMetadataJson,
   writeCoverJpeg,
   writeOpfSidecar,
+  type CoverWriterDeps,
 } from "./sidecar-writer";
 
 describe("buildAudiobookMetadataJson", () => {
@@ -25,7 +26,7 @@ describe("buildAudiobookMetadataJson", () => {
       asin: "B002UZJK1U",
     });
 
-    const parsed = JSON.parse(json) as Record<string, unknown>;
+    const parsed = JSON.parse(json) as Record<string, string | string[] | Array<{ name: string; sequence: string }>>;
     expect(parsed.title).toBe("Mistborn: The Final Empire");
     expect(parsed.authors).toEqual(["Brandon Sanderson"]);
     expect(parsed.narrators).toEqual(["Michael Kramer"]);
@@ -46,7 +47,7 @@ describe("buildAudiobookMetadataJson", () => {
       genres: [],
     });
 
-    const parsed = JSON.parse(json) as Record<string, unknown>;
+    const parsed = JSON.parse(json) as Record<string, string | string[] | Array<{ name: string; sequence: string }>>;
     expect(parsed.title).toBe("Simple Book");
     expect("subtitle" in parsed).toBe(false);
     expect("publisher" in parsed).toBe(false);
@@ -69,8 +70,8 @@ describe("buildAudiobookMetadataJson", () => {
 
 describe("writeAudiobookMetadataJson", () => {
   it("writes metadata.json to the target directory", async () => {
-    const mkdir = vi.fn().mockResolvedValue(undefined);
-    const writeFile = vi.fn().mockResolvedValue(undefined);
+    const mkdir = vi.fn<(p: string, opts: { recursive: true }) => Promise<undefined>>().mockResolvedValue(undefined);
+    const writeFile = vi.fn<(p: string, data: string | Buffer) => Promise<void>>().mockResolvedValue(undefined);
 
     await writeAudiobookMetadataJson(
       "/data/audiobooks/Author/Title",
@@ -88,10 +89,13 @@ describe("writeAudiobookMetadataJson", () => {
       recursive: true,
     });
     expect(writeFile).toHaveBeenCalledTimes(1);
-    const [filePath, contents] = writeFile.mock.calls[0]!;
+    const firstCall = writeFile.mock.calls[0];
+    if (!firstCall) throw new Error("expected writeFile to be called");
+    const [filePath, contents] = firstCall;
     expect(filePath).toBe("/data/audiobooks/Author/Title/metadata.json");
     expect(typeof contents).toBe("string");
-    expect(JSON.parse(contents as string).title).toBe("Title");
+    const parsed = JSON.parse(contents as string) as { title: string };
+    expect(parsed.title).toBe("Title");
   });
 });
 
@@ -112,8 +116,10 @@ describe("buildOpfXml", () => {
     const parsed = parseOpfXml(xml);
     expect(parsed.title).toBe("Mistborn: The Final Empire");
     expect(parsed.authors).toHaveLength(1);
-    expect(parsed.authors[0]!.name).toBe("Brandon Sanderson");
-    expect(parsed.authors[0]!.fileAs).toBe("Sanderson, Brandon");
+    const author0 = parsed.authors[0];
+    if (!author0) throw new Error("expected author");
+    expect(author0.name).toBe("Brandon Sanderson");
+    expect(author0.fileAs).toBe("Sanderson, Brandon");
     expect(parsed.identifiers).toEqual([
       { scheme: "ISBN", value: "9780765311788" },
     ]);
@@ -137,7 +143,9 @@ describe("buildOpfXml", () => {
 
     const parsed = parseOpfXml(xml);
     expect(parsed.title).toBe('Foo & "Bar" <baz>');
-    expect(parsed.authors[0]!.name).toBe("O'Brien & Sons");
+    const a0 = parsed.authors[0];
+    if (!a0) throw new Error("expected author");
+    expect(a0.name).toBe("O'Brien & Sons");
   });
 
   it("supports multiple authors and identifiers", () => {
@@ -219,14 +227,16 @@ describe("buildOpfXml", () => {
     });
     expect(xml).toContain('opf:role="edt"');
     const parsed = parseOpfXml(xml);
-    expect(parsed.authors[0]!.role).toBe("edt");
+    const editor = parsed.authors[0];
+    if (!editor) throw new Error("expected author");
+    expect(editor.role).toBe("edt");
   });
 });
 
 describe("writeOpfSidecar", () => {
   it("writes metadata.opf to the target directory", async () => {
-    const mkdir = vi.fn().mockResolvedValue(undefined);
-    const writeFile = vi.fn().mockResolvedValue(undefined);
+    const mkdir = vi.fn<(p: string, opts: { recursive: true }) => Promise<undefined>>().mockResolvedValue(undefined);
+    const writeFile = vi.fn<(p: string, data: string | Buffer) => Promise<void>>().mockResolvedValue(undefined);
 
     await writeOpfSidecar(
       "/data/ebooks/Author/Title",
@@ -242,7 +252,9 @@ describe("writeOpfSidecar", () => {
     expect(mkdir).toHaveBeenCalledWith("/data/ebooks/Author/Title", {
       recursive: true,
     });
-    const [filePath, contents] = writeFile.mock.calls[0]!;
+    const call = writeFile.mock.calls[0];
+    if (!call) throw new Error("expected writeFile to be called");
+    const [filePath, contents] = call;
     expect(filePath).toBe("/data/ebooks/Author/Title/metadata.opf");
     expect(typeof contents).toBe("string");
     expect(contents as string).toContain("<dc:title>Title</dc:title>");
@@ -251,25 +263,29 @@ describe("writeOpfSidecar", () => {
 
 describe("writeCoverJpeg", () => {
   it("converts input to JPEG via sharp and writes cover.jpg", async () => {
-    const mkdir = vi.fn().mockResolvedValue(undefined);
-    const writeFile = vi.fn().mockResolvedValue(undefined);
-    const toBuffer = vi.fn().mockResolvedValue(Buffer.from("jpeg-bytes"));
-    const jpeg = vi.fn().mockReturnValue({ toBuffer });
-    const sharpFn = vi.fn().mockReturnValue({ jpeg });
+    const mkdir = vi.fn<(p: string, opts: { recursive: true }) => Promise<undefined>>().mockResolvedValue(undefined);
+    const writeFile = vi.fn<(p: string, data: string | Buffer) => Promise<void>>().mockResolvedValue(undefined);
+    const toBuffer = vi.fn<() => Promise<Buffer>>().mockResolvedValue(Buffer.from("jpeg-bytes"));
+    const jpeg = vi.fn<(opts: { quality: number }) => { toBuffer: typeof toBuffer }>().mockReturnValue({ toBuffer });
+    const sharpFn = vi.fn<(buf: Buffer) => { jpeg: typeof jpeg }>().mockReturnValue({ jpeg });
 
     await writeCoverJpeg(
       "/data/ebooks/Author/Title",
       Buffer.from("png-bytes"),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      { mkdir, writeFile, sharp: sharpFn as any },
+      { mkdir, writeFile, sharp: sharpFn as never as CoverWriterDeps["sharp"] },
     );
 
     expect(mkdir).toHaveBeenCalledWith("/data/ebooks/Author/Title", {
       recursive: true,
     });
     expect(sharpFn).toHaveBeenCalledWith(Buffer.from("png-bytes"));
-    expect(jpeg).toHaveBeenCalledWith(expect.objectContaining({ quality: expect.any(Number) }));
-    const [coverPath, coverBytes] = writeFile.mock.calls[0]!;
+    expect(jpeg).toHaveBeenCalled();
+    const jpegCall = jpeg.mock.calls[0];
+    if (!jpegCall) throw new Error("expected jpeg call");
+    expect(typeof jpegCall[0].quality).toBe("number");
+    const call = writeFile.mock.calls[0];
+    if (!call) throw new Error("expected writeFile to be called");
+    const [coverPath, coverBytes] = call;
     expect(coverPath).toBe("/data/ebooks/Author/Title/cover.jpg");
     expect(coverBytes).toEqual(Buffer.from("jpeg-bytes"));
   });

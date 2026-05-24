@@ -28,6 +28,7 @@ export {
   scanLibraryRoot,
   walkRegularFiles,
   createIngestServices,
+  ingestUploadedBook,
 } from "./services";
 
 export type {
@@ -53,6 +54,8 @@ export type {
   ScanLibraryRootInput,
   ScanLibraryRootResult,
   ScanProgressData,
+  IngestUploadedBookInput,
+  IngestUploadedBookResult,
 } from "./services";
 
 export { extractEpubCover } from "./epub";

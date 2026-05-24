@@ -9,6 +9,7 @@ import {
   Headphones,
   LogOut,
   Settings,
+  Upload,
   Users,
 } from "lucide-react";
 import { BookhouseMark } from "~/components/branding/bookhouse-mark";
@@ -38,6 +39,7 @@ const navItems = [
   { title: "Series", href: "/series", icon: BookCopy, ownerOnly: false },
   { title: "Authors", href: "/authors", icon: Users, ownerOnly: false },
   { title: "Shelves", href: "/shelves", icon: FolderOpen, ownerOnly: false },
+  { title: "Upload", href: "/upload", icon: Upload, ownerOnly: true },
   { title: "Duplicates", href: "/duplicates", icon: Copy, ownerOnly: true },
   { title: "Match Suggestions", href: "/match-suggestions", icon: Headphones, ownerOnly: true },
   { title: "Library Health", href: "/health", icon: Activity, ownerOnly: true },
