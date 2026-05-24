@@ -120,6 +120,7 @@ enum ImportJobKind {
   MATCH_SUGGESTIONS
   ENRICH_AUTHOR_PHOTOS
   BULK_ENRICH
+  UPLOAD_INGEST
 }
 
 enum ImportJobStatus {

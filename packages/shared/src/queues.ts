@@ -11,6 +11,7 @@ export const LIBRARY_JOB_NAMES = {
   PROCESS_COVER: "process-cover",
   DETECT_DUPLICATES: "detect-duplicates",
   MATCH_SUGGESTIONS: "match-suggestions",
+  INGEST_UPLOADED_BOOK: "ingest-uploaded-book",
 } as const;
 
 export const ENRICHMENT_JOB_NAMES = {
@@ -57,6 +58,11 @@ export interface MatchSuggestionsJobPayload extends BaseJobPayload {
   fileAssetId: string;
 }
 
+export interface IngestUploadedBookJobPayload extends BaseJobPayload {
+  libraryRootId: string;
+  absolutePaths: string[];
+}
+
 export interface EnrichContributorJobPayload extends BaseJobPayload {
   contributorId: string;
 }
@@ -79,6 +85,7 @@ export interface LibraryJobPayloads {
   [LIBRARY_JOB_NAMES.PROCESS_COVER]: ProcessCoverJobPayload;
   [LIBRARY_JOB_NAMES.DETECT_DUPLICATES]: DetectDuplicatesJobPayload;
   [LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS]: MatchSuggestionsJobPayload;
+  [LIBRARY_JOB_NAMES.INGEST_UPLOADED_BOOK]: IngestUploadedBookJobPayload;
 }
 
 export interface EnrichmentJobPayloads {
@@ -126,6 +133,10 @@ export const RETRY_CONFIG: Record<LibraryJobName, JobRetryConfig> = {
     attempts: 2,
     backoff: { type: "exponential", delay: 3000 },
   },
+  [LIBRARY_JOB_NAMES.INGEST_UPLOADED_BOOK]: {
+    attempts: 2,
+    backoff: { type: "exponential", delay: 3000 },
+  },
 };
 
 export const ENRICHMENT_RETRY_CONFIG: Record<EnrichmentJobName, JobRetryConfig> = {
@@ -142,6 +153,7 @@ export const ENRICHMENT_RETRY_CONFIG: Record<EnrichmentJobName, JobRetryConfig> 
 // Lower number = higher priority. BullMQ processes prioritized jobs before non-prioritized ones.
 export const JOB_PRIORITY: Record<LibraryJobName, number> = {
   [LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT]: 1,
+  [LIBRARY_JOB_NAMES.INGEST_UPLOADED_BOOK]: 1,
   [LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS]: 2,
   [LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION]: 2,
   [LIBRARY_JOB_NAMES.DETECT_DUPLICATES]: 3,

@@ -37,6 +37,8 @@ services:
     volumes:
       - covers:/data/covers:ro
       - kepub-cache:/data/kepub-cache
+      - ${EBOOKS_PATH:?set EBOOKS_PATH in .env}:/data/ebooks
+      - ${AUDIOBOOKS_PATH:?set AUDIOBOOKS_PATH in .env}:/data/audiobooks
     depends_on:
       - db
       - queue
@@ -51,8 +53,8 @@ services:
       NODE_ENV: production
       COVER_CACHE_DIR: /data/covers
     volumes:
-      - ${EBOOKS_PATH:?set EBOOKS_PATH in .env}:/data/ebooks:ro
-      - ${AUDIOBOOKS_PATH:?set AUDIOBOOKS_PATH in .env}:/data/audiobooks:ro
+      - ${EBOOKS_PATH:?set EBOOKS_PATH in .env}:/data/ebooks
+      - ${AUDIOBOOKS_PATH:?set AUDIOBOOKS_PATH in .env}:/data/audiobooks
       - covers:/data/covers
     depends_on:
       - db

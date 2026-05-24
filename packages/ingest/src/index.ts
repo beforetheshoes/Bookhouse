@@ -103,3 +103,13 @@ export { levenshteinDistance, normalizedSimilarity, normalizeForTitleMatching, s
 export { generateSortTitle, generateNameSort } from "./sort-keys";
 export { cascadeCleanupOrphans, cleanupOrphanedFileAssets } from "./cascade-cleanup";
 export type { CascadeCleanupInput, CascadeCleanupResult } from "./cascade-cleanup";
+export { sanitizeFolderSegment, buildBookFolderPath, chooseSidecarKind } from "./upload-layout";
+export type { BuildBookFolderPathInput, SidecarKind } from "./upload-layout";
+export {
+  buildAudiobookMetadataJson,
+  buildOpfXml,
+  writeAudiobookMetadataJson,
+  writeOpfSidecar,
+  writeCoverJpeg,
+} from "./sidecar-writer";
+export type { SidecarWriterDeps, CoverWriterDeps } from "./sidecar-writer";
