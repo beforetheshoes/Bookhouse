@@ -2202,34 +2202,39 @@ export function createIngestServices(
             const hashMatches = await ingestDb.fileAsset.findMany({
               where: { fullHash: hashes.fullHash, NOT: { id: fileAsset.id } },
             });
-            const missingMatch = hashMatches.find(
+            const missingMatches = hashMatches.filter(
               (fa) => fa.availabilityStatus === AvailabilityStatus.MISSING,
             );
-            if (missingMatch) {
+            // A move can leave behind linkless MISSING "orphan" assets from
+            // earlier moves. Skip those and transfer from the first MISSING
+            // match that still owns edition links, so repeated renames re-link
+            // instead of creating a duplicate.
+            for (const missingMatch of missingMatches) {
               const missingEditionFiles = await ingestDb.editionFile.findMany({
                 where: { fileAssetId: missingMatch.id },
               });
-              if (missingEditionFiles.length > 0) {
-                for (const ef of missingEditionFiles) {
-                  await ingestDb.editionFile.update({
-                    where: { id: ef.id },
-                    data: { fileAssetId: fileAsset.id },
-                  });
-                }
-                await ingestDb.work.delete({ where: { id: currentWork.id } });
-                logger.info(
-                  { fromFileAssetId: missingMatch.id, toFileAssetId: fileAsset.id },
-                  "Move detected: transferred edition links",
-                );
-                return {
-                  availabilityStatus: AvailabilityStatus.PRESENT,
-                  fileAssetId: fileAsset.id,
-                  fullHash: hashes.fullHash,
-                  koreaderHash: hashes.koreaderHash,
-                  movedFromFileAssetId: missingMatch.id,
-                  partialHash: hashes.partialHash,
-                };
+              if (missingEditionFiles.length === 0) {
+                continue;
               }
+              for (const ef of missingEditionFiles) {
+                await ingestDb.editionFile.update({
+                  where: { id: ef.id },
+                  data: { fileAssetId: fileAsset.id },
+                });
+              }
+              await ingestDb.work.delete({ where: { id: currentWork.id } });
+              logger.info(
+                { fromFileAssetId: missingMatch.id, toFileAssetId: fileAsset.id },
+                "Move detected: transferred edition links",
+              );
+              return {
+                availabilityStatus: AvailabilityStatus.PRESENT,
+                fileAssetId: fileAsset.id,
+                fullHash: hashes.fullHash,
+                koreaderHash: hashes.koreaderHash,
+                movedFromFileAssetId: missingMatch.id,
+                partialHash: hashes.partialHash,
+              };
             }
           }
         }

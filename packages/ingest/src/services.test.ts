@@ -3264,6 +3264,95 @@ describe("ingest services", () => {
     );
   });
 
+  it("transfers links from the linked MISSING asset even when an orphan with the same hash sorts first", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    // Orphan MISSING asset, same hash, NO edition links (left over from an
+    // earlier move). It sorts first, so the old `find` picked it and skipped
+    // the move; the loop must keep looking for a linked source instead.
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/older-folder/book.epub",
+      availabilityStatus: AvailabilityStatus.MISSING,
+      basename: "book.epub",
+      fullHash: "same-hash-abc",
+      id: "orphan-file",
+      relativePath: "older-folder/book.epub",
+    });
+
+    // The real old file — MISSING, same hash, WITH edition links.
+    const oldFile = addFileAsset(state, {
+      absolutePath: "/tmp/root/old-folder/book.epub",
+      availabilityStatus: AvailabilityStatus.MISSING,
+      basename: "book.epub",
+      fullHash: "same-hash-abc",
+      id: "old-file",
+      relativePath: "old-folder/book.epub",
+    });
+    const oldWork = addWork(state, {
+      enrichmentStatus: "ENRICHED",
+      id: "old-work",
+      titleCanonical: "the fifth season",
+      titleDisplay: "The Fifth Season",
+    });
+    const oldEdition = addEdition(state, { id: "old-edition", workId: oldWork.id });
+    addEditionFile(state, {
+      editionId: oldEdition.id,
+      fileAssetId: oldFile.id,
+      id: "old-edition-file",
+    });
+
+    // New present file with a stub work.
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/new-folder/book.epub",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.epub",
+      fullHash: null,
+      id: "new-file",
+      partialHash: null,
+      relativePath: "new-folder/book.epub",
+    });
+    const stubWork = addWork(state, {
+      enrichmentStatus: "STUB",
+      id: "stub-work",
+      titleCanonical: "book",
+      titleDisplay: "book",
+    });
+    const stubEdition = addEdition(state, { id: "stub-edition", workId: stubWork.id });
+    addEditionFile(state, {
+      editionId: stubEdition.id,
+      fileAssetId: "new-file",
+      id: "stub-edition-file",
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      hashFile: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          fullHash: "same-hash-abc",
+          koreaderHash: "same-koreader-hash-abc",
+          mtime: new Date("2025-01-01T00:00:00.000Z"),
+          partialHash: "partial-abc",
+          sizeBytes: 100n,
+        };
+      }),
+    });
+
+    const result = await services.hashFileAsset({
+      fileAssetId: "new-file",
+      now: new Date("2025-01-01T01:00:00.000Z"),
+    });
+
+    // The move is detected against the LINKED old file, not the orphan.
+    expect(result.movedFromFileAssetId).toBe("old-file");
+    const transferred = [...state.editionFiles.values()].find(
+      (ef) => ef.id === "old-edition-file",
+    );
+    expect(transferred?.fileAssetId).toBe("new-file");
+    expect(state.works.has("stub-work")).toBe(false);
+  });
+
   it("skips move detection when edition for current file is not found", async () => {
     const state = createEmptyState("/tmp/root");
 
