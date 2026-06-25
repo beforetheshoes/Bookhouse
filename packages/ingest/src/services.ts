@@ -1151,7 +1151,14 @@ async function walkRegularFiles(
         if (entryStats.isFile()) {
           files.push(absolutePath);
         }
-      } catch {
+      } catch (error) {
+        // Don't silently drop an entry whose type we couldn't determine — a
+        // transient stat error would otherwise make a present file invisible to
+        // the scan (and later be marked MISSING).
+        logger?.warn(
+          { err: String(error), path: absolutePath },
+          "Failed to stat entry",
+        );
         continue;
       }
     }
