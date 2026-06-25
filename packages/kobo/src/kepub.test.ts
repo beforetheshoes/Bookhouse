@@ -41,7 +41,10 @@ describe("convertToKepub", () => {
   });
 
   it("calls kepubify when cache miss", async () => {
-    const deps = makeDeps();
+    // existsSync: false for the cache check, true for the post-conversion check.
+    const deps = makeDeps({
+      existsSync: vi.fn().mockReturnValueOnce(false).mockReturnValue(true),
+    });
 
     const result = await convertToKepub("/books/test.epub", "/cache", deps);
 
@@ -61,5 +64,16 @@ describe("convertToKepub", () => {
     await expect(
       convertToKepub("/books/test.epub", "/cache", deps),
     ).rejects.toThrow("kepubify not found");
+  });
+
+  it("throws when kepubify exits cleanly but produces no output file", async () => {
+    // execFile resolves but the output never appears on disk (existsSync false
+    // for both the cache check and the post-conversion verification).
+    const deps = makeDeps({ existsSync: vi.fn().mockReturnValue(false) });
+
+    await expect(
+      convertToKepub("/books/test.epub", "/cache", deps),
+    ).rejects.toThrow(/did not produce output/);
+    expect(deps.execFile).toHaveBeenCalled();
   });
 });

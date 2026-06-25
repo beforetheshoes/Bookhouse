@@ -7,6 +7,7 @@ import type { ReadingProgressRecord, KoboReadingState, KoboRequestResult, Locato
 export interface StateHandlerDeps {
   auth: KoboAuthDeps;
   findProgress: (userId: string, editionId: string) => Promise<ReadingProgressRecord | null>;
+  editionExists: (editionId: string) => Promise<boolean>;
   upsertProgress: (params: {
     userId: string;
     editionId: string;
@@ -100,6 +101,14 @@ export function createStateHandler(deps: StateHandlerDeps) {
         });
       }
 
+      // The Kobo still has books in its local library that may no longer exist
+      // here (e.g. an edition replaced or removed by a re-scan). Acknowledge the
+      // update so the device stops retrying, but skip the write that would
+      // violate the ReadingProgress -> Edition foreign key.
+      if (!(await deps.editionExists(bookId))) {
+        return successResult(bookId);
+      }
+
       const existing = await deps.findProgress(device.userId, bookId);
 
       if (existing) {
@@ -135,6 +144,13 @@ export default defineEventHandler(async (event) => {
     auth: {
       findDeviceByToken: (token) =>
         db.koboDevice.findUnique({ where: { authToken: token } }),
+    },
+    editionExists: async (editionId) => {
+      const edition = await db.edition.findUnique({
+        where: { id: editionId },
+        select: { id: true },
+      });
+      return edition !== null;
     },
     findProgress: async (userId, editionId) => {
       const record = await db.readingProgress.findFirst({

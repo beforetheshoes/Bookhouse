@@ -34,5 +34,12 @@ export async function convertToKepub(
 
   await deps.execFile("kepubify", ["-o", outputPath, epubPath]);
 
+  // kepubify can exit 0 without producing output (e.g. an unsupported input or
+  // a write failure). Verify the file actually exists so callers can fall back
+  // to the original EPUB instead of serving a path that 404s on disk.
+  if (!deps.existsSync(outputPath)) {
+    throw new Error(`kepubify did not produce output at ${outputPath}`);
+  }
+
   return outputPath;
 }

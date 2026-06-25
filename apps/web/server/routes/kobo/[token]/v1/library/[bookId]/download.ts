@@ -71,12 +71,18 @@ export function createDownloadHandler(deps: DownloadHandlerDeps) {
         filePath = await deps.convertToKepub(file.absolutePath);
         fileName = fileName.replace(/\.epub$/, ".kepub.epub");
         contentType = "application/x-kobo-epub+zip";
-      } catch {
-        // Fall back to original EPUB if conversion fails
+      } catch (error) {
+        // Fall back to the original EPUB if conversion fails, but log why so a
+        // missing kepubify binary or conversion failure is diagnosable.
+        console.warn(
+          `[kobo] DOWNLOAD kepub conversion failed for ${file.absolutePath}; serving original EPUB`,
+          error,
+        );
       }
     }
 
     if (!deps.existsSync(filePath)) {
+      console.error(`[kobo] DOWNLOAD file missing from disk: ${filePath}`);
       throw Object.assign(new Error("File missing from disk"), {
         statusCode: 404,
         statusMessage: "Not found",

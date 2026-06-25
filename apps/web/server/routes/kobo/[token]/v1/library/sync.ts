@@ -3,7 +3,7 @@ import type { H3Event } from "h3";
 import type { KoboAuthDeps } from "../../../auth-helper";
 import type { EligibleEdition, ReadingProgressRecord, LocatorData } from "@bookhouse/kobo";
 import type { SyncedBookRecord } from "@bookhouse/kobo";
-import { selectPreferredKoboDeliveryFile } from "@bookhouse/shared";
+import { selectPreferredKoboDeliveryFile, isForeignKeyConstraintError } from "@bookhouse/shared";
 
 const SYNC_ITEM_LIMIT = 100;
 
@@ -14,6 +14,8 @@ export interface SyncHandlerDeps {
   markSynced: (deviceId: string, editionIds: string[]) => Promise<void>;
   markRemoved: (deviceId: string, editionIds: string[]) => Promise<void>;
   getReadingProgress: (userId: string, editionIds: string[]) => Promise<ReadingProgressRecord[]>;
+  getLegacyCleanupPending: (deviceId: string) => Promise<boolean>;
+  markLegacyCleanupDone: (deviceId: string) => Promise<void>;
   getBaseUrl: () => string;
   setResponseHeader: (event: H3Event, name: string, value: string) => void;
 }
@@ -62,10 +64,23 @@ export function createSyncHandler(deps: SyncHandlerDeps) {
     }, progressMap);
 
     if (pageAdd.length > 0) {
-      await deps.markSynced(
-        device.id,
-        pageAdd.map((e) => e.id),
-      );
+      try {
+        await deps.markSynced(
+          device.id,
+          pageAdd.map((e) => e.id),
+        );
+      } catch (error) {
+        // An edition can be deleted between selection and this write, making the
+        // FK upsert fail. Skip recording (it re-syncs next time) rather than
+        // 500ing the device. Re-throw anything that isn't an FK violation.
+        if (!isForeignKeyConstraintError(error as Error)) {
+          throw error;
+        }
+        console.warn(
+          `[kobo] SYNC markSynced skipped: edition removed mid-sync (device=${device.id})`,
+          error,
+        );
+      }
     }
 
     if (pageRemove.length > 0) {
@@ -91,16 +106,22 @@ export function createSyncHandler(deps: SyncHandlerDeps) {
       syncResults.push({ ChangedReadingState: { ReadingState: readingState } });
     }
 
-    // One-time cleanup: remove legacy UUID-format entries from old syncs
-    // that used toKoboId(editionId) instead of raw edition IDs.
-    const { toKoboId } = await import("@bookhouse/kobo");
-    for (const edition of eligible) {
-      const legacyId = toKoboId(edition.id);
-      syncResults.push({
-        ChangedEntitlement: {
-          BookEntitlement: { Id: legacyId, IsRemoved: true },
-        },
-      });
+    // One-time-per-device cleanup: remove legacy UUID-format entitlements from
+    // old syncs that used toKoboId(editionId) instead of raw edition IDs. These
+    // were previously re-emitted on every sync (one removal per eligible
+    // edition), bloating the response; send them once per device, then record
+    // completion so subsequent syncs skip them.
+    if (eligible.length > 0 && (await deps.getLegacyCleanupPending(device.id))) {
+      const { toKoboId } = await import("@bookhouse/kobo");
+      for (const edition of eligible) {
+        const legacyId = toKoboId(edition.id);
+        syncResults.push({
+          ChangedEntitlement: {
+            BookEntitlement: { Id: legacyId, IsRemoved: true },
+          },
+        });
+      }
+      await deps.markLegacyCleanupDone(device.id);
     }
 
     // Build sync token for response header
@@ -246,6 +267,19 @@ export default defineEventHandler(async (event) => {
       await db.koboSyncedBook.updateMany({
         where: { koboDeviceId: deviceId, editionId: { in: editionIds } },
         data: { removedAt: new Date() },
+      });
+    },
+    getLegacyCleanupPending: async (deviceId) => {
+      const device = await db.koboDevice.findUnique({
+        where: { id: deviceId },
+        select: { legacyCleanupDoneAt: true },
+      });
+      return device !== null && device.legacyCleanupDoneAt === null;
+    },
+    markLegacyCleanupDone: async (deviceId) => {
+      await db.koboDevice.update({
+        where: { id: deviceId },
+        data: { legacyCleanupDoneAt: new Date() },
       });
     },
     getReadingProgress: async (userId, editionIds) => {

@@ -1425,8 +1425,12 @@ function KoboDevicesTab({ devices, shelves }: { devices: KoboDeviceRow[]; shelve
     const newIds = currentIds.includes(shelfId)
       ? currentIds.filter((id) => id !== shelfId)
       : [...currentIds, shelfId];
-    await updateDeviceCollectionsServerFn({ data: { deviceId, collectionIds: newIds } });
-    void router.invalidate();
+    try {
+      await updateDeviceCollectionsServerFn({ data: { deviceId, collectionIds: newIds } });
+      void router.invalidate();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to update shelves");
+    }
   };
 
   return (

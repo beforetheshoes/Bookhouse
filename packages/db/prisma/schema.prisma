@@ -509,9 +509,10 @@ model KoboDevice {
   deviceId   String
   userKey    String
   authToken  String           @unique
-  status     KoboDeviceStatus @default(ACTIVE)
-  lastSyncAt DateTime?
-  createdAt  DateTime         @default(now())
+  status              KoboDeviceStatus @default(ACTIVE)
+  lastSyncAt          DateTime?
+  legacyCleanupDoneAt DateTime?
+  createdAt           DateTime         @default(now())
 
   user        User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   collections KoboDeviceCollection[]

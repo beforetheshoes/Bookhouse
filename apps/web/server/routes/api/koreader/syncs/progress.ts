@@ -2,6 +2,7 @@ import { defineEventHandler, readBody, createError } from "h3";
 import type { H3Event } from "h3";
 import type { Prisma } from "@bookhouse/db";
 import type { KoreaderAuthResult } from "../auth-helper";
+import { isForeignKeyConstraintError } from "@bookhouse/shared";
 import { resolveKoreaderTimestamp, type CandidateEditionFile, type KoreaderResolvedDocument } from "./shared";
 
 export interface KoreaderProgressPutDeps {
@@ -73,21 +74,38 @@ export function createKoreaderProgressPutHandler(deps: KoreaderProgressPutDeps) 
     const deviceTimestamp = resolveKoreaderTimestamp(body.timestamp, deps.now());
 
     if (!existing || deviceTimestamp.getTime() >= existing.updatedAt.getTime()) {
-      const saved = await deps.upsertProgress({
-        userId: auth.userId,
-        editionId: document.editionId,
-        percent: body.percentage,
-        progress: body.progress,
-        device: body.device,
-        deviceId: body.device_id,
-        document: body.document,
-        timestamp: deviceTimestamp,
-      });
+      try {
+        const saved = await deps.upsertProgress({
+          userId: auth.userId,
+          editionId: document.editionId,
+          percent: body.percentage,
+          progress: body.progress,
+          device: body.device,
+          deviceId: body.device_id,
+          document: body.document,
+          timestamp: deviceTimestamp,
+        });
 
-      return {
-        document: body.document,
-        timestamp: Math.floor(saved.updatedAt.getTime() / 1000),
-      };
+        return {
+          document: body.document,
+          timestamp: Math.floor(saved.updatedAt.getTime() / 1000),
+        };
+      } catch (error) {
+        // The edition can be deleted between document resolution and this write.
+        // Acknowledge with the device's own timestamp instead of 500ing (a
+        // successful response stops KOReader retrying). Re-throw non-FK errors.
+        if (!isForeignKeyConstraintError(error as Error)) {
+          throw error;
+        }
+        console.warn(
+          `[koreader] progress skipped: edition removed mid-sync (${document.editionId})`,
+          error,
+        );
+        return {
+          document: body.document,
+          timestamp: Math.floor(deviceTimestamp.getTime() / 1000),
+        };
+      }
     }
 
     return {

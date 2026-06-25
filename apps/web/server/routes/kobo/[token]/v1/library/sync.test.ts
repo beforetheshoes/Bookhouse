@@ -59,6 +59,8 @@ function makeDeps(overrides: Partial<SyncHandlerDeps> = {}): SyncHandlerDeps {
     markSynced: vi.fn().mockResolvedValue(undefined),
     markRemoved: vi.fn().mockResolvedValue(undefined),
     getReadingProgress: vi.fn().mockResolvedValue([]),
+    getLegacyCleanupPending: vi.fn().mockResolvedValue(true),
+    markLegacyCleanupDone: vi.fn().mockResolvedValue(undefined),
     getBaseUrl: () => "http://localhost:3000",
     setResponseHeader: vi.fn(),
     ...overrides,
@@ -115,13 +117,37 @@ describe("createSyncHandler", () => {
     const handler = createSyncHandler(deps);
     const result = await handler(makeEvent()) as Record<string, unknown>[];
 
-    // 1 NewEntitlement + 1 legacy UUID removal
+    // 1 NewEntitlement + 1 legacy UUID removal (cleanup pending)
     expect(result).toHaveLength(2);
     const item = result.at(0) as { NewEntitlement: { BookEntitlement: { Id: string } } };
     expect(item.NewEntitlement.BookEntitlement.Id).toBe("e1");
     const removal = result.at(1) as { ChangedEntitlement: { BookEntitlement: { Id: string; IsRemoved: boolean } } };
     expect(removal.ChangedEntitlement.BookEntitlement.IsRemoved).toBe(true);
     expect(deps.markSynced).toHaveBeenCalledWith("d1", ["e1"]);
+    // Legacy cleanup runs once and is recorded for the device.
+    expect(deps.markLegacyCleanupDone).toHaveBeenCalledWith("d1");
+  });
+
+  it("skips legacy UUID cleanup once the device has been cleaned", async () => {
+    const deps = makeDeps({
+      getDeviceCollectionEditions: vi.fn().mockResolvedValue([makeEdition("e1")]),
+      getLegacyCleanupPending: vi.fn().mockResolvedValue(false),
+    });
+    const handler = createSyncHandler(deps);
+    const result = await handler(makeEvent()) as Record<string, unknown>[];
+
+    // Only the NewEntitlement — no legacy removal re-sent.
+    expect(result).toHaveLength(1);
+    expect(result.at(0)).toHaveProperty("NewEntitlement");
+    expect(deps.markLegacyCleanupDone).not.toHaveBeenCalled();
+  });
+
+  it("does not mark legacy cleanup done when there are no eligible editions", async () => {
+    const deps = makeDeps();
+    const handler = createSyncHandler(deps);
+    await handler(makeEvent());
+
+    expect(deps.markLegacyCleanupDone).not.toHaveBeenCalled();
   });
 
   it("returns ChangedEntitlement for no-longer-eligible books", async () => {
@@ -262,5 +288,28 @@ describe("createSyncHandler", () => {
     const item = result.at(0) as { NewEntitlement: { ReadingState: { StatusInfo: { Status: string }; CurrentBookmark: { ProgressPercent: number } } } };
     expect(item.NewEntitlement.ReadingState.StatusInfo.Status).toBe("Reading");
     expect(item.NewEntitlement.ReadingState.CurrentBookmark.ProgressPercent).toBe(75);
+  });
+
+  it("continues without 500 when markSynced hits a foreign-key violation", async () => {
+    const fkError = Object.assign(new Error("FK failed"), { code: "P2003" });
+    const deps = makeDeps({
+      getDeviceCollectionEditions: vi.fn().mockResolvedValue([makeEdition("e1")]),
+      markSynced: vi.fn().mockRejectedValue(fkError),
+    });
+    const handler = createSyncHandler(deps);
+    const result = await handler(makeEvent()) as Record<string, unknown>[];
+
+    // The entitlement is still returned; the edition simply isn't recorded yet.
+    expect(result.at(0)).toHaveProperty("NewEntitlement");
+  });
+
+  it("rethrows non-foreign-key errors from markSynced", async () => {
+    const deps = makeDeps({
+      getDeviceCollectionEditions: vi.fn().mockResolvedValue([makeEdition("e1")]),
+      markSynced: vi.fn().mockRejectedValue(new Error("db down")),
+    });
+    const handler = createSyncHandler(deps);
+
+    await expect(handler(makeEvent())).rejects.toThrow("db down");
   });
 });
