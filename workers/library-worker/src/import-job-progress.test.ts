@@ -83,22 +83,4 @@ describe("recordBatchJobProgress", () => {
 
     expect(updateMock).toHaveBeenCalledTimes(1);
   });
-
-  it("does not mark SUCCEEDED when totalFiles is null", async () => {
-    findUniqueMock.mockResolvedValue({ totalFiles: null, processedFiles: 5 });
-    const { recordBatchJobProgress } = await import("./import-job-progress");
-
-    await recordBatchJobProgress("ij-6", false);
-
-    expect(updateMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not mark SUCCEEDED when processedFiles is null", async () => {
-    findUniqueMock.mockResolvedValue({ totalFiles: 10, processedFiles: null });
-    const { recordBatchJobProgress } = await import("./import-job-progress");
-
-    await recordBatchJobProgress("ij-7", false);
-
-    expect(updateMock).toHaveBeenCalledTimes(1);
-  });
 });

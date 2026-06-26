@@ -1059,8 +1059,8 @@ function LibraryRootCard({ root }: { root: LibraryRootWithExtras }) {
               {root.scanProgress.stale ? (
                 <>
                   <Progress
-                    value={root.scanProgress.processedFiles ?? 0}
-                    max={root.scanProgress.totalFiles ?? 1}
+                    value={root.scanProgress.processedFiles}
+                    max={root.scanProgress.totalFiles}
                   />
                   <p className="text-xs text-amber-600 flex items-center gap-1">
                     <AlertTriangle className="size-3.5" />
@@ -1080,11 +1080,11 @@ function LibraryRootCard({ root }: { root: LibraryRootWithExtras }) {
               ) : (
                 <>
                   <Progress
-                    value={root.scanProgress.processedFiles ?? 0}
-                    max={root.scanProgress.totalFiles ?? 1}
+                    value={root.scanProgress.processedFiles}
+                    max={root.scanProgress.totalFiles}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Discovering files... {root.scanProgress.processedFiles ?? 0} / {root.scanProgress.totalFiles ?? "?"} files
+                    Discovering files... {root.scanProgress.processedFiles} / {root.scanProgress.totalFiles} files
                     {root.scanProgress.errorCount ? ` (${String(root.scanProgress.errorCount)} errors)` : ""}
                   </p>
                 </>
