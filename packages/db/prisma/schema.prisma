@@ -371,12 +371,13 @@ model ReadingProgress {
   progressKind ProgressKind
   locator      Json
   percent      Float?
-  source       String?
+  source       String       @default("manual")
   updatedAt    DateTime     @updatedAt
 
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   edition Edition @relation(fields: [editionId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, editionId, progressKind, source])
   @@index([userId, editionId])
 }
 

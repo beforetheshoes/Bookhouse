@@ -154,7 +154,7 @@ export default defineEventHandler(async (event) => {
     },
     findProgress: async (userId, editionId) => {
       const record = await db.readingProgress.findFirst({
-        where: { userId, editionId, progressKind: "EBOOK" },
+        where: { userId, editionId, progressKind: "EBOOK", source: "kobo" },
       });
       if (!record) return null;
       return {
@@ -169,26 +169,28 @@ export default defineEventHandler(async (event) => {
       };
     },
     upsertProgress: async ({ userId, editionId, percent, locator, source }) => {
-      const existing = await db.readingProgress.findFirst({
-        where: { userId, editionId, progressKind: "EBOOK" },
-      });
-
       const jsonLocator = locator as Prisma.InputJsonValue;
-      const record = existing
-        ? await db.readingProgress.update({
-            where: { id: existing.id },
-            data: { percent, locator: jsonLocator, source },
-          })
-        : await db.readingProgress.create({
-            data: {
-              userId,
-              editionId,
-              progressKind: "EBOOK",
-              percent,
-              locator: jsonLocator,
-              source,
-            },
-          });
+      // Atomic upsert keyed on the per-source unique constraint — avoids the
+      // find-then-create race and never clobbers another source's row.
+      const record = await db.readingProgress.upsert({
+        where: {
+          userId_editionId_progressKind_source: {
+            userId,
+            editionId,
+            progressKind: "EBOOK",
+            source,
+          },
+        },
+        create: {
+          userId,
+          editionId,
+          progressKind: "EBOOK",
+          percent,
+          locator: jsonLocator,
+          source,
+        },
+        update: { percent, locator: jsonLocator },
+      });
 
       return {
         id: record.id,

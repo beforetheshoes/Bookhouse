@@ -186,10 +186,7 @@ export default defineEventHandler(async (event) => {
         where: { userId, editionId, progressKind: "EBOOK", source: "koreader" },
         select: { updatedAt: true },
       }),
-    upsertProgress: async ({ userId, editionId, percent, progress, device, deviceId, document, timestamp }) => {
-      const existing = await db.readingProgress.findFirst({
-        where: { userId, editionId, progressKind: "EBOOK", source: "koreader" },
-      });
+    upsertProgress: ({ userId, editionId, percent, progress, device, deviceId, document, timestamp }) => {
       const locator = {
         koreader: {
           document,
@@ -200,24 +197,29 @@ export default defineEventHandler(async (event) => {
         },
       } as Prisma.InputJsonValue;
 
-      return existing
-        ? db.readingProgress.update({
-            where: { id: existing.id },
-            data: { percent, locator, source: "koreader", updatedAt: timestamp },
-            select: { updatedAt: true },
-          })
-        : db.readingProgress.create({
-            data: {
-              userId,
-              editionId,
-              progressKind: "EBOOK",
-              percent,
-              locator,
-              source: "koreader",
-              updatedAt: timestamp,
-            },
-            select: { updatedAt: true },
-          });
+      // Atomic upsert on the per-source unique key — avoids the find-then-create
+      // race and never touches a kobo/manual row for the same edition.
+      return db.readingProgress.upsert({
+        where: {
+          userId_editionId_progressKind_source: {
+            userId,
+            editionId,
+            progressKind: "EBOOK",
+            source: "koreader",
+          },
+        },
+        create: {
+          userId,
+          editionId,
+          progressKind: "EBOOK",
+          percent,
+          locator,
+          source: "koreader",
+          updatedAt: timestamp,
+        },
+        update: { percent, locator, updatedAt: timestamp },
+        select: { updatedAt: true },
+      });
     },
     now: () => new Date(),
   });

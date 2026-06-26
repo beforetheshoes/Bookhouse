@@ -7,8 +7,7 @@ const {
   mockVerifyPassword,
   mockResolveKoreaderDocument,
   mockFindFirst,
-  mockCreate,
-  mockUpdate,
+  mockUpsert,
   mockEditionFileFindMany,
   mockFileAssetUpdate,
 } = vi.hoisted(() => ({
@@ -17,8 +16,7 @@ const {
   mockVerifyPassword: vi.fn(),
   mockResolveKoreaderDocument: vi.fn(),
   mockFindFirst: vi.fn(),
-  mockCreate: vi.fn(),
-  mockUpdate: vi.fn(),
+  mockUpsert: vi.fn(),
   mockEditionFileFindMany: vi.fn(),
   mockFileAssetUpdate: vi.fn(),
 }));
@@ -47,8 +45,7 @@ vi.mock("@bookhouse/db", () => ({
     },
     readingProgress: {
       findFirst: mockFindFirst,
-      create: mockCreate,
-      update: mockUpdate,
+      upsert: mockUpsert,
     },
   },
 }));
@@ -102,10 +99,10 @@ describe("KOReader progress route default handler", () => {
       };
     });
     mockFindFirst.mockResolvedValueOnce(null);
-    mockCreate.mockResolvedValue({ updatedAt: new Date("2024-07-01T12:00:00.000Z") });
+    mockUpsert.mockResolvedValue({ updatedAt: new Date("2024-07-01T12:00:00.000Z") });
   });
 
-  it("wires the module default handler through auth, resolution, and create", async () => {
+  it("wires the module default handler through auth, resolution, and upsert", async () => {
     const result = await handler({
       _headers: {
         "x-auth-user": "reader",
@@ -128,37 +125,47 @@ describe("KOReader progress route default handler", () => {
       document: "abcd1234",
       timestamp: 1719835200,
     });
-    expect(mockCreate).toHaveBeenCalledWith({
-      data: {
+    const koreaderLocator = {
+      koreader: {
+        document: "abcd1234",
+        progress: "epubcfi(/6/2!/4/2/8)",
+        percentage: 55,
+        device: "KOReader",
+        deviceId: "device-1",
+      },
+    };
+    expect(mockUpsert).toHaveBeenCalledWith({
+      where: {
+        userId_editionId_progressKind_source: {
+          userId: "u1",
+          editionId: "ed-1",
+          progressKind: "EBOOK",
+          source: "koreader",
+        },
+      },
+      create: {
         userId: "u1",
         editionId: "ed-1",
         progressKind: "EBOOK",
         percent: 55,
-        locator: {
-          koreader: {
-            document: "abcd1234",
-            progress: "epubcfi(/6/2!/4/2/8)",
-            percentage: 55,
-            device: "KOReader",
-            deviceId: "device-1",
-          },
-        },
+        locator: koreaderLocator,
         source: "koreader",
+        updatedAt: new Date("2024-07-01T12:00:00.000Z"),
+      },
+      update: {
+        percent: 55,
+        locator: koreaderLocator,
         updatedAt: new Date("2024-07-01T12:00:00.000Z"),
       },
       select: { updatedAt: true },
     });
   });
 
-  it("updates an existing koreader record when one already exists", async () => {
+  it("upserts when an older koreader record already exists and the device is newer", async () => {
     mockFindFirst.mockReset();
     mockFindFirst.mockResolvedValueOnce({
       updatedAt: new Date("2024-06-01T12:00:00.000Z"),
     });
-    mockFindFirst.mockResolvedValueOnce({
-      id: "rp-1",
-    });
-    mockUpdate.mockResolvedValue({ updatedAt: new Date("2024-07-01T12:00:00.000Z") });
 
     await handler({
       _headers: {
@@ -167,24 +174,18 @@ describe("KOReader progress route default handler", () => {
       },
     } as unknown as H3Event);
 
-    expect(mockUpdate).toHaveBeenCalledWith({
-      where: { id: "rp-1" },
-      data: {
-        percent: 55,
-        locator: {
-          koreader: {
-            document: "abcd1234",
-            progress: "epubcfi(/6/2!/4/2/8)",
-            percentage: 55,
-            device: "KOReader",
-            deviceId: "device-1",
+    expect(mockUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          userId_editionId_progressKind_source: {
+            userId: "u1",
+            editionId: "ed-1",
+            progressKind: "EBOOK",
+            source: "koreader",
           },
         },
-        source: "koreader",
-        updatedAt: new Date("2024-07-01T12:00:00.000Z"),
-      },
-      select: { updatedAt: true },
-    });
+      }),
+    );
   });
 
   it("falls back to an empty object when readBody returns null", async () => {
