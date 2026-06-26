@@ -214,9 +214,33 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y postgresql-client-17
 
+      - name: Install Playwright system dependencies
+        run: pnpm exec playwright install-deps chromium
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
       - name: Install Playwright browsers
-        timeout-minutes: 10
-        run: pnpm exec playwright install --with-deps chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 12
+        run: |
+          # The browser download can stall on the runner's network after the
+          # archive transfers (observed hanging indefinitely post-download). Kill
+          # a stalled attempt and retry on a fresh connection rather than letting
+          # it consume the whole job budget. A successful run seeds the cache, so
+          # later runs skip the download entirely.
+          for attempt in 1 2 3; do
+            if timeout 180 pnpm exec playwright install chromium; then
+              exit 0
+            fi
+            echo "playwright install attempt ${attempt} stalled; retrying..."
+            sleep 5
+          done
+          exit 1
 
       - name: Start app and worker
         run: |
