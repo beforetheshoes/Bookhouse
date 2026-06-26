@@ -80,7 +80,7 @@ describe("createSyncHandler", () => {
   it("returns empty array when no editions or synced books", async () => {
     const deps = makeDeps();
     const handler = createSyncHandler(deps);
-    const result = await handler(makeEvent()) as Record<string, unknown>[];
+    const result = await handler(makeEvent());
 
     expect(result).toEqual([]);
   });
@@ -115,7 +115,7 @@ describe("createSyncHandler", () => {
       getDeviceCollectionEditions: vi.fn().mockResolvedValue([makeEdition("e1")]),
     });
     const handler = createSyncHandler(deps);
-    const result = await handler(makeEvent()) as Record<string, unknown>[];
+    const result = await handler(makeEvent());
 
     // 1 NewEntitlement + 1 legacy UUID removal (cleanup pending)
     expect(result).toHaveLength(2);
@@ -134,7 +134,7 @@ describe("createSyncHandler", () => {
       getLegacyCleanupPending: vi.fn().mockResolvedValue(false),
     });
     const handler = createSyncHandler(deps);
-    const result = await handler(makeEvent()) as Record<string, unknown>[];
+    const result = await handler(makeEvent());
 
     // Only the NewEntitlement — no legacy removal re-sent.
     expect(result).toHaveLength(1);
@@ -157,7 +157,7 @@ describe("createSyncHandler", () => {
         .mockResolvedValue([{ editionId: "e1", removedAt: null }]),
     });
     const handler = createSyncHandler(deps);
-    const result = await handler(makeEvent()) as Record<string, unknown>[];
+    const result = await handler(makeEvent());
 
     expect(result).toHaveLength(1);
     const item = result.at(0) as { ChangedEntitlement: { BookEntitlement: { Id: string; IsRemoved: boolean } } };
@@ -191,7 +191,7 @@ describe("createSyncHandler", () => {
 
     const deps = makeDeps();
     const handler = createSyncHandler(deps);
-    const result = await handler(makeEvent(token)) as Record<string, unknown>[];
+    const result = await handler(makeEvent(token));
 
     expect(result).toEqual([]);
   });
@@ -203,7 +203,7 @@ describe("createSyncHandler", () => {
       context: { params: { token: validToken } },
       _query: { Filter: 123 },
     } as unknown as H3Event;
-    const result = await handler(event) as Record<string, unknown>[];
+    const result = await handler(event);
 
     expect(result).toEqual([]);
   });
@@ -257,7 +257,7 @@ describe("createSyncHandler", () => {
       getReadingProgress: vi.fn().mockResolvedValue(progressRecords),
     });
     const handler = createSyncHandler(deps);
-    const result = await handler(makeEvent()) as Record<string, unknown>[];
+    const result = await handler(makeEvent());
 
     const changedStates = result.filter(
       (r) => "ChangedReadingState" in r,
@@ -283,7 +283,7 @@ describe("createSyncHandler", () => {
       getReadingProgress: vi.fn().mockResolvedValue(progressRecords),
     });
     const handler = createSyncHandler(deps);
-    const result = await handler(makeEvent()) as Record<string, unknown>[];
+    const result = await handler(makeEvent());
 
     const item = result.at(0) as { NewEntitlement: { ReadingState: { StatusInfo: { Status: string }; CurrentBookmark: { ProgressPercent: number } } } };
     expect(item.NewEntitlement.ReadingState.StatusInfo.Status).toBe("Reading");
@@ -297,7 +297,7 @@ describe("createSyncHandler", () => {
       markSynced: vi.fn().mockRejectedValue(fkError),
     });
     const handler = createSyncHandler(deps);
-    const result = await handler(makeEvent()) as Record<string, unknown>[];
+    const result = await handler(makeEvent());
 
     // The entitlement is still returned; the edition simply isn't recorded yet.
     expect(result.at(0)).toHaveProperty("NewEntitlement");

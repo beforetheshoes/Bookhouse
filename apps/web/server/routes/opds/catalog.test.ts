@@ -40,7 +40,7 @@ describe("createCatalogHandler", () => {
   it("returns a navigation feed with all sub-feeds", async () => {
     const deps = makeDeps();
     const handler = createCatalogHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain("<title>Bookhouse</title>");
     expect(xml).toContain("<title>All Books</title>");
@@ -66,7 +66,7 @@ describe("createCatalogHandler", () => {
   it("includes search link", async () => {
     const deps = makeDeps();
     const handler = createCatalogHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain('rel="search"');
     expect(xml).toContain("/opds/opensearch");
@@ -75,7 +75,7 @@ describe("createCatalogHandler", () => {
   it("includes start link", async () => {
     const deps = makeDeps();
     const handler = createCatalogHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain('rel="start"');
     expect(xml).toContain('href="https://books.example.com/opds/catalog"');

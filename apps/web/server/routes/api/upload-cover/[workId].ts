@@ -85,7 +85,7 @@ export default defineEventHandler(async (event) => {
     resizeAndSave: async (imageBuffer, outputDir) => {
       await resizeCoverImage(
         { imageBuffer, outputDir },
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+         
         { sharp: sharpModule.default as never, mkdir, writeFile },
       );
     },

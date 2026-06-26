@@ -69,7 +69,7 @@ describe("createAuthorBooksHandler", () => {
   it("returns an acquisition feed with books by the author", async () => {
     const deps = makeDeps();
     const handler = createAuthorBooksHandler(deps);
-    const xml = (await handler(makeEvent("a1"))) as string;
+    const xml = (await handler(makeEvent("a1")));
 
     expect(xml).toContain("<title>Jane Austen</title>");
     expect(xml).toContain("<title>Book 1</title>");
@@ -123,7 +123,7 @@ describe("createAuthorBooksHandler", () => {
       getAuthorEditions: vi.fn().mockResolvedValue([]),
     });
     const handler = createAuthorBooksHandler(deps);
-    const xml = (await handler(makeEvent("a1"))) as string;
+    const xml = (await handler(makeEvent("a1")));
 
     expect(xml).toContain("<title>Jane Austen</title>");
     expect(xml).not.toContain("<entry>");

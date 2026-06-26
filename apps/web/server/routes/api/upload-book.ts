@@ -287,12 +287,12 @@ export async function parseMultipartToStaging(
       pendingFileWrites.push(writePromise);
     });
 
-    bb.on("error", (err) => abort(err as Error));
+    bb.on("error", (err) => { abort(err as Error); });
     bb.on("close", () => {
       if (aborted) return;
       Promise.all(pendingFileWrites)
-        .then(() => resolve({ fields, files }))
-        .catch((err: unknown) => abort(err as Error));
+        .then(() => { resolve({ fields, files }); })
+        .catch((err: unknown) => { abort(err as Error); });
     });
 
     req.pipe(bb);

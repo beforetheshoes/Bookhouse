@@ -71,7 +71,7 @@ describe("createSeriesBooksHandler", () => {
   it("returns an acquisition feed with series editions", async () => {
     const deps = makeDeps();
     const handler = createSeriesBooksHandler(deps);
-    const xml = (await handler(makeEvent("series-1"))) as string;
+    const xml = (await handler(makeEvent("series-1")));
 
     expect(xml).toContain("<title>Discworld</title>");
     expect(xml).toContain("<title>Book 1</title>");
@@ -132,7 +132,7 @@ describe("createSeriesBooksHandler", () => {
   it("includes correct feed id and self href", async () => {
     const deps = makeDeps();
     const handler = createSeriesBooksHandler(deps);
-    const xml = (await handler(makeEvent("series-1"))) as string;
+    const xml = (await handler(makeEvent("series-1")));
 
     expect(xml).toContain("<id>urn:bookhouse:series:series-1</id>");
     expect(xml).toContain('href="https://books.example.com/opds/series/series-1"');
@@ -143,7 +143,7 @@ describe("createSeriesBooksHandler", () => {
       getSeriesEditions: vi.fn().mockResolvedValue([]),
     });
     const handler = createSeriesBooksHandler(deps);
-    const xml = (await handler(makeEvent("series-1"))) as string;
+    const xml = (await handler(makeEvent("series-1")));
 
     expect(xml).toContain("<title>Discworld</title>");
     expect(xml).not.toContain("<entry>");

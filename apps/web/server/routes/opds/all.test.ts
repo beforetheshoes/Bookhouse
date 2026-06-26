@@ -68,7 +68,7 @@ describe("createAllBooksHandler", () => {
   it("returns an acquisition feed with entries", async () => {
     const deps = makeDeps();
     const handler = createAllBooksHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain("<title>All Books</title>");
     expect(xml).toContain("<title>Book 1</title>");
@@ -109,7 +109,7 @@ describe("createAllBooksHandler", () => {
       countEditions: vi.fn().mockResolvedValue(50),
     });
     const handler = createAllBooksHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain('rel="next"');
     expect(xml).toContain("<opensearch:totalResults>50</opensearch:totalResults>");
@@ -137,7 +137,7 @@ describe("createAllBooksHandler", () => {
       countEditions: vi.fn().mockResolvedValue(0),
     });
     const handler = createAllBooksHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain("<title>All Books</title>");
     expect(xml).not.toContain("<entry>");
@@ -146,7 +146,7 @@ describe("createAllBooksHandler", () => {
   it("includes search link", async () => {
     const deps = makeDeps();
     const handler = createAllBooksHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain('rel="search"');
   });

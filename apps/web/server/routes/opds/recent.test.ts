@@ -65,7 +65,7 @@ describe("createRecentHandler", () => {
   it("returns an acquisition feed with recent entries", async () => {
     const deps = makeDeps();
     const handler = createRecentHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain("<title>Recently Added</title>");
     expect(xml).toContain("<title>Book 1</title>");
@@ -95,7 +95,7 @@ describe("createRecentHandler", () => {
   it("does not include pagination", async () => {
     const deps = makeDeps();
     const handler = createRecentHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).not.toContain("opensearch:totalResults");
   });
@@ -105,7 +105,7 @@ describe("createRecentHandler", () => {
       getRecentEditions: vi.fn().mockResolvedValue([]),
     });
     const handler = createRecentHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain("<title>Recently Added</title>");
     expect(xml).not.toContain("<entry>");

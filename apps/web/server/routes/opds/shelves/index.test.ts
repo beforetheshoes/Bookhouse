@@ -53,7 +53,7 @@ describe("createShelfListHandler", () => {
   it("returns a navigation feed with shelf entries", async () => {
     const deps = makeDeps();
     const handler = createShelfListHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain("<title>My Shelves</title>");
     expect(xml).toContain("<title>Favorites</title>");
@@ -95,7 +95,7 @@ describe("createShelfListHandler", () => {
       getShelves: vi.fn().mockResolvedValue([]),
     });
     const handler = createShelfListHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain("<title>My Shelves</title>");
     expect(xml).not.toContain("<entry>");
@@ -104,7 +104,7 @@ describe("createShelfListHandler", () => {
   it("includes thr:count for each shelf", async () => {
     const deps = makeDeps();
     const handler = createShelfListHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain('thr:count="5"');
     expect(xml).toContain('thr:count="3"');

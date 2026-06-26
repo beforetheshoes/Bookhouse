@@ -53,7 +53,7 @@ describe("createSeriesListHandler", () => {
   it("returns a navigation feed with series entries", async () => {
     const deps = makeDeps();
     const handler = createSeriesListHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain("<title>Series</title>");
     expect(xml).toContain("<title>Discworld</title>");
@@ -83,7 +83,7 @@ describe("createSeriesListHandler", () => {
   it("includes thr:count for work counts", async () => {
     const deps = makeDeps();
     const handler = createSeriesListHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain('thr:count="41"');
     expect(xml).toContain('thr:count="7"');
@@ -92,7 +92,7 @@ describe("createSeriesListHandler", () => {
   it("includes correct hrefs for each series", async () => {
     const deps = makeDeps();
     const handler = createSeriesListHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain('href="https://books.example.com/opds/series/series-1"');
     expect(xml).toContain('href="https://books.example.com/opds/series/series-2"');
@@ -103,7 +103,7 @@ describe("createSeriesListHandler", () => {
       getSeries: vi.fn().mockResolvedValue([]),
     });
     const handler = createSeriesListHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain("<title>Series</title>");
     expect(xml).not.toContain("<entry>");

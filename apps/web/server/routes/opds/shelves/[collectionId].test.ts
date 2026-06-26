@@ -69,7 +69,7 @@ describe("createShelfBooksHandler", () => {
   it("returns an acquisition feed with books in the shelf", async () => {
     const deps = makeDeps();
     const handler = createShelfBooksHandler(deps);
-    const xml = (await handler(makeEvent("s1"))) as string;
+    const xml = (await handler(makeEvent("s1")));
 
     expect(xml).toContain("<title>Favorites</title>");
     expect(xml).toContain("<title>Book 1</title>");
@@ -132,7 +132,7 @@ describe("createShelfBooksHandler", () => {
       getShelfEditions: vi.fn().mockResolvedValue([]),
     });
     const handler = createShelfBooksHandler(deps);
-    const xml = (await handler(makeEvent("s1"))) as string;
+    const xml = (await handler(makeEvent("s1")));
 
     expect(xml).toContain("<title>Favorites</title>");
     expect(xml).not.toContain("<entry>");

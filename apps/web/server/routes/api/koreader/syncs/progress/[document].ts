@@ -16,7 +16,7 @@ export interface KoreaderProgressGetDeps {
 export function createKoreaderProgressGetHandler(deps: KoreaderProgressGetDeps) {
   return async (event: H3Event) => {
     const auth = await deps.auth(event);
-    const documentParam = (event.context.params as Record<string, string> | undefined)?.document;
+    const documentParam = (event.context.params)?.document;
     if (!documentParam) {
       throw createError({
         statusCode: 400,

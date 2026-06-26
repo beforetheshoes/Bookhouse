@@ -53,7 +53,7 @@ describe("createAuthorListHandler", () => {
   it("returns a navigation feed with author entries", async () => {
     const deps = makeDeps();
     const handler = createAuthorListHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain("<title>Authors</title>");
     expect(xml).toContain("<title>Jane Austen</title>");
@@ -87,7 +87,7 @@ describe("createAuthorListHandler", () => {
       getAuthors: vi.fn().mockResolvedValue([]),
     });
     const handler = createAuthorListHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain("<title>Authors</title>");
     expect(xml).not.toContain("<entry>");
@@ -96,7 +96,7 @@ describe("createAuthorListHandler", () => {
   it("includes thr:count for each author", async () => {
     const deps = makeDeps();
     const handler = createAuthorListHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain('thr:count="5"');
     expect(xml).toContain('thr:count="3"');

@@ -52,7 +52,7 @@ describe("createPublisherListHandler", () => {
   it("returns a navigation feed with publisher entries", async () => {
     const deps = makeDeps();
     const handler = createPublisherListHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain("<title>Publishers</title>");
     expect(xml).toContain("<title>Penguin Books</title>");
@@ -86,7 +86,7 @@ describe("createPublisherListHandler", () => {
       getPublishers: vi.fn().mockResolvedValue([]),
     });
     const handler = createPublisherListHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain("<title>Publishers</title>");
     expect(xml).not.toContain("<entry>");
@@ -95,7 +95,7 @@ describe("createPublisherListHandler", () => {
   it("includes thr:count for each publisher", async () => {
     const deps = makeDeps();
     const handler = createPublisherListHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain('thr:count="10"');
     expect(xml).toContain('thr:count="7"');
