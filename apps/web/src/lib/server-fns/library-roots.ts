@@ -317,6 +317,9 @@ export const scanLibraryRootServerFn = createServerFn({
         kind: "SCAN_ROOT",
         libraryRootId: data.libraryRootId,
         status: { in: ["QUEUED", "RUNNING"] },
+        // Only a *live* scan blocks: a ghost scan (worker crashed, ImportJob
+        // stuck QUEUED/RUNNING) would otherwise permanently prevent re-scans.
+        updatedAt: { gte: new Date(Date.now() - STALE_SCAN_THRESHOLD_MS) },
       },
       select: { id: true, bullmqJobId: true },
     });

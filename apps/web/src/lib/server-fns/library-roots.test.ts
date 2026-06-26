@@ -327,6 +327,7 @@ describe("scanLibraryRootServerFn", () => {
         kind: "SCAN_ROOT",
         libraryRootId: "root-xyz",
         status: { in: ["QUEUED", "RUNNING"] },
+        updatedAt: { gte: expect.any(Date) as Date },
       },
       select: { id: true, bullmqJobId: true },
     });
