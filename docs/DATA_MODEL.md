@@ -132,7 +132,11 @@ skip silently and succeed, never throw (see `feedback_stale_jobs`).
   FileAsset's content hash reappears at a new path, the scan transfers the
   `EditionFile` links from the MISSING asset to the present one. It transfers
   from the first MISSING match **that actually has edition links**, skipping
-  link-less orphans that happen to share the hash.
+  link-less orphans that happen to share the hash. The repoint + stub-Work delete
+  run in **one transaction** (`IngestDb.completeMove`): a crash partway through
+  would otherwise strand a duplicate stub Work that re-scans wouldn't clean (once
+  the old asset is link-less, move detection skips it) and `detect-orphans`
+  wouldn't catch (the stub edition still has a file).
 - **Moved-from cleanup.** After a hash job reports `movedFromFileAssetId`, the
   worker (`workers/library-worker/src/index.ts`) cascade-cleans that orphaned
   source asset so dead `MISSING` rows don't accumulate and can't confuse future

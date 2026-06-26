@@ -342,6 +342,17 @@ export interface IngestDb {
       };
     }): Promise<ExternalLinkRecord[]>;
   };
+  /**
+   * Atomically complete a detected move: repoint the given EditionFiles onto the
+   * destination FileAsset and delete the now-redundant stub Work. Wrapping these
+   * in one transaction prevents a mid-transfer crash from leaving a duplicate
+   * stub Work (which re-scans would not clean) or a half-moved edition.
+   */
+  completeMove(args: {
+    editionFileIds: string[];
+    toFileAssetId: string;
+    deleteWorkId: string;
+  }): Promise<void>;
 }
 
 type IngestLogValue =
@@ -1233,6 +1244,17 @@ function createDefaultIngestDb(): IngestDb {
     duplicateCandidate: prisma.duplicateCandidate as object as IngestDb["duplicateCandidate"],
     matchSuggestion: prisma.matchSuggestion as object as IngestDb["matchSuggestion"],
     externalLink: prisma.externalLink as object as IngestDb["externalLink"],
+    async completeMove({ editionFileIds, toFileAssetId, deleteWorkId }) {
+      await prisma.$transaction([
+        ...editionFileIds.map((id) =>
+          prisma.editionFile.update({
+            where: { id },
+            data: { fileAssetId: toFileAssetId },
+          }),
+        ),
+        prisma.work.delete({ where: { id: deleteWorkId } }),
+      ]);
+    },
   };
 }
 
@@ -2223,13 +2245,13 @@ export function createIngestServices(
               if (missingEditionFiles.length === 0) {
                 continue;
               }
-              for (const ef of missingEditionFiles) {
-                await ingestDb.editionFile.update({
-                  where: { id: ef.id },
-                  data: { fileAssetId: fileAsset.id },
-                });
-              }
-              await ingestDb.work.delete({ where: { id: currentWork.id } });
+              // Repoint the links and delete the stub work atomically — a crash
+              // partway through would otherwise strand a duplicate stub Work.
+              await ingestDb.completeMove({
+                editionFileIds: missingEditionFiles.map((ef) => ef.id),
+                toFileAssetId: fileAsset.id,
+                deleteWorkId: currentWork.id,
+              });
               logger.info(
                 { fromFileAssetId: missingMatch.id, toFileAssetId: fileAsset.id },
                 "Move detected: transferred edition links",

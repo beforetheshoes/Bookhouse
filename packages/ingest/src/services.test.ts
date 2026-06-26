@@ -451,6 +451,17 @@ function createTestDb(state: TestState): IngestDb {
         return updated;
       },
     },
+    async completeMove({ editionFileIds, toFileAssetId, deleteWorkId }) {
+      await Promise.resolve();
+      for (const id of editionFileIds) {
+        const existing = [...state.editionFiles.values()].find((ef) => ef.id === id);
+        if (!existing) throw new Error(`Unknown edition file: ${id}`);
+        state.editionFiles.delete(getEditionFileKey(existing.editionId, existing.fileAssetId));
+        const updated = { ...existing, fileAssetId: toFileAssetId };
+        state.editionFiles.set(getEditionFileKey(updated.editionId, updated.fileAssetId), updated);
+      }
+      state.works.delete(deleteWorkId);
+    },
     contributor: {
       async create({ data }) {
         await Promise.resolve();
