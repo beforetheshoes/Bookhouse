@@ -5,7 +5,7 @@ import { createCoverHandler, type CoverHandlerDeps } from "./handler";
 function createMockDeps(overrides: Partial<CoverHandlerDeps> = {}): CoverHandlerDeps {
   return {
     existsSync: vi.fn().mockReturnValue(true),
-    createReadStream: vi.fn().mockReturnValue("mock-stream" as unknown as NodeJS.ReadableStream),
+    createReadStream: vi.fn().mockReturnValue("mock-stream"),
     coverCacheDir: "/data/covers",
     setResponseHeader: vi.fn(),
     sendStream: vi.fn(),
@@ -21,7 +21,7 @@ function createMockEvent(workId: string, size: string): H3Event {
   } as Partial<H3Event> as H3Event;
 }
 
-function captureThrow(fn: () => unknown): { statusCode?: number; statusMessage?: string } {
+function captureThrow(fn: () => void): { statusCode?: number; statusMessage?: string } {
   try {
     fn();
   } catch (error) {

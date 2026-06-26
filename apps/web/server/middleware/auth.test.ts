@@ -15,7 +15,7 @@ function createMockDeps(
 
 function createMockEvent(pathname: string): H3Event {
   return {
-    path: pathname,
+    url: { pathname },
     context: {},
   } as Partial<H3Event> as H3Event;
 }
@@ -178,14 +178,14 @@ describe("requireOwnerFromEvent", () => {
     const event = {
       context: { user: { id: "u1", roles: ["VIEWER"] } },
     } as Partial<H3Event> as H3Event;
-    expect(() => requireOwnerFromEvent(event)).toThrowError(
+    expect(() => requireOwnerFromEvent(event)).toThrow(
       expect.objectContaining({ statusCode: 403 }),
     );
   });
 
   it("throws 401 when no user is attached", () => {
     const event = { context: {} } as Partial<H3Event> as H3Event;
-    expect(() => requireOwnerFromEvent(event)).toThrowError(
+    expect(() => requireOwnerFromEvent(event)).toThrow(
       expect.objectContaining({ statusCode: 401 }),
     );
   });

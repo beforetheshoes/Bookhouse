@@ -90,10 +90,13 @@ describe("createSyncHandler", () => {
     const handler = createSyncHandler(deps);
     await handler(makeEvent());
 
-    const calls = (deps.setResponseHeader as ReturnType<typeof vi.fn>).mock.calls;
-    const synctokenCall = calls.find((c: unknown[]) => c[1] === "x-kobo-synctoken");
+    const calls = (deps.setResponseHeader as ReturnType<typeof vi.fn>).mock.calls as [object, string, string][];
+    const synctokenCall = calls.find((c) => c[1] === "x-kobo-synctoken");
     expect(synctokenCall).toBeDefined();
-    const decoded = JSON.parse(Buffer.from(synctokenCall![2] as string, "base64").toString());
+    const decoded = JSON.parse(Buffer.from(synctokenCall?.[2] ?? "", "base64").toString()) as {
+      version: string;
+      data: { books_last_modified: number; raw_kobo_store_token: string };
+    };
     expect(decoded.version).toBe("1-1-0");
     expect(decoded.data).toBeDefined();
     expect(typeof decoded.data.books_last_modified).toBe("number");
@@ -106,7 +109,7 @@ describe("createSyncHandler", () => {
     await handler(makeEvent());
 
     const calls = (deps.setResponseHeader as ReturnType<typeof vi.fn>).mock.calls;
-    const apitokenCall = calls.find((c: unknown[]) => c[1] === "x-kobo-apitoken");
+    const apitokenCall = calls.find((c: string[]) => c[1] === "x-kobo-apitoken");
     expect(apitokenCall).toBeUndefined();
   });
 
@@ -209,7 +212,7 @@ describe("createSyncHandler", () => {
   });
 
   it("sets x-kobo-sync: continue header when more than 100 editions pending", async () => {
-    const editions = Array.from({ length: 101 }, (_, i) => makeEdition(`e${i}`));
+    const editions = Array.from({ length: 101 }, (_, i) => makeEdition(`e${String(i)}`));
     const deps = makeDeps({
       getDeviceCollectionEditions: vi.fn().mockResolvedValue(editions),
     });

@@ -291,9 +291,14 @@ export async function parseMultipartToStaging(
     bb.on("error", (err) => { abort(err as Error); });
     bb.on("close", () => {
       if (aborted) return;
-      Promise.all(pendingFileWrites)
-        .then(() => { resolve({ fields, files }); })
-        .catch((err: Error) => { abort(err); });
+      void (async () => {
+        try {
+          await Promise.all(pendingFileWrites);
+          resolve({ fields, files });
+        } catch (err) {
+          abort(err instanceof Error ? err : new Error(String(err)));
+        }
+      })();
     });
 
     req.pipe(bb);

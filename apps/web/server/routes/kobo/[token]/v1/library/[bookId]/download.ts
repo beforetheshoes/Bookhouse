@@ -150,12 +150,12 @@ export default defineEventHandler(async (event) => {
       const { convertToKepub: convert } = await import("@bookhouse/kobo");
       const { execFile: execFileCb } = await import("node:child_process");
       const { promisify } = await import("node:util");
-      const { existsSync: exists, mkdirSync } = await import("node:fs");
+      const { existsSync: fsExistsSync, mkdirSync } = await import("node:fs");
       const execFile = promisify(execFileCb);
       const cacheDir = process.env.KEPUB_CACHE_DIR ?? "/tmp/kepub-cache";
       return convert(epubPath, cacheDir, {
         execFile: (cmd, args) => execFile(cmd, args),
-        existsSync: exists,
+        existsSync: fsExistsSync,
         mkdirSync,
       });
     },

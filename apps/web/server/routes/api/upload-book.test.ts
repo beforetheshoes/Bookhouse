@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { H3Event } from "h3";
 import { MediaKind } from "@bookhouse/domain";
 import {
   createUploadBookHandler,
@@ -13,7 +14,7 @@ interface HandlerOverrides {
   parseResult?: { fields: Record<string, string | undefined>; files: UploadedFilePart[] };
   parseError?: Error;
   libraryRoot?: { id: string; path: string } | null;
-  requireOwner?: (event: unknown) => void;
+  requireOwner?: (event: H3Event) => void;
   finalizeResult?: { absolutePaths: string[] };
   finalizeError?: Error;
   enqueueResult?: string | undefined;
@@ -37,11 +38,11 @@ function makeDeps(overrides: HandlerOverrides = {}): {
   const enqueueIngestJob = vi.fn().mockResolvedValue(
     "enqueueResult" in overrides ? overrides.enqueueResult : "bull-1",
   );
-  const finalize = vi.fn().mockImplementation(async () => {
+  const finalize = vi.fn().mockImplementation(() => {
     if (overrides.finalizeError) throw overrides.finalizeError;
     return overrides.finalizeResult ?? { absolutePaths: ["/data/ebooks/Author/Title/book.epub"] };
   });
-  const parseMultipart = vi.fn().mockImplementation(async () => {
+  const parseMultipart = vi.fn().mockImplementation(() => {
     if (overrides.parseError) throw overrides.parseError;
     return overrides.parseResult ?? {
       fields: {
@@ -134,7 +135,7 @@ describe("createUploadBookHandler", () => {
     });
     await expect(createUploadBookHandler(deps)({} as never)).rejects.toMatchObject({
       statusCode: 400,
-      statusMessage: expect.stringContaining("libraryRootId"),
+      statusMessage: expect.stringContaining("libraryRootId") as string,
     });
   });
 
@@ -146,7 +147,7 @@ describe("createUploadBookHandler", () => {
     });
     await expect(createUploadBookHandler(deps)({} as never)).rejects.toMatchObject({
       statusCode: 400,
-      statusMessage: expect.stringContaining("title"),
+      statusMessage: expect.stringContaining("title") as string,
     });
   });
 
@@ -158,7 +159,7 @@ describe("createUploadBookHandler", () => {
     });
     await expect(createUploadBookHandler(deps)({} as never)).rejects.toMatchObject({
       statusCode: 400,
-      statusMessage: expect.stringContaining("author"),
+      statusMessage: expect.stringContaining("author") as string,
     });
   });
 
@@ -168,7 +169,7 @@ describe("createUploadBookHandler", () => {
     });
     await expect(createUploadBookHandler(deps)({} as never)).rejects.toMatchObject({
       statusCode: 400,
-      statusMessage: expect.stringContaining("at least one file"),
+      statusMessage: expect.stringContaining("at least one file") as string,
     });
   });
 
@@ -183,7 +184,7 @@ describe("createUploadBookHandler", () => {
     });
     await expect(createUploadBookHandler(deps)({} as never)).rejects.toMatchObject({
       statusCode: 400,
-      statusMessage: expect.stringContaining("no book content"),
+      statusMessage: expect.stringContaining("no book content") as string,
     });
   });
 
@@ -199,7 +200,7 @@ describe("createUploadBookHandler", () => {
     });
     await expect(createUploadBookHandler(deps)({} as never)).rejects.toMatchObject({
       statusCode: 400,
-      statusMessage: expect.stringContaining("mix"),
+      statusMessage: expect.stringContaining("mix") as string,
     });
   });
 
@@ -343,7 +344,7 @@ describe("sanitizeUploadFilename", () => {
 
 describe("finalizeUpload", () => {
   it("writes a metadata.opf sidecar for ebook uploads when none was supplied", async () => {
-    const targetDir = `${await import("node:os").then((m) => m.tmpdir())}/bookhouse-upload-test-${Math.random()}`;
+    const targetDir = `${await import("node:os").then((m) => m.tmpdir())}/bookhouse-upload-test-${String(Math.random())}`;
     const fs = await import("node:fs/promises");
     await fs.mkdir(targetDir, { recursive: true });
     const stagingDir = `${targetDir}-staging`;
@@ -377,7 +378,7 @@ describe("finalizeUpload", () => {
   it("writes a metadata.json sidecar for audiobook uploads when none was supplied", async () => {
     const fs = await import("node:fs/promises");
     const os = await import("node:os");
-    const targetDir = `${os.tmpdir()}/bookhouse-upload-test-${Math.random()}`;
+    const targetDir = `${os.tmpdir()}/bookhouse-upload-test-${String(Math.random())}`;
     await fs.mkdir(targetDir, { recursive: true });
     const stagingDir = `${targetDir}-staging`;
     await fs.mkdir(stagingDir, { recursive: true });
@@ -409,7 +410,7 @@ describe("finalizeUpload", () => {
   it("does not overwrite a user-supplied metadata.opf", async () => {
     const fs = await import("node:fs/promises");
     const os = await import("node:os");
-    const targetDir = `${os.tmpdir()}/bookhouse-upload-test-${Math.random()}`;
+    const targetDir = `${os.tmpdir()}/bookhouse-upload-test-${String(Math.random())}`;
     await fs.mkdir(targetDir, { recursive: true });
     const stagingDir = `${targetDir}-staging`;
     await fs.mkdir(stagingDir, { recursive: true });
@@ -440,7 +441,7 @@ describe("finalizeUpload", () => {
   it("does not overwrite a user-supplied metadata.json", async () => {
     const fs = await import("node:fs/promises");
     const os = await import("node:os");
-    const targetDir = `${os.tmpdir()}/bookhouse-upload-test-${Math.random()}`;
+    const targetDir = `${os.tmpdir()}/bookhouse-upload-test-${String(Math.random())}`;
     await fs.mkdir(targetDir, { recursive: true });
     const stagingDir = `${targetDir}-staging`;
     await fs.mkdir(stagingDir, { recursive: true });
@@ -467,7 +468,7 @@ describe("finalizeUpload", () => {
   it("writes minimal sidecar when optional fields are omitted", async () => {
     const fs = await import("node:fs/promises");
     const os = await import("node:os");
-    const targetDir = `${os.tmpdir()}/bookhouse-upload-test-${Math.random()}`;
+    const targetDir = `${os.tmpdir()}/bookhouse-upload-test-${String(Math.random())}`;
     await fs.mkdir(targetDir, { recursive: true });
     const stagingDir = `${targetDir}-staging`;
     await fs.mkdir(stagingDir, { recursive: true });
@@ -493,7 +494,7 @@ describe("finalizeUpload", () => {
   it("writes audiobook sidecar with series when supplied (no description)", async () => {
     const fs = await import("node:fs/promises");
     const os = await import("node:os");
-    const targetDir = `${os.tmpdir()}/bookhouse-upload-test-${Math.random()}`;
+    const targetDir = `${os.tmpdir()}/bookhouse-upload-test-${String(Math.random())}`;
     await fs.mkdir(targetDir, { recursive: true });
     const stagingDir = `${targetDir}-staging`;
     await fs.mkdir(stagingDir, { recursive: true });
@@ -522,7 +523,7 @@ describe("finalizeUpload", () => {
   it("writes ebook sidecar with series but no index", async () => {
     const fs = await import("node:fs/promises");
     const os = await import("node:os");
-    const targetDir = `${os.tmpdir()}/bookhouse-upload-test-${Math.random()}`;
+    const targetDir = `${os.tmpdir()}/bookhouse-upload-test-${String(Math.random())}`;
     await fs.mkdir(targetDir, { recursive: true });
     const stagingDir = `${targetDir}-staging`;
     await fs.mkdir(stagingDir, { recursive: true });
@@ -548,7 +549,7 @@ describe("finalizeUpload", () => {
   it("writes audiobook sidecar with series but no index", async () => {
     const fs = await import("node:fs/promises");
     const os = await import("node:os");
-    const targetDir = `${os.tmpdir()}/bookhouse-upload-test-${Math.random()}`;
+    const targetDir = `${os.tmpdir()}/bookhouse-upload-test-${String(Math.random())}`;
     await fs.mkdir(targetDir, { recursive: true });
     const stagingDir = `${targetDir}-staging`;
     await fs.mkdir(stagingDir, { recursive: true });
@@ -575,7 +576,7 @@ describe("finalizeUpload", () => {
   it("writes audiobook sidecar with description when provided", async () => {
     const fs = await import("node:fs/promises");
     const os = await import("node:os");
-    const targetDir = `${os.tmpdir()}/bookhouse-upload-test-${Math.random()}`;
+    const targetDir = `${os.tmpdir()}/bookhouse-upload-test-${String(Math.random())}`;
     await fs.mkdir(targetDir, { recursive: true });
     const stagingDir = `${targetDir}-staging`;
     await fs.mkdir(stagingDir, { recursive: true });

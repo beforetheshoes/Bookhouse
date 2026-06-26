@@ -3,8 +3,6 @@ import type { SeriesListHandlerDeps } from "./index";
 import type { H3Event } from "h3";
 
 vi.mock("h3", () => ({
-  getRequestHeader: (event: { _authorization?: string }, _name: string) =>
-    event._authorization,
   defineEventHandler: vi.fn(),
 }));
 
@@ -29,7 +27,7 @@ function makeSeries(id: string, name: string, workCount: number) {
 
 function makeEvent(): H3Event {
   return {
-    _authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
+    req: new Request("http://localhost/", { headers: { authorization: `Basic ${Buffer.from("reader:password").toString("base64")}` } }),
   } as Partial<H3Event> as H3Event;
 }
 

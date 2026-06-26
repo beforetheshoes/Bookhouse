@@ -17,15 +17,11 @@ const {
   mockFileAssetUpdate: vi.fn(),
 }));
 
-vi.mock("h3", async () => {
-  const actual = await vi.importActual<typeof import("h3")>("h3");
-  return {
-    ...actual,
-    defineEventHandler: (handler: (event: H3Event) => unknown) => handler,
-    getRequestHeader: (event: { _headers?: Record<string, string> }, name: string) =>
-      event._headers?.[name.toLowerCase()] ?? null,
-  };
-});
+vi.mock("h3", () => ({
+  defineEventHandler: (handler: (event: H3Event) => object | Promise<object>) => handler,
+  createError: (opts: { statusCode: number; statusMessage?: string; message?: string }) =>
+    Object.assign(new Error(opts.message), { statusCode: opts.statusCode, statusMessage: opts.statusMessage }),
+}));
 
 vi.mock("@bookhouse/db", () => ({
   db: {
@@ -48,7 +44,7 @@ vi.mock("@bookhouse/opds", () => ({
   verifyPassword: mockVerifyPassword,
 }));
 
-vi.mock("../shared", async () => {
+vi.mock("../shared", () => {
   return {
     resolveKoreaderDocument: mockResolveKoreaderDocument,
     resolveKoreaderTimestamp: (timestamp: number | undefined, fallback: Date) =>
@@ -73,7 +69,11 @@ describe("KOReader progress document route default handler", () => {
     mockVerifyPassword.mockResolvedValue(true);
     mockEditionFileFindMany.mockResolvedValue([]);
     mockFileAssetUpdate.mockResolvedValue({});
-    mockResolveKoreaderDocument.mockImplementation(async (deps) => {
+    mockResolveKoreaderDocument.mockImplementation(async (deps: {
+      findExactCandidates: () => Promise<object[]>;
+      findUnhashedCandidates: () => Promise<object[]>;
+      updateFileAssetHash: (id: string, hash: string) => Promise<void>;
+    }) => {
       await deps.findExactCandidates();
       await deps.findUnhashedCandidates();
       await deps.updateFileAssetHash("fa-1", "abcd1234");
@@ -101,10 +101,10 @@ describe("KOReader progress document route default handler", () => {
 
   it("wires the module default handler through auth, resolution, and lookup", async () => {
     const result = await handler({
-      _headers: {
+      req: new Request("http://localhost/", { headers: {
         "x-auth-user": "reader",
         "x-auth-key": "secret",
-      },
+      } }),
       context: {
         params: {
           document: "abcd1234",
@@ -116,7 +116,7 @@ describe("KOReader progress document route default handler", () => {
     expect(mockVerifyPassword).toHaveBeenCalledWith("secret", "salt:hash");
     expect(mockResolveKoreaderDocument).toHaveBeenCalledWith(expect.objectContaining({
       document: "abcd1234",
-      updateFileAssetHash: expect.any(Function),
+      updateFileAssetHash: expect.any(Function) as object,
     }));
     expect(mockEditionFileFindMany).toHaveBeenCalledTimes(2);
     expect(mockFileAssetUpdate).toHaveBeenCalledWith({

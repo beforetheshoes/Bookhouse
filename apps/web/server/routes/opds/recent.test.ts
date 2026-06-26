@@ -4,8 +4,6 @@ import type { H3Event } from "h3";
 import type { OpdsEditionData } from "@bookhouse/opds";
 
 vi.mock("h3", () => ({
-  getRequestHeader: (event: { _authorization?: string }, _name: string) =>
-    event._authorization,
   defineEventHandler: vi.fn(),
 }));
 
@@ -43,7 +41,7 @@ function makeEdition(id: string): OpdsEditionData {
 
 function makeEvent(): H3Event {
   return {
-    _authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
+    req: new Request("http://localhost/", { headers: { authorization: `Basic ${Buffer.from("reader:password").toString("base64")}` } }),
     path: "/opds/recent",
   } as Partial<H3Event> as H3Event;
 }

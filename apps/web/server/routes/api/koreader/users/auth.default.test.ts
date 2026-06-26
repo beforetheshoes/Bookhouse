@@ -6,15 +6,9 @@ const { mockFindCredential, mockVerifyPassword } = vi.hoisted(() => ({
   mockVerifyPassword: vi.fn(),
 }));
 
-vi.mock("h3", async () => {
-  const actual = await vi.importActual<typeof import("h3")>("h3");
-  return {
-    ...actual,
-    defineEventHandler: (handler: (event: H3Event) => unknown) => handler,
-    getRequestHeader: (event: { _headers?: Record<string, string> }, name: string) =>
-      event._headers?.[name.toLowerCase()] ?? null,
-  };
-});
+vi.mock("h3", () => ({
+  defineEventHandler: (handler: (event: H3Event) => object | Promise<object>) => handler,
+}));
 
 vi.mock("@bookhouse/db", () => ({
   db: {
@@ -45,10 +39,10 @@ describe("KOReader users/auth default handler", () => {
 
   it("authenticates and returns the KOReader authorization payload", async () => {
     await expect(handler({
-      _headers: {
+      req: new Request("http://localhost/", { headers: {
         "x-auth-user": "reader",
         "x-auth-key": "secret",
-      },
+      } }),
     } as Partial<H3Event> as H3Event)).resolves.toEqual({ authorized: "OK" });
 
     expect(mockFindCredential).toHaveBeenCalledWith({ where: { username: "reader" } });

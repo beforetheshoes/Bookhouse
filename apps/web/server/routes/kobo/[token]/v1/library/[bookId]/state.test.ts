@@ -100,13 +100,10 @@ describe("createStateHandler", () => {
 
       expect(Array.isArray(result)).toBe(true);
       expect(result).toHaveLength(1);
-      expect(result[0]).toEqual(expect.objectContaining({
-        EntitlementId: "ed-1",
-        StatusInfo: expect.objectContaining({
-          Status: "ReadyToRead",
-          TimesStartedReading: 0,
-        }),
-      }));
+      const [state] = result;
+      expect(state?.EntitlementId).toBe("ed-1");
+      expect(state?.StatusInfo.Status).toBe("ReadyToRead");
+      expect(state?.StatusInfo.TimesStartedReading).toBe(0);
     });
 
     it("returns array with formatted reading state when progress exists", async () => {
@@ -118,17 +115,12 @@ describe("createStateHandler", () => {
 
       expect(Array.isArray(result)).toBe(true);
       expect(result).toHaveLength(1);
-      expect(result[0]).toEqual(expect.objectContaining({
-        EntitlementId: "ed-1",
-        StatusInfo: expect.objectContaining({
-          Status: "Reading",
-          TimesStartedReading: 1,
-        }),
-        CurrentBookmark: expect.objectContaining({
-          ProgressPercent: 42,
-          Location: mockLocation,
-        }),
-      }));
+      const [state] = result;
+      expect(state?.EntitlementId).toBe("ed-1");
+      expect(state?.StatusInfo.Status).toBe("Reading");
+      expect(state?.StatusInfo.TimesStartedReading).toBe(1);
+      expect(state?.CurrentBookmark.ProgressPercent).toBe(42);
+      expect(state?.CurrentBookmark.Location).toEqual(mockLocation);
     });
 
     it("throws 400 for invalid bookId", async () => {

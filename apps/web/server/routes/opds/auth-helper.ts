@@ -1,4 +1,4 @@
-import { createError, getRequestHeader, setResponseHeader } from "h3";
+import { createError } from "h3";
 import type { H3Event } from "h3";
 
 export interface OpdsAuthDeps {
@@ -19,13 +19,13 @@ export interface OpdsAuthResult {
 }
 
 function throw401(event: H3Event, message: string): never {
-  setResponseHeader(event, "WWW-Authenticate", 'Basic realm="Bookhouse OPDS"');
+  event.res.headers.set("WWW-Authenticate", 'Basic realm="Bookhouse OPDS"');
   throw createError({ statusCode: 401, statusMessage: "Unauthorized", message });
 }
 
 export function createOpdsAuth(deps: OpdsAuthDeps) {
   return async (event: H3Event): Promise<OpdsAuthResult> => {
-    const authorization = getRequestHeader(event, "authorization");
+    const authorization = event.req.headers.get("authorization");
 
     if (!authorization) {
       throw401(event, "Authentication required");

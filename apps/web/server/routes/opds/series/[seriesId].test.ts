@@ -4,12 +4,10 @@ import type { H3Event } from "h3";
 import type { OpdsEditionData } from "@bookhouse/opds";
 
 vi.mock("h3", () => ({
-  getRouterParam: (_event: unknown, name: string) => {
+  getRouterParam: (_event: object, name: string) => {
     const e = _event as { _params?: Record<string, string> };
     return e._params?.[name];
   },
-  getRequestHeader: (event: { _authorization?: string }, _name: string) =>
-    event._authorization,
   defineEventHandler: vi.fn(),
 }));
 
@@ -48,7 +46,7 @@ function makeEdition(id: string): OpdsEditionData {
 
 function makeEvent(seriesId: string): H3Event {
   return {
-    _authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
+    req: new Request("http://localhost/", { headers: { authorization: `Basic ${Buffer.from("reader:password").toString("base64")}` } }),
     _params: { seriesId },
   } as Partial<H3Event> as H3Event;
 }
@@ -153,7 +151,7 @@ describe("createSeriesBooksHandler", () => {
     const deps = makeDeps();
     const handler = createSeriesBooksHandler(deps);
     const event = {
-      _authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
+      req: new Request("http://localhost/", { headers: { authorization: `Basic ${Buffer.from("reader:password").toString("base64")}` } }),
       _params: {},
     } as Partial<H3Event> as H3Event;
 
