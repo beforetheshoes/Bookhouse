@@ -1,4 +1,5 @@
 import type { H3Event } from "h3";
+import { httpError } from "../../utils/http-error";
 
 export interface KoboAuthDeps {
   findDeviceByToken: (token: string) => Promise<{
@@ -32,26 +33,17 @@ export function createKoboAuth(deps: KoboAuthDeps) {
     const token = params.token as string;
 
     if (!VALID_TOKEN.test(token)) {
-      throw Object.assign(new Error("Invalid token"), {
-        statusCode: 401,
-        statusMessage: "Unauthorized",
-      });
+      throw httpError("Invalid token", 401, "Unauthorized");
     }
 
     const device = await deps.findDeviceByToken(token);
 
     if (!device) {
-      throw Object.assign(new Error("Device not found"), {
-        statusCode: 401,
-        statusMessage: "Unauthorized",
-      });
+      throw httpError("Device not found", 401, "Unauthorized");
     }
 
     if (device.status !== "ACTIVE") {
-      throw Object.assign(new Error("Device revoked"), {
-        statusCode: 403,
-        statusMessage: "Forbidden",
-      });
+      throw httpError("Device revoked", 403, "Forbidden");
     }
 
     return device;

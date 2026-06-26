@@ -2,6 +2,7 @@ import { defineEventHandler, setResponseHeader } from "h3";
 import type { H3Event } from "h3";
 import type { KoboAuthDeps } from "../../../../auth-helper";
 import { selectPreferredKoboDeliveryFile } from "@bookhouse/shared";
+import { httpError } from "../../../../../../utils/http-error";
 
 export interface DownloadHandlerDeps {
   auth: KoboAuthDeps;
@@ -31,26 +32,17 @@ export function createDownloadHandler(deps: DownloadHandlerDeps) {
     const bookId = params.bookId as string;
 
     if (!VALID_ID.test(bookId)) {
-      throw Object.assign(new Error("Invalid bookId"), {
-        statusCode: 400,
-        statusMessage: "Invalid bookId",
-      });
+      throw httpError("Invalid bookId", 400);
     }
 
     const file = await deps.findEditionFile(bookId);
 
     if (!file) {
-      throw Object.assign(new Error("File not found"), {
-        statusCode: 404,
-        statusMessage: "Not found",
-      });
+      throw httpError("File not found", 404, "Not found");
     }
 
     if (file.availabilityStatus !== "PRESENT") {
-      throw Object.assign(new Error("File not available"), {
-        statusCode: 404,
-        statusMessage: "Not found",
-      });
+      throw httpError("File not available", 404, "Not found");
     }
 
     let filePath = file.absolutePath;
@@ -83,10 +75,7 @@ export function createDownloadHandler(deps: DownloadHandlerDeps) {
 
     if (!deps.existsSync(filePath)) {
       console.error(`[kobo] DOWNLOAD file missing from disk: ${filePath}`);
-      throw Object.assign(new Error("File missing from disk"), {
-        statusCode: 404,
-        statusMessage: "Not found",
-      });
+      throw httpError("File missing from disk", 404, "Not found");
     }
 
     const stat = deps.statSync(filePath);

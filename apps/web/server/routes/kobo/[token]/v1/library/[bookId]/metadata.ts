@@ -3,6 +3,7 @@ import type { H3Event } from "h3";
 import type { KoboAuthDeps } from "../../../../auth-helper";
 import type { EligibleEdition } from "@bookhouse/kobo";
 import { selectPreferredKoboDeliveryFile } from "@bookhouse/shared";
+import { httpError } from "../../../../../../utils/http-error";
 
 export interface MetadataHandlerDeps {
   auth: KoboAuthDeps;
@@ -22,10 +23,7 @@ export function createMetadataHandler(deps: MetadataHandlerDeps) {
     const bookId = params.bookId as string;
 
     if (!VALID_ID.test(bookId)) {
-      throw Object.assign(new Error("Invalid bookId"), {
-        statusCode: 400,
-        statusMessage: "Invalid bookId",
-      });
+      throw httpError("Invalid bookId", 400);
     }
 
     const edition = await deps.findEdition(bookId);

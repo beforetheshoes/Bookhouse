@@ -1,6 +1,7 @@
 import { defineEventHandler, setResponseHeader } from "h3";
 import type { H3Event } from "h3";
 import type { KoboAuthDeps } from "../../../../auth-helper";
+import { httpError } from "../../../../../../utils/http-error";
 
 export interface CoverHandlerDeps {
   auth: KoboAuthDeps;
@@ -23,19 +24,13 @@ export function createCoverHandler(deps: CoverHandlerDeps) {
     const bookId = params.bookId as string;
 
     if (!VALID_ID.test(bookId)) {
-      throw Object.assign(new Error("Invalid bookId"), {
-        statusCode: 400,
-        statusMessage: "Invalid bookId",
-      });
+      throw httpError("Invalid bookId", 400);
     }
 
     const coverPath = await deps.findCoverPath(bookId);
 
     if (!coverPath || !deps.existsSync(coverPath)) {
-      throw Object.assign(new Error("Cover not found"), {
-        statusCode: 404,
-        statusMessage: "Not found",
-      });
+      throw httpError("Cover not found", 404, "Not found");
     }
 
     deps.setResponseHeader(event, "Content-Type", "image/jpeg");

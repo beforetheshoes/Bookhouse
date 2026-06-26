@@ -1,6 +1,7 @@
 import { defineEventHandler } from "h3";
 import type { H3Event } from "h3";
 import type { OpdsAuthDeps } from "../auth-helper";
+import { httpError } from "../../../utils/http-error";
 
 const VALID_ID = /^[a-zA-Z0-9_-]+$/;
 
@@ -28,33 +29,21 @@ export function createOpdsDownloadHandler(deps: OpdsDownloadHandlerDeps) {
     const editionFileId = params.editionFileId as string;
 
     if (!VALID_ID.test(editionFileId)) {
-      throw Object.assign(new Error("Invalid editionFileId"), {
-        statusCode: 400,
-        statusMessage: "Invalid editionFileId",
-      });
+      throw httpError("Invalid editionFileId", 400);
     }
 
     const record = await deps.findEditionFile(editionFileId);
 
     if (!record) {
-      throw Object.assign(new Error("Edition file not found"), {
-        statusCode: 404,
-        statusMessage: "Not found",
-      });
+      throw httpError("Edition file not found", 404, "Not found");
     }
 
     if (record.availabilityStatus !== "PRESENT") {
-      throw Object.assign(new Error("File not available"), {
-        statusCode: 404,
-        statusMessage: "Not found",
-      });
+      throw httpError("File not available", 404, "Not found");
     }
 
     if (!deps.existsSync(record.absolutePath)) {
-      throw Object.assign(new Error("File missing from disk"), {
-        statusCode: 404,
-        statusMessage: "Not found",
-      });
+      throw httpError("File missing from disk", 404, "Not found");
     }
 
     deps.setResponseHeader(event, "Content-Type", record.mimeType ?? "application/epub+zip");

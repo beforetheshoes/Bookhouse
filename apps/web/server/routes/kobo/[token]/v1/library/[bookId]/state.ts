@@ -3,6 +3,7 @@ import type { H3Event } from "h3";
 import type { Prisma } from "@bookhouse/db";
 import type { KoboAuthDeps } from "../../../../auth-helper";
 import type { ReadingProgressRecord, KoboReadingState, KoboRequestResult, LocatorData, KoboLocation } from "@bookhouse/kobo";
+import { httpError } from "../../../../../../utils/http-error";
 
 export interface StateHandlerDeps {
   auth: KoboAuthDeps;
@@ -72,10 +73,7 @@ export function createStateHandler(deps: StateHandlerDeps) {
     const bookId = params.bookId as string;
 
     if (!VALID_ID.test(bookId)) {
-      throw Object.assign(new Error("Invalid bookId"), {
-        statusCode: 400,
-        statusMessage: "Invalid bookId",
-      });
+      throw httpError("Invalid bookId", 400);
     }
 
     const method = deps.getMethod(event);
@@ -95,10 +93,7 @@ export function createStateHandler(deps: StateHandlerDeps) {
 
       const parsed = parseStateUpdate(body);
       if ("error" in parsed) {
-        throw Object.assign(new Error(parsed.error), {
-          statusCode: 400,
-          statusMessage: parsed.error,
-        });
+        throw httpError(parsed.error, 400);
       }
 
       // The Kobo still has books in its local library that may no longer exist
@@ -129,10 +124,7 @@ export function createStateHandler(deps: StateHandlerDeps) {
       return successResult(bookId);
     }
 
-    throw Object.assign(new Error("Method not allowed"), {
-      statusCode: 405,
-      statusMessage: "Method not allowed",
-    });
+    throw httpError("Method not allowed", 405);
   };
 }
 

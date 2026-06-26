@@ -2,6 +2,7 @@ import { defineEventHandler, getRouterParam } from "h3";
 import type { H3Event } from "h3";
 import type { OpdsEditionData } from "@bookhouse/opds";
 import type { OpdsAuthDeps } from "../auth-helper";
+import { httpError } from "../../../utils/http-error";
 
 const CONTENT_TYPE = "application/atom+xml;profile=opds-catalog;kind=acquisition";
 const VALID_ID = /^[a-zA-Z0-9_-]+$/;
@@ -23,19 +24,13 @@ export function createSeriesBooksHandler(deps: SeriesBooksHandlerDeps) {
     const seriesId = getRouterParam(event, "seriesId") ?? "";
 
     if (!VALID_ID.test(seriesId)) {
-      throw Object.assign(new Error("Invalid series ID"), {
-        statusCode: 400,
-        statusMessage: "Bad Request",
-      });
+      throw httpError("Invalid series ID", 400, "Bad Request");
     }
 
     const seriesName = await deps.getSeriesName(seriesId);
 
     if (seriesName == null) {
-      throw Object.assign(new Error("Series not found"), {
-        statusCode: 404,
-        statusMessage: "Not Found",
-      });
+      throw httpError("Series not found", 404, "Not Found");
     }
 
     const entries = await deps.getSeriesEditions(seriesId);

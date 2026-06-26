@@ -1,6 +1,7 @@
 import path from "node:path";
 import { defineEventHandler } from "h3";
 import type { H3Event } from "h3";
+import { httpError } from "../../../../utils/http-error";
 
 const VALID_ID = /^[a-zA-Z0-9_-]+$/;
 const VALID_SIZES: Record<string, string> = {
@@ -23,27 +24,18 @@ export function createOpdsCoverHandler(deps: OpdsCoverHandlerDeps) {
     const size = params.size as string;
 
     if (!VALID_ID.test(workId)) {
-      throw Object.assign(new Error("Invalid workId"), {
-        statusCode: 400,
-        statusMessage: "Invalid workId",
-      });
+      throw httpError("Invalid workId", 400);
     }
 
     const sizeKey = VALID_SIZES[size];
     if (!sizeKey) {
-      throw Object.assign(new Error("Invalid size"), {
-        statusCode: 400,
-        statusMessage: "Invalid size",
-      });
+      throw httpError("Invalid size", 400);
     }
 
     const filePath = path.join(deps.coverCacheDir, workId, `${sizeKey}.webp`);
 
     if (!deps.existsSync(filePath)) {
-      throw Object.assign(new Error("Cover not found"), {
-        statusCode: 404,
-        statusMessage: "Not found",
-      });
+      throw httpError("Cover not found", 404, "Not found");
     }
 
     const webpBuffer = await deps.readFile(filePath);
