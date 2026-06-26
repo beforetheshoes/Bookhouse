@@ -11,6 +11,9 @@ import {
   type LibraryRootRow,
 } from "~/lib/server-fns/library-roots";
 import { getUploadStatusServerFn, type UploadStatusResult } from "~/lib/server-fns/upload-status";
+import { z } from "zod";
+
+const uploadBookResponseSchema = z.object({ importJobId: z.string() });
 
 export interface UploadLoaderData {
   libraryRoots: LibraryRootRow[];
@@ -149,7 +152,7 @@ export function UploadForm({ libraryRoots }: UploadFormProps) {
         const text = await res.text();
         throw new Error(text || `Upload failed: ${String(res.status)}`);
       }
-      const body = await res.json() as { importJobId: string };
+      const body = uploadBookResponseSchema.parse(await res.json());
 
       setActiveJob({
         importJobId: body.importJobId,
