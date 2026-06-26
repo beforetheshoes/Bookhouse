@@ -908,7 +908,10 @@ function LibraryRootCard({ root }: { root: LibraryRootWithExtras }) {
       const result = await scanLibraryRootServerFn({
         data: { libraryRootId: root.id, scanMode },
       });
-      toast.success(`Scan started for "${root.name}"`, {
+      const message = result.alreadyRunning
+        ? `A scan is already running for "${root.name}"`
+        : `Scan started for "${root.name}"`;
+      toast.success(message, {
         action: {
           label: "View Job",
           onClick: () => {

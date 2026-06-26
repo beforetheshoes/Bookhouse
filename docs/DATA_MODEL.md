@@ -140,6 +140,14 @@ skip silently and succeed, never throw (see `feedback_stale_jobs`).
 - **No silently dropped files.** A file that fails to `stat` during the walk is
   logged ("Failed to stat entry"), not silently skipped, so a previously-PRESENT
   file that errors isn't quietly left stale.
+- **One active scan per root.** `scanLibraryRootServerFn`
+  (`apps/web/src/lib/server-fns/library-roots.ts`) refuses to start a second
+  scan of a root while a `SCAN_ROOT` ImportJob for it is `QUEUED`/`RUNNING`,
+  returning the in-flight job (`alreadyRunning: true`). This prevents two scans
+  racing through discovery and each creating stub Works for the same file. It is
+  a best-effort check: a pair of exactly-simultaneous requests is bounded but not
+  fully serialised (there is no scheduled/automatic scan path, so the realistic
+  trigger is a manual re-click or an overlapping retry, which this covers).
 
 `scripts/detect-orphans.ts` is the read-only health check for the rows these
 invariants are meant to prevent (MISSING/PRESENT FileAssets with no links,

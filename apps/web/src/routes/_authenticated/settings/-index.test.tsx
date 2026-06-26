@@ -437,6 +437,26 @@ describe("SettingsPage", () => {
     });
   });
 
+  it("scan button shows already-running toast when a scan is in progress", async () => {
+    scanLibraryRootServerFnMock.mockResolvedValue({
+      importJobId: "job-123",
+      alreadyRunning: true,
+    });
+    mockLoaderData = { ...mockLoaderData, roots: [makeRoot({ name: "My Library" })] };
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByText("Scan Now"));
+
+    await waitFor(() => {
+      expect(mockToast.success).toHaveBeenCalledWith(
+        `A scan is already running for "My Library"`,
+        expect.any(Object)
+      );
+    });
+  });
+
   it("delete button opens confirmation dialog", async () => {
     mockLoaderData = { ...mockLoaderData, roots: [makeRoot()] };
     const { Route } = await import("./index");

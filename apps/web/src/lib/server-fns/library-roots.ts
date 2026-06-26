@@ -305,6 +305,29 @@ export const scanLibraryRootServerFn = createServerFn({
       "@bookhouse/shared"
     );
 
+    // Guard against concurrent scans of the same root. Two scans racing through
+    // discovery can each create stub Works/Editions for the same file (see
+    // docs/DATA_MODEL.md). If a scan for this root is already queued or running,
+    // return that one instead of starting a second. This closes the common
+    // re-trigger case (a double-click, or an overlapping retry); a pair of
+    // exactly-simultaneous requests is bounded but not fully serialised by this
+    // best-effort check.
+    const activeScan = await db.importJob.findFirst({
+      where: {
+        kind: "SCAN_ROOT",
+        libraryRootId: data.libraryRootId,
+        status: { in: ["QUEUED", "RUNNING"] },
+      },
+      select: { id: true, bullmqJobId: true },
+    });
+    if (activeScan) {
+      return {
+        jobId: activeScan.bullmqJobId ?? "",
+        importJobId: activeScan.id,
+        alreadyRunning: true,
+      };
+    }
+
     const importJob = await db.importJob.create({
       data: {
         kind: "SCAN_ROOT",
@@ -329,7 +352,7 @@ export const scanLibraryRootServerFn = createServerFn({
       data: { bullmqJobId: jobId },
     });
 
-    return { jobId, importJobId: importJob.id };
+    return { jobId, importJobId: importJob.id, alreadyRunning: false };
   });
 
 export const retryLibraryIssuesServerFn = createServerFn({
