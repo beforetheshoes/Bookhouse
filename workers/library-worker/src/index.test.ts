@@ -259,6 +259,38 @@ describe("library worker", () => {
     });
   });
 
+  it("cleans up the orphaned source asset when a hash job detects a move", async () => {
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor({
+      hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
+      parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
+      scanLibraryRoot: scanLibraryRootMock,
+      detectDuplicates: detectDuplicatesMock,
+      matchSuggestions: matchSuggestionsMock,
+    });
+
+    cascadeCleanupOrphansMock.mockClear();
+    cascadeCleanupOrphansMock.mockResolvedValueOnce({ deletedFileAssetIds: ["old-file"] });
+    hashFileAssetMock.mockResolvedValueOnce({
+      availabilityStatus: "PRESENT",
+      fileAssetId: "new-file",
+      movedFromFileAssetId: "old-file",
+    });
+
+    await processor(createMockJob({
+      data: { fileAssetId: "new-file" },
+      name: "hash-file-asset",
+    }) as never);
+
+    expect(cascadeCleanupOrphansMock).toHaveBeenCalledWith(
+      expect.anything(),
+      { fileAssetIds: ["old-file"] },
+    );
+  });
+
   it("dispatches ingest-uploaded-book and enqueues BULK_ENRICH_METADATA for each created work", async () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({

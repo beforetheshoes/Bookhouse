@@ -165,8 +165,16 @@ async function dispatch(
 
       return scanResult;
     }
-    case LIBRARY_JOB_NAMES.HASH_FILE_ASSET:
-      return handlers.hashFileAsset(job.data as HashFileAssetJobPayload);
+    case LIBRARY_JOB_NAMES.HASH_FILE_ASSET: {
+      const hashResult = await handlers.hashFileAsset(job.data as HashFileAssetJobPayload);
+      // A detected move transferred the old asset's edition links to the new
+      // file, leaving the old asset orphaned. Clean it up so dead MISSING rows
+      // don't accumulate (and can't confuse future move detection).
+      if (hashResult.movedFromFileAssetId !== undefined) {
+        await cascadeCleanupOrphans(db, { fileAssetIds: [hashResult.movedFromFileAssetId] });
+      }
+      return hashResult;
+    }
     case LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION:
       return handlers.matchFileAssetToEdition(job.data as MatchFileAssetToEditionJobPayload);
     case LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA:
