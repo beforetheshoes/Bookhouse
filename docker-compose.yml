@@ -34,9 +34,12 @@ services:
       COVER_CACHE_DIR: /data/covers
       KEPUB_CACHE_DIR: /data/kepub-cache
       KOBO_API_BASE_URL: ${KOBO_API_BASE_URL:-http://localhost:3000/kobo}
+      LOG_DIR: /data/logs
+      LOG_SERVICE: web
     volumes:
       - covers:/data/covers:ro
       - kepub-cache:/data/kepub-cache
+      - logs:/data/logs
       - ${EBOOKS_PATH:?set EBOOKS_PATH in .env}:/data/ebooks
       - ${AUDIOBOOKS_PATH:?set AUDIOBOOKS_PATH in .env}:/data/audiobooks
     depends_on:
@@ -52,10 +55,13 @@ services:
       QUEUE_URL: redis://queue:6379
       NODE_ENV: production
       COVER_CACHE_DIR: /data/covers
+      LOG_DIR: /data/logs
+      LOG_SERVICE: worker
     volumes:
       - ${EBOOKS_PATH:?set EBOOKS_PATH in .env}:/data/ebooks
       - ${AUDIOBOOKS_PATH:?set AUDIOBOOKS_PATH in .env}:/data/audiobooks
       - covers:/data/covers
+      - logs:/data/logs
     depends_on:
       - db
       - queue
@@ -64,4 +70,5 @@ volumes:
   pgdata:
   queuedata:
   covers:
+  logs:
   kepub-cache:

@@ -172,6 +172,50 @@ describe("BackupTab", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/backup/download");
   });
 
+  it("downloads logs as a zip from the logs endpoint", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      blob: () => Promise.resolve(new Blob(["zip"])),
+    });
+    const user = userEvent.setup();
+    render(<BackupTab history={[]} onBackupComplete={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: /download logs/i }));
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/logs/download");
+    await waitFor(() => {
+      expect(mockToast.success).toHaveBeenCalledWith("Logs downloaded");
+    });
+  });
+
+  it("shows an error toast when the logs request fails", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      blob: () => Promise.resolve(new Blob()),
+    });
+    const user = userEvent.setup();
+    render(<BackupTab history={[]} onBackupComplete={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: /download logs/i }));
+
+    await waitFor(() => {
+      expect(mockToast.error).toHaveBeenCalledWith("Could not download logs");
+    });
+  });
+
+  it("shows a generic error toast when the logs request throws a non-Error", async () => {
+    fetchMock.mockRejectedValue("boom");
+    const user = userEvent.setup();
+    render(<BackupTab history={[]} onBackupComplete={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: /download logs/i }));
+
+    await waitFor(() => {
+      expect(mockToast.error).toHaveBeenCalledWith("Could not download logs");
+    });
+  });
+
   it("calls onBackupComplete with manifest after successful backup", async () => {
     mockSuccessfulBackup(MANIFEST);
     const onBackupComplete = vi.fn();
