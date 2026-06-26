@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Proxy `pg_dump` to the dockerized Postgres so the backup feature (and its e2e)
+# can run on a machine that has no host Postgres client installed. The backup
+# code invokes pg_dump with --host=localhost --port=5432, which inside the db
+# container resolves to the container's own Postgres — the same instance the
+# host reaches on the published port. PGPASSWORD is forwarded so the TCP
+# connection authenticates.
+#
+# Wire it in by exporting PG_DUMP_PATH=scripts/pg-tools/pg_dump before the e2e
+# run (scripts/e2e.sh does this automatically when host pg_dump is absent).
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
+exec docker compose exec -T -e PGPASSWORD="${PGPASSWORD:-}" db pg_dump "$@"

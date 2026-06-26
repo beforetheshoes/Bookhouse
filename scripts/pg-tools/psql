@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Proxy `psql` to the dockerized Postgres (companion to ./pg_dump). The restore
+# path passes --file=<host temp path>; the container can't see host paths, so we
+# detect that argument, drop it, and stream the file to psql via stdin instead.
+# PGPASSWORD is forwarded for the TCP connection.
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
+
+args=()
+file=""
+for a in "$@"; do
+  case "$a" in
+    --file=*) file="${a#--file=}" ;;
+    *) args+=("$a") ;;
+  esac
+done
+
+if [[ -n "$file" ]]; then
+  exec docker compose exec -T -e PGPASSWORD="${PGPASSWORD:-}" db psql "${args[@]}" < "$file"
+fi
+exec docker compose exec -T -e PGPASSWORD="${PGPASSWORD:-}" db psql "$@"
