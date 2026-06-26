@@ -138,20 +138,14 @@ export function createStateHandler(deps: StateHandlerDeps) {
 
 /* c8 ignore start — runtime wiring */
 export default defineEventHandler(async (event) => {
-  const { db } = await import("@bookhouse/db");
+  const { db, editionExists } = await import("@bookhouse/db");
 
   const handler = createStateHandler({
     auth: {
       findDeviceByToken: (token) =>
         db.koboDevice.findUnique({ where: { authToken: token } }),
     },
-    editionExists: async (editionId) => {
-      const edition = await db.edition.findUnique({
-        where: { id: editionId },
-        select: { id: true },
-      });
-      return edition !== null;
-    },
+    editionExists: (editionId) => editionExists(db, editionId),
     findProgress: async (userId, editionId) => {
       const record = await db.readingProgress.findFirst({
         where: { userId, editionId, progressKind: "EBOOK", source: "kobo" },
