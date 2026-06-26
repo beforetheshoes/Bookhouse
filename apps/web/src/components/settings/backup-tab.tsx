@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { Loader2, Download, Upload, Archive } from "lucide-react";
+import { Loader2, Download, Upload, Archive, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
 import {
@@ -46,6 +46,7 @@ interface BackupTabProps {
 
 export function BackupTab({ history, onBackupComplete }: BackupTabProps) {
   const [isCreating, setIsCreating] = useState(false);
+  const [isDownloadingLogs, setIsDownloadingLogs] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -86,6 +87,30 @@ export function BackupTab({ history, onBackupComplete }: BackupTabProps) {
       toast.error(err instanceof Error ? err.message : "Backup failed");
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const handleDownloadLogs = async () => {
+    setIsDownloadingLogs(true);
+    try {
+      const response = await fetch("/api/logs/download");
+      if (!response.ok) {
+        throw new Error("Could not download logs");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `bookhouse-logs-${new Date().toISOString()}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("Logs downloaded");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not download logs");
+    } finally {
+      setIsDownloadingLogs(false);
     }
   };
 
@@ -156,6 +181,39 @@ export function BackupTab({ history, onBackupComplete }: BackupTabProps) {
               <>
                 <Download className="mr-2 h-4 w-4" />
                 Create Backup
+              </>
+            )}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Diagnostic Logs */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileText className="h-5 w-5" />
+            Diagnostic Logs
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground mb-4">
+            Download a zip of the web and worker logs to help diagnose scans,
+            syncs, and downloads.
+          </p>
+          <Button
+            variant="outline"
+            onClick={() => { void handleDownloadLogs(); }}
+            disabled={isDownloadingLogs}
+          >
+            {isDownloadingLogs ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Preparing logs...
+              </>
+            ) : (
+              <>
+                <Download className="mr-2 h-4 w-4" />
+                Download Logs
               </>
             )}
           </Button>
