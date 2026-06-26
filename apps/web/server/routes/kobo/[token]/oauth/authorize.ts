@@ -1,8 +1,8 @@
 import { defineEventHandler } from "h3";
-import type { H3Event } from "h3";
+import type { H3Event, HTTPResponse } from "h3";
 
 export interface OauthAuthorizeHandlerDeps {
-  sendRedirect: (event: H3Event, location: string, code: number) => unknown;
+  sendRedirect: (event: H3Event, location: string, code: number) => HTTPResponse;
 }
 
 export function createOauthAuthorizeHandler(deps: OauthAuthorizeHandlerDeps) {

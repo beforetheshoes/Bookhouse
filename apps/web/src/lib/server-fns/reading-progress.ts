@@ -54,24 +54,18 @@ export const updateReadingProgressServerFn = createServerFn({
 
     const { db } = await import("@bookhouse/db");
 
-    const existing = await db.readingProgress.findFirst({
+    // Atomic upsert on the per-source unique key — never touches a kobo/koreader
+    // row for the same edition, and avoids a find-then-create race.
+    return db.readingProgress.upsert({
       where: {
-        userId: user.id,
-        editionId: data.editionId,
-        progressKind: data.progressKind,
-        OR: [{ source: "manual" }, { source: null }],
+        userId_editionId_progressKind_source: {
+          userId: user.id,
+          editionId: data.editionId,
+          progressKind: data.progressKind,
+          source: "manual",
+        },
       },
-    });
-
-    if (existing) {
-      return db.readingProgress.update({
-        where: { id: existing.id },
-        data: { percent: data.percent, locator: {}, source: "manual" },
-      });
-    }
-
-    return db.readingProgress.create({
-      data: {
+      create: {
         userId: user.id,
         editionId: data.editionId,
         progressKind: data.progressKind,
@@ -79,6 +73,7 @@ export const updateReadingProgressServerFn = createServerFn({
         locator: {},
         source: "manual",
       },
+      update: { percent: data.percent, locator: {} },
     });
   });
 

@@ -65,7 +65,7 @@ const validPayload = {
 function makeEvent(bookId = "ed-1"): H3Event {
   return {
     context: { params: { token: validToken, bookId } },
-  } as unknown as H3Event;
+  } as Partial<H3Event> as H3Event;
 }
 
 function makeDeps(overrides: Partial<StateHandlerDeps> = {}): StateHandlerDeps {
@@ -74,6 +74,7 @@ function makeDeps(overrides: Partial<StateHandlerDeps> = {}): StateHandlerDeps {
       findDeviceByToken: vi.fn().mockResolvedValue(mockDevice),
     },
     findProgress: vi.fn().mockResolvedValue(null),
+    editionExists: vi.fn().mockResolvedValue(true),
     upsertProgress: vi.fn().mockResolvedValue(mockProgress),
     getMethod: vi.fn().mockReturnValue("GET"),
     readBody: vi.fn().mockResolvedValue({}),
@@ -99,13 +100,10 @@ describe("createStateHandler", () => {
 
       expect(Array.isArray(result)).toBe(true);
       expect(result).toHaveLength(1);
-      expect(result[0]).toEqual(expect.objectContaining({
-        EntitlementId: "ed-1",
-        StatusInfo: expect.objectContaining({
-          Status: "ReadyToRead",
-          TimesStartedReading: 0,
-        }),
-      }));
+      const [state] = result;
+      expect(state?.EntitlementId).toBe("ed-1");
+      expect(state?.StatusInfo.Status).toBe("ReadyToRead");
+      expect(state?.StatusInfo.TimesStartedReading).toBe(0);
     });
 
     it("returns array with formatted reading state when progress exists", async () => {
@@ -117,17 +115,12 @@ describe("createStateHandler", () => {
 
       expect(Array.isArray(result)).toBe(true);
       expect(result).toHaveLength(1);
-      expect(result[0]).toEqual(expect.objectContaining({
-        EntitlementId: "ed-1",
-        StatusInfo: expect.objectContaining({
-          Status: "Reading",
-          TimesStartedReading: 1,
-        }),
-        CurrentBookmark: expect.objectContaining({
-          ProgressPercent: 42,
-          Location: mockLocation,
-        }),
-      }));
+      const [state] = result;
+      expect(state?.EntitlementId).toBe("ed-1");
+      expect(state?.StatusInfo.Status).toBe("Reading");
+      expect(state?.StatusInfo.TimesStartedReading).toBe(1);
+      expect(state?.CurrentBookmark.ProgressPercent).toBe(42);
+      expect(state?.CurrentBookmark.Location).toEqual(mockLocation);
     });
 
     it("throws 400 for invalid bookId", async () => {
@@ -215,6 +208,25 @@ describe("createStateHandler", () => {
       const result = await handler(makeEvent()) as KoboRequestResult;
 
       expect(deps.upsertProgress).not.toHaveBeenCalled();
+      expect(result.RequestResult).toBe("Success");
+    });
+
+    it("acknowledges without saving when the edition no longer exists", async () => {
+      const upsertProgress = vi.fn().mockResolvedValue(mockProgress);
+      const findProgress = vi.fn().mockResolvedValue(null);
+      const deps = makeDeps({
+        getMethod: vi.fn().mockReturnValue("PUT"),
+        readBody: vi.fn().mockResolvedValue(validPayload),
+        editionExists: vi.fn().mockResolvedValue(false),
+        findProgress,
+        upsertProgress,
+      });
+      const handler = createStateHandler(deps);
+      const result = await handler(makeEvent("ed-gone")) as KoboRequestResult;
+
+      expect(deps.editionExists).toHaveBeenCalledWith("ed-gone");
+      expect(upsertProgress).not.toHaveBeenCalled();
+      expect(findProgress).not.toHaveBeenCalled();
       expect(result.RequestResult).toBe("Success");
     });
 

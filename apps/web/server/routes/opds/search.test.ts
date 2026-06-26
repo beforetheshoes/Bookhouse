@@ -5,8 +5,6 @@ import type { OpdsEditionData } from "@bookhouse/opds";
 
 vi.mock("h3", () => ({
   getQuery: (event: { _query?: Record<string, string> }) => event._query ?? {},
-  getRequestHeader: (event: { _authorization?: string }, _name: string) =>
-    event._authorization,
   defineEventHandler: vi.fn(),
 }));
 
@@ -47,9 +45,9 @@ function makeEvent(q?: string, page?: string): H3Event {
   if (q != null) query.q = q;
   if (page != null) query.page = page;
   return {
-    _authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
+    req: new Request("http://localhost/", { headers: { authorization: `Basic ${Buffer.from("reader:password").toString("base64")}` } }),
     _query: query,
-  } as unknown as H3Event;
+  } as Partial<H3Event> as H3Event;
 }
 
 function makeDeps(overrides: Partial<SearchHandlerDeps> = {}): SearchHandlerDeps {
@@ -70,7 +68,7 @@ describe("createSearchHandler", () => {
   it("returns search results for a query", async () => {
     const deps = makeDeps();
     const handler = createSearchHandler(deps);
-    const xml = (await handler(makeEvent("fantasy"))) as string;
+    const xml = (await handler(makeEvent("fantasy")));
 
     expect(xml).toContain("<title>Search: fantasy</title>");
     expect(xml).toContain("<title>Book 1</title>");
@@ -99,7 +97,7 @@ describe("createSearchHandler", () => {
   it("returns empty feed for missing query param", async () => {
     const deps = makeDeps();
     const handler = createSearchHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain("<title>Search Results</title>");
     expect(xml).not.toContain("<entry>");
@@ -109,7 +107,7 @@ describe("createSearchHandler", () => {
   it("returns empty feed for blank query", async () => {
     const deps = makeDeps();
     const handler = createSearchHandler(deps);
-    const xml = (await handler(makeEvent("  "))) as string;
+    const xml = (await handler(makeEvent("  ")));
 
     expect(xml).not.toContain("<entry>");
     expect(deps.searchEditions).not.toHaveBeenCalled();
@@ -121,7 +119,7 @@ describe("createSearchHandler", () => {
       countSearchResults: vi.fn().mockResolvedValue(50),
     });
     const handler = createSearchHandler(deps);
-    const xml = (await handler(makeEvent("test"))) as string;
+    const xml = (await handler(makeEvent("test")));
 
     expect(xml).toContain('rel="next"');
     expect(xml).toContain("<opensearch:totalResults>50</opensearch:totalResults>");
@@ -149,7 +147,7 @@ describe("createSearchHandler", () => {
       countSearchResults: vi.fn().mockResolvedValue(0),
     });
     const handler = createSearchHandler(deps);
-    const xml = (await handler(makeEvent("nonexistent"))) as string;
+    const xml = (await handler(makeEvent("nonexistent")));
 
     expect(xml).toContain("<title>Search: nonexistent</title>");
     expect(xml).not.toContain("<entry>");
@@ -158,7 +156,7 @@ describe("createSearchHandler", () => {
   it("URL-encodes the query in feed id and selfHref", async () => {
     const deps = makeDeps();
     const handler = createSearchHandler(deps);
-    const xml = (await handler(makeEvent("a & b"))) as string;
+    const xml = (await handler(makeEvent("a & b")));
 
     expect(xml).toContain("urn:bookhouse:search:a%20%26%20b");
   });

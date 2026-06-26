@@ -6,7 +6,7 @@ describe("OIDC discovery handler", () => {
   const deps = { getBaseUrl: () => "http://192.168.1.10:3000" };
 
   function makeEvent(token = "abc123"): H3Event {
-    return { context: { params: { token } } } as unknown as H3Event;
+    return { context: { params: { token } } } as Partial<H3Event> as H3Event;
   }
 
   it("returns discovery document with token-scoped URLs", () => {

@@ -21,6 +21,10 @@ RUN DATABASE_URL="postgresql://build:build@localhost:5432/build" pnpm db:generat
 RUN pnpm build
 
 FROM base AS web
+# kepubify (KEPUB conversion) + postgresql-client-17 (the in-app Backup/Restore
+# feature shells out to pg_dump/psql). The client major must be >= the Postgres
+# server major (17), or pg_dump refuses to dump; Debian bookworm only ships 15,
+# so pull 17 from the PostgreSQL APT (PGDG) repo.
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
   && case "$(dpkg --print-architecture)" in \
        amd64) KEPUBIFY_ARCH=64bit ;; \
@@ -31,6 +35,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
      esac \
   && curl -fsSL "https://github.com/pgaskin/kepubify/releases/latest/download/kepubify-linux-${KEPUBIFY_ARCH}" -o /usr/local/bin/kepubify \
   && chmod +x /usr/local/bin/kepubify \
+  && install -d /usr/share/keyrings \
+  && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/keyrings/pgdg.asc \
+  && echo "deb [signed-by=/usr/share/keyrings/pgdg.asc] http://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo $VERSION_CODENAME)-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends postgresql-client-17 \
   && apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/node_modules node_modules
 COPY --from=build /app/apps/web/.output .output

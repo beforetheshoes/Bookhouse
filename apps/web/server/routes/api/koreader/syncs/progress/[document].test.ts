@@ -6,7 +6,7 @@ import { createKoreaderProgressGetHandler } from "./[document]";
 function makeEvent(document = "abcd1234"): H3Event {
   return {
     context: { params: { document } },
-  } as unknown as H3Event;
+  } as Partial<H3Event> as H3Event;
 }
 
 function makeDeps(overrides: Partial<KoreaderProgressGetDeps> = {}): KoreaderProgressGetDeps {
@@ -57,7 +57,7 @@ describe("KOReader progress GET route", () => {
 
     await expect(handler({
       context: { params: {} },
-    } as unknown as H3Event)).rejects.toThrow(expect.objectContaining({ statusCode: 400 }));
+    } as Partial<H3Event> as H3Event)).rejects.toThrow(expect.objectContaining({ statusCode: 400 }));
   });
 
   it("returns 404 when there is no stored koreader locator", async () => {

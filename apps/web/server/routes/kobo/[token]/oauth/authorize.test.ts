@@ -6,7 +6,7 @@ describe("createOauthAuthorizeHandler", () => {
   it("redirects to kobo://UserAuthenticated with code=token", () => {
     const mockSendRedirect = vi.fn().mockReturnValue(undefined);
     const handler = createOauthAuthorizeHandler({ sendRedirect: mockSendRedirect });
-    const event = { context: { params: { token: "abc123" } } } as unknown as H3Event;
+    const event = { context: { params: { token: "abc123" } } } as Partial<H3Event> as H3Event;
 
     handler(event);
 

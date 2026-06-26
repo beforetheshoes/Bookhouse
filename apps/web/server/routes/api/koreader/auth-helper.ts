@@ -1,4 +1,4 @@
-import { createError, getRequestHeader } from "h3";
+import { createError } from "h3";
 import type { H3Event } from "h3";
 
 export interface KoreaderAuthDeps {
@@ -31,8 +31,8 @@ function createAuthError(statusCode: number, message: string): Error & {
 
 export function createKoreaderAuth(deps: KoreaderAuthDeps) {
   return async (event: H3Event): Promise<KoreaderAuthResult> => {
-    const username = getRequestHeader(event, "x-auth-user");
-    const password = getRequestHeader(event, "x-auth-key");
+    const username = event.req.headers.get("x-auth-user");
+    const password = event.req.headers.get("x-auth-key");
 
     if (!username || !password) {
       throw createAuthError(401, "Unauthorized");

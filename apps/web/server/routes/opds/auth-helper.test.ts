@@ -2,12 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { OpdsAuthDeps } from "./auth-helper";
 import type { H3Event } from "h3";
 
-const mockSetResponseHeader = vi.fn();
-
 vi.mock("h3", () => ({
-  getRequestHeader: (event: { _authorization?: string }, _name: string) =>
-    event._authorization,
-  setResponseHeader: mockSetResponseHeader,
   createError: (opts: { statusCode: number; statusMessage: string; message: string }) => {
     const err = new Error(opts.message) as Error & { statusCode: number; statusMessage: string };
     err.statusCode = opts.statusCode;
@@ -28,8 +23,9 @@ const mockCredential = {
 
 function makeEvent(authorization?: string): H3Event {
   return {
-    _authorization: authorization,
-  } as unknown as H3Event;
+    req: new Request("http://localhost/", { headers: authorization ? { authorization } : {} }),
+    res: { headers: new Headers() },
+  } as Partial<H3Event> as H3Event;
 }
 
 function makeDeps(overrides: Partial<OpdsAuthDeps> = {}): OpdsAuthDeps {
@@ -60,40 +56,32 @@ describe("createOpdsAuth", () => {
   });
 
   it("throws 401 when Authorization header is missing", async () => {
-    mockSetResponseHeader.mockClear();
     const deps = makeDeps();
     const auth = createOpdsAuth(deps);
+    const event = makeEvent();
 
     try {
-      await auth(makeEvent());
+      await auth(event);
       expect.fail("Should have thrown");
     } catch (e) {
       const err = e as Error & { statusCode: number };
       expect(err.statusCode).toBe(401);
-      expect(mockSetResponseHeader).toHaveBeenCalledWith(
-        expect.anything(),
-        "WWW-Authenticate",
-        'Basic realm="Bookhouse OPDS"',
-      );
+      expect(event.res.headers.get("WWW-Authenticate")).toBe('Basic realm="Bookhouse OPDS"');
     }
   });
 
   it("throws 401 for non-Basic auth scheme", async () => {
-    mockSetResponseHeader.mockClear();
     const deps = makeDeps();
     const auth = createOpdsAuth(deps);
+    const event = makeEvent("Bearer some-token");
 
     try {
-      await auth(makeEvent("Bearer some-token"));
+      await auth(event);
       expect.fail("Should have thrown");
     } catch (e) {
       const err = e as Error & { statusCode: number };
       expect(err.statusCode).toBe(401);
-      expect(mockSetResponseHeader).toHaveBeenCalledWith(
-        expect.anything(),
-        "WWW-Authenticate",
-        'Basic realm="Bookhouse OPDS"',
-      );
+      expect(event.res.headers.get("WWW-Authenticate")).toBe('Basic realm="Bookhouse OPDS"');
     }
   });
 

@@ -3,8 +3,6 @@ import type { OpdsDownloadHandlerDeps } from "./[editionFileId]";
 import type { H3Event } from "h3";
 
 vi.mock("h3", () => ({
-  getRequestHeader: (event: { _authorization?: string }, _name: string) =>
-    event._authorization,
   defineEventHandler: vi.fn(),
 }));
 
@@ -25,13 +23,13 @@ const mockFile = {
   availabilityStatus: "PRESENT",
 };
 
-const mockStream = { pipe: vi.fn() } as unknown as NodeJS.ReadableStream;
+const mockStream = { pipe: vi.fn() } as Partial<NodeJS.ReadableStream> as NodeJS.ReadableStream;
 
 function makeEvent(editionFileId: string): H3Event {
   return {
-    _authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
+    req: new Request("http://localhost/", { headers: { authorization: `Basic ${Buffer.from("reader:password").toString("base64")}` } }),
     context: { params: { editionFileId } },
-  } as unknown as H3Event;
+  } as Partial<H3Event> as H3Event;
 }
 
 function makeDeps(overrides: Partial<OpdsDownloadHandlerDeps> = {}): OpdsDownloadHandlerDeps {

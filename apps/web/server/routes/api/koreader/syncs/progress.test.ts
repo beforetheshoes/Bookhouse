@@ -98,6 +98,31 @@ describe("KOReader progress PUT route", () => {
     });
   });
 
+  it("acknowledges without 500 when the edition was removed mid-sync", async () => {
+    const fkError = Object.assign(new Error("FK failed"), { code: "P2003" });
+    const deps = makeDeps({
+      upsertProgress: vi.fn().mockRejectedValue(fkError),
+    });
+    const handler = createKoreaderProgressPutHandler(deps);
+
+    const result = await handler(makeEvent());
+
+    // Echoes the device's own timestamp (it sent none, so the fallback clock).
+    expect(result).toEqual({
+      document: "abcd1234",
+      timestamp: 1719835200,
+    });
+  });
+
+  it("rethrows non-foreign-key errors from upsertProgress", async () => {
+    const deps = makeDeps({
+      upsertProgress: vi.fn().mockRejectedValue(new Error("db down")),
+    });
+    const handler = createKoreaderProgressPutHandler(deps);
+
+    await expect(handler(makeEvent())).rejects.toThrow("db down");
+  });
+
   it("uses the fallback clock when the device timestamp is invalid", async () => {
     const deps = makeDeps({
       readBody: vi.fn().mockResolvedValue({

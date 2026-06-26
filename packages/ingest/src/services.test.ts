@@ -451,6 +451,17 @@ function createTestDb(state: TestState): IngestDb {
         return updated;
       },
     },
+    async completeMove({ editionFileIds, toFileAssetId, deleteWorkId }) {
+      await Promise.resolve();
+      for (const id of editionFileIds) {
+        const existing = [...state.editionFiles.values()].find((ef) => ef.id === id);
+        if (!existing) throw new Error(`Unknown edition file: ${id}`);
+        state.editionFiles.delete(getEditionFileKey(existing.editionId, existing.fileAssetId));
+        const updated = { ...existing, fileAssetId: toFileAssetId };
+        state.editionFiles.set(getEditionFileKey(updated.editionId, updated.fileAssetId), updated);
+      }
+      state.works.delete(deleteWorkId);
+    },
     contributor: {
       async create({ data }) {
         await Promise.resolve();
@@ -3262,6 +3273,95 @@ describe("ingest services", () => {
       LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA,
       expect.anything(),
     );
+  });
+
+  it("transfers links from the linked MISSING asset even when an orphan with the same hash sorts first", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    // Orphan MISSING asset, same hash, NO edition links (left over from an
+    // earlier move). It sorts first, so the old `find` picked it and skipped
+    // the move; the loop must keep looking for a linked source instead.
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/older-folder/book.epub",
+      availabilityStatus: AvailabilityStatus.MISSING,
+      basename: "book.epub",
+      fullHash: "same-hash-abc",
+      id: "orphan-file",
+      relativePath: "older-folder/book.epub",
+    });
+
+    // The real old file — MISSING, same hash, WITH edition links.
+    const oldFile = addFileAsset(state, {
+      absolutePath: "/tmp/root/old-folder/book.epub",
+      availabilityStatus: AvailabilityStatus.MISSING,
+      basename: "book.epub",
+      fullHash: "same-hash-abc",
+      id: "old-file",
+      relativePath: "old-folder/book.epub",
+    });
+    const oldWork = addWork(state, {
+      enrichmentStatus: "ENRICHED",
+      id: "old-work",
+      titleCanonical: "the fifth season",
+      titleDisplay: "The Fifth Season",
+    });
+    const oldEdition = addEdition(state, { id: "old-edition", workId: oldWork.id });
+    addEditionFile(state, {
+      editionId: oldEdition.id,
+      fileAssetId: oldFile.id,
+      id: "old-edition-file",
+    });
+
+    // New present file with a stub work.
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/new-folder/book.epub",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.epub",
+      fullHash: null,
+      id: "new-file",
+      partialHash: null,
+      relativePath: "new-folder/book.epub",
+    });
+    const stubWork = addWork(state, {
+      enrichmentStatus: "STUB",
+      id: "stub-work",
+      titleCanonical: "book",
+      titleDisplay: "book",
+    });
+    const stubEdition = addEdition(state, { id: "stub-edition", workId: stubWork.id });
+    addEditionFile(state, {
+      editionId: stubEdition.id,
+      fileAssetId: "new-file",
+      id: "stub-edition-file",
+    });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      hashFile: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          fullHash: "same-hash-abc",
+          koreaderHash: "same-koreader-hash-abc",
+          mtime: new Date("2025-01-01T00:00:00.000Z"),
+          partialHash: "partial-abc",
+          sizeBytes: 100n,
+        };
+      }),
+    });
+
+    const result = await services.hashFileAsset({
+      fileAssetId: "new-file",
+      now: new Date("2025-01-01T01:00:00.000Z"),
+    });
+
+    // The move is detected against the LINKED old file, not the orphan.
+    expect(result.movedFromFileAssetId).toBe("old-file");
+    const transferred = [...state.editionFiles.values()].find(
+      (ef) => ef.id === "old-edition-file",
+    );
+    expect(transferred?.fileAssetId).toBe("new-file");
+    expect(state.works.has("stub-work")).toBe(false);
   });
 
   it("skips move detection when edition for current file is not found", async () => {
@@ -13065,5 +13165,327 @@ describe("mergeWorksById", () => {
     await expect(services.mergeWorksById("work-surviving", "nonexistent")).rejects.toThrow(
       "Cannot merge: work not found (surviving=work-surviving, losing=nonexistent)",
     );
+  });
+});
+
+describe("ingestUploadedBook", () => {
+  function fileStats(opts: Partial<{ isFile: boolean; isSymlink: boolean; size: number }> = {}): Stats {
+    const { isFile = true, isSymlink = false, size = 1024 } = opts;
+    return {
+      isFile: () => isFile,
+      isSymbolicLink: () => isSymlink,
+      ctime: new Date("2026-05-24T00:00:00.000Z"),
+      mtime: new Date("2026-05-24T00:00:00.000Z"),
+      size,
+    } as never;
+  }
+
+  function makeReadStats(map: Record<string, Stats | Error>): LstatFn {
+    return ((p: string) => {
+      const entry = map[p];
+      if (entry instanceof Error) return Promise.reject(entry);
+      if (entry === undefined) return Promise.reject(new Error(`Unexpected stat path: ${p}`));
+      return Promise.resolve(entry);
+    }) as LstatFn;
+  }
+
+  it("upserts a FileAsset for an ebook upload and creates a stub Work/Edition/EditionFile with PRIMARY role", async () => {
+    const state = createEmptyState("/data/ebooks");
+    const enqueue = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: enqueue,
+      readStats: makeReadStats({ "/data/ebooks/Author/Title/book.epub": fileStats({ size: 2048 }) }),
+    });
+
+    const result = await services.ingestUploadedBook({
+      libraryRootId: "root-1",
+      absolutePaths: ["/data/ebooks/Author/Title/book.epub"],
+    });
+
+    expect(result.fileAssetIds).toHaveLength(1);
+    expect(result.createdWorkIds).toHaveLength(1);
+    const fileAsset = state.fileAssets.get("/data/ebooks/Author/Title/book.epub");
+    expect(fileAsset?.mediaKind).toBe(MediaKind.EPUB);
+    expect(fileAsset?.relativePath).toBe(path.join("Author", "Title", "book.epub"));
+    expect(fileAsset?.availabilityStatus).toBe(AvailabilityStatus.PRESENT);
+    expect(fileAsset?.sizeBytes).toBe(BigInt(2048));
+
+    const editionFile = [...state.editionFiles.values()][0];
+    if (!editionFile) throw new Error("expected an edition file");
+    expect(editionFile.role).toBe(EditionFileRole.PRIMARY);
+
+    const workId = result.createdWorkIds[0];
+    if (!workId) throw new Error("expected a created work");
+    const work = state.works.get(workId);
+    expect(work?.enrichmentStatus).toBe("STUB");
+
+    const calls = enqueue.mock.calls as never as Array<[string, { workId?: string; fileAssetId?: string }]>;
+    expect(calls.some(([name]) => name === LIBRARY_JOB_NAMES.HASH_FILE_ASSET)).toBe(true);
+    const coverCall = calls.find(([name]) => name === LIBRARY_JOB_NAMES.PROCESS_COVER);
+    expect(coverCall).toBeDefined();
+    expect(coverCall?.[1]).toMatchObject({
+      workId,
+      fileAssetId: result.fileAssetIds[0],
+    });
+  });
+
+  it("creates a single AUDIOBOOK stub for a multi-file mp3 upload and links every file as AUDIO_TRACK", async () => {
+    const state = createEmptyState("/data/audiobooks");
+    const enqueue = vi.fn(() => Promise.resolve(undefined));
+    const paths = [
+      "/data/audiobooks/Author/Title/01-chapter.mp3",
+      "/data/audiobooks/Author/Title/02-chapter.mp3",
+      "/data/audiobooks/Author/Title/03-chapter.mp3",
+    ];
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: enqueue,
+      readStats: makeReadStats(Object.fromEntries(paths.map((p) => [p, fileStats()]))),
+    });
+
+    const result = await services.ingestUploadedBook({
+      libraryRootId: "root-1",
+      absolutePaths: paths,
+    });
+
+    expect(result.fileAssetIds).toHaveLength(3);
+    expect(result.createdWorkIds).toHaveLength(1);
+    const audioTrackFiles = [...state.editionFiles.values()].filter(
+      (ef) => ef.role === EditionFileRole.AUDIO_TRACK,
+    );
+    expect(audioTrackFiles).toHaveLength(3);
+
+    const editions = [...state.editions.values()].filter(
+      (e) => e.workId === result.createdWorkIds[0],
+    );
+    expect(editions).toHaveLength(1);
+    const firstEdition = editions[0];
+    if (!firstEdition) throw new Error("expected edition");
+    expect(firstEdition.formatFamily).toBe(FormatFamily.AUDIOBOOK);
+
+    const calls = enqueue.mock.calls as never as Array<[string, object]>;
+    const coverCalls = calls.filter(([name]) => name === LIBRARY_JOB_NAMES.PROCESS_COVER);
+    expect(coverCalls).toHaveLength(1);
+    const hashCalls = calls.filter(([name]) => name === LIBRARY_JOB_NAMES.HASH_FILE_ASSET);
+    expect(hashCalls).toHaveLength(3);
+  });
+
+  it("creates separate stubs for audio files in different directories", async () => {
+    const state = createEmptyState("/data/audiobooks");
+    const enqueue = vi.fn(() => Promise.resolve(undefined));
+    const paths = [
+      "/data/audiobooks/Author A/Title A/file.m4b",
+      "/data/audiobooks/Author B/Title B/file.m4b",
+    ];
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: enqueue,
+      readStats: makeReadStats(Object.fromEntries(paths.map((p) => [p, fileStats()]))),
+    });
+
+    const result = await services.ingestUploadedBook({
+      libraryRootId: "root-1",
+      absolutePaths: paths,
+    });
+
+    expect(result.createdWorkIds).toHaveLength(2);
+  });
+
+  it("groups sibling ebook variants in the same directory into one stub with ALTERNATE_FORMAT roles", async () => {
+    const state = createEmptyState("/data/ebooks");
+    const enqueue = vi.fn(() => Promise.resolve(undefined));
+    const paths = [
+      "/data/ebooks/Author/Title/book.epub",
+      "/data/ebooks/Author/Title/book.mobi",
+    ];
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: enqueue,
+      readStats: makeReadStats(Object.fromEntries(paths.map((p) => [p, fileStats()]))),
+    });
+
+    const result = await services.ingestUploadedBook({
+      libraryRootId: "root-1",
+      absolutePaths: paths,
+    });
+
+    expect(result.createdWorkIds).toHaveLength(1);
+    const editionFiles = [...state.editionFiles.values()];
+    expect(editionFiles).toHaveLength(2);
+    const roles = editionFiles.map((ef) => ef.role).sort();
+    expect(roles).toContain(EditionFileRole.PRIMARY);
+    expect(roles).toContain(EditionFileRole.ALTERNATE_FORMAT);
+  });
+
+  it("upserts sidecar and cover files but does not create a stub or enqueue HASH", async () => {
+    const state = createEmptyState("/data/ebooks");
+    const enqueue = vi.fn(() => Promise.resolve(undefined));
+    const paths = [
+      "/data/ebooks/Author/Title/metadata.opf",
+      "/data/ebooks/Author/Title/cover.jpg",
+    ];
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: enqueue,
+      readStats: makeReadStats(Object.fromEntries(paths.map((p) => [p, fileStats()]))),
+    });
+
+    const result = await services.ingestUploadedBook({
+      libraryRootId: "root-1",
+      absolutePaths: paths,
+    });
+
+    expect(result.fileAssetIds).toHaveLength(2);
+    expect(result.createdWorkIds).toHaveLength(0);
+    expect(state.editionFiles.size).toBe(0);
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("skips symlinks and directories silently", async () => {
+    const state = createEmptyState("/data/ebooks");
+    const enqueue = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: enqueue,
+      readStats: makeReadStats({
+        "/data/ebooks/Author/Title/symlink.epub": fileStats({ isSymlink: true }),
+        "/data/ebooks/Author/Title/subdir": fileStats({ isFile: false }),
+      }),
+    });
+
+    const result = await services.ingestUploadedBook({
+      libraryRootId: "root-1",
+      absolutePaths: [
+        "/data/ebooks/Author/Title/symlink.epub",
+        "/data/ebooks/Author/Title/subdir",
+      ],
+    });
+
+    expect(result.fileAssetIds).toHaveLength(0);
+    expect(result.createdWorkIds).toHaveLength(0);
+  });
+
+  it("throws if the library root does not exist", async () => {
+    const state = createEmptyState("/data/ebooks");
+    const services = createIngestServices({
+      db: createTestDb(state),
+      readStats: makeReadStats({}),
+    });
+
+    await expect(
+      services.ingestUploadedBook({
+        libraryRootId: "missing",
+        absolutePaths: [],
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("does not create a duplicate stub for a re-uploaded path with an existing Edition link", async () => {
+    const state = createEmptyState("/data/ebooks");
+    const enqueue = vi.fn(() => Promise.resolve(undefined));
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: enqueue,
+      readStats: makeReadStats({ "/data/ebooks/Author/Title/book.epub": fileStats() }),
+    });
+
+    await services.ingestUploadedBook({
+      libraryRootId: "root-1",
+      absolutePaths: ["/data/ebooks/Author/Title/book.epub"],
+    });
+    const firstWorkCount = state.works.size;
+
+    await services.ingestUploadedBook({
+      libraryRootId: "root-1",
+      absolutePaths: ["/data/ebooks/Author/Title/book.epub"],
+    });
+
+    expect(state.works.size).toBe(firstWorkCount);
+    expect(state.editionFiles.size).toBe(1);
+    const calls = enqueue.mock.calls as never as Array<[string, object]>;
+    const hashCalls = calls.filter(([name]) => name === LIBRARY_JOB_NAMES.HASH_FILE_ASSET);
+    expect(hashCalls).toHaveLength(2);
+  });
+
+  it("respects an explicit `now` for lastSeenAt", async () => {
+    const state = createEmptyState("/data/ebooks");
+    const now = new Date("2030-01-01T00:00:00.000Z");
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      readStats: makeReadStats({ "/data/ebooks/Author/Title/book.epub": fileStats() }),
+    });
+
+    await services.ingestUploadedBook({
+      libraryRootId: "root-1",
+      absolutePaths: ["/data/ebooks/Author/Title/book.epub"],
+      now,
+    });
+
+    const fileAsset = state.fileAssets.get("/data/ebooks/Author/Title/book.epub");
+    expect(fileAsset?.lastSeenAt).toEqual(now);
+  });
+
+  it("uses path-derived metadata for PDF uploads", async () => {
+    const state = createEmptyState("/data/ebooks");
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      readStats: makeReadStats({ "/data/ebooks/Author/Title/book.pdf": fileStats() }),
+    });
+
+    const result = await services.ingestUploadedBook({
+      libraryRootId: "root-1",
+      absolutePaths: ["/data/ebooks/Author/Title/book.pdf"],
+    });
+
+    expect(result.createdWorkIds).toHaveLength(1);
+    const pdfWorkId = result.createdWorkIds[0];
+    if (!pdfWorkId) throw new Error("expected created work id");
+    const work = state.works.get(pdfWorkId);
+    expect(work).toBeDefined();
+    expect(work?.titleDisplay.length).toBeGreaterThan(0);
+  });
+
+  it("falls back to lowercased title when canonicalisation yields nothing", async () => {
+    const state = createEmptyState("/data/ebooks");
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      readStats: makeReadStats({ "/data/ebooks/Author/!!!/file.pdf": fileStats() }),
+    });
+
+    const result = await services.ingestUploadedBook({
+      libraryRootId: "root-1",
+      absolutePaths: ["/data/ebooks/Author/!!!/file.pdf"],
+    });
+
+    expect(result.createdWorkIds).toHaveLength(1);
+    const fallbackWorkId = result.createdWorkIds[0];
+    if (!fallbackWorkId) throw new Error("expected created work id");
+    const work = state.works.get(fallbackWorkId);
+    expect(work?.titleCanonical).toBe("!!!");
+  });
+
+  it("does not group CBZ files in the same directory as ebook variants", async () => {
+    const state = createEmptyState("/data/ebooks");
+    const paths = [
+      "/data/ebooks/Author/Title/v1.cbz",
+      "/data/ebooks/Author/Title/v2.cbz",
+    ];
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      readStats: makeReadStats(Object.fromEntries(paths.map((p) => [p, fileStats()]))),
+    });
+
+    const result = await services.ingestUploadedBook({
+      libraryRootId: "root-1",
+      absolutePaths: paths,
+    });
+
+    // CBZ is not in SCAN_GROUPED_EBOOK_MEDIA_KINDS, so each file gets its own stub.
+    expect(result.createdWorkIds).toHaveLength(2);
   });
 });

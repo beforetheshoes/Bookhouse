@@ -16,7 +16,7 @@ export interface DownloadHandlerDeps {
   statSync: (path: string) => { size: number };
   createReadStream: (path: string) => NodeJS.ReadableStream;
   setResponseHeader: (event: H3Event, name: string, value: string) => void;
-  sendStream: (event: H3Event, stream: NodeJS.ReadableStream) => unknown;
+  sendStream: (event: H3Event, stream: NodeJS.ReadableStream) => ReadableStream;
 }
 
 const VALID_ID = /^[a-zA-Z0-9_-]+$/;
@@ -71,12 +71,18 @@ export function createDownloadHandler(deps: DownloadHandlerDeps) {
         filePath = await deps.convertToKepub(file.absolutePath);
         fileName = fileName.replace(/\.epub$/, ".kepub.epub");
         contentType = "application/x-kobo-epub+zip";
-      } catch {
-        // Fall back to original EPUB if conversion fails
+      } catch (error) {
+        // Fall back to the original EPUB if conversion fails, but log why so a
+        // missing kepubify binary or conversion failure is diagnosable.
+        console.warn(
+          `[kobo] DOWNLOAD kepub conversion failed for ${file.absolutePath}; serving original EPUB`,
+          error,
+        );
       }
     }
 
     if (!deps.existsSync(filePath)) {
+      console.error(`[kobo] DOWNLOAD file missing from disk: ${filePath}`);
       throw Object.assign(new Error("File missing from disk"), {
         statusCode: 404,
         statusMessage: "Not found",
@@ -101,7 +107,6 @@ export function createDownloadHandler(deps: DownloadHandlerDeps) {
 export default defineEventHandler(async (event) => {
   const fs = await import("node:fs");
   const stream = await import("node:stream");
-  const h3 = await import("h3");
   const { db } = await import("@bookhouse/db");
 
   const handler = createDownloadHandler({
@@ -145,12 +150,12 @@ export default defineEventHandler(async (event) => {
       const { convertToKepub: convert } = await import("@bookhouse/kobo");
       const { execFile: execFileCb } = await import("node:child_process");
       const { promisify } = await import("node:util");
-      const { existsSync: exists, mkdirSync } = await import("node:fs");
+      const { existsSync: fsExistsSync, mkdirSync } = await import("node:fs");
       const execFile = promisify(execFileCb);
       const cacheDir = process.env.KEPUB_CACHE_DIR ?? "/tmp/kepub-cache";
       return convert(epubPath, cacheDir, {
         execFile: (cmd, args) => execFile(cmd, args),
-        existsSync: exists,
+        existsSync: fsExistsSync,
         mkdirSync,
       });
     },
@@ -158,8 +163,8 @@ export default defineEventHandler(async (event) => {
     statSync: fs.statSync,
     createReadStream: fs.createReadStream,
     setResponseHeader,
-    sendStream: (evt, s) =>
-      h3.sendStream(evt, stream.Readable.toWeb(s as InstanceType<typeof stream.Readable>) as ReadableStream),
+    sendStream: (_evt, s) =>
+      stream.Readable.toWeb(s as InstanceType<typeof stream.Readable>) as ReadableStream,
   });
 
   return handler(event);

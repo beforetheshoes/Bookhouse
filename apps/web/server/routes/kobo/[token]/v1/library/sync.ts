@@ -3,7 +3,7 @@ import type { H3Event } from "h3";
 import type { KoboAuthDeps } from "../../../auth-helper";
 import type { EligibleEdition, ReadingProgressRecord, LocatorData } from "@bookhouse/kobo";
 import type { SyncedBookRecord } from "@bookhouse/kobo";
-import { selectPreferredKoboDeliveryFile } from "@bookhouse/shared";
+import { selectPreferredKoboDeliveryFile, isForeignKeyConstraintError } from "@bookhouse/shared";
 
 const SYNC_ITEM_LIMIT = 100;
 
@@ -14,6 +14,8 @@ export interface SyncHandlerDeps {
   markSynced: (deviceId: string, editionIds: string[]) => Promise<void>;
   markRemoved: (deviceId: string, editionIds: string[]) => Promise<void>;
   getReadingProgress: (userId: string, editionIds: string[]) => Promise<ReadingProgressRecord[]>;
+  getLegacyCleanupPending: (deviceId: string) => Promise<boolean>;
+  markLegacyCleanupDone: (deviceId: string) => Promise<void>;
   getBaseUrl: () => string;
   setResponseHeader: (event: H3Event, name: string, value: string) => void;
 }
@@ -33,15 +35,15 @@ export function createSyncHandler(deps: SyncHandlerDeps) {
       getDeviceCollectionEditions: deps.getDeviceCollectionEditions,
     });
 
-    console.log(`[kobo] SYNC device=${device.id} eligible=${eligible.length}`);
+    console.log(`[kobo] SYNC device=${device.id} eligible=${String(eligible.length)}`);
 
     const synced = await deps.getSyncedBooks(device.id);
 
-    console.log(`[kobo] SYNC synced=${synced.length} (active=${synced.filter((s) => s.removedAt === null).length})`);
+    console.log(`[kobo] SYNC synced=${String(synced.length)} (active=${String(synced.filter((s) => s.removedAt === null).length)})`);
 
     const { toAdd, toRemove } = computeSyncDiff(eligible, synced);
 
-    console.log(`[kobo] SYNC toAdd=${toAdd.length} toRemove=${toRemove.length}`);
+    console.log(`[kobo] SYNC toAdd=${String(toAdd.length)} toRemove=${String(toRemove.length)}`);
 
     // Paginate: only send up to SYNC_ITEM_LIMIT items per response
     const pageAdd = toAdd.slice(0, SYNC_ITEM_LIMIT);
@@ -62,10 +64,23 @@ export function createSyncHandler(deps: SyncHandlerDeps) {
     }, progressMap);
 
     if (pageAdd.length > 0) {
-      await deps.markSynced(
-        device.id,
-        pageAdd.map((e) => e.id),
-      );
+      try {
+        await deps.markSynced(
+          device.id,
+          pageAdd.map((e) => e.id),
+        );
+      } catch (error) {
+        // An edition can be deleted between selection and this write, making the
+        // FK upsert fail. Skip recording (it re-syncs next time) rather than
+        // 500ing the device. Re-throw anything that isn't an FK violation.
+        if (!isForeignKeyConstraintError(error as Error)) {
+          throw error;
+        }
+        console.warn(
+          `[kobo] SYNC markSynced skipped: edition removed mid-sync (device=${device.id})`,
+          error,
+        );
+      }
     }
 
     if (pageRemove.length > 0) {
@@ -73,7 +88,7 @@ export function createSyncHandler(deps: SyncHandlerDeps) {
     }
 
     // Build response array
-    const syncResults: Record<string, unknown>[] = [];
+    const syncResults: Record<string, object>[] = [];
 
     for (const entitlement of result.newEntitlements) {
       syncResults.push({ NewEntitlement: entitlement });
@@ -91,16 +106,22 @@ export function createSyncHandler(deps: SyncHandlerDeps) {
       syncResults.push({ ChangedReadingState: { ReadingState: readingState } });
     }
 
-    // One-time cleanup: remove legacy UUID-format entries from old syncs
-    // that used toKoboId(editionId) instead of raw edition IDs.
-    const { toKoboId } = await import("@bookhouse/kobo");
-    for (const edition of eligible) {
-      const legacyId = toKoboId(edition.id);
-      syncResults.push({
-        ChangedEntitlement: {
-          BookEntitlement: { Id: legacyId, IsRemoved: true },
-        },
-      });
+    // One-time-per-device cleanup: remove legacy UUID-format entitlements from
+    // old syncs that used toKoboId(editionId) instead of raw edition IDs. These
+    // were previously re-emitted on every sync (one removal per eligible
+    // edition), bloating the response; send them once per device, then record
+    // completion so subsequent syncs skip them.
+    if (eligible.length > 0 && (await deps.getLegacyCleanupPending(device.id))) {
+      const { toKoboId } = await import("@bookhouse/kobo");
+      for (const edition of eligible) {
+        const legacyId = toKoboId(edition.id);
+        syncResults.push({
+          ChangedEntitlement: {
+            BookEntitlement: { Id: legacyId, IsRemoved: true },
+          },
+        });
+      }
+      await deps.markLegacyCleanupDone(device.id);
     }
 
     // Build sync token for response header
@@ -123,7 +144,7 @@ export function createSyncHandler(deps: SyncHandlerDeps) {
     const hasMore = additionsRemaining;
     if (hasMore) {
       deps.setResponseHeader(event, "x-kobo-sync", "continue");
-      console.log(`[kobo] SYNC paginated: sent ${pageAdd.length}, ${toAdd.length - pageAdd.length} remaining`);
+      console.log(`[kobo] SYNC paginated: sent ${String(pageAdd.length)}, ${String(toAdd.length - pageAdd.length)} remaining`);
     }
 
     // Log first entitlement for diagnostics (only on first page)
@@ -131,7 +152,7 @@ export function createSyncHandler(deps: SyncHandlerDeps) {
       console.log(`[kobo] SYNC first entitlement sample: ${JSON.stringify(syncResults[0])}`);
     }
 
-    console.log(`[kobo] SYNC response: ${syncResults.length} items (filter=${filterParam ?? "none"})`);
+    console.log(`[kobo] SYNC response: ${String(syncResults.length)} items (filter=${filterParam ?? "none"})`);
 
     return syncResults;
   };
@@ -171,7 +192,7 @@ export default defineEventHandler(async (event) => {
         },
       });
 
-      console.log(`[kobo] QUERY found ${deviceCollections.length} deviceCollections, items: ${deviceCollections.map((dc) => dc.collection.items.length).join(",")}`);
+      console.log(`[kobo] QUERY found ${String(deviceCollections.length)} deviceCollections, items: ${deviceCollections.map((dc) => dc.collection.items.length).join(",")}`);
 
       const editionMap = new Map<string, EligibleEdition>();
 
@@ -246,6 +267,19 @@ export default defineEventHandler(async (event) => {
       await db.koboSyncedBook.updateMany({
         where: { koboDeviceId: deviceId, editionId: { in: editionIds } },
         data: { removedAt: new Date() },
+      });
+    },
+    getLegacyCleanupPending: async (deviceId) => {
+      const device = await db.koboDevice.findUnique({
+        where: { id: deviceId },
+        select: { legacyCleanupDoneAt: true },
+      });
+      return device !== null && device.legacyCleanupDoneAt === null;
+    },
+    markLegacyCleanupDone: async (deviceId) => {
+      await db.koboDevice.update({
+        where: { id: deviceId },
+        data: { legacyCleanupDoneAt: new Date() },
       });
     },
     getReadingProgress: async (userId, editionIds) => {

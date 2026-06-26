@@ -6,8 +6,6 @@ import type { OpdsEditionData } from "@bookhouse/opds";
 vi.mock("h3", () => ({
   createError: (opts: { statusCode: number; statusMessage: string }) =>
     Object.assign(new Error(opts.statusMessage), opts),
-  getRequestHeader: (event: { _authorization?: string }, _name: string) =>
-    event._authorization,
   defineEventHandler: vi.fn(),
 }));
 
@@ -46,9 +44,9 @@ function makeEdition(id: string): OpdsEditionData {
 
 function makeEvent(collectionId: string): H3Event {
   return {
-    _authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
+    req: new Request("http://localhost/", { headers: { authorization: `Basic ${Buffer.from("reader:password").toString("base64")}` } }),
     context: { params: { collectionId } },
-  } as unknown as H3Event;
+  } as Partial<H3Event> as H3Event;
 }
 
 function makeDeps(overrides: Partial<ShelfBooksHandlerDeps> = {}): ShelfBooksHandlerDeps {
@@ -69,7 +67,7 @@ describe("createShelfBooksHandler", () => {
   it("returns an acquisition feed with books in the shelf", async () => {
     const deps = makeDeps();
     const handler = createShelfBooksHandler(deps);
-    const xml = (await handler(makeEvent("s1"))) as string;
+    const xml = (await handler(makeEvent("s1")));
 
     expect(xml).toContain("<title>Favorites</title>");
     expect(xml).toContain("<title>Book 1</title>");
@@ -132,7 +130,7 @@ describe("createShelfBooksHandler", () => {
       getShelfEditions: vi.fn().mockResolvedValue([]),
     });
     const handler = createShelfBooksHandler(deps);
-    const xml = (await handler(makeEvent("s1"))) as string;
+    const xml = (await handler(makeEvent("s1")));
 
     expect(xml).toContain("<title>Favorites</title>");
     expect(xml).not.toContain("<entry>");

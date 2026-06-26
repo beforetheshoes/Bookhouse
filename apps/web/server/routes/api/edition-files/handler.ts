@@ -14,7 +14,7 @@ export interface FileDownloadHandlerDeps {
   existsSync: (path: string) => boolean;
   createReadStream: (path: string) => NodeJS.ReadableStream;
   setResponseHeader: (event: H3Event, name: string, value: string) => void;
-  sendStream: (event: H3Event, stream: NodeJS.ReadableStream) => unknown;
+  sendStream: (event: H3Event, stream: NodeJS.ReadableStream) => ReadableStream;
 }
 
 const VALID_ID = /^[a-zA-Z0-9_-]+$/;

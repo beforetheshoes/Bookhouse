@@ -1,4 +1,4 @@
-import { defineEventHandler, setResponseHeader, sendNoContent } from "h3";
+import { defineEventHandler, noContent } from "h3";
 import nodePath from "node:path";
 
 const IS_CUID = /^c[a-z0-9]{24}$/;
@@ -10,7 +10,7 @@ export default defineEventHandler(async (event) => {
   const params = event.context.params as Record<string, string>;
   const imageId = params.ImageId ?? "";
 
-  console.log(`[kobo] IMAGE ${imageId} (${params.Width}x${params.Height})`);
+  console.log(`[kobo] IMAGE ${imageId} (${params.Width ?? ""}x${params.Height ?? ""})`);
 
   const { db } = await import("@bookhouse/db");
   const { existsSync } = await import("node:fs");
@@ -50,10 +50,10 @@ export default defineEventHandler(async (event) => {
       // Kobo e-readers don't support WebP — convert to JPEG
       const sharp = (await import("sharp")).default;
       const jpegBuffer = await sharp(coverFile).jpeg({ quality: 80 }).toBuffer();
-      setResponseHeader(event, "Content-Type", "image/jpeg");
-      setResponseHeader(event, "Content-Length", String(jpegBuffer.length));
-      setResponseHeader(event, "Cache-Control", "public, max-age=86400");
-      console.log(`[kobo] IMAGE serving cover ${coverFile} (${jpegBuffer.length} bytes jpeg)`);
+      event.res.headers.set("Content-Type", "image/jpeg");
+      event.res.headers.set("Content-Length", String(jpegBuffer.length));
+      event.res.headers.set("Cache-Control", "public, max-age=86400");
+      console.log(`[kobo] IMAGE serving cover ${coverFile} (${String(jpegBuffer.length)} bytes jpeg)`);
       return jpegBuffer;
     }
     console.log(`[kobo] IMAGE cover file not found: ${coverFile}`);
@@ -62,6 +62,6 @@ export default defineEventHandler(async (event) => {
   }
 
   // For Kobo store images or missing covers, return 204 No Content
-  return sendNoContent(event);
+  return noContent();
 });
 /* c8 ignore stop */

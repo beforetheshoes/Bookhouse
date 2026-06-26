@@ -1,0 +1,9 @@
+#!/bin/sh
+# Pre-commit gate: lint, typecheck, and tests must pass (CLAUDE.md).
+# Requires Node 24 (see .nvmrc) and a generated Prisma client (pnpm db:generate).
+# Do not bypass with --no-verify.
+set -e
+
+pnpm lint
+pnpm typecheck
+pnpm test

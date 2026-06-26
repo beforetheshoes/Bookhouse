@@ -1,4 +1,4 @@
-import { defineEventHandler, getMethod, readBody } from "h3";
+import { defineEventHandler, readBody } from "h3";
 import type { H3Event } from "h3";
 import type { Prisma } from "@bookhouse/db";
 import type { KoboAuthDeps } from "../../../../auth-helper";
@@ -7,6 +7,7 @@ import type { ReadingProgressRecord, KoboReadingState, KoboRequestResult, Locato
 export interface StateHandlerDeps {
   auth: KoboAuthDeps;
   findProgress: (userId: string, editionId: string) => Promise<ReadingProgressRecord | null>;
+  editionExists: (editionId: string) => Promise<boolean>;
   upsertProgress: (params: {
     userId: string;
     editionId: string;
@@ -100,6 +101,14 @@ export function createStateHandler(deps: StateHandlerDeps) {
         });
       }
 
+      // The Kobo still has books in its local library that may no longer exist
+      // here (e.g. an edition replaced or removed by a re-scan). Acknowledge the
+      // update so the device stops retrying, but skip the write that would
+      // violate the ReadingProgress -> Edition foreign key.
+      if (!(await deps.editionExists(bookId))) {
+        return successResult(bookId);
+      }
+
       const existing = await deps.findProgress(device.userId, bookId);
 
       if (existing) {
@@ -129,16 +138,17 @@ export function createStateHandler(deps: StateHandlerDeps) {
 
 /* c8 ignore start — runtime wiring */
 export default defineEventHandler(async (event) => {
-  const { db } = await import("@bookhouse/db");
+  const { db, editionExists } = await import("@bookhouse/db");
 
   const handler = createStateHandler({
     auth: {
       findDeviceByToken: (token) =>
         db.koboDevice.findUnique({ where: { authToken: token } }),
     },
+    editionExists: (editionId) => editionExists(db, editionId),
     findProgress: async (userId, editionId) => {
       const record = await db.readingProgress.findFirst({
-        where: { userId, editionId, progressKind: "EBOOK" },
+        where: { userId, editionId, progressKind: "EBOOK", source: "kobo" },
       });
       if (!record) return null;
       return {
@@ -153,26 +163,28 @@ export default defineEventHandler(async (event) => {
       };
     },
     upsertProgress: async ({ userId, editionId, percent, locator, source }) => {
-      const existing = await db.readingProgress.findFirst({
-        where: { userId, editionId, progressKind: "EBOOK" },
-      });
-
       const jsonLocator = locator as Prisma.InputJsonValue;
-      const record = existing
-        ? await db.readingProgress.update({
-            where: { id: existing.id },
-            data: { percent, locator: jsonLocator, source },
-          })
-        : await db.readingProgress.create({
-            data: {
-              userId,
-              editionId,
-              progressKind: "EBOOK",
-              percent,
-              locator: jsonLocator,
-              source,
-            },
-          });
+      // Atomic upsert keyed on the per-source unique constraint — avoids the
+      // find-then-create race and never clobbers another source's row.
+      const record = await db.readingProgress.upsert({
+        where: {
+          userId_editionId_progressKind_source: {
+            userId,
+            editionId,
+            progressKind: "EBOOK",
+            source,
+          },
+        },
+        create: {
+          userId,
+          editionId,
+          progressKind: "EBOOK",
+          percent,
+          locator: jsonLocator,
+          source,
+        },
+        update: { percent, locator: jsonLocator },
+      });
 
       return {
         id: record.id,
@@ -185,7 +197,7 @@ export default defineEventHandler(async (event) => {
         updatedAt: record.updatedAt,
       };
     },
-    getMethod: (ev) => getMethod(ev),
+    getMethod: (ev) => ev.req.method,
     readBody: (ev) => readBody(ev),
   });
 

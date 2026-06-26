@@ -5,8 +5,6 @@ import type { OpdsEditionData } from "@bookhouse/opds";
 
 vi.mock("h3", () => ({
   getQuery: (event: { _query?: Record<string, string> }) => event._query ?? {},
-  getRequestHeader: (event: { _authorization?: string }, _name: string) =>
-    event._authorization,
   defineEventHandler: vi.fn(),
 }));
 
@@ -45,9 +43,9 @@ function makeEdition(id: string): OpdsEditionData {
 
 function makeEvent(page?: string): H3Event {
   return {
-    _authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
+    req: new Request("http://localhost/", { headers: { authorization: `Basic ${Buffer.from("reader:password").toString("base64")}` } }),
     _query: page ? { page } : {},
-  } as unknown as H3Event;
+  } as Partial<H3Event> as H3Event;
 }
 
 function makeDeps(overrides: Partial<AllBooksHandlerDeps> = {}): AllBooksHandlerDeps {
@@ -68,7 +66,7 @@ describe("createAllBooksHandler", () => {
   it("returns an acquisition feed with entries", async () => {
     const deps = makeDeps();
     const handler = createAllBooksHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain("<title>All Books</title>");
     expect(xml).toContain("<title>Book 1</title>");
@@ -109,7 +107,7 @@ describe("createAllBooksHandler", () => {
       countEditions: vi.fn().mockResolvedValue(50),
     });
     const handler = createAllBooksHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain('rel="next"');
     expect(xml).toContain("<opensearch:totalResults>50</opensearch:totalResults>");
@@ -137,7 +135,7 @@ describe("createAllBooksHandler", () => {
       countEditions: vi.fn().mockResolvedValue(0),
     });
     const handler = createAllBooksHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain("<title>All Books</title>");
     expect(xml).not.toContain("<entry>");
@@ -146,7 +144,7 @@ describe("createAllBooksHandler", () => {
   it("includes search link", async () => {
     const deps = makeDeps();
     const handler = createAllBooksHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain('rel="search"');
   });

@@ -21,9 +21,7 @@ vi.mock("~/lib/auth-server", () => ({
 
 const workFindUniqueOrThrowMock = vi.fn();
 const readingProgressFindManyMock = vi.fn();
-const readingProgressFindFirstMock = vi.fn();
-const readingProgressUpdateMock = vi.fn();
-const readingProgressCreateMock = vi.fn();
+const readingProgressUpsertMock = vi.fn();
 const workProgressPreferenceFindUniqueMock = vi.fn();
 const userPreferenceFindUniqueMock = vi.fn();
 
@@ -32,9 +30,7 @@ vi.mock("@bookhouse/db", () => ({
     work: { findUniqueOrThrow: workFindUniqueOrThrowMock },
     readingProgress: {
       findMany: readingProgressFindManyMock,
-      findFirst: readingProgressFindFirstMock,
-      update: readingProgressUpdateMock,
-      create: readingProgressCreateMock,
+      upsert: readingProgressUpsertMock,
     },
     workProgressPreference: { findUnique: workProgressPreferenceFindUniqueMock },
     userPreference: { findUnique: userPreferenceFindUniqueMock },
@@ -121,82 +117,59 @@ describe("updateReadingProgressServerFn", () => {
     ).rejects.toThrow("Not authenticated");
   });
 
-  it("updates existing progress record", async () => {
+  it("upserts the manual progress row by its per-source unique key", async () => {
     getCurrentUserMock.mockResolvedValue({ id: "user-1" });
-    const existing = { id: "rp1", percent: 25 };
-    readingProgressFindFirstMock.mockResolvedValue(existing);
-    const updated = { id: "rp1", percent: 50 };
-    readingProgressUpdateMock.mockResolvedValue(updated);
+    const saved = { id: "rp1", percent: 50 };
+    readingProgressUpsertMock.mockResolvedValue(saved);
 
     const result = await updateReadingProgressServerFn({
       data: { editionId: "e1", percent: 50, progressKind: "EBOOK" },
     });
 
-    expect(readingProgressFindFirstMock).toHaveBeenCalledWith({
+    expect(readingProgressUpsertMock).toHaveBeenCalledWith({
       where: {
+        userId_editionId_progressKind_source: {
+          userId: "user-1",
+          editionId: "e1",
+          progressKind: "EBOOK",
+          source: "manual",
+        },
+      },
+      create: {
         userId: "user-1",
         editionId: "e1",
         progressKind: "EBOOK",
-        OR: [{ source: "manual" }, { source: null }],
+        percent: 50,
+        locator: {},
+        source: "manual",
       },
+      update: { percent: 50, locator: {} },
     });
-    expect(readingProgressUpdateMock).toHaveBeenCalledWith({
-      where: { id: "rp1" },
-      data: { percent: 50, locator: {}, source: "manual" },
-    });
-    expect(result).toBe(updated);
+    expect(result).toBe(saved);
   });
 
-  it("creates new progress record when none exists", async () => {
+  it("upserts manual progress for non-EBOOK kinds without touching other sources", async () => {
     getCurrentUserMock.mockResolvedValue({ id: "user-1" });
-    readingProgressFindFirstMock.mockResolvedValue(null);
-    const created = { id: "rp-new", percent: 75 };
-    readingProgressCreateMock.mockResolvedValue(created);
+    const saved = { id: "rp-new", percent: 75 };
+    readingProgressUpsertMock.mockResolvedValue(saved);
 
     const result = await updateReadingProgressServerFn({
       data: { editionId: "e1", percent: 75, progressKind: "AUDIO" },
     });
 
-    expect(readingProgressCreateMock).toHaveBeenCalledWith({
-      data: {
-        userId: "user-1",
-        editionId: "e1",
-        progressKind: "AUDIO",
-        percent: 75,
-        locator: {},
-        source: "manual",
-      },
-    });
-    expect(result).toBe(created);
-  });
-
-  it("does not overwrite a koreader progress record when saving manual progress", async () => {
-    getCurrentUserMock.mockResolvedValue({ id: "user-1" });
-    readingProgressFindFirstMock.mockResolvedValue(null);
-    readingProgressCreateMock.mockResolvedValue({ id: "rp-manual", percent: 60 });
-
-    await updateReadingProgressServerFn({
-      data: { editionId: "e1", percent: 60, progressKind: "EBOOK" },
-    });
-
-    expect(readingProgressFindFirstMock).toHaveBeenCalledWith({
-      where: {
-        userId: "user-1",
-        editionId: "e1",
-        progressKind: "EBOOK",
-        OR: [{ source: "manual" }, { source: null }],
-      },
-    });
-    expect(readingProgressCreateMock).toHaveBeenCalledWith({
-      data: {
-        userId: "user-1",
-        editionId: "e1",
-        progressKind: "EBOOK",
-        percent: 60,
-        locator: {},
-        source: "manual",
-      },
-    });
+    expect(readingProgressUpsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          userId_editionId_progressKind_source: {
+            userId: "user-1",
+            editionId: "e1",
+            progressKind: "AUDIO",
+            source: "manual",
+          },
+        },
+      }),
+    );
+    expect(result).toBe(saved);
   });
 });
 

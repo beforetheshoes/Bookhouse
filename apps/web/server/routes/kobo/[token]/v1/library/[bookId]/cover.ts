@@ -8,7 +8,7 @@ export interface CoverHandlerDeps {
   existsSync: (path: string) => boolean;
   createReadStream: (path: string) => NodeJS.ReadableStream;
   setResponseHeader: (event: H3Event, name: string, value: string) => void;
-  sendStream: (event: H3Event, stream: NodeJS.ReadableStream) => unknown;
+  sendStream: (event: H3Event, stream: NodeJS.ReadableStream) => ReadableStream;
 }
 
 const VALID_ID = /^[a-zA-Z0-9_-]+$/;
@@ -49,7 +49,6 @@ export function createCoverHandler(deps: CoverHandlerDeps) {
 export default defineEventHandler(async (event) => {
   const fs = await import("node:fs");
   const stream = await import("node:stream");
-  const h3 = await import("h3");
   const { db } = await import("@bookhouse/db");
 
   const handler = createCoverHandler({
@@ -71,8 +70,8 @@ export default defineEventHandler(async (event) => {
     existsSync: fs.existsSync,
     createReadStream: fs.createReadStream,
     setResponseHeader,
-    sendStream: (evt, s) =>
-      h3.sendStream(evt, stream.Readable.toWeb(s as InstanceType<typeof stream.Readable>) as ReadableStream),
+    sendStream: (_evt, s) =>
+      stream.Readable.toWeb(s as InstanceType<typeof stream.Readable>) as ReadableStream,
   });
 
   return handler(event);

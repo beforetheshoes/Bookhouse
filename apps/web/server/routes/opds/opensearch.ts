@@ -1,4 +1,4 @@
-import { defineEventHandler, setResponseHeader as h3SetResponseHeader } from "h3";
+import { defineEventHandler } from "h3";
 import type { H3Event } from "h3";
 
 const CONTENT_TYPE = "application/opensearchdescription+xml";
@@ -23,7 +23,7 @@ export default defineEventHandler(async (event) => {
   const handler = createOpenSearchHandler({
     getBaseUrl: () => process.env.APP_URL ?? "http://localhost:3000",
     setResponseHeader: (e, name, value) => {
-      h3SetResponseHeader(e, name, value);
+      e.res.headers.set(name, value);
     },
   });
 

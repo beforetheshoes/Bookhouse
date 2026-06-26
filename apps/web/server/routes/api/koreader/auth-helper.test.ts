@@ -3,8 +3,6 @@ import type { H3Event } from "h3";
 import type { KoreaderAuthDeps } from "./auth-helper";
 
 vi.mock("h3", () => ({
-  getRequestHeader: (event: { _headers?: Record<string, string> }, name: string) =>
-    event._headers?.[name.toLowerCase()] ?? null,
   createError: (opts: { statusCode: number; statusMessage: string; message: string }) => {
     const err = new Error(opts.message) as Error & { statusCode: number; statusMessage: string };
     err.statusCode = opts.statusCode;
@@ -16,7 +14,7 @@ vi.mock("h3", () => ({
 const { createKoreaderAuth } = await import("./auth-helper");
 
 function makeEvent(headers: Record<string, string> = {}): H3Event {
-  return { _headers: headers } as unknown as H3Event;
+  return { req: new Request("http://localhost/", { headers: headers }) } as Partial<H3Event> as H3Event;
 }
 
 function makeDeps(overrides: Partial<KoreaderAuthDeps> = {}): KoreaderAuthDeps {

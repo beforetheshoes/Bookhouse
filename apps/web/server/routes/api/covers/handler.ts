@@ -6,7 +6,7 @@ export interface CoverHandlerDeps {
   createReadStream: (path: string) => NodeJS.ReadableStream;
   coverCacheDir: string;
   setResponseHeader: (event: H3Event, name: string, value: string) => void;
-  sendStream: (event: H3Event, stream: NodeJS.ReadableStream) => unknown;
+  sendStream: (event: H3Event, stream: NodeJS.ReadableStream) => ReadableStream;
   idParamName?: string;
 }
 
@@ -20,7 +20,7 @@ const PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="200" hei
 export function createCoverHandler(deps: CoverHandlerDeps) {
   const idParam = deps.idParamName ?? "workId";
 
-  return async (event: H3Event) => {
+  return (event: H3Event) => {
     const params = event.context.params as Record<string, string>;
     const id = params[idParam] as string;
     const size = params.size as string;

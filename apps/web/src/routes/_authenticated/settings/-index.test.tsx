@@ -437,6 +437,26 @@ describe("SettingsPage", () => {
     });
   });
 
+  it("scan button shows already-running toast when a scan is in progress", async () => {
+    scanLibraryRootServerFnMock.mockResolvedValue({
+      importJobId: "job-123",
+      alreadyRunning: true,
+    });
+    mockLoaderData = { ...mockLoaderData, roots: [makeRoot({ name: "My Library" })] };
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByText("Scan Now"));
+
+    await waitFor(() => {
+      expect(mockToast.success).toHaveBeenCalledWith(
+        `A scan is already running for "My Library"`,
+        expect.any(Object)
+      );
+    });
+  });
+
   it("delete button opens confirmation dialog", async () => {
     mockLoaderData = { ...mockLoaderData, roots: [makeRoot()] };
     const { Route } = await import("./index");
@@ -2074,6 +2094,70 @@ describe("Kobo Devices Tab", () => {
 
     await waitFor(() => {
       expect(updateMock).toHaveBeenCalledWith({ data: { deviceId: "d1", collectionIds: ["s1"] } });
+    });
+  });
+
+  it("shows an error toast when updating shelves rejects with an Error", async () => {
+    mockLoaderData.koboDevices = [
+      {
+        id: "d1",
+        deviceId: "Kobo",
+        status: "ACTIVE",
+        lastSyncAt: null,
+        createdAt: new Date().toISOString(),
+        authToken: "tok-1",
+        collections: [],
+      },
+    ];
+    mockLoaderData.shelves = [
+      { id: "s1", name: "Fiction", kind: "MANUAL", formatFilter: "ALL", ownerUserId: null, _count: { items: 3 } },
+    ];
+
+    const { updateDeviceCollectionsServerFn } = await import("~/lib/server-fns/kobo-devices");
+    vi.mocked(updateDeviceCollectionsServerFn).mockRejectedValue(new Error("Shelf not found"));
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+    fireEvent.click(screen.getByTestId("edit-shelves-btn"));
+    fireEvent.click(screen.getByText("Fiction (3)"));
+
+    await waitFor(() => {
+      expect(mockToast.error).toHaveBeenCalledWith("Shelf not found");
+    });
+  });
+
+  it("shows a generic error toast when updating shelves rejects with a non-Error", async () => {
+    mockLoaderData.koboDevices = [
+      {
+        id: "d1",
+        deviceId: "Kobo",
+        status: "ACTIVE",
+        lastSyncAt: null,
+        createdAt: new Date().toISOString(),
+        authToken: "tok-1",
+        collections: [],
+      },
+    ];
+    mockLoaderData.shelves = [
+      { id: "s1", name: "Fiction", kind: "MANUAL", formatFilter: "ALL", ownerUserId: null, _count: { items: 3 } },
+    ];
+
+    const { updateDeviceCollectionsServerFn } = await import("~/lib/server-fns/kobo-devices");
+    vi.mocked(updateDeviceCollectionsServerFn).mockRejectedValue("boom");
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+    fireEvent.click(screen.getByTestId("edit-shelves-btn"));
+    fireEvent.click(screen.getByText("Fiction (3)"));
+
+    await waitFor(() => {
+      expect(mockToast.error).toHaveBeenCalledWith("Failed to update shelves");
     });
   });
 

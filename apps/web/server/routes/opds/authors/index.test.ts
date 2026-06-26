@@ -3,8 +3,6 @@ import type { AuthorListHandlerDeps } from "./index";
 import type { H3Event } from "h3";
 
 vi.mock("h3", () => ({
-  getRequestHeader: (event: { _authorization?: string }, _name: string) =>
-    event._authorization,
   defineEventHandler: vi.fn(),
 }));
 
@@ -20,8 +18,8 @@ const mockCredential = {
 
 function makeEvent(): H3Event {
   return {
-    _authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
-  } as unknown as H3Event;
+    req: new Request("http://localhost/", { headers: { authorization: `Basic ${Buffer.from("reader:password").toString("base64")}` } }),
+  } as Partial<H3Event> as H3Event;
 }
 
 function makeAuthor(id: string, name: string, editionCount: number) {
@@ -53,7 +51,7 @@ describe("createAuthorListHandler", () => {
   it("returns a navigation feed with author entries", async () => {
     const deps = makeDeps();
     const handler = createAuthorListHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain("<title>Authors</title>");
     expect(xml).toContain("<title>Jane Austen</title>");
@@ -87,7 +85,7 @@ describe("createAuthorListHandler", () => {
       getAuthors: vi.fn().mockResolvedValue([]),
     });
     const handler = createAuthorListHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain("<title>Authors</title>");
     expect(xml).not.toContain("<entry>");
@@ -96,7 +94,7 @@ describe("createAuthorListHandler", () => {
   it("includes thr:count for each author", async () => {
     const deps = makeDeps();
     const handler = createAuthorListHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain('thr:count="5"');
     expect(xml).toContain('thr:count="3"');

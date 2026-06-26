@@ -4,12 +4,10 @@ import type { H3Event } from "h3";
 import type { OpdsEditionData } from "@bookhouse/opds";
 
 vi.mock("h3", () => ({
-  getRouterParam: (_event: unknown, name: string) => {
+  getRouterParam: (_event: object, name: string) => {
     const e = _event as { _params?: Record<string, string> };
     return e._params?.[name];
   },
-  getRequestHeader: (event: { _authorization?: string }, _name: string) =>
-    event._authorization,
   defineEventHandler: vi.fn(),
 }));
 
@@ -48,9 +46,9 @@ function makeEdition(id: string): OpdsEditionData {
 
 function makeEvent(seriesId: string): H3Event {
   return {
-    _authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
+    req: new Request("http://localhost/", { headers: { authorization: `Basic ${Buffer.from("reader:password").toString("base64")}` } }),
     _params: { seriesId },
-  } as unknown as H3Event;
+  } as Partial<H3Event> as H3Event;
 }
 
 function makeDeps(overrides: Partial<SeriesBooksHandlerDeps> = {}): SeriesBooksHandlerDeps {
@@ -71,7 +69,7 @@ describe("createSeriesBooksHandler", () => {
   it("returns an acquisition feed with series editions", async () => {
     const deps = makeDeps();
     const handler = createSeriesBooksHandler(deps);
-    const xml = (await handler(makeEvent("series-1"))) as string;
+    const xml = (await handler(makeEvent("series-1")));
 
     expect(xml).toContain("<title>Discworld</title>");
     expect(xml).toContain("<title>Book 1</title>");
@@ -132,7 +130,7 @@ describe("createSeriesBooksHandler", () => {
   it("includes correct feed id and self href", async () => {
     const deps = makeDeps();
     const handler = createSeriesBooksHandler(deps);
-    const xml = (await handler(makeEvent("series-1"))) as string;
+    const xml = (await handler(makeEvent("series-1")));
 
     expect(xml).toContain("<id>urn:bookhouse:series:series-1</id>");
     expect(xml).toContain('href="https://books.example.com/opds/series/series-1"');
@@ -143,7 +141,7 @@ describe("createSeriesBooksHandler", () => {
       getSeriesEditions: vi.fn().mockResolvedValue([]),
     });
     const handler = createSeriesBooksHandler(deps);
-    const xml = (await handler(makeEvent("series-1"))) as string;
+    const xml = (await handler(makeEvent("series-1")));
 
     expect(xml).toContain("<title>Discworld</title>");
     expect(xml).not.toContain("<entry>");
@@ -153,9 +151,9 @@ describe("createSeriesBooksHandler", () => {
     const deps = makeDeps();
     const handler = createSeriesBooksHandler(deps);
     const event = {
-      _authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
+      req: new Request("http://localhost/", { headers: { authorization: `Basic ${Buffer.from("reader:password").toString("base64")}` } }),
       _params: {},
-    } as unknown as H3Event;
+    } as Partial<H3Event> as H3Event;
 
     await expect(handler(event)).rejects.toMatchObject({
       statusCode: 400,

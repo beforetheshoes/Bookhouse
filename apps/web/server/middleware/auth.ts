@@ -17,7 +17,7 @@ function requiresSessionAuth(path: string): boolean {
 
 export function createAuthMiddleware(deps: AuthMiddlewareDeps) {
   return async (event: H3Event) => {
-    if (!requiresSessionAuth(event.path)) {
+    if (!requiresSessionAuth(event.url.pathname)) {
       return;
     }
 
@@ -63,7 +63,7 @@ export default defineEventHandler(async (event) => {
     },
   });
 
-  if (!requiresSessionAuth(event.path)) {
+  if (!requiresSessionAuth(event.url.pathname)) {
     return;
   }
 

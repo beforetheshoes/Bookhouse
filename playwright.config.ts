@@ -18,6 +18,9 @@ export default defineConfig({
   testDir: "./e2e",
   forbidOnly: CI,
   retries: CI ? 2 : 0,
+  // Stop early in CI if many tests fail rather than burning the whole job
+  // budget on retries (0 = unlimited, used locally).
+  maxFailures: CI ? 5 : 0,
   workers: 1,
   reporter: CI ? "github" : "list",
   globalSetup: "./e2e/global-setup.ts",

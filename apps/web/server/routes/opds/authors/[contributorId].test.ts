@@ -6,8 +6,6 @@ import type { OpdsEditionData } from "@bookhouse/opds";
 vi.mock("h3", () => ({
   createError: (opts: { statusCode: number; statusMessage: string }) =>
     Object.assign(new Error(opts.statusMessage), opts),
-  getRequestHeader: (event: { _authorization?: string }, _name: string) =>
-    event._authorization,
   defineEventHandler: vi.fn(),
 }));
 
@@ -46,9 +44,9 @@ function makeEdition(id: string): OpdsEditionData {
 
 function makeEvent(contributorId: string): H3Event {
   return {
-    _authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
+    req: new Request("http://localhost/", { headers: { authorization: `Basic ${Buffer.from("reader:password").toString("base64")}` } }),
     context: { params: { contributorId } },
-  } as unknown as H3Event;
+  } as Partial<H3Event> as H3Event;
 }
 
 function makeDeps(overrides: Partial<AuthorBooksHandlerDeps> = {}): AuthorBooksHandlerDeps {
@@ -69,7 +67,7 @@ describe("createAuthorBooksHandler", () => {
   it("returns an acquisition feed with books by the author", async () => {
     const deps = makeDeps();
     const handler = createAuthorBooksHandler(deps);
-    const xml = (await handler(makeEvent("a1"))) as string;
+    const xml = (await handler(makeEvent("a1")));
 
     expect(xml).toContain("<title>Jane Austen</title>");
     expect(xml).toContain("<title>Book 1</title>");
@@ -123,7 +121,7 @@ describe("createAuthorBooksHandler", () => {
       getAuthorEditions: vi.fn().mockResolvedValue([]),
     });
     const handler = createAuthorBooksHandler(deps);
-    const xml = (await handler(makeEvent("a1"))) as string;
+    const xml = (await handler(makeEvent("a1")));
 
     expect(xml).toContain("<title>Jane Austen</title>");
     expect(xml).not.toContain("<entry>");

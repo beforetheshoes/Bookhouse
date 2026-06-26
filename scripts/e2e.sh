@@ -14,10 +14,26 @@ export AUTH_OIDC_CLIENT_ID="e2e-client"
 export AUTH_OIDC_CLIENT_SECRET="e2e-secret"
 export APP_URL="http://localhost:3000"
 export COVER_CACHE_DIR="/tmp/e2e-covers"
-# Inherit pg_dump/psql paths from the environment (needed on machines where
-# pg_dump is not in PATH — set PG_DUMP_PATH/PSQL_PATH in your shell or CI env)
-export PG_DUMP_PATH="${PG_DUMP_PATH:-pg_dump}"
-export PSQL_PATH="${PSQL_PATH:-psql}"
+# pg_dump/psql for the backup feature. Prefer an explicit PG_DUMP_PATH/PSQL_PATH;
+# otherwise use the host binary when present, else fall back to the dockerized
+# Postgres via scripts/pg-tools wrappers so no host Postgres client is required.
+# Wrapper paths must be absolute — the app server resolves them from its own cwd.
+if [[ -z "${PG_DUMP_PATH:-}" ]]; then
+  if command -v pg_dump >/dev/null 2>&1; then
+    PG_DUMP_PATH="pg_dump"
+  else
+    PG_DUMP_PATH="$ROOT_DIR/scripts/pg-tools/pg_dump"
+  fi
+fi
+export PG_DUMP_PATH
+if [[ -z "${PSQL_PATH:-}" ]]; then
+  if command -v psql >/dev/null 2>&1; then
+    PSQL_PATH="psql"
+  else
+    PSQL_PATH="$ROOT_DIR/scripts/pg-tools/psql"
+  fi
+fi
+export PSQL_PATH
 
 UI_MODE=0
 SKIP_BUILD=0

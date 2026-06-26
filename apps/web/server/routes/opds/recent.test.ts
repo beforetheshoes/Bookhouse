@@ -4,8 +4,6 @@ import type { H3Event } from "h3";
 import type { OpdsEditionData } from "@bookhouse/opds";
 
 vi.mock("h3", () => ({
-  getRequestHeader: (event: { _authorization?: string }, _name: string) =>
-    event._authorization,
   defineEventHandler: vi.fn(),
 }));
 
@@ -43,9 +41,9 @@ function makeEdition(id: string): OpdsEditionData {
 
 function makeEvent(): H3Event {
   return {
-    _authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
+    req: new Request("http://localhost/", { headers: { authorization: `Basic ${Buffer.from("reader:password").toString("base64")}` } }),
     path: "/opds/recent",
-  } as unknown as H3Event;
+  } as Partial<H3Event> as H3Event;
 }
 
 function makeDeps(overrides: Partial<RecentHandlerDeps> = {}): RecentHandlerDeps {
@@ -65,7 +63,7 @@ describe("createRecentHandler", () => {
   it("returns an acquisition feed with recent entries", async () => {
     const deps = makeDeps();
     const handler = createRecentHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain("<title>Recently Added</title>");
     expect(xml).toContain("<title>Book 1</title>");
@@ -95,7 +93,7 @@ describe("createRecentHandler", () => {
   it("does not include pagination", async () => {
     const deps = makeDeps();
     const handler = createRecentHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).not.toContain("opensearch:totalResults");
   });
@@ -105,7 +103,7 @@ describe("createRecentHandler", () => {
       getRecentEditions: vi.fn().mockResolvedValue([]),
     });
     const handler = createRecentHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain("<title>Recently Added</title>");
     expect(xml).not.toContain("<entry>");

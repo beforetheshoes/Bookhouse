@@ -13,7 +13,7 @@ const jpegBuffer = Buffer.from("jpeg-data");
 function makeEvent(workId: string, size: string): H3Event {
   return {
     context: { params: { workId, size } },
-  } as unknown as H3Event;
+  } as Partial<H3Event> as H3Event;
 }
 
 function makeDeps(overrides: Partial<OpdsCoverHandlerDeps> = {}): OpdsCoverHandlerDeps {

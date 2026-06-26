@@ -1,8 +1,7 @@
 /* c8 ignore start — runtime wiring, tested via unit tests on createDownloadAllHandler */
 import { existsSync, createReadStream } from "node:fs";
 import { Readable } from "node:stream";
-import type { PassThrough } from "node:stream";
-import { defineEventHandler, setResponseHeader, sendStream } from "h3";
+import { defineEventHandler, setResponseHeader } from "h3";
 import archiver from "archiver";
 import { createDownloadAllHandler } from "../download-all-handler";
 
@@ -32,14 +31,17 @@ export default defineEventHandler(async (event) => {
     createReadStream,
     createArchive: () => {
       const archive = archiver("zip", { zlib: { level: 0 } });
-      return archive as unknown as PassThrough & {
-        append: (source: NodeJS.ReadableStream, opts: { name: string }) => unknown;
+      // archiver's Archiver type can't be structurally narrowed to the handler's
+      // archive interface without an `unknown` bridge (TS requires it).
+      // eslint-disable-next-line no-restricted-syntax
+      return archive as unknown as NodeJS.ReadableStream & {
+        append: (source: NodeJS.ReadableStream, opts: { name: string }) => void;
         finalize: () => Promise<void>;
       };
     },
     setResponseHeader,
-    sendStream: (event, stream) =>
-      sendStream(event, Readable.toWeb(stream as Readable) as ReadableStream),
+    sendStream: (_event, stream) =>
+      Readable.toWeb(stream as Readable) as ReadableStream,
   });
 
   return handler(event);

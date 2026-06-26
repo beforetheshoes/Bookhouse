@@ -3,8 +3,6 @@ import type { CatalogHandlerDeps } from "./catalog";
 import type { H3Event } from "h3";
 
 vi.mock("h3", () => ({
-  getRequestHeader: (event: { _authorization?: string }, _name: string) =>
-    event._authorization,
   defineEventHandler: vi.fn(),
 }));
 
@@ -20,8 +18,8 @@ const mockCredential = {
 
 function makeEvent(): H3Event {
   return {
-    _authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
-  } as unknown as H3Event;
+    req: new Request("http://localhost/", { headers: { authorization: `Basic ${Buffer.from("reader:password").toString("base64")}` } }),
+  } as Partial<H3Event> as H3Event;
 }
 
 function makeDeps(overrides: Partial<CatalogHandlerDeps> = {}): CatalogHandlerDeps {
@@ -40,7 +38,7 @@ describe("createCatalogHandler", () => {
   it("returns a navigation feed with all sub-feeds", async () => {
     const deps = makeDeps();
     const handler = createCatalogHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain("<title>Bookhouse</title>");
     expect(xml).toContain("<title>All Books</title>");
@@ -66,7 +64,7 @@ describe("createCatalogHandler", () => {
   it("includes search link", async () => {
     const deps = makeDeps();
     const handler = createCatalogHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain('rel="search"');
     expect(xml).toContain("/opds/opensearch");
@@ -75,7 +73,7 @@ describe("createCatalogHandler", () => {
   it("includes start link", async () => {
     const deps = makeDeps();
     const handler = createCatalogHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain('rel="start"');
     expect(xml).toContain('href="https://books.example.com/opds/catalog"');

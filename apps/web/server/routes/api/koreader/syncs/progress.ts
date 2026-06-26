@@ -2,6 +2,7 @@ import { defineEventHandler, readBody, createError } from "h3";
 import type { H3Event } from "h3";
 import type { Prisma } from "@bookhouse/db";
 import type { KoreaderAuthResult } from "../auth-helper";
+import { isForeignKeyConstraintError } from "@bookhouse/shared";
 import { resolveKoreaderTimestamp, type CandidateEditionFile, type KoreaderResolvedDocument } from "./shared";
 
 export interface KoreaderProgressPutDeps {
@@ -40,7 +41,7 @@ type KoreaderProgressPayload = {
 
 function validatePayload(body: Awaited<ReturnType<KoreaderProgressPutDeps["readBody"]>>): asserts body is KoreaderProgressPayload {
   if (
-    typeof body?.document !== "string" ||
+    typeof body.document !== "string" ||
     typeof body.progress !== "string" ||
     typeof body.percentage !== "number" ||
     typeof body.device !== "string" ||
@@ -73,21 +74,38 @@ export function createKoreaderProgressPutHandler(deps: KoreaderProgressPutDeps) 
     const deviceTimestamp = resolveKoreaderTimestamp(body.timestamp, deps.now());
 
     if (!existing || deviceTimestamp.getTime() >= existing.updatedAt.getTime()) {
-      const saved = await deps.upsertProgress({
-        userId: auth.userId,
-        editionId: document.editionId,
-        percent: body.percentage,
-        progress: body.progress,
-        device: body.device,
-        deviceId: body.device_id,
-        document: body.document,
-        timestamp: deviceTimestamp,
-      });
+      try {
+        const saved = await deps.upsertProgress({
+          userId: auth.userId,
+          editionId: document.editionId,
+          percent: body.percentage,
+          progress: body.progress,
+          device: body.device,
+          deviceId: body.device_id,
+          document: body.document,
+          timestamp: deviceTimestamp,
+        });
 
-      return {
-        document: body.document,
-        timestamp: Math.floor(saved.updatedAt.getTime() / 1000),
-      };
+        return {
+          document: body.document,
+          timestamp: Math.floor(saved.updatedAt.getTime() / 1000),
+        };
+      } catch (error) {
+        // The edition can be deleted between document resolution and this write.
+        // Acknowledge with the device's own timestamp instead of 500ing (a
+        // successful response stops KOReader retrying). Re-throw non-FK errors.
+        if (!isForeignKeyConstraintError(error as Error)) {
+          throw error;
+        }
+        console.warn(
+          `[koreader] progress skipped: edition removed mid-sync (${document.editionId})`,
+          error,
+        );
+        return {
+          document: body.document,
+          timestamp: Math.floor(deviceTimestamp.getTime() / 1000),
+        };
+      }
     }
 
     return {
@@ -168,10 +186,7 @@ export default defineEventHandler(async (event) => {
         where: { userId, editionId, progressKind: "EBOOK", source: "koreader" },
         select: { updatedAt: true },
       }),
-    upsertProgress: async ({ userId, editionId, percent, progress, device, deviceId, document, timestamp }) => {
-      const existing = await db.readingProgress.findFirst({
-        where: { userId, editionId, progressKind: "EBOOK", source: "koreader" },
-      });
+    upsertProgress: ({ userId, editionId, percent, progress, device, deviceId, document, timestamp }) => {
       const locator = {
         koreader: {
           document,
@@ -182,24 +197,29 @@ export default defineEventHandler(async (event) => {
         },
       } as Prisma.InputJsonValue;
 
-      return existing
-        ? db.readingProgress.update({
-            where: { id: existing.id },
-            data: { percent, locator, source: "koreader", updatedAt: timestamp },
-            select: { updatedAt: true },
-          })
-        : db.readingProgress.create({
-            data: {
-              userId,
-              editionId,
-              progressKind: "EBOOK",
-              percent,
-              locator,
-              source: "koreader",
-              updatedAt: timestamp,
-            },
-            select: { updatedAt: true },
-          });
+      // Atomic upsert on the per-source unique key — avoids the find-then-create
+      // race and never touches a kobo/manual row for the same edition.
+      return db.readingProgress.upsert({
+        where: {
+          userId_editionId_progressKind_source: {
+            userId,
+            editionId,
+            progressKind: "EBOOK",
+            source: "koreader",
+          },
+        },
+        create: {
+          userId,
+          editionId,
+          progressKind: "EBOOK",
+          percent,
+          locator,
+          source: "koreader",
+          updatedAt: timestamp,
+        },
+        update: { percent, locator, updatedAt: timestamp },
+        select: { updatedAt: true },
+      });
     },
     now: () => new Date(),
   });

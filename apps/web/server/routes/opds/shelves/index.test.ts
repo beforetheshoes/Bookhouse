@@ -3,8 +3,6 @@ import type { ShelfListHandlerDeps } from "./index";
 import type { H3Event } from "h3";
 
 vi.mock("h3", () => ({
-  getRequestHeader: (event: { _authorization?: string }, _name: string) =>
-    event._authorization,
   defineEventHandler: vi.fn(),
 }));
 
@@ -20,8 +18,8 @@ const mockCredential = {
 
 function makeEvent(): H3Event {
   return {
-    _authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
-  } as unknown as H3Event;
+    req: new Request("http://localhost/", { headers: { authorization: `Basic ${Buffer.from("reader:password").toString("base64")}` } }),
+  } as Partial<H3Event> as H3Event;
 }
 
 function makeShelf(id: string, name: string, itemCount: number) {
@@ -53,7 +51,7 @@ describe("createShelfListHandler", () => {
   it("returns a navigation feed with shelf entries", async () => {
     const deps = makeDeps();
     const handler = createShelfListHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain("<title>My Shelves</title>");
     expect(xml).toContain("<title>Favorites</title>");
@@ -95,7 +93,7 @@ describe("createShelfListHandler", () => {
       getShelves: vi.fn().mockResolvedValue([]),
     });
     const handler = createShelfListHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain("<title>My Shelves</title>");
     expect(xml).not.toContain("<entry>");
@@ -104,7 +102,7 @@ describe("createShelfListHandler", () => {
   it("includes thr:count for each shelf", async () => {
     const deps = makeDeps();
     const handler = createShelfListHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain('thr:count="5"');
     expect(xml).toContain('thr:count="3"');

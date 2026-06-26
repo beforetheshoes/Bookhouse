@@ -6,8 +6,6 @@ import type { OpdsEditionData } from "@bookhouse/opds";
 vi.mock("h3", () => ({
   createError: (opts: { statusCode: number; statusMessage: string }) =>
     Object.assign(new Error(opts.statusMessage), opts),
-  getRequestHeader: (event: { _authorization?: string }, _name: string) =>
-    event._authorization,
   defineEventHandler: vi.fn(),
 }));
 
@@ -46,9 +44,9 @@ function makeEdition(id: string): OpdsEditionData {
 
 function makeEvent(publisher: string): H3Event {
   return {
-    _authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
+    req: new Request("http://localhost/", { headers: { authorization: `Basic ${Buffer.from("reader:password").toString("base64")}` } }),
     context: { params: { publisher } },
-  } as unknown as H3Event;
+  } as Partial<H3Event> as H3Event;
 }
 
 function makeDeps(overrides: Partial<PublisherBooksHandlerDeps> = {}): PublisherBooksHandlerDeps {
@@ -69,7 +67,7 @@ describe("createPublisherBooksHandler", () => {
   it("returns an acquisition feed with books by the publisher", async () => {
     const deps = makeDeps();
     const handler = createPublisherBooksHandler(deps);
-    const xml = (await handler(makeEvent("Penguin%20Books"))) as string;
+    const xml = (await handler(makeEvent("Penguin%20Books")));
 
     expect(xml).toContain("<title>Penguin Books</title>");
     expect(xml).toContain("<title>Book 1</title>");
@@ -122,7 +120,7 @@ describe("createPublisherBooksHandler", () => {
       getPublisherEditions: vi.fn().mockResolvedValue([]),
     });
     const handler = createPublisherBooksHandler(deps);
-    const xml = (await handler(makeEvent("Penguin%20Books"))) as string;
+    const xml = (await handler(makeEvent("Penguin%20Books")));
 
     expect(xml).toContain("<title>Penguin Books</title>");
     expect(xml).not.toContain("<entry>");

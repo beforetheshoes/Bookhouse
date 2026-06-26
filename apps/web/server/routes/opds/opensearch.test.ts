@@ -9,7 +9,7 @@ vi.mock("h3", () => ({
 const { createOpenSearchHandler } = await import("./opensearch");
 
 function makeEvent(): H3Event {
-  return {} as unknown as H3Event;
+  return {} as Partial<H3Event> as H3Event;
 }
 
 function makeDeps(overrides: Partial<OpenSearchHandlerDeps> = {}): OpenSearchHandlerDeps {
@@ -24,7 +24,7 @@ describe("createOpenSearchHandler", () => {
   it("returns an OpenSearch descriptor", async () => {
     const deps = makeDeps();
     const handler = createOpenSearchHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain("<ShortName>Bookhouse</ShortName>");
     expect(xml).toContain("https://books.example.com/opds/search?q={searchTerms}");

@@ -3,8 +3,6 @@ import type { PublisherListHandlerDeps } from "./index";
 import type { H3Event } from "h3";
 
 vi.mock("h3", () => ({
-  getRequestHeader: (event: { _authorization?: string }, _name: string) =>
-    event._authorization,
   defineEventHandler: vi.fn(),
 }));
 
@@ -20,8 +18,8 @@ const mockCredential = {
 
 function makeEvent(): H3Event {
   return {
-    _authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
-  } as unknown as H3Event;
+    req: new Request("http://localhost/", { headers: { authorization: `Basic ${Buffer.from("reader:password").toString("base64")}` } }),
+  } as Partial<H3Event> as H3Event;
 }
 
 function makePublisher(name: string, editionCount: number) {
@@ -52,7 +50,7 @@ describe("createPublisherListHandler", () => {
   it("returns a navigation feed with publisher entries", async () => {
     const deps = makeDeps();
     const handler = createPublisherListHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain("<title>Publishers</title>");
     expect(xml).toContain("<title>Penguin Books</title>");
@@ -86,7 +84,7 @@ describe("createPublisherListHandler", () => {
       getPublishers: vi.fn().mockResolvedValue([]),
     });
     const handler = createPublisherListHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain("<title>Publishers</title>");
     expect(xml).not.toContain("<entry>");
@@ -95,7 +93,7 @@ describe("createPublisherListHandler", () => {
   it("includes thr:count for each publisher", async () => {
     const deps = makeDeps();
     const handler = createPublisherListHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain('thr:count="10"');
     expect(xml).toContain('thr:count="7"');

@@ -1,6 +1,6 @@
 import path from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
-import { defineEventHandler, readMultipartFormData, createError } from "h3";
+import { defineEventHandler, createError } from "h3";
 import type { H3Event } from "h3";
 import { VALID_WORK_ID, MAX_FILE_SIZE, isValidImageData, isAllowedMimeType } from "@bookhouse/ingest";
 
@@ -71,11 +71,20 @@ export default defineEventHandler(async (event) => {
 
   const handler = createAuthorPhotoUploadHandler({
     coverCacheDir: COVER_CACHE_DIR,
-    readFormData: readMultipartFormData,
+    readFormData: async (event) => {
+      const formData = await event.req.formData();
+      return Promise.all(
+        [...formData.entries()].map(async ([name, value]) =>
+          value instanceof Blob
+            ? { name, type: value.type, data: new Uint8Array(await value.arrayBuffer()) }
+            : { name, data: new TextEncoder().encode(value) },
+        ),
+      );
+    },
     resizeAndSave: async (imageBuffer, outputDir) => {
       await resizeCoverImage(
         { imageBuffer, outputDir },
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+         
         { sharp: sharpModule.default as never, mkdir, writeFile },
       );
     },

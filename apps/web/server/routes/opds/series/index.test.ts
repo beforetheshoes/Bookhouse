@@ -3,8 +3,6 @@ import type { SeriesListHandlerDeps } from "./index";
 import type { H3Event } from "h3";
 
 vi.mock("h3", () => ({
-  getRequestHeader: (event: { _authorization?: string }, _name: string) =>
-    event._authorization,
   defineEventHandler: vi.fn(),
 }));
 
@@ -29,8 +27,8 @@ function makeSeries(id: string, name: string, workCount: number) {
 
 function makeEvent(): H3Event {
   return {
-    _authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
-  } as unknown as H3Event;
+    req: new Request("http://localhost/", { headers: { authorization: `Basic ${Buffer.from("reader:password").toString("base64")}` } }),
+  } as Partial<H3Event> as H3Event;
 }
 
 function makeDeps(overrides: Partial<SeriesListHandlerDeps> = {}): SeriesListHandlerDeps {
@@ -53,7 +51,7 @@ describe("createSeriesListHandler", () => {
   it("returns a navigation feed with series entries", async () => {
     const deps = makeDeps();
     const handler = createSeriesListHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain("<title>Series</title>");
     expect(xml).toContain("<title>Discworld</title>");
@@ -83,7 +81,7 @@ describe("createSeriesListHandler", () => {
   it("includes thr:count for work counts", async () => {
     const deps = makeDeps();
     const handler = createSeriesListHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain('thr:count="41"');
     expect(xml).toContain('thr:count="7"');
@@ -92,7 +90,7 @@ describe("createSeriesListHandler", () => {
   it("includes correct hrefs for each series", async () => {
     const deps = makeDeps();
     const handler = createSeriesListHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain('href="https://books.example.com/opds/series/series-1"');
     expect(xml).toContain('href="https://books.example.com/opds/series/series-2"');
@@ -103,7 +101,7 @@ describe("createSeriesListHandler", () => {
       getSeries: vi.fn().mockResolvedValue([]),
     });
     const handler = createSeriesListHandler(deps);
-    const xml = (await handler(makeEvent())) as string;
+    const xml = (await handler(makeEvent()));
 
     expect(xml).toContain("<title>Series</title>");
     expect(xml).not.toContain("<entry>");

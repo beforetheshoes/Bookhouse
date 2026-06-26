@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build && tsc --noEmit",
-    "lint": "eslint src --ext .ts,.tsx",
+    "lint": "eslint src server --ext .ts,.tsx",
     "preview": "vite preview",
     "start": "node .output/server/index.mjs",
     "typecheck": "tsc --noEmit"
@@ -30,6 +30,7 @@
     "@tanstack/react-table": "^8.21.3",
     "@tanstack/react-virtual": "^3.13.23",
     "archiver": "^7.0.1",
+    "busboy": "^1.6.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
@@ -50,6 +51,7 @@
     "@tailwindcss/vite": "^4.2.1",
     "@tanstack/router-cli": "^1.166.12",
     "@types/archiver": "^7.0.0",
+    "@types/busboy": "^1.5.4",
     "@types/node": "^25.5.0",
     "@types/nodemailer": "^7.0.11",
     "@types/react": "^19.2.14",

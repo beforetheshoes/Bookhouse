@@ -1,4 +1,4 @@
-import { defineEventHandler, setResponseHeader as h3SetResponseHeader } from "h3";
+import { defineEventHandler } from "h3";
 import type { H3Event } from "h3";
 import type { OpdsAuthDeps } from "../auth-helper";
 
@@ -15,7 +15,7 @@ export interface OpdsDownloadHandlerDeps {
   existsSync: (path: string) => boolean;
   createReadStream: (path: string) => NodeJS.ReadableStream;
   setResponseHeader: (event: H3Event, name: string, value: string) => void;
-  sendStream: (event: H3Event, stream: NodeJS.ReadableStream) => unknown;
+  sendStream: (event: H3Event, stream: NodeJS.ReadableStream) => ReadableStream;
 }
 
 export function createOpdsDownloadHandler(deps: OpdsDownloadHandlerDeps) {
@@ -71,7 +71,6 @@ export default defineEventHandler(async (event) => {
   const { verifyPassword } = await import("@bookhouse/opds");
   const { existsSync, createReadStream } = await import("node:fs");
   const stream = await import("node:stream");
-  const h3 = await import("h3");
 
   const handler = createOpdsDownloadHandler({
     auth: {
@@ -95,10 +94,10 @@ export default defineEventHandler(async (event) => {
     existsSync,
     createReadStream,
     setResponseHeader: (e, name, value) => {
-      h3SetResponseHeader(e, name, value);
+      e.res.headers.set(name, value);
     },
-    sendStream: (evt, s) =>
-      h3.sendStream(evt, stream.Readable.toWeb(s as InstanceType<typeof stream.Readable>) as ReadableStream),
+    sendStream: (_evt, s) =>
+      stream.Readable.toWeb(s as InstanceType<typeof stream.Readable>) as ReadableStream,
   });
 
   return handler(event);

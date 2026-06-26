@@ -22,7 +22,7 @@ describe("createUserProfileHandler", () => {
     });
     const event = {
       context: { params: { token: validToken } },
-    } as unknown as H3Event;
+    } as Partial<H3Event> as H3Event;
 
     const result = await handler(event);
 
@@ -37,7 +37,7 @@ describe("createUserProfileHandler", () => {
     });
     const event = {
       context: { params: { token: validToken } },
-    } as unknown as H3Event;
+    } as Partial<H3Event> as H3Event;
 
     await expect(handler(event)).rejects.toThrow();
   });

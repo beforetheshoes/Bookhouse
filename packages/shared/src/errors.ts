@@ -42,3 +42,12 @@ export class QueueError extends AppError {
     this.name = "QueueError";
   }
 }
+
+/**
+ * True when an error is a Prisma foreign-key constraint violation (code P2003).
+ * Used to gracefully skip writes whose referenced row (e.g. an Edition) was
+ * deleted between selection and the write, instead of surfacing a 500.
+ */
+export function isForeignKeyConstraintError(error: Error): boolean {
+  return (error as Error & { code?: string }).code === "P2003";
+}

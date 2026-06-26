@@ -56,7 +56,7 @@ describe("events route", () => {
 
     await handler({});
 
-    subscribeCallback!({
+    subscribeCallback?.({
       type: "job:completed",
       data: { jobId: "j1" },
     });
@@ -87,7 +87,7 @@ describe("events route", () => {
 
     await handler({});
 
-    onClosedCallback!();
+    onClosedCallback?.();
 
     expect(mockUnsubscribe).toHaveBeenCalled();
 

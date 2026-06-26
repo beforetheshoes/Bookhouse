@@ -14,7 +14,7 @@ export interface InitializationHandlerDeps {
  * The Kobo firmware uses this to construct URLs for all API operations.
  * We override only the keys needed to redirect to our server.
  */
-function nativeKoboResources(): Record<string, unknown> {
+function nativeKoboResources(): Record<string, string | Record<string, string>> {
   return {
     account_page: "https://www.kobo.com/account/settings",
     account_page_rakuten: "https://my.rakuten.co.jp/",

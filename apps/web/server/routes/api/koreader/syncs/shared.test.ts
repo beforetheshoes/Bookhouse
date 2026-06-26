@@ -49,7 +49,7 @@ describe("resolveKoreaderDocument", () => {
   it("returns the preferred exact match", async () => {
     const result = await resolveKoreaderDocument({
       document: "ABCD1234",
-      findExactCandidates: async () => [
+      findExactCandidates: () => Promise.resolve([
         makeCandidate(),
         makeCandidate({
           id: "ef-2",
@@ -57,8 +57,8 @@ describe("resolveKoreaderDocument", () => {
           role: "SIDECAR",
           fileAsset: { id: "fa-2", koreaderHash: "ABCD1234" },
         }),
-      ],
-      findUnhashedCandidates: async () => [],
+      ]),
+      findUnhashedCandidates: () => Promise.resolve([]),
       updateFileAssetHash: vi.fn(),
     });
 
@@ -72,7 +72,7 @@ describe("resolveKoreaderDocument", () => {
   it("does not match when only a non-preferred file has the hash", async () => {
     const result = await resolveKoreaderDocument({
       document: "abcd1234",
-      findExactCandidates: async () => [
+      findExactCandidates: () => Promise.resolve([
         makeCandidate({
           fileAsset: { koreaderHash: "different-hash" },
         }),
@@ -81,8 +81,8 @@ describe("resolveKoreaderDocument", () => {
           role: "SIDECAR",
           fileAsset: { id: "fa-2", koreaderHash: "abcd1234" },
         }),
-      ],
-      findUnhashedCandidates: async () => [],
+      ]),
+      findUnhashedCandidates: () => Promise.resolve([]),
       updateFileAssetHash: vi.fn(),
     });
 
@@ -104,8 +104,8 @@ describe("resolveKoreaderDocument", () => {
 
     const result = await resolveKoreaderDocument({
       document: "lazy-hash-1",
-      findExactCandidates: async () => [],
-      findUnhashedCandidates: async () => [
+      findExactCandidates: () => Promise.resolve([]),
+      findUnhashedCandidates: () => Promise.resolve([
         {
           id: "ef-1",
           editionId: "ed-1",
@@ -118,7 +118,7 @@ describe("resolveKoreaderDocument", () => {
           role: "SIDECAR",
           fileAsset: sharedFileAsset,
         },
-      ],
+      ]),
       updateFileAssetHash,
     });
 

@@ -35,6 +35,10 @@ const workUpdateMock = vi.fn(() => Promise.reject(new Error("not used")));
 const workFindManyMock = vi.fn(() => Promise.resolve([]));
 const workCreateMock = vi.fn(({ data }) => Promise.resolve({ id: "work-1", ...data }));
 const seriesCreateMock = vi.fn(() => Promise.resolve({ id: "series-1", name: "test" }));
+const editionFileUpdateMock = vi.fn(({ data }: { data: { fileAssetId: string } }) =>
+  Promise.resolve({ id: "ef", ...data }));
+const workDeleteMock = vi.fn(() => Promise.resolve(undefined));
+const transactionMock = vi.fn(() => Promise.resolve([]));
 
 vi.mock("@bookhouse/db", () => ({
   db: {
@@ -76,17 +80,20 @@ vi.mock("@bookhouse/db", () => ({
       create: editionFileCreateMock,
       findMany: editionFileFindManyMock,
       findFirst: vi.fn(() => Promise.resolve(null)),
+      update: editionFileUpdateMock,
     },
     work: {
       create: workCreateMock,
       findMany: workFindManyMock,
       findUnique: vi.fn(() => Promise.resolve(null)),
       update: workUpdateMock,
+      delete: workDeleteMock,
     },
     series: {
       findFirst: vi.fn(() => Promise.resolve(null)),
       create: seriesCreateMock,
     },
+    $transaction: transactionMock,
   },
 }));
 
@@ -165,6 +172,9 @@ beforeEach(() => {
   workCreateMock.mockClear();
   workFindManyMock.mockReset();
   workFindManyMock.mockResolvedValue([]);
+  editionFileUpdateMock.mockClear();
+  workDeleteMock.mockClear();
+  transactionMock.mockClear();
 });
 
 describe("ingest runtime defaults", () => {
@@ -257,6 +267,59 @@ describe("ingest runtime defaults", () => {
     expect(result2.availabilityStatus).toBe("PRESENT");
     // create should still be 1 (not called again — existing series was returned)
     expect(seriesCreateMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("default adapter completeMove atomically transfers links and deletes the stub work on a detected move", async () => {
+    vi.resetModules();
+    const { db } = await import("@bookhouse/db");
+    const { createIngestServices } = await import("./services");
+
+    const services = createIngestServices({
+      hashFile: vi.fn(() => Promise.resolve({
+        fullHash: "moved-hash",
+        koreaderHash: "moved-koreader",
+        mtime: new Date("2025-01-01T00:00:00.000Z"),
+        partialHash: "moved-partial",
+        sizeBytes: 100n,
+      })),
+    });
+
+    // The reappeared file, now present at a new path.
+    vi.mocked(db.fileAsset).findUnique.mockResolvedValueOnce({
+      id: "new-file",
+      absolutePath: "/tmp/runtime-root/new/book.epub",
+      availabilityStatus: "PRESENT",
+    } as never);
+    vi.mocked(db.fileAsset).update.mockResolvedValueOnce({} as never);
+    // Its freshly-created stub edition/work (the duplicate to be removed).
+    vi.mocked(db.editionFile).findFirst.mockResolvedValueOnce({
+      id: "stub-ef", editionId: "stub-edition", fileAssetId: "new-file", role: "PRIMARY",
+    } as never);
+    vi.mocked(db.edition).findUnique.mockResolvedValueOnce({
+      id: "stub-edition", workId: "stub-work",
+    } as never);
+    vi.mocked(db.work).findUnique.mockResolvedValueOnce({ id: "stub-work" } as never);
+    // The old MISSING asset still owning the real edition's link.
+    fileAssetFindManyMock.mockResolvedValueOnce([
+      { id: "old-file", availabilityStatus: "MISSING", fullHash: "moved-hash" },
+    ] as never);
+    editionFileFindManyMock.mockResolvedValueOnce([
+      { id: "real-ef", editionId: "real-edition", fileAssetId: "old-file" },
+    ] as never);
+
+    const result = await services.hashFileAsset({
+      fileAssetId: "new-file",
+      now: new Date("2025-01-01T01:00:00.000Z"),
+    });
+
+    expect(result.movedFromFileAssetId).toBe("old-file");
+    // The link repoint and stub-work delete go through a single $transaction.
+    expect(editionFileUpdateMock).toHaveBeenCalledWith({
+      where: { id: "real-ef" },
+      data: { fileAssetId: "new-file" },
+    });
+    expect(workDeleteMock).toHaveBeenCalledWith({ where: { id: "stub-work" } });
+    expect(transactionMock).toHaveBeenCalledTimes(1);
   });
 
   it("uses FULL once for a new root, then requires an explicit override for later full scans", async () => {

@@ -49,6 +49,7 @@ const importJobUpdateMock = vi.fn();
 const importJobUpdateManyMock = vi.fn();
 const importJobDeleteManyMock = vi.fn();
 const importJobFindManyMock = vi.fn();
+const importJobFindFirstMock = vi.fn();
 const transactionMock = vi.fn(async (fnOrOps: ((tx: object) => Promise<void>) | Array<Promise<void>>) => {
   if (typeof fnOrOps === "function") {
     return fnOrOps({});
@@ -75,6 +76,7 @@ vi.mock("@bookhouse/db", () => ({
       updateMany: importJobUpdateManyMock,
       deleteMany: importJobDeleteManyMock,
       findMany: importJobFindManyMock,
+      findFirst: importJobFindFirstMock,
     },
     $transaction: transactionMock,
   },
@@ -284,6 +286,7 @@ describe("scanLibraryRootServerFn", () => {
   beforeEach(() => {
     importJobCreateMock.mockReset();
     importJobUpdateMock.mockReset();
+    importJobFindFirstMock.mockReset();
     enqueueLibraryJobMock.mockReset();
   });
 
@@ -301,6 +304,51 @@ describe("scanLibraryRootServerFn", () => {
         libraryRootId: "root-xyz",
         scanStage: "DISCOVERY",
       },
+    });
+  });
+
+  it("returns the existing scan without enqueuing when one is already active", async () => {
+    importJobFindFirstMock.mockResolvedValue({
+      id: "active-job",
+      bullmqJobId: "bull-active",
+    });
+
+    const result = await scanLibraryRootServerFn({
+      data: { libraryRootId: "root-xyz" },
+    });
+
+    expect(result).toEqual({
+      jobId: "bull-active",
+      importJobId: "active-job",
+      alreadyRunning: true,
+    });
+    expect(importJobFindFirstMock).toHaveBeenCalledWith({
+      where: {
+        kind: "SCAN_ROOT",
+        libraryRootId: "root-xyz",
+        status: { in: ["QUEUED", "RUNNING"] },
+        updatedAt: { gte: expect.any(Date) as Date },
+      },
+      select: { id: true, bullmqJobId: true },
+    });
+    expect(importJobCreateMock).not.toHaveBeenCalled();
+    expect(enqueueLibraryJobMock).not.toHaveBeenCalled();
+  });
+
+  it("falls back to an empty jobId when the active scan has no bullmqJobId yet", async () => {
+    importJobFindFirstMock.mockResolvedValue({
+      id: "active-job",
+      bullmqJobId: null,
+    });
+
+    const result = await scanLibraryRootServerFn({
+      data: { libraryRootId: "root-xyz" },
+    });
+
+    expect(result).toEqual({
+      jobId: "",
+      importJobId: "active-job",
+      alreadyRunning: true,
     });
   });
 
@@ -345,7 +393,7 @@ describe("scanLibraryRootServerFn", () => {
     });
   });
 
-  it("returns { jobId, importJobId }", async () => {
+  it("returns { jobId, importJobId, alreadyRunning: false }", async () => {
     importJobCreateMock.mockResolvedValue({ id: "job-abc" });
     enqueueLibraryJobMock.mockResolvedValue("bull-job-123");
     importJobUpdateMock.mockResolvedValue({});
@@ -354,7 +402,11 @@ describe("scanLibraryRootServerFn", () => {
       data: { libraryRootId: "root-xyz" },
     });
 
-    expect(result).toEqual({ jobId: "bull-job-123", importJobId: "job-abc" });
+    expect(result).toEqual({
+      jobId: "bull-job-123",
+      importJobId: "job-abc",
+      alreadyRunning: false,
+    });
   });
 });
 
