@@ -140,15 +140,6 @@ jobs:
     name: E2E
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # Run inside the official Playwright image so the browsers are prebaked. This
-    # removes the dependency on the cdn.playwright.dev browser download, which was
-    # stalling the runner network indefinitely. The tag must track
-    # @playwright/test in package.json (1.58.2); this image ships Node 24.
-    container:
-      image: mcr.microsoft.com/playwright:v1.58.2-noble
-      # Chromium crashes on heavier pages with the container's default 64MB
-      # /dev/shm. Enlarge it — the standard browser-in-Docker fix.
-      options: --shm-size=2g
     services:
       postgres:
         image: postgres:17
@@ -173,9 +164,8 @@ jobs:
           --health-timeout=5s
           --health-retries=5
     env:
-      # Container jobs reach service containers by their label hostname, not localhost.
-      DATABASE_URL: postgresql://bookhouse:bookhouse@postgres:5432/bookhouse_test
-      QUEUE_URL: redis://valkey:6379
+      DATABASE_URL: postgresql://bookhouse:bookhouse@localhost:5432/bookhouse_test
+      QUEUE_URL: redis://localhost:6379
       AUTH_SECRET: e2e-test-secret-at-least-32-chars!!
       AUTH_OIDC_ISSUER: http://localhost:9090
       AUTH_OIDC_CLIENT_ID: e2e-client
@@ -191,7 +181,11 @@ jobs:
         with:
           version: ${{ env.PNPM_VERSION }}
 
-      # No setup-node step: the Playwright container already ships Node 24.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -211,15 +205,49 @@ jobs:
 
       - name: Install PostgreSQL 17 client tools
         run: |
-          apt-get update -qq
-          apt-get install -y --no-install-recommends curl ca-certificates gnupg
+          sudo apt-get install -y curl ca-certificates gnupg
           curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
-            | gpg --dearmor -o /usr/share/keyrings/postgresql-keyring.gpg
-          echo "deb [signed-by=/usr/share/keyrings/postgresql-keyring.gpg] https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo $VERSION_CODENAME)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
-          apt-get update -qq
-          apt-get install -y --no-install-recommends postgresql-client-17
+            | sudo gpg --dearmor -o /usr/share/keyrings/postgresql-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/postgresql-keyring.gpg] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client-17
 
-      # Playwright browsers are prebaked into the container image — no download step.
+      - name: Install Playwright system dependencies
+        run: pnpm exec playwright install-deps chromium
+
+      # Cache the browsers so a single good download is reused forever. restore +
+      # save-on-success (rather than actions/cache) avoids saving a poisoned
+      # partial when a download is killed mid-stream.
+      - name: Restore Playwright browser cache
+        id: playwright-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 14
+        run: |
+          # cdn.playwright.dev intermittently stalls from GH runners. Kill a
+          # stalled attempt and retry on a fresh connection; once one run caches,
+          # later runs skip the download entirely.
+          for attempt in 1 2 3 4 5; do
+            if timeout 150 pnpm exec playwright install chromium; then
+              exit 0
+            fi
+            echo "playwright download attempt ${attempt} stalled; retrying..."
+            sleep 5
+          done
+          exit 1
+
+      - name: Save Playwright browser cache
+        if: steps.playwright-cache.outputs.cache-hit != 'true' && success()
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Start app and worker
         run: |
