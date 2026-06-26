@@ -5,7 +5,7 @@ import type { H3Event } from "h3";
 describe("createOauthTokenHandler", () => {
   it("returns OAuth token response using the device token", () => {
     const handler = createOauthTokenHandler();
-    const event = { context: { params: { token: "abc123" } } } as unknown as H3Event;
+    const event = { context: { params: { token: "abc123" } } } as Partial<H3Event> as H3Event;
     const result = handler(event);
 
     expect(result.access_token).toBe("abc123");

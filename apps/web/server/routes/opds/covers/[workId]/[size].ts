@@ -1,5 +1,5 @@
 import path from "node:path";
-import { defineEventHandler, setResponseHeader as h3SetResponseHeader } from "h3";
+import { defineEventHandler } from "h3";
 import type { H3Event } from "h3";
 
 const VALID_ID = /^[a-zA-Z0-9_-]+$/;
@@ -72,7 +72,7 @@ export default defineEventHandler(async (event) => {
       return sharp(buffer).jpeg({ quality: 80 }).toBuffer();
     },
     setResponseHeader: (e, name, value) => {
-      h3SetResponseHeader(e, name, value);
+      e.res.headers.set(name, value);
     },
   });
 

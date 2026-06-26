@@ -41,7 +41,7 @@ function makeEvent(filter?: string): H3Event {
   return {
     context: { params: { token: validToken } },
     _query: filter ? { Filter: filter } : {},
-  } as unknown as H3Event;
+  } as Partial<H3Event> as H3Event;
 }
 
 vi.mock("h3", () => ({
@@ -202,7 +202,7 @@ describe("createSyncHandler", () => {
     const event = {
       context: { params: { token: validToken } },
       _query: { Filter: 123 },
-    } as unknown as H3Event;
+    } as Partial<H3Event> as H3Event;
     const result = await handler(event);
 
     expect(result).toEqual([]);

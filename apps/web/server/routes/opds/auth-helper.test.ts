@@ -29,7 +29,7 @@ const mockCredential = {
 function makeEvent(authorization?: string): H3Event {
   return {
     _authorization: authorization,
-  } as unknown as H3Event;
+  } as Partial<H3Event> as H3Event;
 }
 
 function makeDeps(overrides: Partial<OpdsAuthDeps> = {}): OpdsAuthDeps {

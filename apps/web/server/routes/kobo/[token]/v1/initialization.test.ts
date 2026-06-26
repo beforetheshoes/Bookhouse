@@ -25,7 +25,7 @@ describe("createInitializationHandler", () => {
     });
     const event = {
       context: { params: { token: validToken } },
-    } as unknown as H3Event;
+    } as Partial<H3Event> as H3Event;
 
     const result = await handler(event);
 
@@ -57,7 +57,7 @@ describe("createInitializationHandler", () => {
     });
     const event = {
       context: { params: { token: validToken } },
-    } as unknown as H3Event;
+    } as Partial<H3Event> as H3Event;
 
     await expect(handler(event)).rejects.toThrow();
   });

@@ -1,5 +1,5 @@
 import { writeFile, mkdir, rm, rename, mkdtemp } from "node:fs/promises";
-import { defineEventHandler, readMultipartFormData, createError } from "h3";
+import { defineEventHandler, createError } from "h3";
 import type { H3Event } from "h3";
 import { restoreBackup as restoreBackupImpl, type RestoreBackupDeps } from "~/lib/backup/restore-backup";
 import type { BackupManifest } from "~/lib/backup/manifest";
@@ -45,10 +45,10 @@ export default defineEventHandler(async (event) => {
   const execFile = promisify(execFileCallback);
 
   const restoreDeps: RestoreBackupDeps = {
-    execFile: execFile as unknown as RestoreBackupDeps["execFile"],
+    execFile: execFile as RestoreBackupDeps["execFile"],
     writeFile,
-    mkdir: mkdir as unknown as RestoreBackupDeps["mkdir"],
-    rm: rm as unknown as RestoreBackupDeps["rm"],
+    mkdir: mkdir as RestoreBackupDeps["mkdir"],
+    rm: rm as RestoreBackupDeps["rm"],
     rename,
     mkdtemp,
     coverCacheDir,
@@ -59,7 +59,17 @@ export default defineEventHandler(async (event) => {
   const { requireOwnerFromEvent } = await import("../../../middleware/auth");
 
   const handler = createUploadRestoreHandler({
-    readFormData: readMultipartFormData as unknown as UploadRestoreHandlerDeps["readFormData"],
+    // Equivalent to the deprecated readMultipartFormData (formData + mapping).
+    readFormData: async (event) => {
+      const formData = await event.req.formData();
+      return Promise.all(
+        [...formData.entries()].map(async ([name, value]) =>
+          value instanceof Blob
+            ? { name, type: value.type, data: new Uint8Array(await value.arrayBuffer()) }
+            : { name, data: new TextEncoder().encode(value) },
+        ),
+      );
+    },
     restoreBackup: (buf) => restoreBackupImpl(restoreDeps, buf),
     maxFileSize: MAX_FILE_SIZE,
     requireOwner: (e) => { requireOwnerFromEvent(e); },

@@ -1,7 +1,7 @@
 import { defineEventHandler } from "h3";
 
 export default defineEventHandler((event) => {
-  if (event.path.startsWith("/kobo/")) {
-    console.log(`[kobo] ${event.method} ${event.path}`);
+  if (event.url.pathname.startsWith("/kobo/")) {
+    console.log(`[kobo] ${event.req.method} ${event.url.pathname}`);
   }
 });

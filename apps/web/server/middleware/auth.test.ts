@@ -17,7 +17,7 @@ function createMockEvent(pathname: string): H3Event {
   return {
     path: pathname,
     context: {},
-  } as unknown as H3Event;
+  } as Partial<H3Event> as H3Event;
 }
 
 const validUser: AuthenticatedUser = {
@@ -169,7 +169,7 @@ describe("requireOwnerFromEvent", () => {
   it("returns the user when they are an owner", () => {
     const event = {
       context: { user: { id: "u1", roles: ["OWNER"] } },
-    } as unknown as H3Event;
+    } as Partial<H3Event> as H3Event;
     const user = requireOwnerFromEvent(event);
     expect(user.id).toBe("u1");
   });
@@ -177,14 +177,14 @@ describe("requireOwnerFromEvent", () => {
   it("throws 403 when the user is not an owner", () => {
     const event = {
       context: { user: { id: "u1", roles: ["VIEWER"] } },
-    } as unknown as H3Event;
+    } as Partial<H3Event> as H3Event;
     expect(() => requireOwnerFromEvent(event)).toThrowError(
       expect.objectContaining({ statusCode: 403 }),
     );
   });
 
   it("throws 401 when no user is attached", () => {
-    const event = { context: {} } as unknown as H3Event;
+    const event = { context: {} } as Partial<H3Event> as H3Event;
     expect(() => requireOwnerFromEvent(event)).toThrowError(
       expect.objectContaining({ statusCode: 401 }),
     );

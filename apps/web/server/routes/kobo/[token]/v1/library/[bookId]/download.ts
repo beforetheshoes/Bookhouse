@@ -16,7 +16,7 @@ export interface DownloadHandlerDeps {
   statSync: (path: string) => { size: number };
   createReadStream: (path: string) => NodeJS.ReadableStream;
   setResponseHeader: (event: H3Event, name: string, value: string) => void;
-  sendStream: (event: H3Event, stream: NodeJS.ReadableStream) => unknown;
+  sendStream: (event: H3Event, stream: NodeJS.ReadableStream) => ReadableStream;
 }
 
 const VALID_ID = /^[a-zA-Z0-9_-]+$/;
@@ -107,7 +107,6 @@ export function createDownloadHandler(deps: DownloadHandlerDeps) {
 export default defineEventHandler(async (event) => {
   const fs = await import("node:fs");
   const stream = await import("node:stream");
-  const h3 = await import("h3");
   const { db } = await import("@bookhouse/db");
 
   const handler = createDownloadHandler({
@@ -164,8 +163,8 @@ export default defineEventHandler(async (event) => {
     statSync: fs.statSync,
     createReadStream: fs.createReadStream,
     setResponseHeader,
-    sendStream: (evt, s) =>
-      h3.sendStream(evt, stream.Readable.toWeb(s as InstanceType<typeof stream.Readable>) as ReadableStream),
+    sendStream: (_evt, s) =>
+      stream.Readable.toWeb(s as InstanceType<typeof stream.Readable>) as ReadableStream,
   });
 
   return handler(event);

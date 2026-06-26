@@ -49,7 +49,7 @@ describe("KOReader users/auth default handler", () => {
         "x-auth-user": "reader",
         "x-auth-key": "secret",
       },
-    } as unknown as H3Event)).resolves.toEqual({ authorized: "OK" });
+    } as Partial<H3Event> as H3Event)).resolves.toEqual({ authorized: "OK" });
 
     expect(mockFindCredential).toHaveBeenCalledWith({ where: { username: "reader" } });
     expect(mockVerifyPassword).toHaveBeenCalledWith("secret", "salt:hash");

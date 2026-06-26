@@ -1,5 +1,4 @@
 import type { H3Event } from "h3";
-import type { PassThrough } from "node:stream";
 
 const CONTENT_MEDIA_KINDS = new Set(["EPUB", "PDF", "CBZ", "AUDIO"]);
 
@@ -20,12 +19,12 @@ export interface DownloadAllHandlerDeps {
   };
   existsSync: (path: string) => boolean;
   createReadStream: (path: string) => NodeJS.ReadableStream;
-  createArchive: () => PassThrough & {
-    append: (source: NodeJS.ReadableStream, opts: { name: string }) => unknown;
+  createArchive: () => NodeJS.ReadableStream & {
+    append: (source: NodeJS.ReadableStream, opts: { name: string }) => void;
     finalize: () => Promise<void>;
   };
   setResponseHeader: (event: H3Event, name: string, value: string) => void;
-  sendStream: (event: H3Event, stream: NodeJS.ReadableStream) => unknown;
+  sendStream: (event: H3Event, stream: NodeJS.ReadableStream) => ReadableStream;
 }
 
 const VALID_ID = /^[a-zA-Z0-9_-]+$/;

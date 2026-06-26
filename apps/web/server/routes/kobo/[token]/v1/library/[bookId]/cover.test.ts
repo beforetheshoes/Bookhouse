@@ -19,7 +19,7 @@ const mockDevice = {
 function makeEvent(bookId = "ed-1"): H3Event {
   return {
     context: { params: { token: validToken, bookId } },
-  } as unknown as H3Event;
+  } as Partial<H3Event> as H3Event;
 }
 
 function makeDeps(overrides: Partial<CoverHandlerDeps> = {}): CoverHandlerDeps {

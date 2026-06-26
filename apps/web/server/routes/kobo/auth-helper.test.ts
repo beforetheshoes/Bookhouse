@@ -4,7 +4,7 @@ import type { KoboAuthDeps } from "./auth-helper";
 import type { H3Event } from "h3";
 
 function makeEvent(token: string): H3Event {
-  return { context: { params: { token } } } as unknown as H3Event;
+  return { context: { params: { token } } } as Partial<H3Event> as H3Event;
 }
 
 const mockDevice = {

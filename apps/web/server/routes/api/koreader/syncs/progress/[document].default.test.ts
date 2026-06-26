@@ -110,7 +110,7 @@ describe("KOReader progress document route default handler", () => {
           document: "abcd1234",
         },
       },
-    } as unknown as H3Event);
+    } as Partial<H3Event> as H3Event);
 
     expect(mockFindCredential).toHaveBeenCalledWith({ where: { username: "reader" } });
     expect(mockVerifyPassword).toHaveBeenCalledWith("secret", "salt:hash");

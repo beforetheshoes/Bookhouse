@@ -41,7 +41,7 @@ type KoreaderProgressPayload = {
 
 function validatePayload(body: Awaited<ReturnType<KoreaderProgressPutDeps["readBody"]>>): asserts body is KoreaderProgressPayload {
   if (
-    typeof body?.document !== "string" ||
+    typeof body.document !== "string" ||
     typeof body.progress !== "string" ||
     typeof body.percentage !== "number" ||
     typeof body.device !== "string" ||

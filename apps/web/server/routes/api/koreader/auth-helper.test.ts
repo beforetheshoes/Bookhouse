@@ -16,7 +16,7 @@ vi.mock("h3", () => ({
 const { createKoreaderAuth } = await import("./auth-helper");
 
 function makeEvent(headers: Record<string, string> = {}): H3Event {
-  return { _headers: headers } as unknown as H3Event;
+  return { _headers: headers } as Partial<H3Event> as H3Event;
 }
 
 function makeDeps(overrides: Partial<KoreaderAuthDeps> = {}): KoreaderAuthDeps {

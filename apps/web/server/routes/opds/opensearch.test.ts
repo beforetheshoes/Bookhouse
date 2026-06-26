@@ -9,7 +9,7 @@ vi.mock("h3", () => ({
 const { createOpenSearchHandler } = await import("./opensearch");
 
 function makeEvent(): H3Event {
-  return {} as unknown as H3Event;
+  return {} as Partial<H3Event> as H3Event;
 }
 
 function makeDeps(overrides: Partial<OpenSearchHandlerDeps> = {}): OpenSearchHandlerDeps {

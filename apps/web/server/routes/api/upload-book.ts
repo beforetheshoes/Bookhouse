@@ -4,7 +4,7 @@ import { mkdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import busboyFactory from "busboy";
-import { defineEventHandler, createError, getRequestHeaders } from "h3";
+import { defineEventHandler, createError } from "h3";
 import type { H3Event } from "h3";
 import {
   buildBookFolderPath,
@@ -99,6 +99,7 @@ export function isAllowedUploadFilename(basename: string): boolean {
 export function sanitizeUploadFilename(basename: string): string {
   // Strip path components and unsafe chars; preserve extension. Disallow
   // dotfiles and path traversal segments.
+  // eslint-disable-next-line no-control-regex -- intentionally strips control chars from filenames
   const stripped = path.basename(basename).replace(/[\x00-\x1f/\\:"<>|?*]/g, "_");
   if (stripped === "" || stripped === "." || stripped === "..") {
     return "";
@@ -217,12 +218,12 @@ export async function parseMultipartToStaging(
   stagingDir: string,
   limits: ParseMultipartLimits = { maxFileSizeBytes: 4 * 1024 * 1024 * 1024 },
 ): Promise<{ fields: UploadBookFields; files: UploadedFilePart[] }> {
-  const headers = getRequestHeaders(event);
+  const headers = Object.fromEntries(event.req.headers);
   const contentType = headers["content-type"] ?? headers["Content-Type"];
   if (typeof contentType !== "string" || !contentType.startsWith("multipart/form-data")) {
     throw createError({ statusCode: 415, statusMessage: "Content-Type must be multipart/form-data" });
   }
-  const req = event.node?.req;
+  const req = event.runtime?.node?.req;
   if (!req) {
     throw createError({ statusCode: 500, statusMessage: "request stream unavailable" });
   }
@@ -292,7 +293,7 @@ export async function parseMultipartToStaging(
       if (aborted) return;
       Promise.all(pendingFileWrites)
         .then(() => { resolve({ fields, files }); })
-        .catch((err: unknown) => { abort(err as Error); });
+        .catch((err: Error) => { abort(err); });
     });
 
     req.pipe(bb);

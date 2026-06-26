@@ -1,4 +1,4 @@
-import { defineEventHandler, getMethod, readBody } from "h3";
+import { defineEventHandler, readBody } from "h3";
 import type { H3Event } from "h3";
 import type { Prisma } from "@bookhouse/db";
 import type { KoboAuthDeps } from "../../../../auth-helper";
@@ -203,7 +203,7 @@ export default defineEventHandler(async (event) => {
         updatedAt: record.updatedAt,
       };
     },
-    getMethod: (ev) => getMethod(ev),
+    getMethod: (ev) => ev.req.method,
     readBody: (ev) => readBody(ev),
   });
 

@@ -1,5 +1,5 @@
 import { readdir, readFile, stat } from "node:fs/promises";
-import { defineEventHandler, setResponseHeader, sendStream } from "h3";
+import { defineEventHandler, setResponseHeader } from "h3";
 import type { H3Event } from "h3";
 import type { Readable } from "node:stream";
 import { createBackup as createBackupImpl, type CreateBackupDeps } from "~/lib/backup/create-backup";
@@ -8,7 +8,7 @@ import type { BackupManifest } from "~/lib/backup/manifest";
 export interface DownloadHandlerDeps {
   createBackup: () => Promise<{ stream: Readable; manifest: BackupManifest }>;
   setResponseHeader: (event: H3Event, name: string, value: string) => void;
-  sendStream: (event: H3Event, stream: Readable) => unknown;
+  sendStream: (event: H3Event, stream: Readable) => Readable;
   requireOwner: (event: H3Event) => void;
 }
 
@@ -41,8 +41,8 @@ export default defineEventHandler(async (event) => {
   const handler = createDownloadHandler({
     createBackup: () =>
       createBackupImpl({
-        execFile: execFile as unknown as CreateBackupDeps["execFile"],
-        readdir: readdir as unknown as CreateBackupDeps["readdir"],
+        execFile: execFile as CreateBackupDeps["execFile"],
+        readdir: readdir as CreateBackupDeps["readdir"],
         readFile,
         stat,
         coverCacheDir,
@@ -50,7 +50,8 @@ export default defineEventHandler(async (event) => {
         pgDumpBin,
       }),
     setResponseHeader,
-    sendStream: sendStream as unknown as DownloadHandlerDeps["sendStream"],
+    // h3 v2's sendStream is identity (returns the value); stream directly.
+    sendStream: (_event, stream) => stream,
     requireOwner: (e) => { requireOwnerFromEvent(e); },
   });
   return handler(event);

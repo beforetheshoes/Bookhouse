@@ -17,7 +17,7 @@ const mockDevice = {
 };
 
 function makeEvent(): H3Event {
-  return { context: { params: { token: validToken } } } as unknown as H3Event;
+  return { context: { params: { token: validToken } } } as Partial<H3Event> as H3Event;
 }
 
 function makeDeps(overrides: Partial<DeviceAuthHandlerDeps> = {}): DeviceAuthHandlerDeps {
@@ -58,7 +58,7 @@ describe("createDeviceAuthHandler", () => {
       auth: { findDeviceByToken: vi.fn().mockResolvedValue(null) },
     });
     const handler = createDeviceAuthHandler(deps);
-    const event = { context: { params: { token: "bad" } } } as unknown as H3Event;
+    const event = { context: { params: { token: "bad" } } } as Partial<H3Event> as H3Event;
 
     await expect(handler(event)).rejects.toThrow();
   });

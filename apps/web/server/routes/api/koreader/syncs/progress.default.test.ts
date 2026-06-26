@@ -108,7 +108,7 @@ describe("KOReader progress route default handler", () => {
         "x-auth-user": "reader",
         "x-auth-key": "secret",
       },
-    } as unknown as H3Event);
+    } as Partial<H3Event> as H3Event);
 
     expect(mockFindCredential).toHaveBeenCalledWith({ where: { username: "reader" } });
     expect(mockVerifyPassword).toHaveBeenCalledWith("secret", "salt:hash");
@@ -172,7 +172,7 @@ describe("KOReader progress route default handler", () => {
         "x-auth-user": "reader",
         "x-auth-key": "secret",
       },
-    } as unknown as H3Event);
+    } as Partial<H3Event> as H3Event);
 
     expect(mockUpsert).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -196,6 +196,6 @@ describe("KOReader progress route default handler", () => {
         "x-auth-user": "reader",
         "x-auth-key": "secret",
       },
-    } as unknown as H3Event)).rejects.toThrow(expect.objectContaining({ statusCode: 400 }));
+    } as Partial<H3Event> as H3Event)).rejects.toThrow(expect.objectContaining({ statusCode: 400 }));
   });
 });

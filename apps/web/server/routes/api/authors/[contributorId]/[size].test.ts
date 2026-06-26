@@ -1,12 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
 import { Readable } from "node:stream";
-
-const mockSendStream = vi.fn();
+import type { H3Event } from "h3";
 
 vi.mock("h3", () => ({
   defineEventHandler: (fn: (event: object) => object | Promise<object>) => fn,
   setResponseHeader: vi.fn(),
-  sendStream: (...args: unknown[]) => mockSendStream(...args),
 }));
 
 vi.mock("node:fs", () => ({
@@ -20,18 +18,14 @@ describe("author photo route", () => {
     expect(typeof mod.default).toBe("function");
   });
 
-  it("converts Node stream to Web ReadableStream for h3 sendStream", async () => {
+  it("returns the author photo as a Web ReadableStream", async () => {
     const mod = await import("./[size]");
-    const handler = mod.default as (event: object) => Promise<unknown>;
-
     const event = {
       context: { params: { contributorId: "c1", size: "thumb" } },
-    };
+    } as Partial<H3Event> as H3Event;
 
-    await handler(event);
+    const result = mod.default(event);
 
-    expect(mockSendStream).toHaveBeenCalledTimes(1);
-    const [, webStream] = mockSendStream.mock.calls[0] as [unknown, unknown];
-    expect(webStream).toBeInstanceOf(ReadableStream);
+    expect(result).toBeInstanceOf(ReadableStream);
   });
 });

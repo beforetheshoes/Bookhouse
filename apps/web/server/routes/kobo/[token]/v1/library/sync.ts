@@ -35,15 +35,15 @@ export function createSyncHandler(deps: SyncHandlerDeps) {
       getDeviceCollectionEditions: deps.getDeviceCollectionEditions,
     });
 
-    console.log(`[kobo] SYNC device=${device.id} eligible=${eligible.length}`);
+    console.log(`[kobo] SYNC device=${device.id} eligible=${String(eligible.length)}`);
 
     const synced = await deps.getSyncedBooks(device.id);
 
-    console.log(`[kobo] SYNC synced=${synced.length} (active=${synced.filter((s) => s.removedAt === null).length})`);
+    console.log(`[kobo] SYNC synced=${String(synced.length)} (active=${String(synced.filter((s) => s.removedAt === null).length)})`);
 
     const { toAdd, toRemove } = computeSyncDiff(eligible, synced);
 
-    console.log(`[kobo] SYNC toAdd=${toAdd.length} toRemove=${toRemove.length}`);
+    console.log(`[kobo] SYNC toAdd=${String(toAdd.length)} toRemove=${String(toRemove.length)}`);
 
     // Paginate: only send up to SYNC_ITEM_LIMIT items per response
     const pageAdd = toAdd.slice(0, SYNC_ITEM_LIMIT);
@@ -88,7 +88,7 @@ export function createSyncHandler(deps: SyncHandlerDeps) {
     }
 
     // Build response array
-    const syncResults: Record<string, unknown>[] = [];
+    const syncResults: Record<string, object>[] = [];
 
     for (const entitlement of result.newEntitlements) {
       syncResults.push({ NewEntitlement: entitlement });
@@ -144,7 +144,7 @@ export function createSyncHandler(deps: SyncHandlerDeps) {
     const hasMore = additionsRemaining;
     if (hasMore) {
       deps.setResponseHeader(event, "x-kobo-sync", "continue");
-      console.log(`[kobo] SYNC paginated: sent ${pageAdd.length}, ${toAdd.length - pageAdd.length} remaining`);
+      console.log(`[kobo] SYNC paginated: sent ${String(pageAdd.length)}, ${String(toAdd.length - pageAdd.length)} remaining`);
     }
 
     // Log first entitlement for diagnostics (only on first page)
@@ -152,7 +152,7 @@ export function createSyncHandler(deps: SyncHandlerDeps) {
       console.log(`[kobo] SYNC first entitlement sample: ${JSON.stringify(syncResults[0])}`);
     }
 
-    console.log(`[kobo] SYNC response: ${syncResults.length} items (filter=${filterParam ?? "none"})`);
+    console.log(`[kobo] SYNC response: ${String(syncResults.length)} items (filter=${filterParam ?? "none"})`);
 
     return syncResults;
   };
@@ -192,7 +192,7 @@ export default defineEventHandler(async (event) => {
         },
       });
 
-      console.log(`[kobo] QUERY found ${deviceCollections.length} deviceCollections, items: ${deviceCollections.map((dc) => dc.collection.items.length).join(",")}`);
+      console.log(`[kobo] QUERY found ${String(deviceCollections.length)} deviceCollections, items: ${deviceCollections.map((dc) => dc.collection.items.length).join(",")}`);
 
       const editionMap = new Map<string, EligibleEdition>();
 

@@ -50,7 +50,7 @@ function makeEvent(seriesId: string): H3Event {
   return {
     _authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
     _params: { seriesId },
-  } as unknown as H3Event;
+  } as Partial<H3Event> as H3Event;
 }
 
 function makeDeps(overrides: Partial<SeriesBooksHandlerDeps> = {}): SeriesBooksHandlerDeps {
@@ -155,7 +155,7 @@ describe("createSeriesBooksHandler", () => {
     const event = {
       _authorization: `Basic ${Buffer.from("reader:password").toString("base64")}`,
       _params: {},
-    } as unknown as H3Event;
+    } as Partial<H3Event> as H3Event;
 
     await expect(handler(event)).rejects.toMatchObject({
       statusCode: 400,
