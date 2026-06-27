@@ -643,25 +643,14 @@ function isEbookVariant(mediaKind: MediaKind): boolean {
   return EBOOK_VARIANT_MEDIA_KINDS.has(mediaKind);
 }
 
-const PATH_DERIVED_EBOOK_MEDIA_KINDS = new Set<MediaKind>([
-  MediaKind.PDF,
-  MediaKind.KEPUB,
-  MediaKind.MOBI,
-  MediaKind.AZW,
-  MediaKind.AZW3,
-]);
-
+// Path-derived metadata applies to the same set of ebook variant formats.
 function usesPathDerivedEbookMetadata(mediaKind: MediaKind): boolean {
-  return PATH_DERIVED_EBOOK_MEDIA_KINDS.has(mediaKind);
+  return EBOOK_VARIANT_MEDIA_KINDS.has(mediaKind);
 }
 
 const SCAN_GROUPED_EBOOK_MEDIA_KINDS = new Set<MediaKind>([
   MediaKind.EPUB,
-  MediaKind.PDF,
-  MediaKind.KEPUB,
-  MediaKind.MOBI,
-  MediaKind.AZW,
-  MediaKind.AZW3,
+  ...EBOOK_VARIANT_MEDIA_KINDS,
 ]);
 
 function groupsWithSiblingEbookVariants(mediaKind: MediaKind): boolean {
@@ -1420,12 +1409,8 @@ async function duplicatePairExists(
 
 const DUPLICATE_MEDIA_KINDS: ReadonlySet<MediaKind> = new Set([
   MediaKind.EPUB,
-  MediaKind.KEPUB,
-  MediaKind.MOBI,
-  MediaKind.AZW,
-  MediaKind.AZW3,
-  MediaKind.PDF,
   MediaKind.CBZ,
+  ...EBOOK_VARIANT_MEDIA_KINDS,
 ]);
 
 async function detectDuplicatesImpl(
@@ -3546,24 +3531,16 @@ export function createIngestServices(
   async function matchFileAssetToEdition(
     input: MatchFileAssetToEditionInput,
   ): Promise<MatchFileAssetToEditionResult> {
-    const DUPLICATE_CONTENT_MEDIA_KINDS: ReadonlySet<string> = new Set([
+    const DUPLICATE_CONTENT_MEDIA_KINDS: ReadonlySet<string> = new Set<string>([
       MediaKind.EPUB,
-      MediaKind.KEPUB,
-      MediaKind.MOBI,
-      MediaKind.AZW,
-      MediaKind.AZW3,
-      MediaKind.PDF,
       MediaKind.CBZ,
+      ...EBOOK_VARIANT_MEDIA_KINDS,
     ]);
-    const MATCH_SUGGESTION_MEDIA_KINDS: ReadonlySet<string> = new Set([
+    const MATCH_SUGGESTION_MEDIA_KINDS: ReadonlySet<string> = new Set<string>([
       MediaKind.EPUB,
-      MediaKind.KEPUB,
-      MediaKind.MOBI,
-      MediaKind.AZW,
-      MediaKind.AZW3,
-      MediaKind.PDF,
       MediaKind.CBZ,
       MediaKind.AUDIO,
+      ...EBOOK_VARIANT_MEDIA_KINDS,
     ]);
     const result = await matchFileAssetToEditionCore(input);
     if (!result.skipped && result.mediaKind !== undefined && DUPLICATE_CONTENT_MEDIA_KINDS.has(result.mediaKind)) {
@@ -3583,12 +3560,7 @@ export function createIngestServices(
     });
 
     const matchableMediaKinds: Set<MediaKind> = new Set([
-      MediaKind.EPUB,
-      MediaKind.PDF,
-      MediaKind.KEPUB,
-      MediaKind.MOBI,
-      MediaKind.AZW,
-      MediaKind.AZW3,
+      ...SCAN_GROUPED_EBOOK_MEDIA_KINDS,
       MediaKind.AUDIO,
       MediaKind.SIDECAR,
     ]);

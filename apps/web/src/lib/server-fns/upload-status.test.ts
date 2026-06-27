@@ -111,25 +111,6 @@ describe("getUploadStatusServerFn", () => {
     });
   });
 
-  it("coerces null processedFiles/totalFiles/errorCount to 0", async () => {
-    importJobFindUniqueMock.mockResolvedValue({
-      id: "j1",
-      kind: "UPLOAD_INGEST",
-      status: "RUNNING",
-      processedFiles: null,
-      totalFiles: null,
-      errorCount: null,
-      error: null,
-    });
-    const result = await getUploadStatusServerFn({ data: { importJobId: "j1" } });
-    expect(result).toEqual({
-      status: "RUNNING",
-      processedFiles: 0,
-      totalFiles: 0,
-      errorCount: 0,
-    });
-  });
-
   it("returns FAILED status with the error message", async () => {
     importJobFindUniqueMock.mockResolvedValue({
       id: "j1",

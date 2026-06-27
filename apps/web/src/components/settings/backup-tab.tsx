@@ -16,7 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
-import type { BackupManifest } from "~/lib/backup/manifest";
+import { backupManifestSchema, type BackupManifest } from "~/lib/backup/manifest";
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${String(bytes)} B`;
@@ -75,7 +75,7 @@ export function BackupTab({ history, onBackupComplete }: BackupTabProps) {
 
       if (manifestHeader) {
         try {
-          const manifest = JSON.parse(manifestHeader) as BackupManifest;
+          const manifest = backupManifestSchema.parse(JSON.parse(manifestHeader));
           onBackupComplete(manifest);
         } catch {
           // manifest header parse failed, non-critical

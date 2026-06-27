@@ -1,4 +1,5 @@
 import type { H3Event } from "h3";
+import { httpError } from "../../../utils/http-error";
 
 const CONTENT_MEDIA_KINDS = new Set(["EPUB", "PDF", "CBZ", "AUDIO"]);
 
@@ -35,7 +36,7 @@ export function createDownloadAllHandler(deps: DownloadAllHandlerDeps) {
     const editionId = params.editionId as string;
 
     if (!VALID_ID.test(editionId)) {
-      throw Object.assign(new Error("Invalid editionId"), { statusCode: 400, statusMessage: "Invalid editionId" });
+      throw httpError("Invalid editionId", 400);
     }
 
     const editionFiles = await deps.db.findEditionFiles(editionId);
@@ -46,7 +47,7 @@ export function createDownloadAllHandler(deps: DownloadAllHandlerDeps) {
       .filter((ef) => deps.existsSync(ef.fileAsset.absolutePath));
 
     if (presentFiles.length === 0) {
-      throw Object.assign(new Error("No files available"), { statusCode: 404, statusMessage: "Not found" });
+      throw httpError("No files available", 404, "Not found");
     }
 
     const archive = deps.createArchive();

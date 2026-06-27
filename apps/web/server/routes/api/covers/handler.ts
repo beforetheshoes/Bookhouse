@@ -1,5 +1,6 @@
 import path from "node:path";
 import type { H3Event } from "h3";
+import { httpError } from "../../../utils/http-error";
 
 export interface CoverHandlerDeps {
   existsSync: (path: string) => boolean;
@@ -26,11 +27,11 @@ export function createCoverHandler(deps: CoverHandlerDeps) {
     const size = params.size as string;
 
     if (!VALID_WORK_ID.test(id)) {
-      throw Object.assign(new Error(`Invalid ${idParam}`), { statusCode: 400, statusMessage: `Invalid ${idParam}` });
+      throw httpError(`Invalid ${idParam}`, 400);
     }
 
     if (!VALID_SIZES.has(size)) {
-      throw Object.assign(new Error("Invalid size"), { statusCode: 400, statusMessage: "Invalid size" });
+      throw httpError("Invalid size", 400);
     }
 
     const filePath = path.join(deps.coverCacheDir, id, `${size}.webp`);

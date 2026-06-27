@@ -1,7 +1,9 @@
-import { defineEventHandler, getQuery } from "h3";
+import { defineEventHandler } from "h3";
 import type { H3Event } from "h3";
+import { z } from "zod";
 import type { OpdsEditionData } from "@bookhouse/opds";
 import type { OpdsAuthDeps } from "./auth-helper";
+import { parseQuery } from "../../utils/validate";
 
 const CONTENT_TYPE = "application/atom+xml;profile=opds-catalog;kind=acquisition";
 const PAGE_SIZE = 25;
@@ -20,9 +22,9 @@ export function createAllBooksHandler(deps: AllBooksHandlerDeps) {
     const auth = createOpdsAuth(deps.auth);
     await auth(event);
 
-    const query = getQuery(event);
-    const pageParam = typeof query.page === "string" ? parseInt(query.page, 10) : 1;
-    const page = Number.isFinite(pageParam) && pageParam >= 1 ? pageParam : 1;
+    const { page } = parseQuery(event, z.object({
+      page: z.coerce.number().int().min(1).catch(1),
+    }));
 
     const skip = (page - 1) * PAGE_SIZE;
     const [entries, total] = await Promise.all([

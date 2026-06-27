@@ -1,7 +1,9 @@
-import { defineEventHandler, getQuery } from "h3";
+import { defineEventHandler } from "h3";
 import type { H3Event } from "h3";
+import { z } from "zod";
 import type { OpdsEditionData } from "@bookhouse/opds";
 import type { OpdsAuthDeps } from "./auth-helper";
+import { parseQuery } from "../../utils/validate";
 
 const CONTENT_TYPE = "application/atom+xml;profile=opds-catalog;kind=acquisition";
 const PAGE_SIZE = 25;
@@ -20,10 +22,10 @@ export function createSearchHandler(deps: SearchHandlerDeps) {
     const auth = createOpdsAuth(deps.auth);
     await auth(event);
 
-    const query = getQuery(event);
-    const q = typeof query.q === "string" ? query.q.trim() : "";
-    const pageParam = typeof query.page === "string" ? parseInt(query.page, 10) : 1;
-    const page = Number.isFinite(pageParam) && pageParam >= 1 ? pageParam : 1;
+    const { q, page } = parseQuery(event, z.object({
+      q: z.string().trim().catch(""),
+      page: z.coerce.number().int().min(1).catch(1),
+    }));
 
     const { buildAcquisitionFeed } = await import("@bookhouse/opds");
     const baseUrl = deps.getBaseUrl();

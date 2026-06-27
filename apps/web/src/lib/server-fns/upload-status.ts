@@ -51,9 +51,7 @@ export const getUploadStatusServerFn = createServerFn({
       return null;
     }
 
-    const processedFiles = job.processedFiles ?? 0;
-    const totalFiles = job.totalFiles ?? 0;
-    const errorCount = job.errorCount ?? 0;
+    const { processedFiles, totalFiles, errorCount } = job;
 
     if (job.status === "FAILED") {
       return {

@@ -460,9 +460,9 @@ model ImportJob {
   payload        Json?
   error          String?
   attemptsMade   Int             @default(0)
-  totalFiles             Int?
-  processedFiles         Int?
-  errorCount             Int?
+  totalFiles             Int             @default(0)
+  processedFiles         Int             @default(0)
+  errorCount             Int             @default(0)
   scanStage              ScanStage?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt

@@ -4,6 +4,7 @@ import type { Prisma } from "@bookhouse/db";
 import type { KoreaderAuthResult } from "../auth-helper";
 import { isForeignKeyConstraintError } from "@bookhouse/shared";
 import { resolveKoreaderTimestamp, type CandidateEditionFile, type KoreaderResolvedDocument } from "./shared";
+import { z } from "zod";
 
 export interface KoreaderProgressPutDeps {
   auth: (event: H3Event) => Promise<KoreaderAuthResult>;
@@ -30,36 +31,30 @@ export interface KoreaderProgressPutDeps {
   now: () => Date;
 }
 
-type KoreaderProgressPayload = {
-  document: string;
-  progress: string;
-  percentage: number;
-  device: string;
-  device_id: string;
-  timestamp?: number;
-};
-
-function validatePayload(body: Awaited<ReturnType<KoreaderProgressPutDeps["readBody"]>>): asserts body is KoreaderProgressPayload {
-  if (
-    typeof body.document !== "string" ||
-    typeof body.progress !== "string" ||
-    typeof body.percentage !== "number" ||
-    typeof body.device !== "string" ||
-    typeof body.device_id !== "string"
-  ) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: "Bad Request",
-      message: "Invalid KOReader progress payload",
-    });
-  }
-}
+const koreaderProgressSchema = z.object({
+  document: z.string(),
+  progress: z.string(),
+  percentage: z.number(),
+  device: z.string(),
+  device_id: z.string(),
+  // An invalid/NaN device timestamp is tolerated and falls back to the server
+  // clock downstream (resolveKoreaderTimestamp), so coerce it to undefined
+  // rather than rejecting the whole request.
+  timestamp: z.number().optional().catch(undefined),
+});
 
 export function createKoreaderProgressPutHandler(deps: KoreaderProgressPutDeps) {
   return async (event: H3Event) => {
     const auth = await deps.auth(event);
-    const body = await deps.readBody(event);
-    validatePayload(body);
+    const parsed = koreaderProgressSchema.safeParse(await deps.readBody(event));
+    if (!parsed.success) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: "Bad Request",
+        message: "Invalid KOReader progress payload",
+      });
+    }
+    const body = parsed.data;
 
     const document = await deps.resolveDocument(auth.userId, body.document);
     if (!document) {

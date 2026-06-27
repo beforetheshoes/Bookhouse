@@ -17,12 +17,7 @@ export async function recordBatchJobProgress(
     where: { id: importJobId },
     select: { totalFiles: true, processedFiles: true },
   });
-  if (
-    job &&
-    job.totalFiles !== null &&
-    job.processedFiles !== null &&
-    job.processedFiles >= job.totalFiles
-  ) {
+  if (job && job.processedFiles >= job.totalFiles) {
     await db.importJob.update({
       where: { id: importJobId },
       data: { status: "SUCCEEDED", finishedAt: new Date() },
