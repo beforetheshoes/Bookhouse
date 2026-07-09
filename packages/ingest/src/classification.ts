@@ -5,7 +5,11 @@ export const IGNORED_BASENAMES = [".DS_Store", "Thumbs.db", "desktop.ini"] as co
 const IGNORED_BASENAMES_SET = new Set<string>(IGNORED_BASENAMES);
 
 export function isIgnoredBasename(filePath: string): boolean {
-  return IGNORED_BASENAMES_SET.has(path.basename(filePath));
+  const basename = path.basename(filePath);
+  // Dot-prefixed files are never library content: upload temp files
+  // (.<name>.partial), AppleDouble forks (._<name>), and editor/OS junk.
+  if (basename.startsWith(".")) return true;
+  return IGNORED_BASENAMES_SET.has(basename);
 }
 
 const AUDIO_EXTENSIONS = new Set([

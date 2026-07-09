@@ -63,6 +63,13 @@ describe("classification helpers", () => {
     expect(isIgnoredBasename("/volumes/books/Thumbs.db")).toBe(true);
   });
 
+  it("ignores dot-prefixed files (upload temp files, AppleDouble junk)", () => {
+    expect(isIgnoredBasename(".book.epub.partial")).toBe(true);
+    expect(isIgnoredBasename("._book.epub")).toBe(true);
+    expect(isIgnoredBasename(".hidden")).toBe(true);
+    expect(isIgnoredBasename("/tmp/books/Author/Title/.book.epub.partial")).toBe(true);
+  });
+
   it("classifies supported media kinds", () => {
     expect(classifyMediaKind("book.epub")).toBe(MediaKind.EPUB);
     expect(classifyMediaKind("book.kepub")).toBe(MediaKind.KEPUB);
