@@ -50,13 +50,15 @@ vi.mock("~/lib/server-fns/upload-status", () => ({
 }));
 
 const fetchMock = vi.fn();
-beforeEach(() => {
+beforeEach(async () => {
   toastErrorMock.mockReset();
   toastSuccessMock.mockReset();
   fetchMock.mockReset();
   getUploadStatusServerFnMock.mockReset();
   getUploadStatusServerFnMock.mockResolvedValue(null);
   globalThis.fetch = fetchMock as never;
+  const { takePendingUploadFiles } = await import("~/lib/pending-upload");
+  takePendingUploadFiles();
 });
 
 function makeRoot(overrides: Partial<LibraryRootRow> = {}): LibraryRootRow {
@@ -101,28 +103,40 @@ describe("UploadForm", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("rejects submission with no title", async () => {
+  it("submits without title and author, leaving them to server-side detection", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: () => ({ importJobId: "import-1" }),
+    });
     render(<UploadForm libraryRoots={[makeRoot()]} />);
     const file = new File(["x"], "book.epub", { type: "application/epub+zip" });
     const input = screen.getByTestId("upload-file-input");
     Object.defineProperty(input, "files", { value: [file] });
     fireEvent.change(input);
-    fireEvent.change(screen.getByLabelText("Author"), { target: { value: "A" } });
     fireEvent.click(screen.getByRole("button", { name: /upload/i }));
-    await Promise.resolve();
-    expect(toastErrorMock).toHaveBeenCalledWith("Title is required");
+
+    await new Promise((r) => setTimeout(r, 5));
+    expect(toastErrorMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const sentBody = (fetchMock.mock.calls[0] as [string, { body: FormData }])[1].body;
+    expect(sentBody.has("title")).toBe(false);
+    expect(sentBody.has("author")).toBe(false);
   });
 
-  it("rejects submission with no author", async () => {
+  it("consumes files stashed by the global drop target on mount", async () => {
+    const { stashPendingUploadFiles } = await import("~/lib/pending-upload");
+    stashPendingUploadFiles([new File(["x"], "stashed.epub")]);
+
     render(<UploadForm libraryRoots={[makeRoot()]} />);
-    const file = new File(["x"], "book.epub", { type: "application/epub+zip" });
-    const input = screen.getByTestId("upload-file-input");
-    Object.defineProperty(input, "files", { value: [file] });
-    fireEvent.change(input);
-    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "T" } });
-    fireEvent.click(screen.getByRole("button", { name: /upload/i }));
-    await Promise.resolve();
-    expect(toastErrorMock).toHaveBeenCalledWith("Author is required");
+    expect(await screen.findByText("stashed.epub")).toBeTruthy();
+  });
+
+  it("receives files dropped globally while the form is already mounted", async () => {
+    const { stashPendingUploadFiles } = await import("~/lib/pending-upload");
+    render(<UploadForm libraryRoots={[makeRoot()]} />);
+
+    stashPendingUploadFiles([new File(["x"], "live-drop.epub")]);
+    expect(await screen.findByText("live-drop.epub")).toBeTruthy();
   });
 
   it("posts to /api/upload-book on submit and reports success", async () => {
@@ -201,13 +215,19 @@ describe("UploadForm", () => {
     expect(toastErrorMock).toHaveBeenCalledWith("Upload failed");
   });
 
-  it("accepts files dropped onto the dropzone", () => {
+  it("accepts files dropped onto the dropzone without leaking to the window", () => {
+    const windowDrop = vi.fn();
+    window.addEventListener("drop", windowDrop);
     render(<UploadForm libraryRoots={[makeRoot()]} />);
     const dropzone = screen.getByTestId("upload-dropzone");
     const file = new File(["x"], "dropped.epub");
     fireEvent.dragOver(dropzone);
     fireEvent.drop(dropzone, { dataTransfer: { files: [file] } });
     expect(screen.getByText("dropped.epub")).toBeTruthy();
+    // The local dropzone must stop propagation so the app-wide drop
+    // target doesn't also stash the same files.
+    expect(windowDrop).not.toHaveBeenCalled();
+    window.removeEventListener("drop", windowDrop);
   });
 
   it("ignores empty drag/drop events", () => {

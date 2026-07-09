@@ -1,5 +1,8 @@
-import { Outlet, createFileRoute, redirect } from "@tanstack/react-router";
+import { Outlet, createFileRoute, redirect, useRouter } from "@tanstack/react-router";
+import { isOwner } from "@bookhouse/auth";
 import { getCurrentUserServerFn } from "../lib/auth-client";
+import { GlobalUploadDrop } from "~/components/global-upload-drop";
+import { stashPendingUploadFiles } from "~/lib/pending-upload";
 import {
   SidebarInset,
   SidebarProvider,
@@ -45,6 +48,12 @@ export const Route = createFileRoute("/_authenticated")({
 
 function AuthenticatedLayout() {
   const { user, theme, colorMode, accentColor, brandPalette } = Route.useRouteContext();
+  const router = useRouter();
+
+  function handleGlobalDrop(files: File[]): void {
+    stashPendingUploadFiles(files);
+    void router.navigate({ to: "/upload" });
+  }
 
   return (
     <ThemeProvider initialTheme={theme}>
@@ -54,6 +63,10 @@ function AuthenticatedLayout() {
         initialBrandPalette={brandPalette}
       >
         <SidebarProvider>
+          <GlobalUploadDrop
+            enabled={isOwner(user.roles)}
+            onFilesDropped={handleGlobalDrop}
+          />
           <AppSidebar user={user} />
           <SidebarInset>
             <AppHeader />
