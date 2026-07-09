@@ -25,7 +25,7 @@ FROM base AS web
 # feature shells out to pg_dump/psql). The client major must be >= the Postgres
 # server major (17), or pg_dump refuses to dump; Debian bookworm only ships 15,
 # so pull 17 from the PostgreSQL APT (PGDG) repo.
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates gosu \
   && case "$(dpkg --print-architecture)" in \
        amd64) KEPUBIFY_ARCH=64bit ;; \
        arm64) KEPUBIFY_ARCH=arm64 ;; \
@@ -52,8 +52,14 @@ RUN chmod +x /usr/local/bin/web-entrypoint.sh
 CMD ["/usr/local/bin/web-entrypoint.sh"]
 
 FROM base AS worker
+# gosu lets the entrypoint drop from root to PUID:PGID after fixing up
+# volume ownership, so files written into the library aren't root-owned.
+RUN apt-get update && apt-get install -y --no-install-recommends gosu \
+  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app/workers/library-worker
 COPY --from=build /app/node_modules /app/node_modules
 COPY --from=build /app/workers/library-worker/node_modules node_modules
 COPY --from=build /app/workers/library-worker/dist dist
-CMD ["node", "dist/index.js"]
+COPY scripts/worker-entrypoint.sh /usr/local/bin/worker-entrypoint.sh
+RUN chmod +x /usr/local/bin/worker-entrypoint.sh
+CMD ["/usr/local/bin/worker-entrypoint.sh"]

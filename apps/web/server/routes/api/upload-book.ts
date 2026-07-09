@@ -1,6 +1,6 @@
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { mkdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import busboyFactory from "busboy";
@@ -119,9 +119,11 @@ export function createUploadBookHandler(deps: UploadBookHandlerDeps) {
     const stagingDir = path.join(tempParent, uploadId);
 
     try {
-      // Staging dir lives under cwd/.tmp-uploads; the rename to the final
-      // location may cross volumes in dev but is atomic in prod because
-      // /data/ebooks and the app's cwd are on the same volume.
+      // Staging dir lives under cwd/.tmp-uploads, which is expected to be a
+      // different filesystem from the library root (container overlay fs vs
+      // bind mount). finalize copies across, then renames within the
+      // destination filesystem so files never appear at their final path
+      // incomplete.
       await deps.ensureStagingDir(stagingDir);
 
       const { fields, files } = await deps.parseMultipart(event, stagingDir);
@@ -306,6 +308,23 @@ export async function parseMultipartToStaging(
 }
 /* c8 ignore stop */
 
+// Materialize a file in targetDir without it ever being visible at its
+// final name incomplete: write to a dot-prefixed temp name (which the
+// library scanner ignores), then rename. The rename is same-device by
+// construction, so it cannot fail with EXDEV; the staging dir is expected
+// to live on a different filesystem from the library root.
+async function placeFile(
+  targetDir: string,
+  basename: string,
+  writeTemp: (tempPath: string) => Promise<void>,
+): Promise<string> {
+  const tempPath = path.join(targetDir, `.${basename}.partial`);
+  const finalPath = path.join(targetDir, basename);
+  await writeTemp(tempPath);
+  await rename(tempPath, finalPath);
+  return finalPath;
+}
+
 export async function finalizeUpload(input: {
   targetDir: string;
   files: UploadedFilePart[];
@@ -313,54 +332,64 @@ export async function finalizeUpload(input: {
   mediaKind: "EBOOK" | "AUDIOBOOK";
 }): Promise<{ absolutePaths: string[] }> {
   await mkdir(input.targetDir, { recursive: true });
-  const absolutePaths: string[] = [];
-  for (const file of input.files) {
-    const finalPath = path.join(input.targetDir, file.basename);
-    await rename(file.stagingPath, finalPath);
-    absolutePaths.push(finalPath);
+  try {
+    const absolutePaths: string[] = [];
+    for (const file of input.files) {
+      absolutePaths.push(
+        await placeFile(input.targetDir, file.basename, (tempPath) =>
+          copyFile(file.stagingPath, tempPath),
+        ),
+      );
+    }
+
+    // Write a sidecar with the user-supplied metadata, unless the user
+    // already uploaded one (we don't overwrite their explicit choice).
+    const hasOpfSidecar = input.files.some((f) => f.basename.toLowerCase() === "metadata.opf");
+    const hasJsonSidecar = input.files.some((f) => f.basename.toLowerCase() === "metadata.json");
+
+    if (input.mediaKind === "EBOOK" && !hasOpfSidecar) {
+      const xml = buildOpfXml({
+        title: input.fields.title,
+        authors: [{ name: input.fields.author }],
+        identifiers: [],
+        description: input.fields.description,
+        subjects: [],
+        series: input.fields.series !== undefined
+          ? {
+              name: input.fields.series,
+              ...(input.fields.seriesIndex !== undefined
+                ? { index: Number(input.fields.seriesIndex) }
+                : {}),
+            }
+          : undefined,
+      });
+      absolutePaths.push(
+        await placeFile(input.targetDir, "metadata.opf", (tempPath) => writeFile(tempPath, xml)),
+      );
+    } else if (input.mediaKind === "AUDIOBOOK" && !hasJsonSidecar) {
+      const json = buildAudiobookMetadataJson({
+        title: input.fields.title,
+        authors: [input.fields.author],
+        narrators: [],
+        series: input.fields.series !== undefined
+          ? [{ name: input.fields.series, sequence: input.fields.seriesIndex ?? "" }]
+          : [],
+        genres: [],
+        ...(input.fields.description !== undefined ? { description: input.fields.description } : {}),
+      });
+      absolutePaths.push(
+        await placeFile(input.targetDir, "metadata.json", (tempPath) => writeFile(tempPath, json)),
+      );
+    }
+
+    return { absolutePaths };
+  } catch (error) {
+    // The conflict check upstream refused to touch a pre-existing folder,
+    // so targetDir is entirely ours: remove it rather than strand a folder
+    // that would 409 every retry.
+    await rm(input.targetDir, { recursive: true, force: true });
+    throw error;
   }
-
-  // Write a sidecar with the user-supplied metadata, unless the user
-  // already uploaded one (we don't overwrite their explicit choice).
-  const hasOpfSidecar = input.files.some((f) => f.basename.toLowerCase() === "metadata.opf");
-  const hasJsonSidecar = input.files.some((f) => f.basename.toLowerCase() === "metadata.json");
-
-  if (input.mediaKind === "EBOOK" && !hasOpfSidecar) {
-    const xml = buildOpfXml({
-      title: input.fields.title,
-      authors: [{ name: input.fields.author }],
-      identifiers: [],
-      description: input.fields.description,
-      subjects: [],
-      series: input.fields.series !== undefined
-        ? {
-            name: input.fields.series,
-            ...(input.fields.seriesIndex !== undefined
-              ? { index: Number(input.fields.seriesIndex) }
-              : {}),
-          }
-        : undefined,
-    });
-    const opfPath = path.join(input.targetDir, "metadata.opf");
-    await writeFile(opfPath, xml);
-    absolutePaths.push(opfPath);
-  } else if (input.mediaKind === "AUDIOBOOK" && !hasJsonSidecar) {
-    const json = buildAudiobookMetadataJson({
-      title: input.fields.title,
-      authors: [input.fields.author],
-      narrators: [],
-      series: input.fields.series !== undefined
-        ? [{ name: input.fields.series, sequence: input.fields.seriesIndex ?? "" }]
-        : [],
-      genres: [],
-      ...(input.fields.description !== undefined ? { description: input.fields.description } : {}),
-    });
-    const jsonPath = path.join(input.targetDir, "metadata.json");
-    await writeFile(jsonPath, json);
-    absolutePaths.push(jsonPath);
-  }
-
-  return { absolutePaths };
 }
 
 /* c8 ignore start — runtime wiring, tested via unit tests on createUploadBookHandler */

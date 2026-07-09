@@ -36,6 +36,12 @@ services:
       KOBO_API_BASE_URL: ${KOBO_API_BASE_URL:-http://localhost:3000/kobo}
       LOG_DIR: /data/logs
       LOG_SERVICE: web
+      # Run the server as this uid:gid so files written into the libraries
+      # aren't root-owned. Unset = keep running as root. UMASK=0002 makes
+      # created files group-writable (default 0022).
+      PUID: ${PUID:-}
+      PGID: ${PGID:-}
+      UMASK: ${UMASK:-}
     volumes:
       - covers:/data/covers:ro
       - kepub-cache:/data/kepub-cache
@@ -57,6 +63,9 @@ services:
       COVER_CACHE_DIR: /data/covers
       LOG_DIR: /data/logs
       LOG_SERVICE: worker
+      PUID: ${PUID:-}
+      PGID: ${PGID:-}
+      UMASK: ${UMASK:-}
     volumes:
       - ${EBOOKS_PATH:?set EBOOKS_PATH in .env}:/data/ebooks
       - ${AUDIOBOOKS_PATH:?set AUDIOBOOKS_PATH in .env}:/data/audiobooks

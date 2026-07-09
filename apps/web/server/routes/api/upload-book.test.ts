@@ -573,6 +573,56 @@ describe("finalizeUpload", () => {
     await fs.rm(stagingDir, { recursive: true, force: true });
   });
 
+  it("removes the created target folder when a file cannot be placed", async () => {
+    const fs = await import("node:fs/promises");
+    const os = await import("node:os");
+    const targetDir = `${os.tmpdir()}/bookhouse-upload-test-${String(Math.random())}`;
+
+    await expect(
+      finalizeUpload({
+        targetDir,
+        files: [
+          {
+            basename: "book.epub",
+            mediaKind: MediaKind.EPUB,
+            stagingPath: `${os.tmpdir()}/does-not-exist-${String(Math.random())}/book.epub`,
+            sizeBytes: 10,
+          },
+        ],
+        fields: { title: "T", author: "A" },
+        mediaKind: "EBOOK",
+      }),
+    ).rejects.toThrow();
+
+    // The folder must not be left behind: an orphaned folder makes every
+    // retry fail the handler's 409 already-exists check.
+    await expect(fs.stat(targetDir)).rejects.toThrow();
+  });
+
+  it("leaves no dot-prefixed temp files in the target folder on success", async () => {
+    const fs = await import("node:fs/promises");
+    const os = await import("node:os");
+    const targetDir = `${os.tmpdir()}/bookhouse-upload-test-${String(Math.random())}`;
+    const stagingDir = `${targetDir}-staging`;
+    await fs.mkdir(stagingDir, { recursive: true });
+    await fs.writeFile(`${stagingDir}/book.epub`, "epub-bytes");
+
+    await finalizeUpload({
+      targetDir,
+      files: [
+        { basename: "book.epub", mediaKind: MediaKind.EPUB, stagingPath: `${stagingDir}/book.epub`, sizeBytes: 10 },
+      ],
+      fields: { title: "T", author: "A" },
+      mediaKind: "EBOOK",
+    });
+
+    const entries = await fs.readdir(targetDir);
+    expect(entries.sort()).toEqual(["book.epub", "metadata.opf"]);
+
+    await fs.rm(targetDir, { recursive: true, force: true });
+    await fs.rm(stagingDir, { recursive: true, force: true });
+  });
+
   it("writes audiobook sidecar with description when provided", async () => {
     const fs = await import("node:fs/promises");
     const os = await import("node:os");
