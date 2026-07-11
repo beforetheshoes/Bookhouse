@@ -19,6 +19,7 @@ interface HandlerOverrides {
   finalizeError?: Error;
   enqueueResult?: string | undefined;
   targetDirExists?: boolean;
+  deriveResult?: Record<string, string>;
 }
 
 function makeDeps(overrides: HandlerOverrides = {}): {
@@ -31,6 +32,7 @@ function makeDeps(overrides: HandlerOverrides = {}): {
   parseMultipart: ReturnType<typeof vi.fn>;
   targetDirExists: ReturnType<typeof vi.fn>;
   ensureStagingDir: ReturnType<typeof vi.fn>;
+  deriveMetadata: ReturnType<typeof vi.fn>;
 } {
   const cleanup = vi.fn().mockResolvedValue(undefined);
   const createImportJob = vi.fn().mockResolvedValue({ id: "import-1" });
@@ -69,6 +71,7 @@ function makeDeps(overrides: HandlerOverrides = {}): {
 
   const targetDirExists = vi.fn().mockResolvedValue(overrides.targetDirExists ?? false);
   const ensureStagingDir = vi.fn().mockResolvedValue(undefined);
+  const deriveMetadata = vi.fn().mockResolvedValue(overrides.deriveResult ?? {});
 
   return {
     deps: {
@@ -84,6 +87,7 @@ function makeDeps(overrides: HandlerOverrides = {}): {
       cleanup,
       targetDirExists,
       ensureStagingDir,
+      deriveMetadata,
     },
     cleanup,
     createImportJob,
@@ -93,6 +97,7 @@ function makeDeps(overrides: HandlerOverrides = {}): {
     parseMultipart,
     targetDirExists,
     ensureStagingDir,
+    deriveMetadata,
   };
 }
 
@@ -139,8 +144,8 @@ describe("createUploadBookHandler", () => {
     });
   });
 
-  it("rejects with 400 when title is missing", async () => {
-    const { deps } = makeDeps({
+  it("rejects with 400 when title is missing and cannot be derived", async () => {
+    const { deps, deriveMetadata } = makeDeps({
       parseResult: { fields: { libraryRootId: "root-1", author: "A" }, files: [
         { basename: "b.epub", mediaKind: MediaKind.EPUB, stagingPath: "/tmp/b.epub", sizeBytes: 1 },
       ] },
@@ -149,18 +154,100 @@ describe("createUploadBookHandler", () => {
       statusCode: 400,
       statusMessage: expect.stringContaining("title") as string,
     });
+    expect(deriveMetadata).toHaveBeenCalledTimes(1);
   });
 
-  it("rejects with 400 when author is missing", async () => {
+  it("rejects with 400 when author is missing and cannot be derived", async () => {
     const { deps } = makeDeps({
       parseResult: { fields: { libraryRootId: "root-1", title: "T" }, files: [
         { basename: "b.epub", mediaKind: MediaKind.EPUB, stagingPath: "/tmp/b.epub", sizeBytes: 1 },
       ] },
+      deriveResult: { title: "Derived Title" },
     });
     await expect(createUploadBookHandler(deps)({} as never)).rejects.toMatchObject({
       statusCode: 400,
       statusMessage: expect.stringContaining("author") as string,
     });
+  });
+
+  it("derives title and author from file metadata when fields are blank", async () => {
+    const { deps, finalize } = makeDeps({
+      parseResult: {
+        fields: { libraryRootId: "root-1" },
+        files: [
+          { basename: "b.epub", mediaKind: MediaKind.EPUB, stagingPath: "/tmp/b.epub", sizeBytes: 1 },
+        ],
+      },
+      deriveResult: {
+        title: "Derived Title",
+        author: "Derived Author",
+        series: "Derived Saga",
+        seriesIndex: "3",
+        description: "Derived description",
+      },
+    });
+    const result = await createUploadBookHandler(deps)({} as never);
+    expect(result.folderRelativePath).toContain("Derived Author");
+    expect(finalize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fields: {
+          title: "Derived Title",
+          author: "Derived Author",
+          series: "Derived Saga",
+          seriesIndex: "3",
+          description: "Derived description",
+        },
+      }),
+    );
+  });
+
+  it("prefers user-supplied fields over derived metadata", async () => {
+    const { deps, finalize } = makeDeps({
+      parseResult: {
+        fields: { libraryRootId: "root-1", title: "User Title", series: "User Saga" },
+        files: [
+          { basename: "b.epub", mediaKind: MediaKind.EPUB, stagingPath: "/tmp/b.epub", sizeBytes: 1 },
+        ],
+      },
+      deriveResult: { title: "Derived Title", author: "Derived Author", series: "Derived Saga" },
+    });
+    await createUploadBookHandler(deps)({} as never);
+    expect(finalize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fields: expect.objectContaining({
+          title: "User Title",
+          author: "Derived Author",
+          series: "User Saga",
+        }) as Record<string, string>,
+      }),
+    );
+  });
+
+  it("does not derive metadata when the user provided both title and author", async () => {
+    const { deps, deriveMetadata } = makeDeps();
+    await createUploadBookHandler(deps)({} as never);
+    expect(deriveMetadata).not.toHaveBeenCalled();
+  });
+
+  it("treats whitespace-only title/author fields as missing", async () => {
+    const { deps, finalize } = makeDeps({
+      parseResult: {
+        fields: { libraryRootId: "root-1", title: "  ", author: "  " },
+        files: [
+          { basename: "b.epub", mediaKind: MediaKind.EPUB, stagingPath: "/tmp/b.epub", sizeBytes: 1 },
+        ],
+      },
+      deriveResult: { title: "Derived Title", author: "Derived Author" },
+    });
+    await createUploadBookHandler(deps)({} as never);
+    expect(finalize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fields: expect.objectContaining({
+          title: "Derived Title",
+          author: "Derived Author",
+        }) as Record<string, string>,
+      }),
+    );
   });
 
   it("rejects with 400 when no files were uploaded", async () => {

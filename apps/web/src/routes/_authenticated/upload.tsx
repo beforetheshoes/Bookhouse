@@ -11,6 +11,7 @@ import {
   type LibraryRootRow,
 } from "~/lib/server-fns/library-roots";
 import { getUploadStatusServerFn, type UploadStatusResult } from "~/lib/server-fns/upload-status";
+import { subscribePendingUploadFiles, takePendingUploadFiles } from "~/lib/pending-upload";
 import { z } from "zod";
 
 const uploadBookResponseSchema = z.object({ importJobId: z.string() });
@@ -66,8 +67,23 @@ export function UploadForm({ libraryRoots }: UploadFormProps) {
   const [activeJob, setActiveJob] = useState<UploadJobState | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Take files dropped anywhere in the app (stashed by GlobalUploadDrop
+  // before navigating here), then subscribe for drops that happen while
+  // this form is already mounted.
+  useEffect(() => {
+    const pending = takePendingUploadFiles();
+    if (pending.length > 0) {
+      setFiles((prev) => [...prev, ...pending]);
+    }
+    return subscribePendingUploadFiles((dropped) => {
+      setFiles((prev) => [...prev, ...dropped]);
+    });
+  }, []);
+
   function handleDrop(e: DragEvent<HTMLDivElement>): void {
     e.preventDefault();
+    // Keep local drops out of the window-level drop target.
+    e.stopPropagation();
     setIsDragging(false);
     const dropped = Array.from(e.dataTransfer.files);
     if (dropped.length > 0) {
@@ -114,14 +130,6 @@ export function UploadForm({ libraryRoots }: UploadFormProps) {
       toast.error("Add at least one file");
       return;
     }
-    if (!title.trim()) {
-      toast.error("Title is required");
-      return;
-    }
-    if (!author.trim()) {
-      toast.error("Author is required");
-      return;
-    }
 
     setSubmitting(true);
     setActiveJob({
@@ -135,8 +143,8 @@ export function UploadForm({ libraryRoots }: UploadFormProps) {
     try {
       const formData = new FormData();
       formData.append("libraryRootId", libraryRootId);
-      formData.append("title", title.trim());
-      formData.append("author", author.trim());
+      if (title.trim()) formData.append("title", title.trim());
+      if (author.trim()) formData.append("author", author.trim());
       if (series.trim()) formData.append("series", series.trim());
       if (seriesIndex.trim()) formData.append("seriesIndex", seriesIndex.trim());
       if (description.trim()) formData.append("description", description.trim());
@@ -264,6 +272,7 @@ export function UploadForm({ libraryRoots }: UploadFormProps) {
           <Input
             id="upload-title"
             value={title}
+            placeholder="Auto-detected from file metadata"
             onChange={(e) => { setTitle(e.target.value); }}
           />
         </div>
@@ -273,6 +282,7 @@ export function UploadForm({ libraryRoots }: UploadFormProps) {
           <Input
             id="upload-author"
             value={author}
+            placeholder="Auto-detected from file metadata"
             onChange={(e) => { setAuthor(e.target.value); }}
           />
         </div>

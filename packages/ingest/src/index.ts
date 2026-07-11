@@ -108,6 +108,8 @@ export { cascadeCleanupOrphans, cleanupOrphanedFileAssets } from "./cascade-clea
 export type { CascadeCleanupInput, CascadeCleanupResult } from "./cascade-cleanup";
 export { sanitizeFolderSegment, buildBookFolderPath, chooseSidecarKind } from "./upload-layout";
 export type { BuildBookFolderPathInput, SidecarKind } from "./upload-layout";
+export { deriveUploadMetadata } from "./upload-metadata";
+export type { DerivedUploadMetadata, DeriveUploadMetadataDeps, UploadFileForDerivation } from "./upload-metadata";
 export {
   buildAudiobookMetadataJson,
   buildOpfXml,

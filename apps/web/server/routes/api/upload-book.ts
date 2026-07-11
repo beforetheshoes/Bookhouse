@@ -11,6 +11,7 @@ import {
   classifyMediaKind,
   buildOpfXml,
   buildAudiobookMetadataJson,
+  deriveUploadMetadata,
 } from "@bookhouse/ingest";
 import { MediaKind } from "@bookhouse/domain";
 
@@ -77,6 +78,13 @@ export interface UploadBookHandlerDeps {
   }) => Promise<{ absolutePaths: string[] }>;
   targetDirExists: (targetDir: string) => Promise<boolean>;
   ensureStagingDir: (stagingDir: string) => Promise<void>;
+  deriveMetadata: (files: UploadedFilePart[]) => Promise<{
+    title?: string;
+    author?: string;
+    series?: string;
+    seriesIndex?: string;
+    description?: string;
+  }>;
 }
 
 function classifyContentKind(mediaKind: MediaKind): "EBOOK" | "AUDIOBOOK" | null {
@@ -131,12 +139,6 @@ export function createUploadBookHandler(deps: UploadBookHandlerDeps) {
       if (!fields.libraryRootId) {
         throw createError({ statusCode: 400, statusMessage: "libraryRootId is required" });
       }
-      if (!fields.title) {
-        throw createError({ statusCode: 400, statusMessage: "title is required" });
-      }
-      if (!fields.author) {
-        throw createError({ statusCode: 400, statusMessage: "author is required" });
-      }
       if (files.length === 0) {
         throw createError({ statusCode: 400, statusMessage: "at least one file is required" });
       }
@@ -153,6 +155,29 @@ export function createUploadBookHandler(deps: UploadBookHandlerDeps) {
       }
       const mediaKind = [...contentKinds][0] as "EBOOK" | "AUDIOBOOK";
 
+      // Blank title/author are derived from the files themselves (sidecars,
+      // embedded metadata, filename) so users only type what the files don't
+      // already know. Explicit input always wins.
+      let title = fields.title?.trim() ?? "";
+      let author = fields.author?.trim() ?? "";
+      let series = fields.series;
+      let seriesIndex = fields.seriesIndex;
+      let description = fields.description;
+      if (title === "" || author === "") {
+        const derived = await deps.deriveMetadata(files);
+        title = title === "" ? derived.title ?? "" : title;
+        author = author === "" ? derived.author ?? "" : author;
+        series ??= derived.series;
+        seriesIndex ??= derived.seriesIndex;
+        description ??= derived.description;
+      }
+      if (title === "") {
+        throw createError({ statusCode: 400, statusMessage: "title is required (could not be derived from file metadata)" });
+      }
+      if (author === "") {
+        throw createError({ statusCode: 400, statusMessage: "author is required (could not be derived from file metadata)" });
+      }
+
       const libraryRoot = await deps.db.findLibraryRoot(fields.libraryRootId);
       if (!libraryRoot) {
         throw createError({ statusCode: 404, statusMessage: "library root not found" });
@@ -160,8 +185,8 @@ export function createUploadBookHandler(deps: UploadBookHandlerDeps) {
 
       const targetDir = buildBookFolderPath({
         libraryRootPath: libraryRoot.path,
-        author: fields.author,
-        title: fields.title,
+        author,
+        title,
       });
 
       // Conflict: refuse to overwrite an existing book folder.
@@ -173,11 +198,11 @@ export function createUploadBookHandler(deps: UploadBookHandlerDeps) {
         targetDir,
         files,
         fields: {
-          title: fields.title,
-          author: fields.author,
-          ...(fields.series !== undefined ? { series: fields.series } : {}),
-          ...(fields.seriesIndex !== undefined ? { seriesIndex: fields.seriesIndex } : {}),
-          ...(fields.description !== undefined ? { description: fields.description } : {}),
+          title,
+          author,
+          ...(series !== undefined ? { series } : {}),
+          ...(seriesIndex !== undefined ? { seriesIndex } : {}),
+          ...(description !== undefined ? { description } : {}),
         },
         mediaKind,
       });
@@ -423,6 +448,7 @@ export default defineEventHandler(async (event) => {
     ensureStagingDir: async (dir) => {
       await mkdir(dir, { recursive: true });
     },
+    deriveMetadata: (files) => deriveUploadMetadata(files),
   });
 
   return handler(event);

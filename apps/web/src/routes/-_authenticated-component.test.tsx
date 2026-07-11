@@ -1,14 +1,23 @@
 // @vitest-environment happy-dom
 import type * as TanstackRouter from "@tanstack/react-router";
-import { render, screen } from "@testing-library/react";
-import { describe, it, expect, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { beforeEach, describe, it, expect, vi } from "vitest";
+import { takePendingUploadFiles } from "~/lib/pending-upload";
 
 /** Cast route option function types that have no overlap with simple function types */
 function asBeforeLoad<TArgs, TResult>(fn: ((args: TArgs) => Promise<TResult>) | object): (args: TArgs) => Promise<TResult> {
   return fn as ((args: TArgs) => Promise<TResult>) & typeof fn;
 }
 
-const mockRouteContext = { user: { name: "Test User", email: "test@test.com", image: null }, theme: "system" as const, colorMode: "book" as const, accentColor: null };
+const mockRouteContext = { user: { name: "Test User", email: "test@test.com", image: null, roles: ["OWNER"] as string[] }, theme: "system" as const, colorMode: "book" as const, accentColor: null };
+
+const { navigateMock } = vi.hoisted(() => ({ navigateMock: vi.fn() }));
+
+beforeEach(() => {
+  navigateMock.mockReset();
+  mockRouteContext.user.roles = ["OWNER"];
+  takePendingUploadFiles();
+});
 
 vi.mock("~/components/app-sidebar", () => ({
   AppSidebar: () => <div data-testid="app-sidebar">sidebar</div>,
@@ -47,7 +56,7 @@ vi.mock("@tanstack/react-router", async () => {
   return {
     ...actual,
     Outlet: () => <div data-testid="outlet">outlet</div>,
-    useRouter: () => ({ invalidate: vi.fn(), navigate: vi.fn() }),
+    useRouter: () => ({ invalidate: vi.fn(), navigate: navigateMock }),
     redirect: (args: Record<string, string>) => {
       const e = Object.assign(new Error("redirect"), args);
       throw e;
@@ -102,5 +111,37 @@ describe("_authenticated route", () => {
     render(<Layout />);
 
     expect(screen.getByTestId("theme-provider")).toBeTruthy();
+  });
+
+  it("stashes files dropped anywhere and navigates to /upload for owners", async () => {
+    const { Route } = await import("./_authenticated");
+    const Layout = (Route.options.component as React.ComponentType);
+    const { unmount } = render(<Layout />);
+
+    const file = new File(["x"], "dropped-anywhere.epub");
+    fireEvent.dragEnter(window, { dataTransfer: { types: ["Files"], files: [] } });
+    expect(screen.getByTestId("global-drop-overlay")).toBeTruthy();
+    fireEvent.drop(window, { dataTransfer: { types: ["Files"], files: [file] } });
+
+    expect(navigateMock).toHaveBeenCalledWith({ to: "/upload" });
+    expect(takePendingUploadFiles().map((f) => f.name)).toEqual(["dropped-anywhere.epub"]);
+    unmount();
+  });
+
+  it("ignores global file drops for non-owners", async () => {
+    mockRouteContext.user.roles = ["VIEWER"];
+    const { Route } = await import("./_authenticated");
+    const Layout = (Route.options.component as React.ComponentType);
+    const { unmount } = render(<Layout />);
+
+    fireEvent.dragEnter(window, { dataTransfer: { types: ["Files"], files: [] } });
+    expect(screen.queryByTestId("global-drop-overlay")).toBeNull();
+    fireEvent.drop(window, {
+      dataTransfer: { types: ["Files"], files: [new File(["x"], "n.epub")] },
+    });
+
+    expect(navigateMock).not.toHaveBeenCalled();
+    expect(takePendingUploadFiles()).toEqual([]);
+    unmount();
   });
 });
