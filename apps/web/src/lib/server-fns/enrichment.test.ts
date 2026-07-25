@@ -33,6 +33,7 @@ const tagCreateMock = vi.fn();
 const workTagUpsertMock = vi.fn();
 const contributorFindFirstMock = vi.fn();
 const contributorCreateMock = vi.fn();
+const contributorUpsertMock = vi.fn();
 const editionContributorDeleteManyMock = vi.fn();
 const editionContributorCreateManyMock = vi.fn();
 const searchAllSourcesMock = vi.fn();
@@ -63,6 +64,7 @@ vi.mock("@bookhouse/db", () => ({
     contributor: {
       findFirst: contributorFindFirstMock,
       create: contributorCreateMock,
+      upsert: contributorUpsertMock,
     },
     editionContributor: {
       deleteMany: editionContributorDeleteManyMock,
@@ -620,9 +622,8 @@ describe("applyEnrichmentServerFn", () => {
   it("applies authors via contributor resolution and edition contributor creation", async () => {
     workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: [] });
     editionFindManyMock.mockResolvedValue([{ id: "e1" }, { id: "e2" }]);
-    contributorFindFirstMock.mockResolvedValueOnce({ id: "c1", nameDisplay: "Frank Herbert" });
-    contributorFindFirstMock.mockResolvedValueOnce(null);
-    contributorCreateMock.mockResolvedValueOnce({ id: "c2", nameDisplay: "Brian Herbert" });
+    contributorUpsertMock.mockResolvedValueOnce({ id: "c1", nameDisplay: "Frank Herbert" });
+    contributorUpsertMock.mockResolvedValueOnce({ id: "c2", nameDisplay: "Brian Herbert" });
     editionContributorDeleteManyMock.mockResolvedValue({});
     editionContributorCreateManyMock.mockResolvedValue({});
     externalLinkUpsertMock.mockResolvedValue({});
@@ -635,8 +636,7 @@ describe("applyEnrichmentServerFn", () => {
       },
     });
 
-    expect(contributorFindFirstMock).toHaveBeenCalledTimes(2);
-    expect(contributorCreateMock).toHaveBeenCalledTimes(1);
+    expect(contributorUpsertMock).toHaveBeenCalledTimes(2);
     expect(editionContributorDeleteManyMock).toHaveBeenCalledWith({
       where: { editionId: { in: ["e1", "e2"] }, role: "AUTHOR" },
     });
@@ -655,8 +655,7 @@ describe("applyEnrichmentServerFn", () => {
   it("falls back to lowercase when canonicalizeContributorName returns null", async () => {
     workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: [] });
     editionFindManyMock.mockResolvedValue([{ id: "e1" }]);
-    contributorFindFirstMock.mockResolvedValueOnce(null);
-    contributorCreateMock.mockResolvedValueOnce({ id: "c1", nameDisplay: "UNKNOWN" });
+    contributorUpsertMock.mockResolvedValueOnce({ id: "c1", nameDisplay: "UNKNOWN" });
     editionContributorDeleteManyMock.mockResolvedValue({});
     editionContributorCreateManyMock.mockResolvedValue({});
     externalLinkUpsertMock.mockResolvedValue({});
@@ -670,16 +669,17 @@ describe("applyEnrichmentServerFn", () => {
     });
 
     // canonicalizeContributorName("UNKNOWN") returns null, so fallback to "unknown"
-    expect(contributorFindFirstMock).toHaveBeenCalledWith({ where: { nameCanonical: "unknown" } });
-    expect(contributorCreateMock).toHaveBeenCalledWith({
-      data: { nameDisplay: "UNKNOWN", nameCanonical: "unknown" },
+    expect(contributorUpsertMock).toHaveBeenCalledWith({
+      where: { nameCanonical: "unknown" },
+      create: { nameDisplay: "UNKNOWN", nameCanonical: "unknown" },
+      update: {},
     });
   });
 
   it("skips empty author names in authors array", async () => {
     workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: [] });
     editionFindManyMock.mockResolvedValue([{ id: "e1" }]);
-    contributorFindFirstMock.mockResolvedValueOnce({ id: "c1", nameDisplay: "Frank Herbert" });
+    contributorUpsertMock.mockResolvedValueOnce({ id: "c1", nameDisplay: "Frank Herbert" });
     editionContributorDeleteManyMock.mockResolvedValue({});
     editionContributorCreateManyMock.mockResolvedValue({});
     externalLinkUpsertMock.mockResolvedValue({});
@@ -693,7 +693,7 @@ describe("applyEnrichmentServerFn", () => {
     });
 
     // Only "Frank Herbert" should be resolved; "" and "  " are trimmed and skipped
-    expect(contributorFindFirstMock).toHaveBeenCalledTimes(1);
+    expect(contributorUpsertMock).toHaveBeenCalledTimes(1);
   });
 
   it("maps title to titleDisplay in work update", async () => {
@@ -806,9 +806,8 @@ describe("applyEnrichmentServerFn", () => {
   it("applies narrators as per-edition contributors", async () => {
     workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: [] });
     editionFindUniqueMock.mockResolvedValue({ id: "e1", editedFields: [] });
-    contributorFindFirstMock.mockResolvedValueOnce({ id: "c1", nameDisplay: "Scott Brick" });
-    contributorFindFirstMock.mockResolvedValueOnce(null);
-    contributorCreateMock.mockResolvedValueOnce({ id: "c2", nameDisplay: "Julia Whelan" });
+    contributorUpsertMock.mockResolvedValueOnce({ id: "c1", nameDisplay: "Scott Brick" });
+    contributorUpsertMock.mockResolvedValueOnce({ id: "c2", nameDisplay: "Julia Whelan" });
     editionContributorDeleteManyMock.mockResolvedValue({});
     editionContributorCreateManyMock.mockResolvedValue({});
     externalLinkUpsertMock.mockResolvedValue({});
@@ -822,9 +821,13 @@ describe("applyEnrichmentServerFn", () => {
       },
     });
 
-    expect(contributorFindFirstMock).toHaveBeenCalledWith({ where: { nameCanonical: "scott brick" } });
-    expect(contributorFindFirstMock).toHaveBeenCalledWith({ where: { nameCanonical: "julia whelan" } });
-    expect(contributorCreateMock).toHaveBeenCalledTimes(1);
+    expect(contributorUpsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { nameCanonical: "scott brick" } }),
+    );
+    expect(contributorUpsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { nameCanonical: "julia whelan" } }),
+    );
+    expect(contributorUpsertMock).toHaveBeenCalledTimes(2);
     expect(editionContributorDeleteManyMock).toHaveBeenCalledWith({
       where: { editionId: "e1", role: "NARRATOR" },
     });
@@ -842,7 +845,7 @@ describe("applyEnrichmentServerFn", () => {
     workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: [] });
     editionFindUniqueMock.mockResolvedValue({ id: "e1", editedFields: [] });
     editionUpdateMock.mockResolvedValue({ id: "e1" });
-    contributorFindFirstMock.mockResolvedValueOnce({ id: "c1" });
+    contributorUpsertMock.mockResolvedValueOnce({ id: "c1" });
     editionContributorDeleteManyMock.mockResolvedValue({});
     editionContributorCreateManyMock.mockResolvedValue({});
     externalLinkUpsertMock.mockResolvedValue({});
@@ -883,7 +886,7 @@ describe("applyEnrichmentServerFn", () => {
   it("skips empty narrator names", async () => {
     workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: [] });
     editionFindUniqueMock.mockResolvedValue({ id: "e1", editedFields: [] });
-    contributorFindFirstMock.mockResolvedValueOnce({ id: "c1", nameDisplay: "Scott Brick" });
+    contributorUpsertMock.mockResolvedValueOnce({ id: "c1", nameDisplay: "Scott Brick" });
     editionContributorDeleteManyMock.mockResolvedValue({});
     editionContributorCreateManyMock.mockResolvedValue({});
     externalLinkUpsertMock.mockResolvedValue({});
@@ -898,14 +901,13 @@ describe("applyEnrichmentServerFn", () => {
     });
 
     // Only "Scott Brick" processed, empty strings skipped
-    expect(contributorFindFirstMock).toHaveBeenCalledTimes(1);
+    expect(contributorUpsertMock).toHaveBeenCalledTimes(1);
   });
 
   it("falls back to lowercase for narrator when canonicalize returns null", async () => {
     workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: [] });
     editionFindUniqueMock.mockResolvedValue({ id: "e1", editedFields: [] });
-    contributorFindFirstMock.mockResolvedValueOnce(null);
-    contributorCreateMock.mockResolvedValueOnce({ id: "c1", nameDisplay: "UNKNOWN" });
+    contributorUpsertMock.mockResolvedValueOnce({ id: "c1", nameDisplay: "UNKNOWN" });
     editionContributorDeleteManyMock.mockResolvedValue({});
     editionContributorCreateManyMock.mockResolvedValue({});
     externalLinkUpsertMock.mockResolvedValue({});
@@ -920,7 +922,9 @@ describe("applyEnrichmentServerFn", () => {
     });
 
     // canonicalizeContributorName("UNKNOWN") returns null (from mock), fallback to "unknown"
-    expect(contributorFindFirstMock).toHaveBeenCalledWith({ where: { nameCanonical: "unknown" } });
+    expect(contributorUpsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { nameCanonical: "unknown" } }),
+    );
   });
 
   it("applying same subjects twice uses workTag upsert to avoid duplicates", async () => {
