@@ -13,12 +13,12 @@ vi.mock("@tanstack/react-start", () => ({
   createServerFn: () => {
     type ServerFnInput = Record<string, string | number | boolean | null | string[] | Date | undefined | object>;
     type Builder = {
-      inputValidator: (validator: ZodType) => Builder;
+      validator: (validator: ZodType) => Builder;
       handler: (fn: (a: ServerFnInput) => ServerFnInput | Promise<ServerFnInput>) => (a: ServerFnInput) => ServerFnInput | Promise<ServerFnInput>;
     };
     let validator: ZodType | null = null;
     const b: Builder = {
-      inputValidator: (nextValidator) => {
+      validator: (nextValidator) => {
         validator = nextValidator;
         return b;
       },

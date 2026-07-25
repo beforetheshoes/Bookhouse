@@ -4,8 +4,15 @@ import type { H3Event } from "h3";
 import type { OpdsEditionData } from "@bookhouse/opds";
 
 vi.mock("h3", () => ({
-  createError: (opts: { statusCode: number; statusMessage: string }) =>
-    Object.assign(new Error(opts.statusMessage), opts),
+  HTTPError: class HTTPError extends Error {
+    status: number;
+    statusText: string | undefined;
+    constructor(opts: { status: number; statusText?: string; message?: string }) {
+      super(opts.message ?? opts.statusText);
+      this.status = opts.status;
+      this.statusText = opts.statusText;
+    }
+  },
   defineEventHandler: vi.fn(),
 }));
 
@@ -101,8 +108,8 @@ describe("createAuthorBooksHandler", () => {
     const handler = createAuthorBooksHandler(deps);
 
     await expect(handler(makeEvent("unknown-id"))).rejects.toMatchObject({
-      statusCode: 404,
-      statusMessage: "Author not found",
+      status: 404,
+      statusText: "Author not found",
     });
   });
 
@@ -111,8 +118,8 @@ describe("createAuthorBooksHandler", () => {
     const handler = createAuthorBooksHandler(deps);
 
     await expect(handler(makeEvent("bad/id"))).rejects.toMatchObject({
-      statusCode: 400,
-      statusMessage: "Invalid contributorId",
+      status: 400,
+      statusText: "Invalid contributorId",
     });
   });
 

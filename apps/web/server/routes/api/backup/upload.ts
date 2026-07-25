@@ -1,5 +1,5 @@
 import { writeFile, mkdir, rm, rename, mkdtemp } from "node:fs/promises";
-import { defineEventHandler, createError } from "h3";
+import { defineEventHandler, HTTPError } from "h3";
 import type { H3Event } from "h3";
 import { restoreBackup as restoreBackupImpl, type RestoreBackupDeps } from "~/lib/backup/restore-backup";
 import type { BackupManifest } from "~/lib/backup/manifest";
@@ -20,11 +20,11 @@ export function createUploadRestoreHandler(deps: UploadRestoreHandlerDeps) {
     const fileField = formData?.find((f) => f.name === "file");
 
     if (!fileField?.data || fileField.data.length === 0) {
-      throw createError({ statusCode: 400, statusMessage: "No file uploaded" });
+      throw new HTTPError({ status: 400, statusText: "No file uploaded" });
     }
 
     if (fileField.data.length > deps.maxFileSize) {
-      throw createError({ statusCode: 400, statusMessage: "File too large (max 2 GB)" });
+      throw new HTTPError({ status: 400, statusText: "File too large (max 2 GB)" });
     }
 
     const archiveBuffer = Buffer.from(fileField.data);
@@ -45,10 +45,10 @@ export default defineEventHandler(async (event) => {
   const execFile = promisify(execFileCallback);
 
   const restoreDeps: RestoreBackupDeps = {
-    execFile: execFile as RestoreBackupDeps["execFile"],
+    execFile: execFile,
     writeFile,
     mkdir: mkdir as RestoreBackupDeps["mkdir"],
-    rm: rm as RestoreBackupDeps["rm"],
+    rm: rm,
     rename,
     mkdtemp,
     coverCacheDir,

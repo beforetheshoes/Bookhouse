@@ -1,6 +1,6 @@
 import path from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
-import { defineEventHandler, createError } from "h3";
+import { defineEventHandler, HTTPError } from "h3";
 import type { H3Event } from "h3";
 import { VALID_WORK_ID, MAX_FILE_SIZE, isValidImageData, isAllowedMimeType } from "@bookhouse/ingest";
 
@@ -24,26 +24,26 @@ export function createAuthorPhotoUploadHandler(deps: AuthorPhotoUploadDeps) {
     const { contributorId } = params;
 
     if (!VALID_WORK_ID.test(contributorId)) {
-      throw createError({ statusCode: 400, statusMessage: "Invalid contributorId" });
+      throw new HTTPError({ status: 400, statusText: "Invalid contributorId" });
     }
 
     const formData = await deps.readFormData(event);
     const fileField = formData?.find((f) => f.name === "file");
 
     if (!fileField?.data || fileField.data.length === 0) {
-      throw createError({ statusCode: 400, statusMessage: "No file uploaded" });
+      throw new HTTPError({ status: 400, statusText: "No file uploaded" });
     }
 
     if (fileField.data.length > MAX_FILE_SIZE) {
-      throw createError({ statusCode: 400, statusMessage: "File too large (max 10 MB)" });
+      throw new HTTPError({ status: 400, statusText: "File too large (max 10 MB)" });
     }
 
     if (!isAllowedMimeType(fileField.type)) {
-      throw createError({ statusCode: 400, statusMessage: "Invalid image type" });
+      throw new HTTPError({ status: 400, statusText: "Invalid image type" });
     }
 
     if (!isValidImageData(fileField.data)) {
-      throw createError({ statusCode: 400, statusMessage: "File is not a valid image" });
+      throw new HTTPError({ status: 400, statusText: "File is not a valid image" });
     }
 
     const imageBuffer = Buffer.from(fileField.data);
@@ -52,7 +52,7 @@ export function createAuthorPhotoUploadHandler(deps: AuthorPhotoUploadDeps) {
 
     const contributor = await deps.db.findContributor(contributorId);
     if (!contributor) {
-      throw createError({ statusCode: 404, statusMessage: "Contributor not found" });
+      throw new HTTPError({ status: 404, statusText: "Contributor not found" });
     }
 
     await deps.db.updateContributor(contributorId, { imagePath: contributorId });

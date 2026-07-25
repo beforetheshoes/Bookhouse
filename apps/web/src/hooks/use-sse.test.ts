@@ -49,7 +49,7 @@ it("sets onerror on the EventSource", () => {
   vi.stubGlobal("EventSource", class extends OriginalFake {
     constructor(url: string) {
       super(url);
-      instances.push(this as FakeEventSource);
+      instances.push(this);
     }
   });
 
@@ -142,7 +142,7 @@ it("calling onerror does nothing (no throw)", () => {
   vi.stubGlobal("EventSource", class extends OriginalFake {
     constructor(url: string) {
       super(url);
-      instances.push(this as FakeEventSource);
+      instances.push(this);
     }
   });
 

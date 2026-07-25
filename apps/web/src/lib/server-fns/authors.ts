@@ -36,7 +36,7 @@ const getAuthorDetailSchema = z.object({
 export const getAuthorDetailServerFn = createServerFn({
   method: "GET",
 })
-  .inputValidator(getAuthorDetailSchema)
+  .validator(getAuthorDetailSchema)
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
 
@@ -135,7 +135,7 @@ const fetchAuthorPhotoSchema = z.object({
 export const fetchAuthorPhotoFromUrlServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(fetchAuthorPhotoSchema)
+  .validator(fetchAuthorPhotoSchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { applyAuthorPhotoFromUrl, resizeAndSaveCover } = await import("@bookhouse/ingest");

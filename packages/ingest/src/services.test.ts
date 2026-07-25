@@ -220,7 +220,7 @@ function createTestDb(state: TestState): IngestDb {
           );
         }
         // Hash-based query with NOT exclusion
-        const hashWhere = where as { fullHash: string; NOT: { id: string } };
+        const hashWhere = where;
         return [...state.fileAssetsById.values()].filter(
           (fa) => fa.fullHash === hashWhere.fullHash && fa.id !== hashWhere.NOT.id,
         );
@@ -326,7 +326,7 @@ function createTestDb(state: TestState): IngestDb {
         if ("titleCanonical" in where) {
           filtered = [...state.works.values()].filter((work) => work.titleCanonical === where.titleCanonical);
         } else {
-          const notWhere = where as { NOT: { id: string } };
+          const notWhere = where;
           filtered = [...state.works.values()].filter((work) => work.id !== notWhere.NOT.id);
         }
         return filtered
@@ -389,7 +389,7 @@ function createTestDb(state: TestState): IngestDb {
         await Promise.resolve();
         const existing = state.editions.get(where.id);
         if (!existing) throw new Error(`Unknown edition: ${where.id}`);
-        const updated: TestEdition = { ...existing, ...data } as TestEdition;
+        const updated: TestEdition = { ...existing, ...data };
         state.editions.set(updated.id, updated);
         return updated;
       },
@@ -741,11 +741,11 @@ describe("ingest services", () => {
       (async (dirPath, options) => {
         const { readdir } = await import("node:fs/promises");
         return readdir(dirPath, options);
-      }) as ReaddirFn,
+      }),
       (async (entryPath) => {
         const { lstat } = await import("node:fs/promises");
         return lstat(entryPath);
-      }) as LstatFn,
+      }),
     );
 
     expect(files).toEqual([
@@ -758,8 +758,8 @@ describe("ingest services", () => {
     const warnMock = vi.fn();
     const files = await walkRegularFiles(
       "/tmp/unreadable-root",
-      (() => Promise.reject(new Error("permission denied"))) as ReaddirFn,
-      (() => Promise.reject(new Error("should not be called"))) as LstatFn,
+      (() => Promise.reject(new Error("permission denied"))),
+      (() => Promise.reject(new Error("should not be called"))),
       { info: vi.fn(), warn: warnMock },
     );
 
@@ -773,8 +773,8 @@ describe("ingest services", () => {
   it("continues silently when a directory cannot be listed and no logger is provided", async () => {
     const files = await walkRegularFiles(
       "/tmp/unreadable-root",
-      (() => Promise.reject(new Error("permission denied"))) as ReaddirFn,
-      (() => Promise.reject(new Error("should not be called"))) as LstatFn,
+      (() => Promise.reject(new Error("permission denied"))),
+      (() => Promise.reject(new Error("should not be called"))),
     );
 
     expect(files).toEqual([]);
@@ -786,7 +786,7 @@ describe("ingest services", () => {
     const files = await walkRegularFiles(
       "/tmp/unreadable-root",
       listDir as ReaddirFn,
-      (() => Promise.reject(new Error("should not be called"))) as LstatFn,
+      (() => Promise.reject(new Error("should not be called"))),
       { info: vi.fn(), warn: warnMock },
     );
 
@@ -849,7 +849,7 @@ describe("ingest services", () => {
         }
 
         return [] as never;
-      }) as ReaddirFn,
+      }),
       (async (entryPath) => {
         await Promise.resolve();
         const normalized = path.resolve(entryPath);
@@ -887,7 +887,7 @@ describe("ingest services", () => {
         }
 
         throw new Error("broken entry");
-      }) as LstatFn,
+      }),
     );
 
     expect(files).toEqual([
@@ -910,11 +910,11 @@ describe("ingest services", () => {
       (async (dirPath, options) => {
         const { readdir } = await import("node:fs/promises");
         return readdir(dirPath, options);
-      }) as ReaddirFn,
+      }),
       (async (entryPath) => {
         const { lstat } = await import("node:fs/promises");
         return lstat(entryPath);
-      }) as LstatFn,
+      }),
     );
 
     expect(files).toEqual([path.join(directory, "book.epub")]);
@@ -1400,7 +1400,7 @@ describe("ingest services", () => {
       db: createTestDb(createEmptyState("/tmp/root")),
       enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
       listDirectory: listDirectory as never,
-      readStats: readStats as never,
+      readStats: readStats,
     });
 
     const result = await services.scanLibraryRoot({ libraryRootId: "root-1" });
@@ -2686,7 +2686,7 @@ describe("ingest services", () => {
       source: "opf-sidecar",
       status: "parsed",
       warnings: [],
-    } as TestFileAsset["metadata"];
+    };
 
     enqueuedJobs.length = 0;
 
@@ -2847,12 +2847,12 @@ describe("ingest services", () => {
             isSymbolicLink: () => false,
             name: "ghost.epub",
           },
-        ] as never)) as ReaddirFn,
+        ] as never)),
       readStats: (() =>
         Promise.resolve({
           isFile: () => false,
           isSymbolicLink: () => true,
-        } as never)) as LstatFn,
+        } as never)),
     });
 
     const result = await services.scanLibraryRoot({ libraryRootId: "root-1" });
@@ -5192,7 +5192,7 @@ describe("ingest services", () => {
           source: "epub",
           status: "parsed",
           warnings: [],
-        } as FileAsset["metadata"];
+        };
       }
 
       return originalCreate(args);
@@ -7977,7 +7977,7 @@ describe("ingest services", () => {
           authors: ["Author"],
           identifiers: { unknown: [] },
         },
-      } as object as FileAsset["metadata"],
+      },
       mtime: new Date("2024-01-01T00:00:00.000Z"),
       partialHash: "sidecar-phash",
       relativePath: "Author/Book/metadata.json",
@@ -8038,7 +8038,7 @@ describe("ingest services", () => {
         source: "audio-id3",
         status: "unparseable",
         warnings: ["unsupported Unicode escape sequence"],
-      } as object as FileAsset["metadata"],
+      },
       mtime: new Date("2024-01-01T00:00:00.000Z"),
       partialHash: "phash",
       relativePath: "Author/Book/chapter01.mp3",
@@ -8069,7 +8069,7 @@ describe("ingest services", () => {
           authors: ["Author"],
           identifiers: { unknown: [] },
         },
-      } as object as FileAsset["metadata"],
+      },
       mtime: new Date("2024-01-01T00:00:00.000Z"),
       partialHash: "sidecar-phash",
       relativePath: "Author/Book/metadata.json",
@@ -8142,7 +8142,7 @@ describe("ingest services", () => {
           authors: ["Author Name"],
           identifiers: { unknown: [] },
         },
-      } as object as FileAsset["metadata"],
+      },
       mtime: new Date("2024-01-01T00:00:00.000Z"),
       partialHash: "sidecar-phash",
       relativePath: "Author/Book/metadata.json",
@@ -8238,7 +8238,7 @@ describe("ingest services", () => {
           authors: ["Author Name"],
           identifiers: { unknown: [] },
         },
-      } as object as FileAsset["metadata"],
+      },
       mtime: new Date("2024-01-01T00:00:00.000Z"),
       partialHash: "sidecar-phash",
       relativePath: "Author/Book/metadata.json",
@@ -11270,7 +11270,7 @@ describe("detectDuplicates", () => {
       coverPath: null,
       description: null,
       editedFields: [],
-      enrichmentStatus: "STUB" as EnrichmentStatus,
+      enrichmentStatus: "STUB",
       id,
       seriesId: null,
       seriesPosition: null,
@@ -11954,7 +11954,7 @@ describe("matchSuggestions", () => {
       coverPath: null,
       description: null,
       editedFields: [],
-      enrichmentStatus: "STUB" as EnrichmentStatus,
+      enrichmentStatus: "STUB",
       id,
       seriesId: null,
       seriesPosition: null,
@@ -13186,7 +13186,7 @@ describe("ingestUploadedBook", () => {
       if (entry instanceof Error) return Promise.reject(entry);
       if (entry === undefined) return Promise.reject(new Error(`Unexpected stat path: ${p}`));
       return Promise.resolve(entry);
-    }) as LstatFn;
+    });
   }
 
   it("upserts a FileAsset for an ebook upload and creates a stub Work/Edition/EditionFile with PRIMARY role", async () => {

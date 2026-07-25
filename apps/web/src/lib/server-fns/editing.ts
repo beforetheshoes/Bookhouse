@@ -14,7 +14,7 @@ const updateWorkSchema = z.object({
 export const updateWorkServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(updateWorkSchema)
+  .validator(updateWorkSchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
@@ -70,7 +70,7 @@ const updateEditionSchema = z.object({
 export const updateEditionServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(updateEditionSchema)
+  .validator(updateEditionSchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
@@ -118,7 +118,7 @@ const updateWorkAuthorsSchema = z.object({
 export const updateWorkAuthorsServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(updateWorkAuthorsSchema)
+  .validator(updateWorkAuthorsSchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
@@ -206,7 +206,7 @@ const updateEditionNarratorsSchema = z.object({
 export const updateEditionNarratorsServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(updateEditionNarratorsSchema)
+  .validator(updateEditionNarratorsSchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
@@ -274,7 +274,7 @@ const updateContributorSchema = z.object({
 export const updateContributorServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(updateContributorSchema)
+  .validator(updateContributorSchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");

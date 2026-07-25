@@ -1749,7 +1749,7 @@ describe("Integrations Tab", () => {
 
     const { recordBackupServerFn } = await import("~/lib/server-fns/backup");
     const recordMock = vi.mocked(recordBackupServerFn);
-    recordMock.mockResolvedValue(undefined as never);
+    recordMock.mockResolvedValue(undefined);
 
     const { Route } = await import("./index");
     const SettingsPage = (Route.options.component as React.ComponentType);
@@ -2412,7 +2412,7 @@ describe("Kobo Devices Tab", () => {
     const saveMock = vi.mocked(saveKoreaderCredentialServerFn);
     saveMock.mockReturnValueOnce(
       new Promise((resolve) => {
-        resolveSave = resolve as typeof resolveSave;
+        resolveSave = resolve;
       }) as never,
     );
 

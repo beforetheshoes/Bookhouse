@@ -113,7 +113,7 @@ describe("LibraryGrid", () => {
         observe(el: Element) {
           this.callback(
             [{ contentRect: { width: 1200 }, target: el }] as ResizeObserverEntry[],
-            this as ResizeObserver,
+            this,
           );
         }
         unobserve = vi.fn();
@@ -179,7 +179,7 @@ describe("LibraryGrid", () => {
         observe(el: Element) {
           this.callback(
             [{ contentRect: { width: 1200 }, target: el }] as ResizeObserverEntry[],
-            this as ResizeObserver,
+            this,
           );
         }
         unobserve = vi.fn();
@@ -228,7 +228,7 @@ describe("LibraryGrid", () => {
           this.callback = cb;
         }
         observe() {
-          this.callback([] as ResizeObserverEntry[], this as ResizeObserver);
+          this.callback([] as ResizeObserverEntry[], this);
         }
         unobserve = vi.fn();
         disconnect = vi.fn();

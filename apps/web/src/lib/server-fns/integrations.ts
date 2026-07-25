@@ -69,7 +69,7 @@ const setApiKeySchema = z.object({
 export const setApiKeyServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(setApiKeySchema)
+  .validator(setApiKeySchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
@@ -94,7 +94,7 @@ const removeApiKeySchema = z.object({
 export const removeApiKeyServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(removeApiKeySchema)
+  .validator(removeApiKeySchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
@@ -121,7 +121,7 @@ const validateApiKeySchema = z.object({
 export const validateApiKeyServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(validateApiKeySchema)
+  .validator(validateApiKeySchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { searchGoogleBooks, searchHardcover } = await import("@bookhouse/ingest");

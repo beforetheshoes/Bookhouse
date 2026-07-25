@@ -86,7 +86,7 @@ export default defineEventHandler(async (event) => {
       e.res.headers.set(name, value);
     },
     sendStream: (_evt, s) =>
-      stream.Readable.toWeb(s as InstanceType<typeof stream.Readable>) as ReadableStream,
+      stream.Readable.toWeb(s) as ReadableStream,
   });
 
   return handler(event);

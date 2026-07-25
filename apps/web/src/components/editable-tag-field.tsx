@@ -140,7 +140,7 @@ export function EditableTagField({
   }
 
   function handleContainerBlur(e: React.FocusEvent) {
-    if (containerRef.current?.contains(e.relatedTarget as Node)) return;
+    if (containerRef.current?.contains(e.relatedTarget)) return;
     void save();
   }
 

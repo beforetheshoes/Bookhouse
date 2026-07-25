@@ -19,8 +19,15 @@ const {
 
 vi.mock("h3", () => ({
   defineEventHandler: (handler: (event: H3Event) => object | Promise<object>) => handler,
-  createError: (opts: { statusCode: number; statusMessage?: string; message?: string }) =>
-    Object.assign(new Error(opts.message), { statusCode: opts.statusCode, statusMessage: opts.statusMessage }),
+  HTTPError: class HTTPError extends Error {
+    status: number;
+    statusText: string | undefined;
+    constructor(opts: { status: number; statusText?: string; message?: string }) {
+      super(opts.message ?? opts.statusText);
+      this.status = opts.status;
+      this.statusText = opts.statusText;
+    }
+  },
 }));
 
 vi.mock("@bookhouse/db", () => ({

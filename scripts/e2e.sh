@@ -149,7 +149,11 @@ pnpm --filter @bookhouse/library-worker exec tsx src/index.ts &
 WORKER_PID=$!
 
 echo "Waiting for app to be ready on :3000"
-pnpm exec wait-on http://localhost:3000 --timeout 30000
+# tcp:, not http:. An HTTP probe of / follows the 307 to /auth/login, which
+# performs OIDC discovery against the mock on :9090 — and the mock is not
+# started until Playwright's globalSetup, after this point. The probe then sees
+# a 500 and times out even though the app is up and healthy.
+pnpm exec wait-on tcp:3000 --timeout 30000
 
 # ── Run Playwright ────────────────────────────────────────────────────────────
 

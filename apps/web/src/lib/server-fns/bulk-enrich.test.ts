@@ -10,11 +10,11 @@ vi.mock("./_guards", () => ({
 vi.mock("@tanstack/react-start", () => ({
   createServerFn: () => {
     type Builder = {
-      inputValidator: () => Builder;
+      validator: () => Builder;
       handler: <T>(fn: (a: { data: T }) => Promise<{ importJobId: string; enqueuedCount: number }>) => (a: { data: T }) => Promise<{ importJobId: string; enqueuedCount: number }>;
     };
     const b: Builder = {
-      inputValidator: () => b,
+      validator: () => b,
       handler: (fn) => (a) => fn(a),
     };
     return b;

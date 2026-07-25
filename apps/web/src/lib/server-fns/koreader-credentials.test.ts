@@ -3,11 +3,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("@tanstack/react-start", () => ({
   createServerFn: () => {
     type Builder = {
-      inputValidator: (schema: object) => Builder;
+      validator: (schema: object) => Builder;
       handler: <T extends Record<string, string | number | boolean | null | string[] | Date | undefined>>(fn: (a: T) => T | Promise<T>) => (a: T) => T | Promise<T>;
     };
     const b: Builder = {
-      inputValidator: () => b,
+      validator: () => b,
       handler: (fn) => (a) => fn(a),
     };
     return b;
@@ -54,7 +54,7 @@ describe("koreader-credentials server functions", () => {
     const credential = { id: "kc1", username: "reader", isEnabled: true, createdAt: new Date(), updatedAt: new Date() };
     mockFindUnique.mockResolvedValue(credential);
 
-    const result = await getKoreaderCredentialServerFn({} as never);
+    const result = await getKoreaderCredentialServerFn({});
 
     expect(result).toEqual(credential);
     expect(mockFindUnique).toHaveBeenCalledWith({
@@ -72,7 +72,7 @@ describe("koreader-credentials server functions", () => {
   it("requires authentication to read credentials", async () => {
     mockGetCurrentUser.mockResolvedValueOnce(null);
 
-    await expect(getKoreaderCredentialServerFn({} as never)).rejects.toThrow("Not authenticated");
+    await expect(getKoreaderCredentialServerFn({})).rejects.toThrow("Not authenticated");
   });
 
   it("upserts KOReader credentials with a hashed password", async () => {

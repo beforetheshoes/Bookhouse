@@ -27,7 +27,7 @@ export const getBackupHistoryServerFn = createServerFn({
 export const recordBackupServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(backupManifestSchema)
+  .validator(backupManifestSchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");

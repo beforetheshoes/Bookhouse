@@ -1,4 +1,4 @@
-import { defineEventHandler, createError } from "h3";
+import { defineEventHandler, HTTPError } from "h3";
 import type { H3Event } from "h3";
 import type { OpdsEditionData } from "@bookhouse/opds";
 import type { OpdsAuthDeps } from "../auth-helper";
@@ -24,12 +24,12 @@ export function createAuthorBooksHandler(deps: AuthorBooksHandlerDeps) {
     const { contributorId } = params;
 
     if (!VALID_ID.test(contributorId)) {
-      throw createError({ statusCode: 400, statusMessage: "Invalid contributorId" });
+      throw new HTTPError({ status: 400, statusText: "Invalid contributorId" });
     }
 
     const authorName = await deps.getAuthorName(contributorId);
     if (!authorName) {
-      throw createError({ statusCode: 404, statusMessage: "Author not found" });
+      throw new HTTPError({ status: 404, statusText: "Author not found" });
     }
 
     const entries = await deps.getAuthorEditions(contributorId);

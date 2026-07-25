@@ -1,4 +1,4 @@
-import { createError, defineEventHandler, useSession } from "h3";
+import { HTTPError, defineEventHandler, useSession } from "h3";
 import type { H3Event } from "h3";
 import type { AuthSessionData, AuthenticatedUser } from "@bookhouse/auth";
 
@@ -25,7 +25,7 @@ export function createAuthMiddleware(deps: AuthMiddlewareDeps) {
     const user = await deps.resolveUser(session.data);
 
     if (!user) {
-      throw createError({ statusCode: 401, statusMessage: "Unauthorized" });
+      throw new HTTPError({ status: 401, statusText: "Unauthorized" });
     }
 
     (event.context as { user?: AuthenticatedUser }).user = user;
@@ -35,10 +35,10 @@ export function createAuthMiddleware(deps: AuthMiddlewareDeps) {
 export function requireOwnerFromEvent(event: H3Event): AuthenticatedUser {
   const user = (event.context as { user?: AuthenticatedUser }).user;
   if (!user) {
-    throw createError({ statusCode: 401, statusMessage: "Unauthorized" });
+    throw new HTTPError({ status: 401, statusText: "Unauthorized" });
   }
   if (!user.roles.includes("OWNER")) {
-    throw createError({ statusCode: 403, statusMessage: "Forbidden" });
+    throw new HTTPError({ status: 403, statusText: "Forbidden" });
   }
   return user;
 }
@@ -70,7 +70,7 @@ export default defineEventHandler(async (event) => {
   const user = await resolveAuthenticatedUser({ db, session: session.data });
 
   if (!user) {
-    throw createError({ statusCode: 401, statusMessage: "Unauthorized" });
+    throw new HTTPError({ status: 401, statusText: "Unauthorized" });
   }
 
   (event.context as { user?: typeof user }).user = user;

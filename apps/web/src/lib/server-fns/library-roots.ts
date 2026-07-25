@@ -66,7 +66,7 @@ const addLibraryRootSchema = z.object({
 export const addLibraryRootServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(addLibraryRootSchema)
+  .validator(addLibraryRootSchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
@@ -87,7 +87,7 @@ const removeLibraryRootSchema = z.object({
 export const removeLibraryRootServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(removeLibraryRootSchema)
+  .validator(removeLibraryRootSchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
@@ -100,7 +100,7 @@ export const removeLibraryRootServerFn = createServerFn({
       });
 
       if (fileAssets.length > 0) {
-        await cascadeCleanupOrphans(tx as never, {
+        await cascadeCleanupOrphans(tx, {
           fileAssetIds: fileAssets.map((fa) => fa.id),
         });
       }
@@ -124,7 +124,7 @@ export const STALE_SCAN_THRESHOLD_MS = 5 * 60 * 1000;
 export const getScanProgressServerFn = createServerFn({
   method: "GET",
 })
-  .inputValidator(libraryRootIdSchema)
+  .validator(libraryRootIdSchema)
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
     const { getImportJobLiveActivity, getLibraryJobSnapshot } = await import("@bookhouse/shared");
@@ -241,7 +241,7 @@ export const getScanProgressServerFn = createServerFn({
 export const getLibraryIssueCountServerFn = createServerFn({
   method: "GET",
 })
-  .inputValidator(libraryRootIdSchema)
+  .validator(libraryRootIdSchema)
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
     return db.fileAsset.count({
@@ -261,7 +261,7 @@ const libraryIssuesSchema = z.object({
 export const getLibraryIssuesServerFn = createServerFn({
   method: "GET",
 })
-  .inputValidator(libraryIssuesSchema)
+  .validator(libraryIssuesSchema)
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
     const where = {
@@ -297,7 +297,7 @@ const scanLibraryRootSchema = z.object({
 export const scanLibraryRootServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(scanLibraryRootSchema)
+  .validator(scanLibraryRootSchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
@@ -361,7 +361,7 @@ export const scanLibraryRootServerFn = createServerFn({
 export const retryLibraryIssuesServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(libraryRootIdSchema)
+  .validator(libraryRootIdSchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");

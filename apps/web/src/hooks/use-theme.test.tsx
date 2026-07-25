@@ -171,7 +171,7 @@ describe("useTheme", () => {
   });
 
   it("getSystemDark returns false when matchMedia is unavailable (SSR)", () => {
-    const originalMatchMedia = window.matchMedia;
+    const originalMatchMedia = window.matchMedia.bind(window);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
     (window as any).matchMedia = undefined;
     try {

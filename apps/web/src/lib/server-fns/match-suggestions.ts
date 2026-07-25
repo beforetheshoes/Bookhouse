@@ -63,7 +63,7 @@ const acceptSchema = z.object({ id: z.string(), survivingWorkId: z.string() });
 export const acceptMatchSuggestionServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(acceptSchema)
+  .validator(acceptSchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
@@ -125,7 +125,7 @@ export const acceptMatchSuggestionServerFn = createServerFn({
 export const declineMatchSuggestionServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(idSchema)
+  .validator(idSchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");

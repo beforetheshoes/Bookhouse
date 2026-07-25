@@ -27,7 +27,7 @@ vi.mock("~/lib/server-fns/editing", () => ({
 
 vi.mock("~/components/editable-table-cell", async () => {
   const actual = await vi.importActual("~/components/editable-table-cell");
-  return actual as Record<string, object>;
+  return actual;
 });
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -63,8 +63,8 @@ function makeWork(
       {
         id: `edition-${title.toLowerCase().replace(/\s/g, "-")}`,
         formatFamily: formats[0] ?? "EBOOK",
-        publisher: "Test Publisher" as string | null,
-        isbn13: "1234567890123" as string | null,
+        publisher: "Test Publisher",
+        isbn13: "1234567890123",
         isbn10: null as string | null,
         contributors: authors.map((name) => ({
           role: "AUTHOR",

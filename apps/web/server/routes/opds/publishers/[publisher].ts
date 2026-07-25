@@ -1,4 +1,4 @@
-import { defineEventHandler, createError } from "h3";
+import { defineEventHandler, HTTPError } from "h3";
 import type { H3Event } from "h3";
 import type { OpdsEditionData } from "@bookhouse/opds";
 import type { OpdsAuthDeps } from "../auth-helper";
@@ -24,7 +24,7 @@ export function createPublisherBooksHandler(deps: PublisherBooksHandlerDeps) {
 
     const exists = await deps.publisherExists(publisher);
     if (!exists) {
-      throw createError({ statusCode: 404, statusMessage: "Publisher not found" });
+      throw new HTTPError({ status: 404, statusText: "Publisher not found" });
     }
 
     const entries = await deps.getPublisherEditions(publisher);

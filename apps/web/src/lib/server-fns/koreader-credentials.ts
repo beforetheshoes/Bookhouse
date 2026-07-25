@@ -36,7 +36,7 @@ const saveCredentialSchema = z.object({
 export const saveKoreaderCredentialServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(saveCredentialSchema)
+  .validator(saveCredentialSchema)
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
     const { hashPassword } = await import("@bookhouse/opds");
@@ -69,7 +69,7 @@ const toggleCredentialSchema = z.object({
 export const toggleKoreaderCredentialServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(toggleCredentialSchema)
+  .validator(toggleCredentialSchema)
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
     const { getCurrentUser } = await import("~/lib/auth-server");

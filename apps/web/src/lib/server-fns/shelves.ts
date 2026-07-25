@@ -47,7 +47,7 @@ export type ShelfRow = Awaited<
 export const getShelfDetailServerFn = createServerFn({
   method: "GET",
 })
-  .inputValidator(z.object({ shelfId: z.string().min(1) }))
+  .validator(z.object({ shelfId: z.string().min(1) }))
   .handler(async ({ data }) => {
     const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
@@ -83,7 +83,7 @@ export type ShelfDetail = Awaited<ReturnType<typeof getShelfDetailServerFn>>;
 export const getShelvesForEditionServerFn = createServerFn({
   method: "GET",
 })
-  .inputValidator(z.object({ editionId: z.string().min(1) }))
+  .validator(z.object({ editionId: z.string().min(1) }))
   .handler(async ({ data }) => {
     const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
@@ -100,7 +100,7 @@ export const getShelvesForEditionServerFn = createServerFn({
 export const getShelvesForWorkServerFn = createServerFn({
   method: "GET",
 })
-  .inputValidator(z.object({ workId: z.string().min(1) }))
+  .validator(z.object({ workId: z.string().min(1) }))
   .handler(async ({ data }) => {
     const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
@@ -133,7 +133,7 @@ export const getShelvesForWorkServerFn = createServerFn({
 export const createShelfServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(z.object({
+  .validator(z.object({
     name: z.string().min(1),
     formatFilter: z.enum(["ALL", "EBOOK", "AUDIOBOOK"]).default("ALL"),
   }))
@@ -153,7 +153,7 @@ export const createShelfServerFn = createServerFn({
 export const getAvailableEditionsServerFn = createServerFn({
   method: "GET",
 })
-  .inputValidator(z.object({ shelfId: z.string().min(1) }))
+  .validator(z.object({ shelfId: z.string().min(1) }))
   .handler(async ({ data }) => {
     const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
@@ -193,7 +193,7 @@ export type AvailableEdition = Awaited<ReturnType<typeof getAvailableEditionsSer
 export const renameShelfServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(z.object({ shelfId: z.string().min(1), name: z.string().min(1) }))
+  .validator(z.object({ shelfId: z.string().min(1), name: z.string().min(1) }))
   .handler(async ({ data }) => {
     const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
@@ -207,7 +207,7 @@ export const renameShelfServerFn = createServerFn({
 export const deleteShelfServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(z.object({ shelfId: z.string().min(1) }))
+  .validator(z.object({ shelfId: z.string().min(1) }))
   .handler(async ({ data }) => {
     const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
@@ -220,7 +220,7 @@ export const deleteShelfServerFn = createServerFn({
 export const addEditionToShelfServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(z.object({ shelfId: z.string().min(1), editionId: z.string().min(1) }))
+  .validator(z.object({ shelfId: z.string().min(1), editionId: z.string().min(1) }))
   .handler(async ({ data }) => {
     const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
@@ -233,7 +233,7 @@ export const addEditionToShelfServerFn = createServerFn({
 export const addEditionsForWorkToShelfServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(z.object({ shelfId: z.string().min(1), workId: z.string().min(1) }))
+  .validator(z.object({ shelfId: z.string().min(1), workId: z.string().min(1) }))
   .handler(async ({ data }) => {
     const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
@@ -267,7 +267,7 @@ export const addEditionsForWorkToShelfServerFn = createServerFn({
 export const bulkAddToShelfServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(z.object({ shelfId: z.string().min(1), workIds: z.array(z.string().min(1)).min(1) }))
+  .validator(z.object({ shelfId: z.string().min(1), workIds: z.array(z.string().min(1)).min(1) }))
   .handler(async ({ data }) => {
     const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
@@ -301,7 +301,7 @@ export const bulkAddToShelfServerFn = createServerFn({
 export const removeEditionFromShelfServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(z.object({ shelfId: z.string().min(1), editionId: z.string().min(1) }))
+  .validator(z.object({ shelfId: z.string().min(1), editionId: z.string().min(1) }))
   .handler(async ({ data }) => {
     const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
@@ -319,7 +319,7 @@ export const removeEditionFromShelfServerFn = createServerFn({
 export const removeWorkEditionsFromShelfServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(z.object({ shelfId: z.string().min(1), workId: z.string().min(1) }))
+  .validator(z.object({ shelfId: z.string().min(1), workId: z.string().min(1) }))
   .handler(async ({ data }) => {
     const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");

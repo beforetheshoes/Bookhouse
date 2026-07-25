@@ -397,7 +397,8 @@ export async function processBulkEnrichWork(
   if (Object.keys(workFields).length > 0 || editionApplyPlan.length > 0) {
     // Apply work fields with the first ebook edition (or first audiobook) for author linking.
     // We know at least one edition exists (checked at the top of the function).
-    const primaryEdition = ebookEditions[0] ?? (audiobookEditions[0] as BulkEnrichEditionData);
+    const primaryEdition: BulkEnrichEditionData =
+      ebookEditions[0] ?? (audiobookEditions[0] as BulkEnrichEditionData);
     const applyResult = await deps.applyEnrichmentFields(
       {
         workId,

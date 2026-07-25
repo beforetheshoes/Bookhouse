@@ -2,7 +2,7 @@
 import { existsSync, createReadStream } from "node:fs";
 import { Readable } from "node:stream";
 import { defineEventHandler, setResponseHeader } from "h3";
-import archiver from "archiver";
+import { ZipArchive } from "archiver";
 import { createDownloadAllHandler } from "../download-all-handler";
 
 export default defineEventHandler(async (event) => {
@@ -30,7 +30,7 @@ export default defineEventHandler(async (event) => {
     existsSync,
     createReadStream,
     createArchive: () => {
-      const archive = archiver("zip", { zlib: { level: 0 } });
+      const archive = new ZipArchive({ zlib: { level: 0 } });
       // archiver's Archiver type can't be structurally narrowed to the handler's
       // archive interface without an `unknown` bridge (TS requires it).
       // eslint-disable-next-line no-restricted-syntax
@@ -41,7 +41,7 @@ export default defineEventHandler(async (event) => {
     },
     setResponseHeader,
     sendStream: (_event, stream) =>
-      Readable.toWeb(stream as Readable) as ReadableStream,
+      Readable.toWeb(stream) as ReadableStream,
   });
 
   return handler(event);

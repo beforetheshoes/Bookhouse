@@ -8,11 +8,11 @@ vi.mock("./_guards", () => ({
 vi.mock("@tanstack/react-start", () => ({
   createServerFn: () => {
     type Builder = {
-      inputValidator: (schema: object) => Builder;
+      validator: (schema: object) => Builder;
       handler: <T extends Record<string, string | number | boolean | null | string[] | Date | undefined>>(fn: (a: T) => T | Promise<T>) => (a: T) => T | Promise<T>;
     };
     const b: Builder = {
-      inputValidator: () => b,
+      validator: () => b,
       handler: (fn) => (a) => fn(a),
     };
     return b;
@@ -77,7 +77,7 @@ describe("kobo-devices server functions", () => {
       ];
       mockFindMany.mockResolvedValue(devices);
 
-      const result = await getKoboDevicesServerFn({} as never);
+      const result = await getKoboDevicesServerFn({});
 
       expect(result).toEqual(devices);
       expect(mockFindMany).toHaveBeenCalledWith({

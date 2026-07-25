@@ -156,7 +156,7 @@ describe("parseOpfSidecar", () => {
     }));
 
     const { readFile } = await import("node:fs/promises");
-    vi.mocked(readFile).mockResolvedValueOnce(CALIBRE_OPF as never);
+    vi.mocked(readFile).mockResolvedValueOnce(CALIBRE_OPF);
 
     const result = await parseOpfSidecar("/library/Author/Book/metadata.opf");
 

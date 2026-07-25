@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { PassThrough, type Readable } from "node:stream";
-import archiver from "archiver";
+import { ZipArchive } from "archiver";
 
 export interface CreateLogsArchiveDeps {
   /** Directory the log files live in (shared volume between web and worker). */
@@ -21,7 +21,7 @@ export async function createLogsArchive(
   const entries = await deps.readdir(deps.logDir);
   const logFiles = entries.filter((name) => name.includes(".log")).sort();
 
-  const archive = archiver("zip", { zlib: { level: 9 } });
+  const archive = new ZipArchive({ zlib: { level: 9 } });
   const output = new PassThrough();
   archive.pipe(output);
 

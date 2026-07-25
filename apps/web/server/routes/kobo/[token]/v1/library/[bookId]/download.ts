@@ -153,7 +153,7 @@ export default defineEventHandler(async (event) => {
     createReadStream: fs.createReadStream,
     setResponseHeader,
     sendStream: (_evt, s) =>
-      stream.Readable.toWeb(s as InstanceType<typeof stream.Readable>) as ReadableStream,
+      stream.Readable.toWeb(s) as ReadableStream,
   });
 
   return handler(event);

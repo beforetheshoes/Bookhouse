@@ -82,7 +82,7 @@ export async function applyEnrichmentFields(
 
     // Apply remaining scalar work fields
     if (Object.keys(filteredFields).length > 0) {
-      await deps.updateWork(input.workId, filteredFields as UpdateData);
+      await deps.updateWork(input.workId, filteredFields);
       appliedAnyFields = true;
       allAppliedFields.push(...Object.keys(filteredFields));
     }
@@ -139,7 +139,7 @@ export async function applyEnrichmentFields(
     delete filteredFields.narrators;
 
     if (Object.keys(filteredFields).length > 0) {
-      await deps.updateEdition(input.editionId, filteredFields as UpdateData);
+      await deps.updateEdition(input.editionId, filteredFields);
       appliedAnyFields = true;
       allAppliedFields.push(...Object.keys(filteredFields));
     }

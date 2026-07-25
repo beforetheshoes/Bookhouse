@@ -42,7 +42,7 @@ export default defineEventHandler(async (event) => {
     createBackup: () =>
       createBackupImpl({
         execFile: execFile as CreateBackupDeps["execFile"],
-        readdir: readdir as CreateBackupDeps["readdir"],
+        readdir: readdir,
         readFile,
         stat,
         coverCacheDir,

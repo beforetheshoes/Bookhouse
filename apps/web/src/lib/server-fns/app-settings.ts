@@ -37,14 +37,14 @@ export const getAllScanConcurrenciesServerFn = createServerFn({
 export const setScanConcurrencyServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(z.object({
+  .validator(z.object({
     scanType: z.enum(["full", "onDemand", "incremental"]),
     concurrency: z.number().int().min(1).max(20),
   }))
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
-    const key = SCAN_CONCURRENCY_KEYS[data.scanType as ScanType];
+    const key = SCAN_CONCURRENCY_KEYS[data.scanType];
 
     await db.appSetting.upsert({
       where: { key },
@@ -52,7 +52,7 @@ export const setScanConcurrencyServerFn = createServerFn({
       update: { value: String(data.concurrency) },
     });
 
-    return { scanType: data.scanType as ScanType, concurrency: data.concurrency };
+    return { scanType: data.scanType, concurrency: data.concurrency };
   });
 
 export type MissingFileBehavior = "auto-cleanup" | "manual";
@@ -69,7 +69,7 @@ export const getMissingFileBehaviorServerFn = createServerFn({
 export const setMissingFileBehaviorServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(z.object({ behavior: z.enum(["auto-cleanup", "manual"]) }))
+  .validator(z.object({ behavior: z.enum(["auto-cleanup", "manual"]) }))
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
@@ -80,7 +80,7 @@ export const setMissingFileBehaviorServerFn = createServerFn({
       update: { value: data.behavior },
     });
 
-    return { behavior: data.behavior as MissingFileBehavior };
+    return { behavior: data.behavior };
   });
 
 export type ThemePreference = "light" | "dark" | "system";
@@ -97,7 +97,7 @@ export const getThemeServerFn = createServerFn({
 export const setThemeServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(z.object({ theme: z.enum(["light", "dark", "system"]) }))
+  .validator(z.object({ theme: z.enum(["light", "dark", "system"]) }))
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
@@ -108,7 +108,7 @@ export const setThemeServerFn = createServerFn({
       update: { value: data.theme },
     });
 
-    return { theme: data.theme as ThemePreference };
+    return { theme: data.theme };
   });
 
 export type ColorMode = "off" | "book" | "page" | "accent";
@@ -125,7 +125,7 @@ export const getColorModeServerFn = createServerFn({
 export const setColorModeServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(z.object({ mode: z.enum(["off", "book", "page", "accent"]) }))
+  .validator(z.object({ mode: z.enum(["off", "book", "page", "accent"]) }))
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
@@ -136,7 +136,7 @@ export const setColorModeServerFn = createServerFn({
       update: { value: data.mode },
     });
 
-    return { mode: data.mode as ColorMode };
+    return { mode: data.mode };
   });
 
 export const getAccentColorServerFn = createServerFn({
@@ -151,7 +151,7 @@ export const getAccentColorServerFn = createServerFn({
 export const setAccentColorServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(z.object({ color: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable() }))
+  .validator(z.object({ color: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable() }))
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
@@ -192,7 +192,7 @@ export const getBrandPaletteServerFn = createServerFn({
 export const setBrandPaletteServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(z.object({ palette: paletteSchema }))
+  .validator(z.object({ palette: paletteSchema }))
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");

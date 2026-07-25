@@ -10,11 +10,11 @@ vi.mock("./_guards", () => ({
 vi.mock("@tanstack/react-start", () => ({
   createServerFn: () => {
     type Builder = {
-      inputValidator: (schema: object) => Builder;
+      validator: (schema: object) => Builder;
       handler: <T extends Record<string, string | number | boolean | null | string[] | Date | undefined>>(fn: (a: T) => T | Promise<T>) => (a: T) => T | Promise<T>;
     };
     const b: Builder = {
-      inputValidator: () => b,
+      validator: () => b,
       handler: (fn) => (a) => fn(a),
     };
     return b;
@@ -105,7 +105,7 @@ describe("integrations server functions", () => {
     it("returns false for all providers when no keys are stored", async () => {
       mockFindUnique.mockResolvedValue(null);
 
-      const result = await getIntegrationStatusServerFn({} as never);
+      const result = await getIntegrationStatusServerFn({});
 
       expect(result).toEqual({
         openlibrary: { configured: true, label: "Open Library" },
@@ -121,7 +121,7 @@ describe("integrations server functions", () => {
         return null;
       });
 
-      const result = await getIntegrationStatusServerFn({} as never);
+      const result = await getIntegrationStatusServerFn({});
 
       expect(result.googlebooks.configured).toBe(true);
       expect(result.hardcover.configured).toBe(false);

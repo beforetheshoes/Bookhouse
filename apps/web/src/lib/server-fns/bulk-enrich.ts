@@ -10,7 +10,7 @@ const bulkEnrichSchema = z.object({
 export const bulkEnrichServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(bulkEnrichSchema)
+  .validator(bulkEnrichSchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");

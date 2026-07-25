@@ -4,7 +4,7 @@ import { z } from "zod";
 export const getReadingProgressServerFn = createServerFn({
   method: "GET",
 })
-  .inputValidator(z.object({ workId: z.string().min(1) }))
+  .validator(z.object({ workId: z.string().min(1) }))
   .handler(async ({ data }) => {
     const { getCurrentUser } = await import("~/lib/auth-server");
     const user = await getCurrentUser();
@@ -40,7 +40,7 @@ export const getReadingProgressServerFn = createServerFn({
 export const updateReadingProgressServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(
+  .validator(
     z.object({
       editionId: z.string().min(1),
       percent: z.number().min(0).max(100),

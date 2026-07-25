@@ -44,7 +44,7 @@ export const listAllowedEmailsServerFn = createServerFn({
 export const addAllowedEmailServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(z.object({ email: z.string().email() }))
+  .validator(z.object({ email: z.string().email() }))
   .handler(async ({ data }) => {
     const owner = await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
@@ -59,7 +59,7 @@ export const addAllowedEmailServerFn = createServerFn({
 export const removeAllowedEmailServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(z.object({ id: z.string().min(1) }))
+  .validator(z.object({ id: z.string().min(1) }))
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
@@ -81,7 +81,7 @@ export const removeAllowedEmailServerFn = createServerFn({
 export const removeUserServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(z.object({ userId: z.string().min(1) }))
+  .validator(z.object({ userId: z.string().min(1) }))
   .handler(async ({ data }) => {
     const owner = await (await import("./_guards")).ownerOnly();
     if (data.userId === owner.id) {

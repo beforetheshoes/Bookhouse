@@ -4,8 +4,15 @@ import { z } from "zod";
 
 const getQueryMock = vi.fn<(event: H3Event) => Record<string, string>>();
 vi.mock("h3", () => ({
-  createError: (opts: { statusCode: number; statusMessage: string }) =>
-    Object.assign(new Error(opts.statusMessage), opts),
+  HTTPError: class HTTPError extends Error {
+    status: number;
+    statusText: string | undefined;
+    constructor(opts: { status: number; statusText?: string; message?: string }) {
+      super(opts.message ?? opts.statusText);
+      this.status = opts.status;
+      this.statusText = opts.statusText;
+    }
+  },
   getQuery: (event: H3Event) => getQueryMock(event),
 }));
 
@@ -23,7 +30,7 @@ describe("parseParams", () => {
   it("throws a 400 when a param is missing or empty", () => {
     expect(() =>
       parseParams(eventWith({ workId: "" }), z.object({ workId: z.string().min(1) })),
-    ).toThrow(expect.objectContaining({ statusCode: 400 }));
+    ).toThrow(expect.objectContaining({ status: 400 }));
   });
 });
 
@@ -45,6 +52,6 @@ describe("parseQuery", () => {
     getQueryMock.mockReturnValue({ page: "-5" });
     expect(() =>
       parseQuery({} as object as H3Event, z.object({ page: z.coerce.number().int().min(1) })),
-    ).toThrow(expect.objectContaining({ statusCode: 400 }));
+    ).toThrow(expect.objectContaining({ status: 400 }));
   });
 });

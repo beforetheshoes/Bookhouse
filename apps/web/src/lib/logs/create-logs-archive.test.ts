@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Readable } from "node:stream";
 
-const { appendMock, pipeMock, finalizeMock, archiverFn } = vi.hoisted(() => {
+const { appendMock, pipeMock, finalizeMock, ZipArchiveMock } = vi.hoisted(() => {
   const appendMock = vi.fn();
   const pipeMock = vi.fn();
   const finalizeMock = vi.fn();
@@ -9,14 +9,14 @@ const { appendMock, pipeMock, finalizeMock, archiverFn } = vi.hoisted(() => {
     appendMock,
     pipeMock,
     finalizeMock,
-    archiverFn: vi.fn(() => ({
-      append: appendMock,
-      pipe: pipeMock,
-      finalize: finalizeMock,
-    })),
+    ZipArchiveMock: class {
+      append = appendMock;
+      pipe = pipeMock;
+      finalize = finalizeMock;
+    },
   };
 });
-vi.mock("archiver", () => ({ default: archiverFn }));
+vi.mock("archiver", () => ({ ZipArchive: ZipArchiveMock }));
 
 import { createLogsArchive } from "./create-logs-archive";
 
