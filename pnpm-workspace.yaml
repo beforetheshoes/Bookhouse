@@ -13,21 +13,14 @@ overrides:
   # property names (moderate).
   valibot: '>=1.4.2'
 
+# Packages allowed to run install scripts. Keep this a list of real package
+# names — it started life as the scalar `onlyBuiltDependencies: '@prisma/engines'`,
+# and when pnpm rewrote it as a list it spread that string into its individual
+# characters, leaving eleven junk entries that matched nothing.
 onlyBuiltDependencies:
-  - /
-  - '@'
   - '@prisma/engines'
-  - a
-  - e
   - esbuild
-  - g
-  - i
-  - m
   - msgpackr-extract
   - msw
-  - n
-  - p
   - prisma
-  - r
-  - s
   - sharp
