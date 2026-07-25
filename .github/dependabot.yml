@@ -1,0 +1,78 @@
+version: 2
+
+updates:
+  # pnpm workspace — the single root lockfile covers apps/*, packages/*, workers/*.
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Chicago
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: deps
+      prefix-development: deps-dev
+      include: scope
+    groups:
+      # One PR a week for everything low-risk; majors stay individual so each
+      # gets its own review against the four CI gates.
+      npm-minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+      # Security fixes arrive as their own grouped PR, ahead of the routine bump.
+      npm-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Chicago
+    commit-message:
+      prefix: ci
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  # Dockerfile base image (node:24-slim).
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Chicago
+    commit-message:
+      prefix: docker
+    ignore:
+      # A Node major has to move together with engines.node, CI's NODE_VERSION,
+      # and the runtime — do those deliberately, not via an automated PR.
+      - dependency-name: node
+        update-types:
+          - version-update:semver-major
+
+  # docker-compose.yml service images (postgres, valkey).
+  - package-ecosystem: docker-compose
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Chicago
+    commit-message:
+      prefix: docker
+    ignore:
+      # Published by this repo's own Publish workflow — not an upstream dep.
+      - dependency-name: ghcr.io/beforetheshoes/bookhouse-*
+      # A Postgres major is a data migration, not a version bump.
+      - dependency-name: postgres
+        update-types:
+          - version-update:semver-major
