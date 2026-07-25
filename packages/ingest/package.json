@@ -22,7 +22,7 @@
   "devDependencies": {
     "@types/yauzl": "^3.4.0",
     "@types/yazl": "^3.3.1",
-    "typescript": "^5.9.3",
+    "typescript": "^6.0.3",
     "yazl": "^3.3.1"
   }
 }
