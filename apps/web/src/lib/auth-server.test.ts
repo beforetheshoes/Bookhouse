@@ -238,10 +238,10 @@ describe("auth server helpers", () => {
   });
 
   it("clears the local session on logout", async () => {
-    const { authSessionConfig, handleLogoutRequest } = await import("./auth-server");
+    const { getAuthSessionConfig, handleLogoutRequest } = await import("./auth-server");
     const response = await handleLogoutRequest();
 
-    expect(clearStartSessionMock).toHaveBeenCalledWith(authSessionConfig);
+    expect(clearStartSessionMock).toHaveBeenCalledWith(getAuthSessionConfig());
     expect(response.headers.get("location")).toBe(
       "http://localhost:3000/logged-out",
     );
