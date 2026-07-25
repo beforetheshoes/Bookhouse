@@ -124,6 +124,35 @@ function createJobHandlers(
   };
 }
 
+/** Prisma's code for an update whose `where` matched no row. */
+const PRISMA_RECORD_NOT_FOUND = "P2025";
+
+/**
+ * Update an ImportJob whose row may no longer match — the library root was
+ * removed, the scan was cancelled, or the job already moved out of the status
+ * the `where` expects. A job whose entity is gone should skip silently rather
+ * than fail and be retried, so a missing row resolves `false`. Anything else is
+ * a real database error and still throws.
+ */
+async function updateImportJobIfPresent(
+  args: Parameters<typeof db.importJob.update>[0],
+): Promise<boolean> {
+  try {
+    await db.importJob.update(args);
+    return true;
+  } catch (error) {
+    const prismaError = typeof error === "object" &&
+      error !== null &&
+      "code" in error
+      ? error as { code?: string }
+      : null;
+    if (prismaError?.code !== PRISMA_RECORD_NOT_FOUND) {
+      throw error;
+    }
+    return false;
+  }
+}
+
 async function dispatch(
   handlers: LibraryWorkerHandlers,
   job: Job<LibraryJobPayload<LibraryJobName>, LibraryJobResult, LibraryJobName>,
@@ -233,21 +262,13 @@ export function createLibraryWorkerProcessor(
   if ((job.data as BaseJobPayload).step === "waiting-children") {
     logger.info({ jobId: job.id, jobName: job.name }, "All children finished, entering completion phase");
     if (importJobId && isScanJob) {
-      try {
-        await db.importJob.update({
-          where: { id: importJobId, status: "RUNNING" },
-          data: { status: "SUCCEEDED", finishedAt: new Date(), scanStage: null, bullmqJobId: null },
-        });
+      const updated = await updateImportJobIfPresent({
+        where: { id: importJobId, status: "RUNNING" },
+        data: { status: "SUCCEEDED", finishedAt: new Date(), scanStage: null, bullmqJobId: null },
+      });
+      if (updated) {
         logger.info({ jobId: job.id, importJobId }, "Scan marked SUCCEEDED");
-      } catch (error) {
-        const prismaError = typeof error === "object" &&
-          error !== null &&
-          "code" in error
-          ? error as { code?: string }
-          : null;
-        if (prismaError?.code !== "P2025") {
-          throw error;
-        }
+      } else {
         logger.warn(
           { jobId: job.id, jobName: job.name, importJobId },
           "ImportJob missing during completion phase; skipping SUCCEEDED update",
@@ -260,7 +281,7 @@ export function createLibraryWorkerProcessor(
 
     // Only the scan job manages ImportJob lifecycle
     if (importJobId && isScanJob) {
-      await db.importJob.update({
+      const updated = await updateImportJobIfPresent({
         where: { id: importJobId },
         data: {
           status: "RUNNING",
@@ -268,6 +289,12 @@ export function createLibraryWorkerProcessor(
           attemptsMade: job.attemptsMade,
         },
       });
+      if (!updated) {
+        logger.warn(
+          { jobId: job.id, jobName: job.name, importJobId },
+          "ImportJob missing; skipping RUNNING update",
+        );
+      }
     }
 
     // Clean up stale ImportJobs when a new scan starts
@@ -308,11 +335,18 @@ export function createLibraryWorkerProcessor(
 
         // No children (or all already done) — complete immediately
         if (importJobId) {
-          await db.importJob.update({
+          const updated = await updateImportJobIfPresent({
             where: { id: importJobId, status: "RUNNING" },
             data: { status: "SUCCEEDED", finishedAt: new Date(), scanStage: null, bullmqJobId: null },
           });
-          logger.info({ jobId: job.id, importJobId }, "Scan completed immediately (no pending children)");
+          if (updated) {
+            logger.info({ jobId: job.id, importJobId }, "Scan completed immediately (no pending children)");
+          } else {
+            logger.warn(
+              { jobId: job.id, jobName: job.name, importJobId },
+              "ImportJob missing; skipping SUCCEEDED update",
+            );
+          }
         }
         activeScanType = null;
       }
@@ -327,17 +361,32 @@ export function createLibraryWorkerProcessor(
         throw error;
       }
       if (importJobId && isScanJob) {
-        await db.importJob.update({
-          where: { id: importJobId },
-          data: {
-            status: "FAILED",
-            finishedAt: new Date(),
-            error: error instanceof Error ? error.message : String(error),
-            attemptsMade: job.attemptsMade,
-            scanStage: null,
-            bullmqJobId: null,
-          },
-        });
+        // Bookkeeping must never mask the failure that got us here: whatever
+        // happens recording FAILED, `error` is what the caller needs to see.
+        try {
+          const updated = await updateImportJobIfPresent({
+            where: { id: importJobId },
+            data: {
+              status: "FAILED",
+              finishedAt: new Date(),
+              error: error instanceof Error ? error.message : String(error),
+              attemptsMade: job.attemptsMade,
+              scanStage: null,
+              bullmqJobId: null,
+            },
+          });
+          if (!updated) {
+            logger.warn(
+              { jobId: job.id, jobName: job.name, importJobId },
+              "ImportJob missing; skipping FAILED update",
+            );
+          }
+        } catch (updateError) {
+          logger.error(
+            { err: updateError, jobId: job.id, jobName: job.name, importJobId },
+            "Failed to record ImportJob failure",
+          );
+        }
       }
       if (importJobId && !isScanJob && finalAttempt) {
         if (isStandaloneBatch) {

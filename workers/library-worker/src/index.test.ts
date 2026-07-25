@@ -1041,6 +1041,152 @@ describe("library worker", () => {
     );
   });
 
+  it("tolerates a missing ImportJob when marking the scan RUNNING", async () => {
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor({
+      hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
+      parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
+      scanLibraryRoot: scanLibraryRootMock,
+      detectDuplicates: detectDuplicatesMock,
+      matchSuggestions: matchSuggestionsMock,
+    });
+    scanLibraryRootMock.mockResolvedValueOnce({ missingFileAssetIds: [] });
+    // The row was deleted between enqueue and pickup.
+    importJobUpdateMock.mockRejectedValueOnce({
+      code: "P2025",
+      name: "PrismaClientKnownRequestError",
+    });
+
+    await expect(processor(createMockJob({
+      data: { libraryRootId: "root-1", importJobId: "ij-gone-start" },
+      name: "scan-library-root",
+      attemptsMade: 1,
+    }) as never, "test-token")).resolves.toBeDefined();
+
+    expect(loggerWarnMock).toHaveBeenCalledWith(
+      expect.objectContaining({ importJobId: "ij-gone-start" }),
+      "ImportJob missing; skipping RUNNING update",
+    );
+  });
+
+  it("rethrows unexpected errors when marking the scan RUNNING", async () => {
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor({
+      hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
+      parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
+      scanLibraryRoot: scanLibraryRootMock,
+      detectDuplicates: detectDuplicatesMock,
+      matchSuggestions: matchSuggestionsMock,
+    });
+    importJobUpdateMock.mockRejectedValueOnce(new Error("db unavailable"));
+
+    await expect(processor(createMockJob({
+      data: { libraryRootId: "root-1", importJobId: "ij-start-error" },
+      name: "scan-library-root",
+      attemptsMade: 1,
+    }) as never, "test-token")).rejects.toThrow("db unavailable");
+  });
+
+  it("tolerates a missing ImportJob when marking the scan SUCCEEDED", async () => {
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor({
+      hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
+      parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
+      scanLibraryRoot: scanLibraryRootMock,
+      detectDuplicates: detectDuplicatesMock,
+      matchSuggestions: matchSuggestionsMock,
+    });
+    scanLibraryRootMock.mockResolvedValueOnce({ missingFileAssetIds: [] });
+    // RUNNING lands, then the row is truncated before the scan completes.
+    importJobUpdateMock.mockResolvedValueOnce({});
+    importJobUpdateMock.mockRejectedValueOnce({
+      code: "P2025",
+      name: "PrismaClientKnownRequestError",
+    });
+
+    await expect(processor(createMockJob({
+      data: { libraryRootId: "root-1", importJobId: "ij-gone-done" },
+      name: "scan-library-root",
+      attemptsMade: 1,
+    }) as never, "test-token")).resolves.toBeDefined();
+
+    expect(loggerWarnMock).toHaveBeenCalledWith(
+      expect.objectContaining({ importJobId: "ij-gone-done" }),
+      "ImportJob missing; skipping SUCCEEDED update",
+    );
+  });
+
+  it("propagates the original handler error when the ImportJob is missing during failure handling", async () => {
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor({
+      hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
+      parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
+      scanLibraryRoot: scanLibraryRootMock,
+      detectDuplicates: detectDuplicatesMock,
+      matchSuggestions: matchSuggestionsMock,
+    });
+    scanLibraryRootMock.mockRejectedValueOnce(new Error("Disk full"));
+    // RUNNING lands, then the row disappears before the FAILED update.
+    importJobUpdateMock.mockResolvedValueOnce({});
+    importJobUpdateMock.mockRejectedValueOnce({
+      code: "P2025",
+      name: "PrismaClientKnownRequestError",
+    });
+
+    // The handler's error must win — not the bookkeeping failure on top of it.
+    await expect(processor(createMockJob({
+      data: { libraryRootId: "root-1", importJobId: "ij-gone-fail" },
+      name: "scan-library-root",
+      attemptsMade: 2,
+    }) as never, "test-token")).rejects.toThrow("Disk full");
+
+    expect(loggerWarnMock).toHaveBeenCalledWith(
+      expect.objectContaining({ importJobId: "ij-gone-fail" }),
+      "ImportJob missing; skipping FAILED update",
+    );
+  });
+
+  it("propagates the original handler error when the FAILED update fails outright", async () => {
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor({
+      hashFileAsset: hashFileAssetMock,
+      ingestUploadedBook: ingestUploadedBookMock,
+      matchFileAssetToEdition: matchFileAssetToEditionMock,
+      parseFileAssetMetadata: parseFileAssetMetadataMock,
+      processCoverForWork: processCoverForWorkMock,
+      scanLibraryRoot: scanLibraryRootMock,
+      detectDuplicates: detectDuplicatesMock,
+      matchSuggestions: matchSuggestionsMock,
+    });
+    scanLibraryRootMock.mockRejectedValueOnce(new Error("Disk full"));
+    importJobUpdateMock.mockResolvedValueOnce({});
+    importJobUpdateMock.mockRejectedValueOnce(new Error("db unavailable"));
+
+    // Even a genuine DB failure while recording FAILED must not mask the cause.
+    await expect(processor(createMockJob({
+      data: { libraryRootId: "root-1", importJobId: "ij-fail-error" },
+      name: "scan-library-root",
+      attemptsMade: 2,
+    }) as never, "test-token")).rejects.toThrow("Disk full");
+
+    expect(loggerErrorMock).toHaveBeenCalledWith(
+      expect.objectContaining({ importJobId: "ij-fail-error" }),
+      "Failed to record ImportJob failure",
+    );
+  });
+
   it("skips activeScanType reset in completion phase for non-scan jobs", async () => {
     const { createLibraryWorkerProcessor } = await import("./index");
     const processor = createLibraryWorkerProcessor({
