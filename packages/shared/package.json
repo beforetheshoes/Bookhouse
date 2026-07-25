@@ -16,8 +16,8 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "bullmq": "^5.71.0",
-    "ioredis": "5.9.3",
+    "bullmq": "^5.81.2",
+    "ioredis": "5.11.1",
     "pino": "^10.3.1"
   }
 }
