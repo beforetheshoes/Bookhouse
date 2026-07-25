@@ -43,7 +43,7 @@ services:
       PGID: ${PGID:-}
       UMASK: ${UMASK:-}
     volumes:
-      - covers:/data/covers:ro
+      - covers:/data/covers
       - kepub-cache:/data/kepub-cache
       - logs:/data/logs
       - ${EBOOKS_PATH:?set EBOOKS_PATH in .env}:/data/ebooks
