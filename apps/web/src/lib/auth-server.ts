@@ -21,12 +21,10 @@ import {
   useSession,
 } from "@tanstack/react-start/server";
 
-const authConfig = loadAuthConfig();
-
 type AuthSessionManager = Awaited<ReturnType<typeof useSession<AuthSessionData>>>;
 
 function appUrl(pathname: string): string {
-  return new URL(pathname, `${authConfig.appUrl}/`).toString();
+  return new URL(pathname, `${loadAuthConfig().appUrl}/`).toString();
 }
 
 function redirectResponse(location: string): Response {
@@ -38,20 +36,54 @@ function redirectResponse(location: string): Response {
   });
 }
 
-export const authSessionConfig = {
-  password: authConfig.secret,
-  name: "bookhouse-auth",
-  maxAge: 60 * 60 * 24 * 7,
+let sessionConfig: AuthSessionConfig | undefined;
+
+interface AuthSessionConfig {
+  password: string;
+  name: string;
+  maxAge: number;
   cookie: {
-    httpOnly: true,
-    sameSite: "lax" as const,
-    path: "/",
-    secure: new URL(authConfig.appUrl).protocol === "https:",
-  },
-};
+    httpOnly: boolean;
+    sameSite: "lax";
+    path: string;
+    secure: boolean;
+  };
+}
+
+/**
+ * Built on first use rather than at module scope, then cached.
+ *
+ * Deferring matters because rolldown (Vite 8) is free to order this module
+ * ahead of `@bookhouse/auth`, and a module-scope `loadAuthConfig()` then runs
+ * before that package's zod schema is initialized.
+ *
+ * Caching matters because `useSession` keys the per-request session on the
+ * config object. Handing out a fresh object per call makes a single request
+ * open two independent sessions, each sealing its own `Set-Cookie` — the
+ * second (empty) one lands last and silently discards the login state.
+ */
+export function getAuthSessionConfig(): AuthSessionConfig {
+  if (!sessionConfig) {
+    const authConfig = loadAuthConfig();
+
+    sessionConfig = {
+      password: authConfig.secret,
+      name: "bookhouse-auth",
+      maxAge: 60 * 60 * 24 * 7,
+      cookie: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: new URL(authConfig.appUrl).protocol === "https:",
+      },
+    };
+  }
+
+  return sessionConfig;
+}
 
 export async function getAuthSession(): Promise<AuthSessionManager> {
-  return useSession<AuthSessionData>(authSessionConfig);
+  return useSession<AuthSessionData>(getAuthSessionConfig());
 }
 
 export async function getCurrentUser(): Promise<AuthenticatedUser | null> {
@@ -118,7 +150,7 @@ export async function handleLoginRequest(): Promise<Response> {
   const returnTo = normalizeReturnTo(requestUrl.searchParams.get("returnTo"));
   const session = await getAuthSession();
   const { authorizationUrl, login } = await createAuthorizationRequest(
-    authConfig,
+    loadAuthConfig(),
     returnTo,
   );
 
@@ -139,7 +171,7 @@ export async function handleCallbackRequest(): Promise<Response> {
   }
 
   const { claims } = await exchangeAuthorizationCode({
-    config: authConfig,
+    config: loadAuthConfig(),
     currentUrl: new URL(getRequest().url),
     codeVerifier: login.codeVerifier,
     expectedState: login.state,
@@ -150,7 +182,7 @@ export async function handleCallbackRequest(): Promise<Response> {
   try {
     user = await upsertOidcUser({
       db,
-      config: authConfig,
+      config: loadAuthConfig(),
       claims,
     });
   } catch (error) {
@@ -164,7 +196,7 @@ export async function handleCallbackRequest(): Promise<Response> {
   await session.update(
     createAuthenticatedSession({
       userId: user.id,
-      issuer: authConfig.issuer,
+      issuer: loadAuthConfig().issuer,
       subject: claims.sub,
     }),
   );
@@ -173,7 +205,7 @@ export async function handleCallbackRequest(): Promise<Response> {
 }
 
 export async function handleLogoutRequest(): Promise<Response> {
-  await clearStartSession(authSessionConfig);
+  await clearStartSession(getAuthSessionConfig());
 
   return redirectResponse(appUrl("/logged-out"));
 }
