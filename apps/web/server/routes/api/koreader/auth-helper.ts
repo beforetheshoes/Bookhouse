@@ -1,4 +1,4 @@
-import { createError } from "h3";
+import { HTTPError } from "h3";
 import type { H3Event } from "h3";
 
 export interface KoreaderAuthDeps {
@@ -18,15 +18,12 @@ export interface KoreaderAuthResult {
   username: string;
 }
 
-function createAuthError(statusCode: number, message: string): Error & {
-  statusCode: number;
-  statusMessage: string;
-} {
-  return createError({
-    statusCode,
-    statusMessage: statusCode === 403 ? "Forbidden" : "Unauthorized",
+function createAuthError(status: number, message: string): HTTPError {
+  return new HTTPError({
+    status,
+    statusText: status === 403 ? "Forbidden" : "Unauthorized",
     message,
-  }) as Error & { statusCode: number; statusMessage: string };
+  });
 }
 
 export function createKoreaderAuth(deps: KoreaderAuthDeps) {

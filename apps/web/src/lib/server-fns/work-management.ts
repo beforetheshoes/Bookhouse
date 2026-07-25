@@ -4,7 +4,7 @@ import { z } from "zod";
 export const mergeWorksServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(
+  .validator(
     z.object({
       targetWorkId: z.string().min(1),
       sourceWorkIds: z.array(z.string().min(1)).min(1).max(99),
@@ -25,7 +25,7 @@ export const mergeWorksServerFn = createServerFn({
 export const splitEditionToWorkServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(z.object({ editionId: z.string().min(1) }))
+  .validator(z.object({ editionId: z.string().min(1) }))
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
@@ -64,7 +64,7 @@ export const splitEditionToWorkServerFn = createServerFn({
 export const splitEditionFilesServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(
+  .validator(
     z.object({
       editionId: z.string().min(1),
       editionFileIds: z.array(z.string().min(1)).min(1),

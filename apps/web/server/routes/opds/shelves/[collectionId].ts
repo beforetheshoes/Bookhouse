@@ -1,4 +1,4 @@
-import { defineEventHandler, createError } from "h3";
+import { defineEventHandler, HTTPError } from "h3";
 import type { H3Event } from "h3";
 import type { OpdsEditionData } from "@bookhouse/opds";
 import type { OpdsAuthDeps, OpdsAuthResult } from "../auth-helper";
@@ -24,12 +24,12 @@ export function createShelfBooksHandler(deps: ShelfBooksHandlerDeps) {
     const { collectionId } = params;
 
     if (!VALID_ID.test(collectionId)) {
-      throw createError({ statusCode: 400, statusMessage: "Invalid collectionId" });
+      throw new HTTPError({ status: 400, statusText: "Invalid collectionId" });
     }
 
     const shelfName = await deps.getShelfName(collectionId, authResult.userId);
     if (!shelfName) {
-      throw createError({ statusCode: 404, statusMessage: "Shelf not found" });
+      throw new HTTPError({ status: 404, statusText: "Shelf not found" });
     }
 
     const entries = await deps.getShelfEditions(collectionId, authResult.userId);

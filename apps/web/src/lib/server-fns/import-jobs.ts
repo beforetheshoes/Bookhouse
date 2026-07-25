@@ -32,7 +32,7 @@ const getImportJobsSchema = z.object({
 export const getImportJobsServerFn = createServerFn({
   method: "GET",
 })
-  .inputValidator(getImportJobsSchema)
+  .validator(getImportJobsSchema)
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
     const { getImportJobLiveActivity, getLibraryJobSnapshot } = await import("@bookhouse/shared");
@@ -140,7 +140,7 @@ const getImportJobDetailSchema = z.object({
 export const getImportJobDetailServerFn = createServerFn({
   method: "GET",
 })
-  .inputValidator(getImportJobDetailSchema)
+  .validator(getImportJobDetailSchema)
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
     const { NotFoundError } = await import("@bookhouse/shared");

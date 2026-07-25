@@ -82,7 +82,7 @@ export function createOLFetcher(contactEmail: string, baseFetch: typeof fetch = 
         ...(init?.headers as Record<string, string> | undefined),
         "User-Agent": `Bookhouse (${contactEmail})`,
       },
-    })) as typeof fetch;
+    }));
 }
 
 function extractOlid(key: string): string {

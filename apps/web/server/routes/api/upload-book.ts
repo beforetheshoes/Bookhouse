@@ -4,7 +4,7 @@ import { copyFile, mkdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import busboyFactory from "busboy";
-import { defineEventHandler, createError } from "h3";
+import { defineEventHandler, HTTPError } from "h3";
 import type { H3Event } from "h3";
 import {
   buildBookFolderPath,
@@ -137,21 +137,21 @@ export function createUploadBookHandler(deps: UploadBookHandlerDeps) {
       const { fields, files } = await deps.parseMultipart(event, stagingDir);
 
       if (!fields.libraryRootId) {
-        throw createError({ statusCode: 400, statusMessage: "libraryRootId is required" });
+        throw new HTTPError({ status: 400, statusText: "libraryRootId is required" });
       }
       if (files.length === 0) {
-        throw createError({ statusCode: 400, statusMessage: "at least one file is required" });
+        throw new HTTPError({ status: 400, statusText: "at least one file is required" });
       }
 
       const contentFiles = files.filter((f) => classifyContentKind(f.mediaKind) !== null);
       if (contentFiles.length === 0) {
-        throw createError({ statusCode: 400, statusMessage: "no book content files (epub/pdf/m4b/mp3) found" });
+        throw new HTTPError({ status: 400, statusText: "no book content files (epub/pdf/m4b/mp3) found" });
       }
       const contentKinds = new Set(
         contentFiles.map((f) => classifyContentKind(f.mediaKind)),
       );
       if (contentKinds.size > 1) {
-        throw createError({ statusCode: 400, statusMessage: "cannot mix ebook and audiobook files in one upload" });
+        throw new HTTPError({ status: 400, statusText: "cannot mix ebook and audiobook files in one upload" });
       }
       const mediaKind = [...contentKinds][0] as "EBOOK" | "AUDIOBOOK";
 
@@ -172,15 +172,15 @@ export function createUploadBookHandler(deps: UploadBookHandlerDeps) {
         description ??= derived.description;
       }
       if (title === "") {
-        throw createError({ statusCode: 400, statusMessage: "title is required (could not be derived from file metadata)" });
+        throw new HTTPError({ status: 400, statusText: "title is required (could not be derived from file metadata)" });
       }
       if (author === "") {
-        throw createError({ statusCode: 400, statusMessage: "author is required (could not be derived from file metadata)" });
+        throw new HTTPError({ status: 400, statusText: "author is required (could not be derived from file metadata)" });
       }
 
       const libraryRoot = await deps.db.findLibraryRoot(fields.libraryRootId);
       if (!libraryRoot) {
-        throw createError({ statusCode: 404, statusMessage: "library root not found" });
+        throw new HTTPError({ status: 404, statusText: "library root not found" });
       }
 
       const targetDir = buildBookFolderPath({
@@ -191,7 +191,7 @@ export function createUploadBookHandler(deps: UploadBookHandlerDeps) {
 
       // Conflict: refuse to overwrite an existing book folder.
       if (await deps.targetDirExists(targetDir)) {
-        throw createError({ statusCode: 409, statusMessage: "a book folder already exists at the target path" });
+        throw new HTTPError({ status: 409, statusText: "a book folder already exists at the target path" });
       }
 
       const { absolutePaths } = await deps.finalize({
@@ -248,11 +248,11 @@ export async function parseMultipartToStaging(
   const headers = Object.fromEntries(event.req.headers);
   const contentType = headers["content-type"] ?? headers["Content-Type"];
   if (typeof contentType !== "string" || !contentType.startsWith("multipart/form-data")) {
-    throw createError({ statusCode: 415, statusMessage: "Content-Type must be multipart/form-data" });
+    throw new HTTPError({ status: 415, statusText: "Content-Type must be multipart/form-data" });
   }
   const req = event.runtime?.node?.req;
   if (!req) {
-    throw createError({ statusCode: 500, statusMessage: "request stream unavailable" });
+    throw new HTTPError({ status: 500, statusText: "request stream unavailable" });
   }
 
   return new Promise((resolve, reject) => {
@@ -287,9 +287,9 @@ export async function parseMultipartToStaging(
       if (sanitized === "" || !isAllowedUploadFilename(sanitized)) {
         fileStream.resume();
         abort(
-          createError({
-            statusCode: 400,
-            statusMessage: `rejected file: ${info.filename}`,
+          new HTTPError({
+            status: 400,
+            statusText: `rejected file: ${info.filename}`,
           }),
         );
         return;
@@ -299,9 +299,9 @@ export async function parseMultipartToStaging(
       const writeStream = createWriteStream(stagingPath);
       const writePromise = pipeline(fileStream, writeStream).then(async () => {
         if ((fileStream as { truncated?: boolean }).truncated === true) {
-          throw createError({
-            statusCode: 413,
-            statusMessage: `file too large: ${info.filename}`,
+          throw new HTTPError({
+            status: 413,
+            statusText: `file too large: ${info.filename}`,
           });
         }
         const stats = await stat(stagingPath);

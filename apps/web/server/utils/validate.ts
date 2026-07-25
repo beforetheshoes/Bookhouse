@@ -1,4 +1,4 @@
-import { createError, getQuery } from "h3";
+import { HTTPError, getQuery } from "h3";
 import type { H3Event } from "h3";
 import type { z } from "zod";
 
@@ -16,7 +16,7 @@ export function parseParams<T extends z.ZodTypeAny>(
 ): z.infer<T> {
   const result = schema.safeParse(event.context.params);
   if (!result.success) {
-    throw createError({ statusCode: 400, statusMessage: "Bad Request" });
+    throw new HTTPError({ status: 400, statusText: "Bad Request" });
   }
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return
   return result.data;
@@ -28,7 +28,7 @@ export function parseQuery<T extends z.ZodTypeAny>(
 ): z.infer<T> {
   const result = schema.safeParse(getQuery(event));
   if (!result.success) {
-    throw createError({ statusCode: 400, statusMessage: "Bad Request" });
+    throw new HTTPError({ status: 400, statusText: "Bad Request" });
   }
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return
   return result.data;

@@ -34,8 +34,8 @@ let mockLoaderData: {
     },
   },
   orphanedFiles: [
-    { id: "f1", relativePath: "books/orphan1.epub", mediaKind: "EPUB" as MediaKind, sizeBytes: 1024n },
-    { id: "f2", relativePath: "books/orphan2.epub", mediaKind: "EPUB" as MediaKind, sizeBytes: 2048n },
+    { id: "f1", relativePath: "books/orphan1.epub", mediaKind: "EPUB", sizeBytes: 1024n },
+    { id: "f2", relativePath: "books/orphan2.epub", mediaKind: "EPUB", sizeBytes: 2048n },
   ],
   emptyWorks: [
     { id: "w1", titleDisplay: "Ghost Book" },
@@ -195,8 +195,8 @@ describe("health route", () => {
       mockLoaderData = {
         health: { totalWorks: 100, checks: { missingCover: { count: 0, total: 100 }, noIsbn: { count: 0, total: 100 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 2 }, pendingMatchSuggestions: { count: 0 }, emptyWorks: { count: 0 } } },
         orphanedFiles: [
-          { id: "f1", relativePath: "books/orphan1.epub", mediaKind: "EPUB" as MediaKind, sizeBytes: 1024n },
-          { id: "f2", relativePath: "books/orphan2.epub", mediaKind: "EPUB" as MediaKind, sizeBytes: 2048n },
+          { id: "f1", relativePath: "books/orphan1.epub", mediaKind: "EPUB", sizeBytes: 1024n },
+          { id: "f2", relativePath: "books/orphan2.epub", mediaKind: "EPUB", sizeBytes: 2048n },
         ],
         emptyWorks: [],
       };
@@ -209,7 +209,7 @@ describe("health route", () => {
       mockLoaderData = {
         health: { totalWorks: 100, checks: { missingCover: { count: 0, total: 100 }, noIsbn: { count: 0, total: 100 }, pendingDuplicates: { count: 0 }, orphanedFiles: { count: 1 }, pendingMatchSuggestions: { count: 0 }, emptyWorks: { count: 0 } } },
         orphanedFiles: [
-          { id: "f1", relativePath: "books/orphan1.epub", mediaKind: "EPUB" as MediaKind, sizeBytes: null },
+          { id: "f1", relativePath: "books/orphan1.epub", mediaKind: "EPUB", sizeBytes: null },
         ],
         emptyWorks: [],
       };

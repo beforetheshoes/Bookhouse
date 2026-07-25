@@ -55,7 +55,7 @@ describe("cascadeCleanupOrphans", () => {
   });
 
   it("returns zeros and does nothing when given empty fileAssetIds", async () => {
-    const result = await cascadeCleanupOrphans(createMockDb() as never, { fileAssetIds: [] });
+    const result = await cascadeCleanupOrphans(createMockDb(), { fileAssetIds: [] });
     expect(result).toEqual({ deletedEditionFileCount: 0, deletedEditionIds: [], deletedWorkIds: [] });
     expect(editionFileDeleteManyMock).not.toHaveBeenCalled();
   });
@@ -69,7 +69,7 @@ describe("cascadeCleanupOrphans", () => {
     editionFileCountMock.mockResolvedValue(3); // edition still has other files
     editionFindManyMock.mockResolvedValue([]);
 
-    const result = await cascadeCleanupOrphans(createMockDb() as never, { fileAssetIds: ["fa-1", "fa-2"] });
+    const result = await cascadeCleanupOrphans(createMockDb(), { fileAssetIds: ["fa-1", "fa-2"] });
 
     expect(editionFileFindManyMock).toHaveBeenCalledWith({
       where: { fileAssetId: { in: ["fa-1", "fa-2"] } },
@@ -85,7 +85,7 @@ describe("cascadeCleanupOrphans", () => {
     editionFileFindManyMock.mockResolvedValue([]);
     editionFindManyMock.mockResolvedValue([]);
 
-    await cascadeCleanupOrphans(createMockDb() as never, { fileAssetIds: ["fa-1"] });
+    await cascadeCleanupOrphans(createMockDb(), { fileAssetIds: ["fa-1"] });
 
     expect(duplicateCandidateDeleteManyMock).toHaveBeenCalledWith({
       where: {
@@ -113,7 +113,7 @@ describe("cascadeCleanupOrphans", () => {
     editionCountMock.mockResolvedValue(0);
     workDeleteManyMock.mockResolvedValue({ count: 1 });
 
-    const result = await cascadeCleanupOrphans(createMockDb() as never, { fileAssetIds: ["fa-1"] });
+    const result = await cascadeCleanupOrphans(createMockDb(), { fileAssetIds: ["fa-1"] });
 
     expect(editionFindManyMock).toHaveBeenCalledWith({
       where: { id: { in: ["ed-1"] } },
@@ -134,7 +134,7 @@ describe("cascadeCleanupOrphans", () => {
     editionFileCountMock.mockResolvedValue(2);
     editionFindManyMock.mockResolvedValue([]);
 
-    const result = await cascadeCleanupOrphans(createMockDb() as never, { fileAssetIds: ["fa-1"] });
+    const result = await cascadeCleanupOrphans(createMockDb(), { fileAssetIds: ["fa-1"] });
 
     expect(editionDeleteManyMock).not.toHaveBeenCalled();
     expect(result.deletedEditionIds).toEqual([]);
@@ -151,7 +151,7 @@ describe("cascadeCleanupOrphans", () => {
     editionCountMock.mockResolvedValue(0);
     workDeleteManyMock.mockResolvedValue({ count: 1 });
 
-    const result = await cascadeCleanupOrphans(createMockDb() as never, { fileAssetIds: ["fa-1"] });
+    const result = await cascadeCleanupOrphans(createMockDb(), { fileAssetIds: ["fa-1"] });
 
     expect(workDeleteManyMock).toHaveBeenCalledWith({
       where: { id: { in: ["w-1"] } },
@@ -170,7 +170,7 @@ describe("cascadeCleanupOrphans", () => {
     // w-1 still has 2 remaining editions
     editionCountMock.mockResolvedValue(2);
 
-    const result = await cascadeCleanupOrphans(createMockDb() as never, { fileAssetIds: ["fa-1"] });
+    const result = await cascadeCleanupOrphans(createMockDb(), { fileAssetIds: ["fa-1"] });
 
     expect(workDeleteManyMock).not.toHaveBeenCalled();
     expect(result.deletedWorkIds).toEqual([]);
@@ -187,7 +187,7 @@ describe("cascadeCleanupOrphans", () => {
     editionCountMock.mockResolvedValue(0);
     workDeleteManyMock.mockResolvedValue({ count: 1 });
 
-    await cascadeCleanupOrphans(createMockDb() as never, { fileAssetIds: ["fa-1"] });
+    await cascadeCleanupOrphans(createMockDb(), { fileAssetIds: ["fa-1"] });
 
     // Should have two duplicateCandidate.deleteMany calls:
     // 1st for FileAssets, 2nd for Editions
@@ -224,7 +224,7 @@ describe("cascadeCleanupOrphans", () => {
       .mockResolvedValueOnce(0);  // w-2 empty
     workDeleteManyMock.mockResolvedValue({ count: 1 });
 
-    const result = await cascadeCleanupOrphans(createMockDb() as never, { fileAssetIds: ["fa-1", "fa-2", "fa-3"] });
+    const result = await cascadeCleanupOrphans(createMockDb(), { fileAssetIds: ["fa-1", "fa-2", "fa-3"] });
 
     expect(result.deletedEditionIds).toEqual(["ed-1", "ed-3"]);
     expect(result.deletedWorkIds).toEqual(["w-2"]);
@@ -251,7 +251,7 @@ describe("cleanupOrphanedFileAssets", () => {
   });
 
   it("returns empty array for empty input", async () => {
-    const result = await cleanupOrphanedFileAssets(createOrphanDb() as never, []);
+    const result = await cleanupOrphanedFileAssets(createOrphanDb(), []);
     expect(result).toEqual({ deletedFileAssetIds: [] });
     expect(fileAssetFindManyMock).not.toHaveBeenCalled();
   });
@@ -260,7 +260,7 @@ describe("cleanupOrphanedFileAssets", () => {
     fileAssetFindManyMock.mockResolvedValue([{ id: "fa-1" }, { id: "fa-2" }]);
     fileAssetDeleteManyMock2.mockResolvedValue({ count: 2 });
 
-    const result = await cleanupOrphanedFileAssets(createOrphanDb() as never, ["fa-1", "fa-2", "fa-3"]);
+    const result = await cleanupOrphanedFileAssets(createOrphanDb(), ["fa-1", "fa-2", "fa-3"]);
 
     expect(fileAssetFindManyMock).toHaveBeenCalledWith({
       where: { id: { in: ["fa-1", "fa-2", "fa-3"] }, editionFiles: { none: {} } },
@@ -275,7 +275,7 @@ describe("cleanupOrphanedFileAssets", () => {
   it("preserves FileAssets that still have EditionFile links", async () => {
     fileAssetFindManyMock.mockResolvedValue([]); // none are orphaned
 
-    const result = await cleanupOrphanedFileAssets(createOrphanDb() as never, ["fa-1"]);
+    const result = await cleanupOrphanedFileAssets(createOrphanDb(), ["fa-1"]);
 
     expect(fileAssetDeleteManyMock2).not.toHaveBeenCalled();
     expect(result).toEqual({ deletedFileAssetIds: [] });

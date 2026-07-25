@@ -10,11 +10,11 @@ vi.mock("./_guards", () => ({
 vi.mock("@tanstack/react-start", () => ({
   createServerFn: () => {
     type Builder = {
-      inputValidator: (schema: object) => Builder;
+      validator: (schema: object) => Builder;
       handler: <T extends Record<string, string | number | boolean | null | string[] | Date | undefined>>(fn: (a: T) => T | Promise<T>) => (a: T) => T | Promise<T>;
     };
     const b: Builder = {
-      inputValidator: () => b,
+      validator: () => b,
       handler: (fn) => (a) => fn(a),
     };
     return b;
@@ -87,7 +87,7 @@ describe("kindle server functions", () => {
     it("returns configured false when no kindle:email exists", async () => {
       mockFindUnique.mockResolvedValue(null);
 
-      const result = await getKindleStatusServerFn({} as never);
+      const result = await getKindleStatusServerFn({});
 
       expect(result).toEqual({ configured: false });
       expect(mockFindUnique).toHaveBeenCalledWith({ where: { key: "kindle:email" } });
@@ -96,7 +96,7 @@ describe("kindle server functions", () => {
     it("returns configured true when kindle:email exists", async () => {
       mockFindUnique.mockResolvedValue({ key: "kindle:email", value: "me@kindle.com" });
 
-      const result = await getKindleStatusServerFn({} as never);
+      const result = await getKindleStatusServerFn({});
 
       expect(result).toEqual({ configured: true });
     });
@@ -106,7 +106,7 @@ describe("kindle server functions", () => {
     it("returns configured false when no setting exists", async () => {
       mockFindUnique.mockResolvedValue(null);
 
-      const result = await getKindleConfigServerFn({} as never);
+      const result = await getKindleConfigServerFn({});
 
       expect(result).toEqual({ configured: false });
     });
@@ -114,7 +114,7 @@ describe("kindle server functions", () => {
     it("returns configured true with email when setting exists", async () => {
       mockFindUnique.mockResolvedValue({ key: "kindle:email", value: "me@kindle.com" });
 
-      const result = await getKindleConfigServerFn({} as never);
+      const result = await getKindleConfigServerFn({});
 
       expect(result).toEqual({ configured: true, email: "me@kindle.com" });
     });
@@ -146,7 +146,7 @@ describe("kindle server functions", () => {
     it("deletes the kindle:email setting", async () => {
       mockDeleteMany.mockResolvedValue({ count: 1 });
 
-      const result = await removeKindleConfigServerFn({} as never);
+      const result = await removeKindleConfigServerFn({});
 
       expect(result).toEqual({ removed: true });
       expect(mockDeleteMany).toHaveBeenCalledWith({

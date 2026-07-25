@@ -28,7 +28,7 @@ const addDeviceSchema = z.object({
 export const addKoboDeviceServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(addDeviceSchema)
+  .validator(addDeviceSchema)
   .handler(async ({ data }) => {
     const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
@@ -68,7 +68,7 @@ async function requireOwnedKoboDevice(
 export const revokeKoboDeviceServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(revokeDeviceSchema)
+  .validator(revokeDeviceSchema)
   .handler(async ({ data }) => {
     const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
@@ -86,7 +86,7 @@ const removeDeviceSchema = z.object({
 export const removeKoboDeviceServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(removeDeviceSchema)
+  .validator(removeDeviceSchema)
   .handler(async ({ data }) => {
     const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
@@ -104,7 +104,7 @@ const updateDeviceCollectionsSchema = z.object({
 export const updateDeviceCollectionsServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(updateDeviceCollectionsSchema)
+  .validator(updateDeviceCollectionsSchema)
   .handler(async ({ data }) => {
     const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");

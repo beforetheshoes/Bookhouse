@@ -7,11 +7,11 @@ vi.mock("./_guards", () => ({
 vi.mock("@tanstack/react-start", () => ({
   createServerFn: () => {
     type Builder = {
-      inputValidator: (schema: object) => Builder;
+      validator: (schema: object) => Builder;
       handler: <T>(fn: (a: { data: { importJobId: string } }) => T | Promise<T>) => (a: { data: { importJobId: string } }) => T | Promise<T>;
     };
     const b: Builder = {
-      inputValidator: () => b,
+      validator: () => b,
       handler: (fn) => (a) => fn(a),
     };
     return b;

@@ -19,7 +19,7 @@ const searchSchema = z.object({
 export const searchLibraryServerFn = createServerFn({
   method: "GET",
 })
-  .inputValidator(searchSchema)
+  .validator(searchSchema)
   .handler(async ({ data }) => {
     const trimmed = data.query.trim();
 

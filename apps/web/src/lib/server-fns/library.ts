@@ -250,7 +250,7 @@ async function fetchWorksWithEditionSort(
 export const getFilteredLibraryWorksServerFn = createServerFn({
   method: "GET",
 })
-  .inputValidator(filterSchema)
+  .validator(filterSchema)
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
 
@@ -579,7 +579,7 @@ async function fetchEditionsWithContributorSort(
 export const getFilteredLibraryEditionsServerFn = createServerFn({
   method: "GET",
 })
-  .inputValidator(filterSchema)
+  .validator(filterSchema)
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
 
@@ -619,7 +619,7 @@ const idsOnlyFilterSchema = filterSchema.omit({ page: true, pageSize: true, sort
 export const getAllFilteredWorkIdsServerFn = createServerFn({
   method: "GET",
 })
-  .inputValidator(idsOnlyFilterSchema)
+  .validator(idsOnlyFilterSchema)
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
 

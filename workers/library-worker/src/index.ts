@@ -104,7 +104,7 @@ function createJobHandlers(
       ...(parentImportJobId ? { importJobId: parentImportJobId } : {}),
       scanJobId,
       scanQueueName,
-    } as LibraryJobPayload<TName>;
+    };
     return enqueueLibraryJob(jobName, enrichedPayload, {
       parent: { id: scanJobId, queue: scanQueueName },
     });

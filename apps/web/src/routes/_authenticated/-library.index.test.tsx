@@ -233,7 +233,7 @@ vi.mock("~/components/data-table", async () => {
 // Use real EditableTableCell so column cell renderers execute fully
 vi.mock("~/components/editable-table-cell", async () => {
   const actual = await vi.importActual("~/components/editable-table-cell");
-  return actual as Record<string, object>;
+  return actual;
 });
 
 vi.mock("~/lib/server-fns/editing", () => ({
@@ -1777,7 +1777,7 @@ describe("LibraryPage", () => {
   it("opens shelf picker dialog and adds works to selected shelf", async () => {
     mockView = "table";
     const { bulkAddToShelfServerFn } = await import("~/lib/server-fns/shelves");
-    vi.mocked(bulkAddToShelfServerFn).mockResolvedValue({ added: 1 } as never);
+    vi.mocked(bulkAddToShelfServerFn).mockResolvedValue({ added: 1 });
 
     mockLoaderData = {
       libraryResult: { works: [makeWork("Book A")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },

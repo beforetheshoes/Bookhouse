@@ -17,7 +17,7 @@ function subscribe(callback: () => void): () => void {
 }
 
 export function useGridTileSize(): [GridTileSize, (v: GridTileSize) => void] {
-  const tileSize = useSyncExternalStore(subscribe, getSnapshot, () => "small" as GridTileSize);
+  const tileSize = useSyncExternalStore(subscribe, getSnapshot, (): GridTileSize => "small");
   const [, setTick] = useState(0);
 
   const setTileSize = useCallback((v: GridTileSize) => {

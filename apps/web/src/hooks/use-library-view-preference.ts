@@ -17,7 +17,7 @@ function subscribe(callback: () => void): () => void {
 }
 
 export function useLibraryViewPreference(): [LibraryView, (v: LibraryView) => void] {
-  const view = useSyncExternalStore(subscribe, getSnapshot, () => "grid" as LibraryView);
+  const view = useSyncExternalStore(subscribe, getSnapshot, (): LibraryView => "grid");
   const [, setTick] = useState(0);
 
   const setView = useCallback((v: LibraryView) => {

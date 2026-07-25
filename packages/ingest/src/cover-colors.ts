@@ -125,6 +125,6 @@ export async function extractDominantColors(
 /* c8 ignore start — runtime wiring, tested via unit tests on extractDominantColors */
 export async function extractDominantColorsDefault(imageBuffer: Buffer): Promise<string[]> {
   const sharp = await import("sharp");
-  return extractDominantColors(imageBuffer, sharp.default as SharpFn);
+  return extractDominantColors(imageBuffer, sharp.default);
 }
 /* c8 ignore stop */

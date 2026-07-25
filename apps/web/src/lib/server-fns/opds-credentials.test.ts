@@ -3,11 +3,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("@tanstack/react-start", () => ({
   createServerFn: () => {
     type Builder = {
-      inputValidator: (schema: object) => Builder;
+      validator: (schema: object) => Builder;
       handler: <T extends Record<string, string | number | boolean | null | string[] | Date | undefined>>(fn: (a: T) => T | Promise<T>) => (a: T) => T | Promise<T>;
     };
     const b: Builder = {
-      inputValidator: () => b,
+      validator: () => b,
       handler: (fn) => (a) => fn(a),
     };
     return b;
@@ -69,7 +69,7 @@ describe("opds-credentials server functions", () => {
       ];
       mockFindMany.mockResolvedValue(credentials);
 
-      const result = await getOpdsCredentialsServerFn({} as never);
+      const result = await getOpdsCredentialsServerFn({});
 
       expect(result).toEqual(credentials);
       expect(mockFindMany).toHaveBeenCalledWith({
@@ -88,7 +88,7 @@ describe("opds-credentials server functions", () => {
       mockGetCurrentUser.mockResolvedValue(null);
 
       await expect(
-        getOpdsCredentialsServerFn({} as never),
+        getOpdsCredentialsServerFn({}),
       ).rejects.toThrow("Not authenticated");
     });
   });

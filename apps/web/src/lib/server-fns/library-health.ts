@@ -104,7 +104,7 @@ export type OrphanedFile = Awaited<
 export const deleteOrphanedFileServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(z.object({ fileAssetId: z.string().min(1) }))
+  .validator(z.object({ fileAssetId: z.string().min(1) }))
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");

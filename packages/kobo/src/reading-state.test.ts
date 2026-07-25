@@ -165,7 +165,7 @@ describe("parseStateUpdate", () => {
   });
 
   it("returns error for missing ReadingStates", () => {
-    const result = parseStateUpdate({} as { ReadingStates: never[] });
+    const result = parseStateUpdate({});
     expect(result).toEqual({ error: "Missing ReadingStates" });
   });
 

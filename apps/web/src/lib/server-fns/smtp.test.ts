@@ -10,11 +10,11 @@ vi.mock("./_guards", () => ({
 vi.mock("@tanstack/react-start", () => ({
   createServerFn: () => {
     type Builder = {
-      inputValidator: (schema: object) => Builder;
+      validator: (schema: object) => Builder;
       handler: <T extends Record<string, string | number | boolean | null | string[] | Date | undefined>>(fn: (a: T) => T | Promise<T>) => (a: T) => T | Promise<T>;
     };
     const b: Builder = {
-      inputValidator: () => b,
+      validator: () => b,
       handler: (fn) => (a) => fn(a),
     };
     return b;
@@ -87,7 +87,7 @@ describe("smtp server functions", () => {
     it("returns configured false when no smtp:host exists", async () => {
       mockFindUnique.mockResolvedValue(null);
 
-      const result = await getSmtpStatusServerFn({} as never);
+      const result = await getSmtpStatusServerFn({});
 
       expect(result).toEqual({ configured: false });
       expect(mockFindUnique).toHaveBeenCalledWith({ where: { key: "smtp:host" } });
@@ -96,7 +96,7 @@ describe("smtp server functions", () => {
     it("returns configured true when smtp:host exists", async () => {
       mockFindUnique.mockResolvedValue({ key: "smtp:host", value: "mail.example.com" });
 
-      const result = await getSmtpStatusServerFn({} as never);
+      const result = await getSmtpStatusServerFn({});
 
       expect(result).toEqual({ configured: true });
     });
@@ -106,7 +106,7 @@ describe("smtp server functions", () => {
     it("returns configured false when no settings exist", async () => {
       mockFindMany.mockResolvedValue([]);
 
-      const result = await getSmtpConfigServerFn({} as never);
+      const result = await getSmtpConfigServerFn({});
 
       expect(result).toEqual({ configured: false });
     });
@@ -121,7 +121,7 @@ describe("smtp server functions", () => {
         { key: "smtp:security", value: "starttls" },
       ]);
 
-      const result = await getSmtpConfigServerFn({} as never);
+      const result = await getSmtpConfigServerFn({});
 
       expect(result).toEqual({
         configured: true,
@@ -138,7 +138,7 @@ describe("smtp server functions", () => {
         { key: "smtp:port", value: "587" },
       ]);
 
-      const result = await getSmtpConfigServerFn({} as never);
+      const result = await getSmtpConfigServerFn({});
 
       expect(result).toEqual({ configured: false });
     });
@@ -148,7 +148,7 @@ describe("smtp server functions", () => {
         { key: "smtp:host", value: "mail.example.com" },
       ]);
 
-      const result = await getSmtpConfigServerFn({} as never);
+      const result = await getSmtpConfigServerFn({});
 
       expect(result).toEqual({
         configured: true,
@@ -216,7 +216,7 @@ describe("smtp server functions", () => {
     it("deletes all smtp settings", async () => {
       mockDeleteMany.mockResolvedValue({ count: 6 });
 
-      const result = await removeSmtpConfigServerFn({} as never);
+      const result = await removeSmtpConfigServerFn({});
 
       expect(result).toEqual({ removed: true });
       expect(mockDeleteMany).toHaveBeenCalledWith({

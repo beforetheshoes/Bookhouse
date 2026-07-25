@@ -6,7 +6,6 @@ import {
   writeAudiobookMetadataJson,
   writeCoverJpeg,
   writeOpfSidecar,
-  type CoverWriterDeps,
 } from "./sidecar-writer";
 
 describe("buildAudiobookMetadataJson", () => {
@@ -272,7 +271,7 @@ describe("writeCoverJpeg", () => {
     await writeCoverJpeg(
       "/data/ebooks/Author/Title",
       Buffer.from("png-bytes"),
-      { mkdir, writeFile, sharp: sharpFn as never as CoverWriterDeps["sharp"] },
+      { mkdir, writeFile, sharp: sharpFn as never },
     );
 
     expect(mkdir).toHaveBeenCalledWith("/data/ebooks/Author/Title", {

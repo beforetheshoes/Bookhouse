@@ -1,6 +1,6 @@
 import path from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
-import { defineEventHandler, createError } from "h3";
+import { defineEventHandler, HTTPError } from "h3";
 import type { H3Event } from "h3";
 import { VALID_WORK_ID, MAX_FILE_SIZE, isValidImageData, isAllowedMimeType } from "@bookhouse/ingest";
 
@@ -25,26 +25,26 @@ export function createUploadHandler(deps: UploadHandlerDeps) {
     const { workId } = params;
 
     if (!VALID_WORK_ID.test(workId)) {
-      throw createError({ statusCode: 400, statusMessage: "Invalid workId" });
+      throw new HTTPError({ status: 400, statusText: "Invalid workId" });
     }
 
     const formData = await deps.readFormData(event);
     const fileField = formData?.find((f) => f.name === "file");
 
     if (!fileField?.data || fileField.data.length === 0) {
-      throw createError({ statusCode: 400, statusMessage: "No file uploaded" });
+      throw new HTTPError({ status: 400, statusText: "No file uploaded" });
     }
 
     if (fileField.data.length > MAX_FILE_SIZE) {
-      throw createError({ statusCode: 400, statusMessage: "File too large (max 10 MB)" });
+      throw new HTTPError({ status: 400, statusText: "File too large (max 10 MB)" });
     }
 
     if (!isAllowedMimeType(fileField.type)) {
-      throw createError({ statusCode: 400, statusMessage: "Invalid image type" });
+      throw new HTTPError({ status: 400, statusText: "Invalid image type" });
     }
 
     if (!isValidImageData(fileField.data)) {
-      throw createError({ statusCode: 400, statusMessage: "File is not a valid image" });
+      throw new HTTPError({ status: 400, statusText: "File is not a valid image" });
     }
 
     const imageBuffer = Buffer.from(fileField.data);
@@ -61,7 +61,7 @@ export function createUploadHandler(deps: UploadHandlerDeps) {
 
     const work = await deps.db.findWork(workId);
     if (!work) {
-      throw createError({ statusCode: 404, statusMessage: "Work not found" });
+      throw new HTTPError({ status: 404, statusText: "Work not found" });
     }
 
     const mergedEdited = [...new Set([...work.editedFields, "coverPath"])];
@@ -98,7 +98,7 @@ export default defineEventHandler(async (event) => {
         { sharp: sharpModule.default as never, mkdir, writeFile },
       );
     },
-    extractColors: (buf) => extractDominantColors(buf, sharpModule.default as never),
+    extractColors: (buf) => extractDominantColors(buf, sharpModule.default),
     db: {
       findWork: (id) => db.work.findUnique({ where: { id }, select: { editedFields: true } }),
       updateWork: async (id, data) => { await db.work.update({ where: { id }, data }); },

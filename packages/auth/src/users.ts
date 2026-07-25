@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from "@bookhouse/db";
+import type { PrismaClient } from "@bookhouse/db";
 import { AuthAccessDeniedError } from "./errors";
 import { OWNER_ROLE, VIEWER_ROLE } from "./roles";
 import type {
@@ -89,7 +89,7 @@ export async function upsertOidcUser(input: {
           id: existingIdentity.id,
         },
         data: {
-          metadata: normalizedClaims.raw as Prisma.InputJsonValue,
+          metadata: normalizedClaims.raw,
         },
       });
 
@@ -162,7 +162,7 @@ export async function upsertOidcUser(input: {
         userId: user.id,
         provider: config.issuer,
         providerAccountId: normalizedClaims.sub,
-        metadata: normalizedClaims.raw as Prisma.InputJsonValue,
+        metadata: normalizedClaims.raw,
       },
     });
 

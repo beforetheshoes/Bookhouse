@@ -211,6 +211,6 @@ export function processCoverForWorkDefault(db: CoverDb) {
       detectAdjacentCover: (directory) => detectAdjacentCover(directory, readdir),
       resizeCoverImage: (resizeInput) =>
         resizeCoverImage(resizeInput, { sharp: sharp as never, mkdir, writeFile }),
-      extractColors: (buf) => extractDominantColors(buf, sharp as never),
+      extractColors: (buf) => extractDominantColors(buf, sharp),
     });
 }

@@ -9,46 +9,46 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as LoggedOutRouteImport } from './routes/logged-out'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
+import { Route as LoggedOutRouteImport } from './routes/logged-out'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
-import { Route as AuthLogoutRouteImport } from './routes/auth/logout'
-import { Route as AuthLoginRouteImport } from './routes/auth/login'
-import { Route as AuthDeniedRouteImport } from './routes/auth/denied'
-import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
-import { Route as AuthenticatedUploadRouteImport } from './routes/_authenticated/upload'
-import { Route as AuthenticatedShelvesRouteImport } from './routes/_authenticated/shelves'
-import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
-import { Route as AuthenticatedSeriesRouteImport } from './routes/_authenticated/series'
-import { Route as AuthenticatedMatchSuggestionsRouteImport } from './routes/_authenticated/match-suggestions'
-import { Route as AuthenticatedLibraryRouteImport } from './routes/_authenticated/library'
-import { Route as AuthenticatedHealthRouteImport } from './routes/_authenticated/health'
-import { Route as AuthenticatedDuplicatesRouteImport } from './routes/_authenticated/duplicates'
 import { Route as AuthenticatedAuthorsRouteImport } from './routes/_authenticated/authors'
-import { Route as AuthenticatedShelvesIndexRouteImport } from './routes/_authenticated/shelves.index'
-import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
-import { Route as AuthenticatedSeriesIndexRouteImport } from './routes/_authenticated/series.index'
-import { Route as AuthenticatedLibraryIndexRouteImport } from './routes/_authenticated/library.index'
+import { Route as AuthenticatedDuplicatesRouteImport } from './routes/_authenticated/duplicates'
+import { Route as AuthenticatedHealthRouteImport } from './routes/_authenticated/health'
+import { Route as AuthenticatedLibraryRouteImport } from './routes/_authenticated/library'
+import { Route as AuthenticatedMatchSuggestionsRouteImport } from './routes/_authenticated/match-suggestions'
+import { Route as AuthenticatedSeriesRouteImport } from './routes/_authenticated/series'
+import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
+import { Route as AuthenticatedShelvesRouteImport } from './routes/_authenticated/shelves'
+import { Route as AuthenticatedUploadRouteImport } from './routes/_authenticated/upload'
+import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
+import { Route as AuthDeniedRouteImport } from './routes/auth/denied'
+import { Route as AuthLoginRouteImport } from './routes/auth/login'
+import { Route as AuthLogoutRouteImport } from './routes/auth/logout'
 import { Route as AuthenticatedAuthorsIndexRouteImport } from './routes/_authenticated/authors.index'
-import { Route as AuthenticatedShelvesShelfIdRouteImport } from './routes/_authenticated/shelves.$shelfId'
-import { Route as AuthenticatedSettingsUsersRouteImport } from './routes/_authenticated/settings/users'
-import { Route as AuthenticatedSettingsMissingFilesRouteImport } from './routes/_authenticated/settings/missing-files'
-import { Route as AuthenticatedSettingsLibrariesRouteImport } from './routes/_authenticated/settings/libraries'
-import { Route as AuthenticatedSettingsJobsRouteImport } from './routes/_authenticated/settings/jobs'
-import { Route as AuthenticatedSeriesSeriesIdRouteImport } from './routes/_authenticated/series.$seriesId'
-import { Route as AuthenticatedLibraryWorkIdRouteImport } from './routes/_authenticated/library.$workId'
 import { Route as AuthenticatedAuthorsAuthorIdRouteImport } from './routes/_authenticated/authors.$authorId'
+import { Route as AuthenticatedLibraryIndexRouteImport } from './routes/_authenticated/library.index'
+import { Route as AuthenticatedLibraryWorkIdRouteImport } from './routes/_authenticated/library.$workId'
+import { Route as AuthenticatedSeriesIndexRouteImport } from './routes/_authenticated/series.index'
+import { Route as AuthenticatedSeriesSeriesIdRouteImport } from './routes/_authenticated/series.$seriesId'
+import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
+import { Route as AuthenticatedSettingsJobsRouteImport } from './routes/_authenticated/settings/jobs'
+import { Route as AuthenticatedSettingsLibrariesRouteImport } from './routes/_authenticated/settings/libraries'
+import { Route as AuthenticatedSettingsMissingFilesRouteImport } from './routes/_authenticated/settings/missing-files'
+import { Route as AuthenticatedSettingsUsersRouteImport } from './routes/_authenticated/settings/users'
+import { Route as AuthenticatedShelvesIndexRouteImport } from './routes/_authenticated/shelves.index'
+import { Route as AuthenticatedShelvesShelfIdRouteImport } from './routes/_authenticated/shelves.$shelfId'
 import { Route as AuthenticatedSettingsJobsIndexRouteImport } from './routes/_authenticated/settings/jobs.index'
-import { Route as AuthenticatedSettingsLibraryIssuesLibraryRootIdRouteImport } from './routes/_authenticated/settings/library-issues.$libraryRootId'
 import { Route as AuthenticatedSettingsJobsJobIdRouteImport } from './routes/_authenticated/settings/jobs.$jobId'
+import { Route as AuthenticatedSettingsLibraryIssuesLibraryRootIdRouteImport } from './routes/_authenticated/settings/library-issues.$libraryRootId'
 
+const AuthenticatedRoute = AuthenticatedRouteImport.update({
+  id: '/_authenticated',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoggedOutRoute = LoggedOutRouteImport.update({
   id: '/logged-out',
   path: '/logged-out',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthenticatedRoute = AuthenticatedRouteImport.update({
-  id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
@@ -56,44 +56,24 @@ const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthLogoutRoute = AuthLogoutRouteImport.update({
-  id: '/auth/logout',
-  path: '/auth/logout',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthLoginRoute = AuthLoginRouteImport.update({
-  id: '/auth/login',
-  path: '/auth/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthDeniedRoute = AuthDeniedRouteImport.update({
-  id: '/auth/denied',
-  path: '/auth/denied',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthCallbackRoute = AuthCallbackRouteImport.update({
-  id: '/auth/callback',
-  path: '/auth/callback',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthenticatedUploadRoute = AuthenticatedUploadRouteImport.update({
-  id: '/upload',
-  path: '/upload',
+const AuthenticatedAuthorsRoute = AuthenticatedAuthorsRouteImport.update({
+  id: '/authors',
+  path: '/authors',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedShelvesRoute = AuthenticatedShelvesRouteImport.update({
-  id: '/shelves',
-  path: '/shelves',
+const AuthenticatedDuplicatesRoute = AuthenticatedDuplicatesRouteImport.update({
+  id: '/duplicates',
+  path: '/duplicates',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
+const AuthenticatedHealthRoute = AuthenticatedHealthRouteImport.update({
+  id: '/health',
+  path: '/health',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedSeriesRoute = AuthenticatedSeriesRouteImport.update({
-  id: '/series',
-  path: '/series',
+const AuthenticatedLibraryRoute = AuthenticatedLibraryRouteImport.update({
+  id: '/library',
+  path: '/library',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedMatchSuggestionsRoute =
@@ -102,43 +82,57 @@ const AuthenticatedMatchSuggestionsRoute =
     path: '/match-suggestions',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
-const AuthenticatedLibraryRoute = AuthenticatedLibraryRouteImport.update({
-  id: '/library',
-  path: '/library',
+const AuthenticatedSeriesRoute = AuthenticatedSeriesRouteImport.update({
+  id: '/series',
+  path: '/series',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedHealthRoute = AuthenticatedHealthRouteImport.update({
-  id: '/health',
-  path: '/health',
+const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedDuplicatesRoute = AuthenticatedDuplicatesRouteImport.update({
-  id: '/duplicates',
-  path: '/duplicates',
+const AuthenticatedShelvesRoute = AuthenticatedShelvesRouteImport.update({
+  id: '/shelves',
+  path: '/shelves',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedAuthorsRoute = AuthenticatedAuthorsRouteImport.update({
-  id: '/authors',
-  path: '/authors',
+const AuthenticatedUploadRoute = AuthenticatedUploadRouteImport.update({
+  id: '/upload',
+  path: '/upload',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedShelvesIndexRoute =
-  AuthenticatedShelvesIndexRouteImport.update({
+const AuthCallbackRoute = AuthCallbackRouteImport.update({
+  id: '/auth/callback',
+  path: '/auth/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthDeniedRoute = AuthDeniedRouteImport.update({
+  id: '/auth/denied',
+  path: '/auth/denied',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthLoginRoute = AuthLoginRouteImport.update({
+  id: '/auth/login',
+  path: '/auth/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthLogoutRoute = AuthLogoutRouteImport.update({
+  id: '/auth/logout',
+  path: '/auth/logout',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedAuthorsIndexRoute =
+  AuthenticatedAuthorsIndexRouteImport.update({
     id: '/',
     path: '/',
-    getParentRoute: () => AuthenticatedShelvesRoute,
+    getParentRoute: () => AuthenticatedAuthorsRoute,
   } as any)
-const AuthenticatedSettingsIndexRoute =
-  AuthenticatedSettingsIndexRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => AuthenticatedSettingsRoute,
-  } as any)
-const AuthenticatedSeriesIndexRoute =
-  AuthenticatedSeriesIndexRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => AuthenticatedSeriesRoute,
+const AuthenticatedAuthorsAuthorIdRoute =
+  AuthenticatedAuthorsAuthorIdRouteImport.update({
+    id: '/$authorId',
+    path: '/$authorId',
+    getParentRoute: () => AuthenticatedAuthorsRoute,
   } as any)
 const AuthenticatedLibraryIndexRoute =
   AuthenticatedLibraryIndexRouteImport.update({
@@ -146,34 +140,28 @@ const AuthenticatedLibraryIndexRoute =
     path: '/',
     getParentRoute: () => AuthenticatedLibraryRoute,
   } as any)
-const AuthenticatedAuthorsIndexRoute =
-  AuthenticatedAuthorsIndexRouteImport.update({
+const AuthenticatedLibraryWorkIdRoute =
+  AuthenticatedLibraryWorkIdRouteImport.update({
+    id: '/$workId',
+    path: '/$workId',
+    getParentRoute: () => AuthenticatedLibraryRoute,
+  } as any)
+const AuthenticatedSeriesIndexRoute =
+  AuthenticatedSeriesIndexRouteImport.update({
     id: '/',
     path: '/',
-    getParentRoute: () => AuthenticatedAuthorsRoute,
+    getParentRoute: () => AuthenticatedSeriesRoute,
   } as any)
-const AuthenticatedShelvesShelfIdRoute =
-  AuthenticatedShelvesShelfIdRouteImport.update({
-    id: '/$shelfId',
-    path: '/$shelfId',
-    getParentRoute: () => AuthenticatedShelvesRoute,
+const AuthenticatedSeriesSeriesIdRoute =
+  AuthenticatedSeriesSeriesIdRouteImport.update({
+    id: '/$seriesId',
+    path: '/$seriesId',
+    getParentRoute: () => AuthenticatedSeriesRoute,
   } as any)
-const AuthenticatedSettingsUsersRoute =
-  AuthenticatedSettingsUsersRouteImport.update({
-    id: '/users',
-    path: '/users',
-    getParentRoute: () => AuthenticatedSettingsRoute,
-  } as any)
-const AuthenticatedSettingsMissingFilesRoute =
-  AuthenticatedSettingsMissingFilesRouteImport.update({
-    id: '/missing-files',
-    path: '/missing-files',
-    getParentRoute: () => AuthenticatedSettingsRoute,
-  } as any)
-const AuthenticatedSettingsLibrariesRoute =
-  AuthenticatedSettingsLibrariesRouteImport.update({
-    id: '/libraries',
-    path: '/libraries',
+const AuthenticatedSettingsIndexRoute =
+  AuthenticatedSettingsIndexRouteImport.update({
+    id: '/',
+    path: '/',
     getParentRoute: () => AuthenticatedSettingsRoute,
   } as any)
 const AuthenticatedSettingsJobsRoute =
@@ -182,23 +170,35 @@ const AuthenticatedSettingsJobsRoute =
     path: '/jobs',
     getParentRoute: () => AuthenticatedSettingsRoute,
   } as any)
-const AuthenticatedSeriesSeriesIdRoute =
-  AuthenticatedSeriesSeriesIdRouteImport.update({
-    id: '/$seriesId',
-    path: '/$seriesId',
-    getParentRoute: () => AuthenticatedSeriesRoute,
+const AuthenticatedSettingsLibrariesRoute =
+  AuthenticatedSettingsLibrariesRouteImport.update({
+    id: '/libraries',
+    path: '/libraries',
+    getParentRoute: () => AuthenticatedSettingsRoute,
   } as any)
-const AuthenticatedLibraryWorkIdRoute =
-  AuthenticatedLibraryWorkIdRouteImport.update({
-    id: '/$workId',
-    path: '/$workId',
-    getParentRoute: () => AuthenticatedLibraryRoute,
+const AuthenticatedSettingsMissingFilesRoute =
+  AuthenticatedSettingsMissingFilesRouteImport.update({
+    id: '/missing-files',
+    path: '/missing-files',
+    getParentRoute: () => AuthenticatedSettingsRoute,
   } as any)
-const AuthenticatedAuthorsAuthorIdRoute =
-  AuthenticatedAuthorsAuthorIdRouteImport.update({
-    id: '/$authorId',
-    path: '/$authorId',
-    getParentRoute: () => AuthenticatedAuthorsRoute,
+const AuthenticatedSettingsUsersRoute =
+  AuthenticatedSettingsUsersRouteImport.update({
+    id: '/users',
+    path: '/users',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
+const AuthenticatedShelvesIndexRoute =
+  AuthenticatedShelvesIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedShelvesRoute,
+  } as any)
+const AuthenticatedShelvesShelfIdRoute =
+  AuthenticatedShelvesShelfIdRouteImport.update({
+    id: '/$shelfId',
+    path: '/$shelfId',
+    getParentRoute: () => AuthenticatedShelvesRoute,
   } as any)
 const AuthenticatedSettingsJobsIndexRoute =
   AuthenticatedSettingsJobsIndexRouteImport.update({
@@ -206,17 +206,17 @@ const AuthenticatedSettingsJobsIndexRoute =
     path: '/',
     getParentRoute: () => AuthenticatedSettingsJobsRoute,
   } as any)
-const AuthenticatedSettingsLibraryIssuesLibraryRootIdRoute =
-  AuthenticatedSettingsLibraryIssuesLibraryRootIdRouteImport.update({
-    id: '/library-issues/$libraryRootId',
-    path: '/library-issues/$libraryRootId',
-    getParentRoute: () => AuthenticatedSettingsRoute,
-  } as any)
 const AuthenticatedSettingsJobsJobIdRoute =
   AuthenticatedSettingsJobsJobIdRouteImport.update({
     id: '/$jobId',
     path: '/$jobId',
     getParentRoute: () => AuthenticatedSettingsJobsRoute,
+  } as any)
+const AuthenticatedSettingsLibraryIssuesLibraryRootIdRoute =
+  AuthenticatedSettingsLibraryIssuesLibraryRootIdRouteImport.update({
+    id: '/library-issues/$libraryRootId',
+    path: '/library-issues/$libraryRootId',
+    getParentRoute: () => AuthenticatedSettingsRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -422,18 +422,18 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/logged-out': {
-      id: '/logged-out'
-      path: '/logged-out'
-      fullPath: '/logged-out'
-      preLoaderRoute: typeof LoggedOutRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/_authenticated': {
       id: '/_authenticated'
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AuthenticatedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/logged-out': {
+      id: '/logged-out'
+      path: '/logged-out'
+      fullPath: '/logged-out'
+      preLoaderRoute: typeof LoggedOutRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/': {
@@ -443,81 +443,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/auth/logout': {
-      id: '/auth/logout'
-      path: '/auth/logout'
-      fullPath: '/auth/logout'
-      preLoaderRoute: typeof AuthLogoutRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/auth/login': {
-      id: '/auth/login'
-      path: '/auth/login'
-      fullPath: '/auth/login'
-      preLoaderRoute: typeof AuthLoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/auth/denied': {
-      id: '/auth/denied'
-      path: '/auth/denied'
-      fullPath: '/auth/denied'
-      preLoaderRoute: typeof AuthDeniedRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/auth/callback': {
-      id: '/auth/callback'
-      path: '/auth/callback'
-      fullPath: '/auth/callback'
-      preLoaderRoute: typeof AuthCallbackRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_authenticated/upload': {
-      id: '/_authenticated/upload'
-      path: '/upload'
-      fullPath: '/upload'
-      preLoaderRoute: typeof AuthenticatedUploadRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/shelves': {
-      id: '/_authenticated/shelves'
-      path: '/shelves'
-      fullPath: '/shelves'
-      preLoaderRoute: typeof AuthenticatedShelvesRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/settings': {
-      id: '/_authenticated/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof AuthenticatedSettingsRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/series': {
-      id: '/_authenticated/series'
-      path: '/series'
-      fullPath: '/series'
-      preLoaderRoute: typeof AuthenticatedSeriesRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/match-suggestions': {
-      id: '/_authenticated/match-suggestions'
-      path: '/match-suggestions'
-      fullPath: '/match-suggestions'
-      preLoaderRoute: typeof AuthenticatedMatchSuggestionsRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/library': {
-      id: '/_authenticated/library'
-      path: '/library'
-      fullPath: '/library'
-      preLoaderRoute: typeof AuthenticatedLibraryRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/health': {
-      id: '/_authenticated/health'
-      path: '/health'
-      fullPath: '/health'
-      preLoaderRoute: typeof AuthenticatedHealthRouteImport
+    '/_authenticated/authors': {
+      id: '/_authenticated/authors'
+      path: '/authors'
+      fullPath: '/authors'
+      preLoaderRoute: typeof AuthenticatedAuthorsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/duplicates': {
@@ -527,40 +457,82 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDuplicatesRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/authors': {
-      id: '/_authenticated/authors'
-      path: '/authors'
-      fullPath: '/authors'
-      preLoaderRoute: typeof AuthenticatedAuthorsRouteImport
+    '/_authenticated/health': {
+      id: '/_authenticated/health'
+      path: '/health'
+      fullPath: '/health'
+      preLoaderRoute: typeof AuthenticatedHealthRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/shelves/': {
-      id: '/_authenticated/shelves/'
-      path: '/'
-      fullPath: '/shelves/'
-      preLoaderRoute: typeof AuthenticatedShelvesIndexRouteImport
-      parentRoute: typeof AuthenticatedShelvesRoute
+    '/_authenticated/library': {
+      id: '/_authenticated/library'
+      path: '/library'
+      fullPath: '/library'
+      preLoaderRoute: typeof AuthenticatedLibraryRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/settings/': {
-      id: '/_authenticated/settings/'
-      path: '/'
-      fullPath: '/settings/'
-      preLoaderRoute: typeof AuthenticatedSettingsIndexRouteImport
-      parentRoute: typeof AuthenticatedSettingsRoute
+    '/_authenticated/match-suggestions': {
+      id: '/_authenticated/match-suggestions'
+      path: '/match-suggestions'
+      fullPath: '/match-suggestions'
+      preLoaderRoute: typeof AuthenticatedMatchSuggestionsRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/series/': {
-      id: '/_authenticated/series/'
-      path: '/'
-      fullPath: '/series/'
-      preLoaderRoute: typeof AuthenticatedSeriesIndexRouteImport
-      parentRoute: typeof AuthenticatedSeriesRoute
+    '/_authenticated/series': {
+      id: '/_authenticated/series'
+      path: '/series'
+      fullPath: '/series'
+      preLoaderRoute: typeof AuthenticatedSeriesRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/library/': {
-      id: '/_authenticated/library/'
-      path: '/'
-      fullPath: '/library/'
-      preLoaderRoute: typeof AuthenticatedLibraryIndexRouteImport
-      parentRoute: typeof AuthenticatedLibraryRoute
+    '/_authenticated/settings': {
+      id: '/_authenticated/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AuthenticatedSettingsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/shelves': {
+      id: '/_authenticated/shelves'
+      path: '/shelves'
+      fullPath: '/shelves'
+      preLoaderRoute: typeof AuthenticatedShelvesRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/upload': {
+      id: '/_authenticated/upload'
+      path: '/upload'
+      fullPath: '/upload'
+      preLoaderRoute: typeof AuthenticatedUploadRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/auth/callback': {
+      id: '/auth/callback'
+      path: '/auth/callback'
+      fullPath: '/auth/callback'
+      preLoaderRoute: typeof AuthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/denied': {
+      id: '/auth/denied'
+      path: '/auth/denied'
+      fullPath: '/auth/denied'
+      preLoaderRoute: typeof AuthDeniedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/login': {
+      id: '/auth/login'
+      path: '/auth/login'
+      fullPath: '/auth/login'
+      preLoaderRoute: typeof AuthLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/logout': {
+      id: '/auth/logout'
+      path: '/auth/logout'
+      fullPath: '/auth/logout'
+      preLoaderRoute: typeof AuthLogoutRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_authenticated/authors/': {
       id: '/_authenticated/authors/'
@@ -569,32 +541,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAuthorsIndexRouteImport
       parentRoute: typeof AuthenticatedAuthorsRoute
     }
-    '/_authenticated/shelves/$shelfId': {
-      id: '/_authenticated/shelves/$shelfId'
-      path: '/$shelfId'
-      fullPath: '/shelves/$shelfId'
-      preLoaderRoute: typeof AuthenticatedShelvesShelfIdRouteImport
-      parentRoute: typeof AuthenticatedShelvesRoute
+    '/_authenticated/authors/$authorId': {
+      id: '/_authenticated/authors/$authorId'
+      path: '/$authorId'
+      fullPath: '/authors/$authorId'
+      preLoaderRoute: typeof AuthenticatedAuthorsAuthorIdRouteImport
+      parentRoute: typeof AuthenticatedAuthorsRoute
     }
-    '/_authenticated/settings/users': {
-      id: '/_authenticated/settings/users'
-      path: '/users'
-      fullPath: '/settings/users'
-      preLoaderRoute: typeof AuthenticatedSettingsUsersRouteImport
-      parentRoute: typeof AuthenticatedSettingsRoute
+    '/_authenticated/library/': {
+      id: '/_authenticated/library/'
+      path: '/'
+      fullPath: '/library/'
+      preLoaderRoute: typeof AuthenticatedLibraryIndexRouteImport
+      parentRoute: typeof AuthenticatedLibraryRoute
     }
-    '/_authenticated/settings/missing-files': {
-      id: '/_authenticated/settings/missing-files'
-      path: '/missing-files'
-      fullPath: '/settings/missing-files'
-      preLoaderRoute: typeof AuthenticatedSettingsMissingFilesRouteImport
-      parentRoute: typeof AuthenticatedSettingsRoute
+    '/_authenticated/library/$workId': {
+      id: '/_authenticated/library/$workId'
+      path: '/$workId'
+      fullPath: '/library/$workId'
+      preLoaderRoute: typeof AuthenticatedLibraryWorkIdRouteImport
+      parentRoute: typeof AuthenticatedLibraryRoute
     }
-    '/_authenticated/settings/libraries': {
-      id: '/_authenticated/settings/libraries'
-      path: '/libraries'
-      fullPath: '/settings/libraries'
-      preLoaderRoute: typeof AuthenticatedSettingsLibrariesRouteImport
+    '/_authenticated/series/': {
+      id: '/_authenticated/series/'
+      path: '/'
+      fullPath: '/series/'
+      preLoaderRoute: typeof AuthenticatedSeriesIndexRouteImport
+      parentRoute: typeof AuthenticatedSeriesRoute
+    }
+    '/_authenticated/series/$seriesId': {
+      id: '/_authenticated/series/$seriesId'
+      path: '/$seriesId'
+      fullPath: '/series/$seriesId'
+      preLoaderRoute: typeof AuthenticatedSeriesSeriesIdRouteImport
+      parentRoute: typeof AuthenticatedSeriesRoute
+    }
+    '/_authenticated/settings/': {
+      id: '/_authenticated/settings/'
+      path: '/'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof AuthenticatedSettingsIndexRouteImport
       parentRoute: typeof AuthenticatedSettingsRoute
     }
     '/_authenticated/settings/jobs': {
@@ -604,26 +590,40 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsJobsRouteImport
       parentRoute: typeof AuthenticatedSettingsRoute
     }
-    '/_authenticated/series/$seriesId': {
-      id: '/_authenticated/series/$seriesId'
-      path: '/$seriesId'
-      fullPath: '/series/$seriesId'
-      preLoaderRoute: typeof AuthenticatedSeriesSeriesIdRouteImport
-      parentRoute: typeof AuthenticatedSeriesRoute
+    '/_authenticated/settings/libraries': {
+      id: '/_authenticated/settings/libraries'
+      path: '/libraries'
+      fullPath: '/settings/libraries'
+      preLoaderRoute: typeof AuthenticatedSettingsLibrariesRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
     }
-    '/_authenticated/library/$workId': {
-      id: '/_authenticated/library/$workId'
-      path: '/$workId'
-      fullPath: '/library/$workId'
-      preLoaderRoute: typeof AuthenticatedLibraryWorkIdRouteImport
-      parentRoute: typeof AuthenticatedLibraryRoute
+    '/_authenticated/settings/missing-files': {
+      id: '/_authenticated/settings/missing-files'
+      path: '/missing-files'
+      fullPath: '/settings/missing-files'
+      preLoaderRoute: typeof AuthenticatedSettingsMissingFilesRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
     }
-    '/_authenticated/authors/$authorId': {
-      id: '/_authenticated/authors/$authorId'
-      path: '/$authorId'
-      fullPath: '/authors/$authorId'
-      preLoaderRoute: typeof AuthenticatedAuthorsAuthorIdRouteImport
-      parentRoute: typeof AuthenticatedAuthorsRoute
+    '/_authenticated/settings/users': {
+      id: '/_authenticated/settings/users'
+      path: '/users'
+      fullPath: '/settings/users'
+      preLoaderRoute: typeof AuthenticatedSettingsUsersRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
+    '/_authenticated/shelves/': {
+      id: '/_authenticated/shelves/'
+      path: '/'
+      fullPath: '/shelves/'
+      preLoaderRoute: typeof AuthenticatedShelvesIndexRouteImport
+      parentRoute: typeof AuthenticatedShelvesRoute
+    }
+    '/_authenticated/shelves/$shelfId': {
+      id: '/_authenticated/shelves/$shelfId'
+      path: '/$shelfId'
+      fullPath: '/shelves/$shelfId'
+      preLoaderRoute: typeof AuthenticatedShelvesShelfIdRouteImport
+      parentRoute: typeof AuthenticatedShelvesRoute
     }
     '/_authenticated/settings/jobs/': {
       id: '/_authenticated/settings/jobs/'
@@ -632,19 +632,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsJobsIndexRouteImport
       parentRoute: typeof AuthenticatedSettingsJobsRoute
     }
-    '/_authenticated/settings/library-issues/$libraryRootId': {
-      id: '/_authenticated/settings/library-issues/$libraryRootId'
-      path: '/library-issues/$libraryRootId'
-      fullPath: '/settings/library-issues/$libraryRootId'
-      preLoaderRoute: typeof AuthenticatedSettingsLibraryIssuesLibraryRootIdRouteImport
-      parentRoute: typeof AuthenticatedSettingsRoute
-    }
     '/_authenticated/settings/jobs/$jobId': {
       id: '/_authenticated/settings/jobs/$jobId'
       path: '/$jobId'
       fullPath: '/settings/jobs/$jobId'
       preLoaderRoute: typeof AuthenticatedSettingsJobsJobIdRouteImport
       parentRoute: typeof AuthenticatedSettingsJobsRoute
+    }
+    '/_authenticated/settings/library-issues/$libraryRootId': {
+      id: '/_authenticated/settings/library-issues/$libraryRootId'
+      path: '/library-issues/$libraryRootId'
+      fullPath: '/settings/library-issues/$libraryRootId'
+      preLoaderRoute: typeof AuthenticatedSettingsLibraryIssuesLibraryRootIdRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
     }
   }
 }

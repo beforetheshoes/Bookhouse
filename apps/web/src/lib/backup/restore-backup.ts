@@ -73,7 +73,11 @@ function extractArchive(data: Buffer): Promise<ExtractedArchive> {
         const raw = JSON.parse(manifestBuffer.toString()) as Record<string, number | string>;
         manifest = backupManifestSchema.parse(raw);
       } catch (err) {
-        reject(err as Error);
+        // JSON.parse throws SyntaxError and zod throws ZodError - both Errors.
+        // The typed local keeps the assertion (reject's `any` parameter would
+        // otherwise make it look redundant) so reject still gets an Error.
+        const error: Error = err as Error;
+        reject(error);
         return;
       }
 

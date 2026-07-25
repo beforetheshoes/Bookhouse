@@ -10,11 +10,11 @@ vi.mock("./_guards", () => ({
 vi.mock("@tanstack/react-start", () => ({
   createServerFn: () => {
     type Builder = {
-      inputValidator: (schema: object) => Builder;
+      validator: (schema: object) => Builder;
       handler: <T extends Record<string, string | number | boolean | null | string[] | Date | undefined>>(fn: (a: T) => T | Promise<T>) => (a: T) => T | Promise<T>;
     };
     const b: Builder = {
-      inputValidator: () => b,
+      validator: () => b,
       handler: (fn) => (a) => fn(a),
     };
     return b;
@@ -68,7 +68,7 @@ describe("getAllScanConcurrenciesServerFn", () => {
       { key: "concurrencyIncremental", value: "2" },
     ]);
 
-    const result = await getAllScanConcurrenciesServerFn({} as never);
+    const result = await getAllScanConcurrenciesServerFn({});
 
     expect(appSettingFindManyMock).toHaveBeenCalledWith({
       where: { key: { in: ["concurrencyFull", "concurrencyOnDemand", "concurrencyIncremental"] } },
@@ -79,7 +79,7 @@ describe("getAllScanConcurrenciesServerFn", () => {
   it("returns defaults when no settings exist", async () => {
     appSettingFindManyMock.mockResolvedValue([]);
 
-    const result = await getAllScanConcurrenciesServerFn({} as never);
+    const result = await getAllScanConcurrenciesServerFn({});
 
     expect(result).toEqual(SCAN_CONCURRENCY_DEFAULTS);
   });
@@ -89,7 +89,7 @@ describe("getAllScanConcurrenciesServerFn", () => {
       { key: "concurrencyFull", value: "12" },
     ]);
 
-    const result = await getAllScanConcurrenciesServerFn({} as never);
+    const result = await getAllScanConcurrenciesServerFn({});
 
     expect(result).toEqual({ full: 12, onDemand: SCAN_CONCURRENCY_DEFAULTS.onDemand, incremental: SCAN_CONCURRENCY_DEFAULTS.incremental });
   });
@@ -140,7 +140,7 @@ describe("getMissingFileBehaviorServerFn", () => {
   it("returns stored behavior value", async () => {
     appSettingFindUniqueMock.mockResolvedValue({ key: "missingFileBehavior", value: "auto-cleanup" });
 
-    const result = await getMissingFileBehaviorServerFn({} as never);
+    const result = await getMissingFileBehaviorServerFn({});
 
     expect(appSettingFindUniqueMock).toHaveBeenCalledWith({ where: { key: "missingFileBehavior" } });
     expect(result).toBe("auto-cleanup");
@@ -149,7 +149,7 @@ describe("getMissingFileBehaviorServerFn", () => {
   it("returns 'manual' when no setting exists", async () => {
     appSettingFindUniqueMock.mockResolvedValue(null);
 
-    const result = await getMissingFileBehaviorServerFn({} as never);
+    const result = await getMissingFileBehaviorServerFn({});
 
     expect(result).toBe("manual");
   });
@@ -174,7 +174,7 @@ describe("getThemeServerFn", () => {
   it("returns stored theme value", async () => {
     appSettingFindUniqueMock.mockResolvedValue({ key: "theme", value: "dark" });
 
-    const result = await getThemeServerFn({} as never);
+    const result = await getThemeServerFn({});
 
     expect(appSettingFindUniqueMock).toHaveBeenCalledWith({ where: { key: "theme" } });
     expect(result).toBe("dark");
@@ -183,7 +183,7 @@ describe("getThemeServerFn", () => {
   it("returns 'system' when no setting exists", async () => {
     appSettingFindUniqueMock.mockResolvedValue(null);
 
-    const result = await getThemeServerFn({} as never);
+    const result = await getThemeServerFn({});
 
     expect(result).toBe("system");
   });
@@ -208,7 +208,7 @@ describe("getColorModeServerFn", () => {
   it("returns stored color mode value", async () => {
     appSettingFindUniqueMock.mockResolvedValue({ key: "colorMode", value: "accent" });
 
-    const result = await getColorModeServerFn({} as never);
+    const result = await getColorModeServerFn({});
 
     expect(appSettingFindUniqueMock).toHaveBeenCalledWith({ where: { key: "colorMode" } });
     expect(result).toBe("accent");
@@ -217,7 +217,7 @@ describe("getColorModeServerFn", () => {
   it("returns 'book' when no setting exists", async () => {
     appSettingFindUniqueMock.mockResolvedValue(null);
 
-    const result = await getColorModeServerFn({} as never);
+    const result = await getColorModeServerFn({});
 
     expect(result).toBe("book");
   });
@@ -242,7 +242,7 @@ describe("getAccentColorServerFn", () => {
   it("returns stored accent color value", async () => {
     appSettingFindUniqueMock.mockResolvedValue({ key: "accentColor", value: "#ff0000" });
 
-    const result = await getAccentColorServerFn({} as never);
+    const result = await getAccentColorServerFn({});
 
     expect(appSettingFindUniqueMock).toHaveBeenCalledWith({ where: { key: "accentColor" } });
     expect(result).toBe("#ff0000");
@@ -251,7 +251,7 @@ describe("getAccentColorServerFn", () => {
   it("returns null when no setting exists", async () => {
     appSettingFindUniqueMock.mockResolvedValue(null);
 
-    const result = await getAccentColorServerFn({} as never);
+    const result = await getAccentColorServerFn({});
 
     expect(result).toBeNull();
   });
@@ -302,7 +302,7 @@ describe("getBrandPaletteServerFn", () => {
   it("returns the stored palette key", async () => {
     appSettingFindUniqueMock.mockResolvedValue({ key: "brandPalette", value: "vivid" });
 
-    const result = await getBrandPaletteServerFn({} as never);
+    const result = await getBrandPaletteServerFn({});
 
     expect(appSettingFindUniqueMock).toHaveBeenCalledWith({ where: { key: "brandPalette" } });
     expect(result).toBe("vivid");
@@ -311,7 +311,7 @@ describe("getBrandPaletteServerFn", () => {
   it("falls back to shelf when no palette is stored", async () => {
     appSettingFindUniqueMock.mockResolvedValue(null);
 
-    const result = await getBrandPaletteServerFn({} as never);
+    const result = await getBrandPaletteServerFn({});
 
     expect(result).toBe("shelf");
   });
@@ -319,7 +319,7 @@ describe("getBrandPaletteServerFn", () => {
   it("falls back to shelf when stored value is not a known palette", async () => {
     appSettingFindUniqueMock.mockResolvedValue({ key: "brandPalette", value: "rainbow" });
 
-    const result = await getBrandPaletteServerFn({} as never);
+    const result = await getBrandPaletteServerFn({});
 
     expect(result).toBe("shelf");
   });

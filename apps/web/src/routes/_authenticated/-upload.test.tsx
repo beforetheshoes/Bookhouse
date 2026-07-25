@@ -298,6 +298,29 @@ describe("UploadStatusPanel polling", () => {
     }, { timeout: 3000 });
   });
 
+  it("shows QUEUED status between upload and the first poll result", async () => {
+    // Hold the poll open so the panel stays on the state set by the upload
+    // itself. Without this the first poll result can land in the same tick and
+    // the QUEUED render is never observed.
+    getUploadStatusServerFnMock.mockReturnValue(new Promise(() => undefined));
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: () => ({ importJobId: "import-queued" }),
+    });
+    render(<UploadForm libraryRoots={[makeRoot()]} />);
+    const file = new File(["x"], "book.epub");
+    const input = screen.getByTestId("upload-file-input");
+    Object.defineProperty(input, "files", { value: [file] });
+    fireEvent.change(input);
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "T" } });
+    fireEvent.change(screen.getByLabelText("Author"), { target: { value: "A" } });
+    fireEvent.click(screen.getByRole("button", { name: /upload/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Queued for processing…")).toBeTruthy();
+    }, { timeout: 3000 });
+  });
+
   it("shows SUCCEEDED status when polling reports completion", async () => {
     getUploadStatusServerFnMock.mockResolvedValue({
         status: "SUCCEEDED",

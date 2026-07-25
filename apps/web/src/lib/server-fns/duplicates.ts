@@ -8,7 +8,7 @@ const getDuplicatesSchema = z.object({
 export const getDuplicatesServerFn = createServerFn({
   method: "GET",
 })
-  .inputValidator(getDuplicatesSchema)
+  .validator(getDuplicatesSchema)
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
     const EXCLUDED_MEDIA_KINDS = new Set(["SIDECAR", "AUDIO", "COVER", "OTHER"]);
@@ -54,7 +54,7 @@ const idSchema = z.object({ id: z.string() });
 export const ignoreDuplicateServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(idSchema)
+  .validator(idSchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
@@ -68,7 +68,7 @@ export const ignoreDuplicateServerFn = createServerFn({
 export const confirmDuplicateServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(idSchema)
+  .validator(idSchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
@@ -87,7 +87,7 @@ const mergeSchema = z.object({
 export const mergeDuplicateServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(mergeSchema)
+  .validator(mergeSchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");

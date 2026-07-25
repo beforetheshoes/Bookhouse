@@ -1,7 +1,7 @@
-import { defineEventHandler, createError } from "h3";
+import { defineEventHandler, HTTPError } from "h3";
 import type { H3Event } from "h3";
 import type { KoreaderAuthResult } from "../../auth-helper";
-import { resolveKoreaderTimestamp, type CandidateEditionFile, type KoreaderResolvedDocument } from "../shared";
+import { resolveKoreaderTimestamp, type KoreaderResolvedDocument } from "../shared";
 
 export interface KoreaderProgressGetDeps {
   auth: (event: H3Event) => Promise<KoreaderAuthResult>;
@@ -18,27 +18,27 @@ export function createKoreaderProgressGetHandler(deps: KoreaderProgressGetDeps) 
     const auth = await deps.auth(event);
     const documentParam = (event.context.params)?.document;
     if (!documentParam) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: "Bad Request",
+      throw new HTTPError({
+        status: 400,
+        statusText: "Bad Request",
         message: "Missing document",
       });
     }
 
     const document = await deps.resolveDocument(auth.userId, documentParam);
     if (!document) {
-      throw createError({
-        statusCode: 404,
-        statusMessage: "Not Found",
+      throw new HTTPError({
+        status: 404,
+        statusText: "Not Found",
         message: "Unknown document",
       });
     }
 
     const progress = await deps.findProgress(auth.userId, document.editionId);
     if (!progress?.locator.koreader) {
-      throw createError({
-        statusCode: 404,
-        statusMessage: "Not Found",
+      throw new HTTPError({
+        status: 404,
+        statusText: "Not Found",
         message: "No KOReader progress found",
       });
     }
@@ -89,7 +89,7 @@ export default defineEventHandler(async (event) => {
               },
             },
           },
-        }) as Promise<CandidateEditionFile[]>,
+        }),
       findUnhashedCandidates: () =>
         db.editionFile.findMany({
           where: {
@@ -111,7 +111,7 @@ export default defineEventHandler(async (event) => {
               },
             },
           },
-        }) as Promise<CandidateEditionFile[]>,
+        }),
       updateFileAssetHash: async (fileAssetId, koreaderHash) => {
         await db.fileAsset.update({
           where: { id: fileAssetId },

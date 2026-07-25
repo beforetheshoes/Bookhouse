@@ -1822,7 +1822,7 @@ describe("WorkDetailPage", () => {
     ];
     const { addEditionsForWorkToShelfServerFn } = await import("~/lib/server-fns/shelves");
     const addMock = vi.mocked(addEditionsForWorkToShelfServerFn);
-    addMock.mockResolvedValue({ added: 1 } as never);
+    addMock.mockResolvedValue({ added: 1 });
 
     const { Route } = await import("./library.$workId");
     const WorkDetailPage = Route.options.component as React.ComponentType;
@@ -1841,7 +1841,7 @@ describe("WorkDetailPage", () => {
     ];
     const { removeWorkEditionsFromShelfServerFn } = await import("~/lib/server-fns/shelves");
     const removeMock = vi.mocked(removeWorkEditionsFromShelfServerFn);
-    removeMock.mockResolvedValue({ removed: 1 } as never);
+    removeMock.mockResolvedValue({ removed: 1 });
 
     const { Route } = await import("./library.$workId");
     const WorkDetailPage = Route.options.component as React.ComponentType;

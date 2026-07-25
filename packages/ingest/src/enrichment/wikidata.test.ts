@@ -11,7 +11,7 @@ function fakeFetch(responses: Array<{ body: object; status?: number }>): typeof 
       status,
       json: () => Promise.resolve(resp?.body),
     });
-  }) as () => Promise<Response>) as typeof fetch;
+  }) as () => Promise<Response>);
 }
 
 describe("buildWikimediaThumbUrl", () => {

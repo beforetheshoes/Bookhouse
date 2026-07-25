@@ -37,9 +37,9 @@ describe("classification helpers", () => {
     expect(deriveFormatFamily(MediaKind.KEPUB)).toBe(FormatFamily.EBOOK);
     expect(deriveFormatFamily(MediaKind.PDF)).toBe(FormatFamily.EBOOK);
     expect(deriveFormatFamily(MediaKind.CBZ)).toBe(FormatFamily.EBOOK);
-    expect(deriveFormatFamily("MOBI" as MediaKind)).toBe(FormatFamily.EBOOK);
-    expect(deriveFormatFamily("AZW" as MediaKind)).toBe(FormatFamily.EBOOK);
-    expect(deriveFormatFamily("AZW3" as MediaKind)).toBe(FormatFamily.EBOOK);
+    expect(deriveFormatFamily("MOBI")).toBe(FormatFamily.EBOOK);
+    expect(deriveFormatFamily("AZW")).toBe(FormatFamily.EBOOK);
+    expect(deriveFormatFamily("AZW3")).toBe(FormatFamily.EBOOK);
     expect(deriveFormatFamily(MediaKind.AUDIO)).toBe(FormatFamily.AUDIOBOOK);
     expect(deriveFormatFamily(MediaKind.COVER)).toBeNull();
     expect(deriveFormatFamily(MediaKind.SIDECAR)).toBeNull();

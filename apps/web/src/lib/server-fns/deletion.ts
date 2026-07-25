@@ -25,7 +25,7 @@ async function cleanupOrphanedFiles(db: { fileAsset: { findMany: (args: object) 
 export const deleteWorkServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(z.object({ workId: z.string().min(1) }))
+  .validator(z.object({ workId: z.string().min(1) }))
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
@@ -38,7 +38,7 @@ export const deleteWorkServerFn = createServerFn({
 export const deleteEditionServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(z.object({ editionId: z.string().min(1) }))
+  .validator(z.object({ editionId: z.string().min(1) }))
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
@@ -64,7 +64,7 @@ export const deleteEditionServerFn = createServerFn({
 export const bulkDeleteWorksServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(z.object({ workIds: z.array(z.string().min(1)).max(100) }))
+  .validator(z.object({ workIds: z.array(z.string().min(1)).max(100) }))
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     if (data.workIds.length === 0) {
@@ -81,7 +81,7 @@ export const bulkDeleteWorksServerFn = createServerFn({
 export const bulkDeleteEditionsServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(z.object({ editionIds: z.array(z.string().min(1)).max(100) }))
+  .validator(z.object({ editionIds: z.array(z.string().min(1)).max(100) }))
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     if (data.editionIds.length === 0) {
@@ -118,7 +118,7 @@ export const bulkDeleteEditionsServerFn = createServerFn({
 export const bulkDeleteEditionsByFormatForWorksServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(z.object({
+  .validator(z.object({
     workIds: z.array(z.string().min(1)).max(100),
     format: z.enum(["EBOOK", "AUDIOBOOK"]),
   }))
@@ -164,7 +164,7 @@ export const bulkDeleteEditionsByFormatForWorksServerFn = createServerFn({
 export const deleteAllEditionsByFormatServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(z.object({
+  .validator(z.object({
     format: z.enum(["EBOOK", "AUDIOBOOK"]),
   }))
   .handler(async ({ data }) => {
@@ -210,7 +210,7 @@ const missingFilesPaginationSchema = z.object({
 export const getMissingFilesServerFn = createServerFn({
   method: "GET",
 })
-  .inputValidator(missingFilesPaginationSchema)
+  .validator(missingFilesPaginationSchema)
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
 
@@ -249,7 +249,7 @@ export const getMissingFilesServerFn = createServerFn({
 export const cleanupMissingFilesServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(z.object({ fileAssetIds: z.array(z.string().min(1)) }))
+  .validator(z.object({ fileAssetIds: z.array(z.string().min(1)) }))
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");

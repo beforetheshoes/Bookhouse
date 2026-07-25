@@ -271,7 +271,7 @@ export async function searchHardcoverAuthors(
     const parsed = JSON.parse(search.results) as HCAuthorSearchHit[];
     hits = Array.isArray(parsed) ? parsed : [];
   } else if (Array.isArray(search.results)) {
-    hits = search.results as HCAuthorSearchHit[];
+    hits = search.results;
   } else {
     hits = [];
   }

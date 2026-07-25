@@ -243,7 +243,7 @@ describe("ingest runtime defaults", () => {
     editionUpdateMock.mockResolvedValueOnce({} as never); // language update
     workUpdateMock.mockResolvedValueOnce({} as never);
     vi.mocked(db.series).findFirst.mockResolvedValueOnce(null);
-    seriesCreateMock.mockResolvedValueOnce({ id: "series-1", name: "The Kingkiller Chronicle" } as never);
+    seriesCreateMock.mockResolvedValueOnce({ id: "series-1", name: "The Kingkiller Chronicle" });
 
     const result1 = await services.parseFileAssetMetadata({ fileAssetId: "file-opf-1", now: new Date("2025-01-01T00:00:00.000Z") });
     expect(result1.availabilityStatus).toBe("PRESENT");
@@ -261,7 +261,7 @@ describe("ingest runtime defaults", () => {
     vi.mocked(db.work).findUnique.mockResolvedValueOnce({ id: "work-2", description: null, seriesId: null } as never);
     editionUpdateMock.mockResolvedValueOnce({} as never); // language update
     workUpdateMock.mockResolvedValueOnce({} as never);
-    vi.mocked(db.series).findFirst.mockResolvedValueOnce({ id: "series-1", name: "The Kingkiller Chronicle" } as never);
+    vi.mocked(db.series).findFirst.mockResolvedValueOnce({ id: "series-1", name: "The Kingkiller Chronicle" });
 
     const result2 = await services.parseFileAssetMetadata({ fileAssetId: "file-opf-2", now: new Date("2025-01-01T00:00:00.000Z") });
     expect(result2.availabilityStatus).toBe("PRESENT");

@@ -73,7 +73,7 @@ const saveSmtpConfigSchema = z.object({
 export const saveSmtpConfigServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(saveSmtpConfigSchema)
+  .validator(saveSmtpConfigSchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
@@ -122,7 +122,7 @@ const testSmtpConnectionSchema = z.object({
 export const testSmtpConnectionServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(testSmtpConnectionSchema)
+  .validator(testSmtpConnectionSchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const config = await getDecryptedSmtpConfig();

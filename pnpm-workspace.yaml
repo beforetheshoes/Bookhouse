@@ -3,6 +3,16 @@ packages:
   - packages/*
   - workers/*
 
+# Security patches for transitive deps whose parent hasn't released an update.
+# Both arrive via `prisma` (a devDependency) -> @prisma/dev, and both stay
+# within their current major, so the override is a patch/minor bump.
+overrides:
+  # GHSA: find-my-way DDoS with HTTP2 (high).
+  find-my-way: '>=9.7.0'
+  # GHSA: record() issue paths make flatten() throw on inherited Object
+  # property names (moderate).
+  valibot: '>=1.4.2'
+
 onlyBuiltDependencies:
   - /
   - '@'

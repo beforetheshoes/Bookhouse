@@ -2349,7 +2349,7 @@ export function createIngestServices(
           data: {
             availabilityStatus: AvailabilityStatus.PRESENT,
             lastSeenAt: now,
-            metadata: metadata as object as FileAsset["metadata"],
+            metadata: metadata as object,
           },
         });
 
@@ -2484,7 +2484,7 @@ export function createIngestServices(
           data: {
             availabilityStatus: AvailabilityStatus.PRESENT,
             lastSeenAt: now,
-            metadata: metadata as object as FileAsset["metadata"],
+            metadata: metadata as object,
           },
         });
 
@@ -2542,7 +2542,7 @@ export function createIngestServices(
           data: {
             availabilityStatus: AvailabilityStatus.PRESENT,
             lastSeenAt: now,
-            metadata: metadata as object as FileAsset["metadata"],
+            metadata: metadata as object,
           },
         });
 
@@ -2588,7 +2588,7 @@ export function createIngestServices(
           data: {
             availabilityStatus: AvailabilityStatus.PRESENT,
             lastSeenAt: now,
-            metadata: metadata as object as FileAsset["metadata"],
+            metadata: metadata as object,
           },
         });
 
@@ -2682,7 +2682,7 @@ export function createIngestServices(
           data: {
             availabilityStatus: AvailabilityStatus.PRESENT,
             lastSeenAt: now,
-            metadata: metadata as object as FileAsset["metadata"],
+            metadata: metadata as object,
           },
         });
 
@@ -2736,7 +2736,7 @@ export function createIngestServices(
           data: {
             availabilityStatus: AvailabilityStatus.PRESENT,
             lastSeenAt: now,
-            metadata: metadata as object as FileAsset["metadata"],
+            metadata: metadata as object,
           },
         });
 
@@ -2759,7 +2759,7 @@ export function createIngestServices(
         data: {
           availabilityStatus: AvailabilityStatus.PRESENT,
           lastSeenAt: now,
-          metadata: metadata as object as FileAsset["metadata"],
+          metadata: metadata as object,
         },
       });
 
@@ -2800,7 +2800,7 @@ export function createIngestServices(
         data: {
           availabilityStatus: AvailabilityStatus.PRESENT,
           lastSeenAt: now,
-          metadata: metadata as object as FileAsset["metadata"],
+          metadata: metadata as object,
         },
       });
 
@@ -2851,7 +2851,7 @@ export function createIngestServices(
         data: {
           availabilityStatus: AvailabilityStatus.PRESENT,
           lastSeenAt: now,
-          metadata: metadata as object as FileAsset["metadata"],
+          metadata: metadata as object,
         },
       });
 

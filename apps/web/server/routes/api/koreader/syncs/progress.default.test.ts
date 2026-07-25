@@ -24,8 +24,15 @@ const {
 vi.mock("h3", () => ({
   defineEventHandler: (handler: (event: H3Event) => object | Promise<object>) => handler,
   readBody: mockReadBody,
-  createError: (opts: { statusCode: number; statusMessage?: string; message?: string }) =>
-    Object.assign(new Error(opts.message), { statusCode: opts.statusCode, statusMessage: opts.statusMessage }),
+  HTTPError: class HTTPError extends Error {
+    status: number;
+    statusText: string | undefined;
+    constructor(opts: { status: number; statusText?: string; message?: string }) {
+      super(opts.message ?? opts.statusText);
+      this.status = opts.status;
+      this.statusText = opts.statusText;
+    }
+  },
 }));
 
 vi.mock("@bookhouse/db", () => ({
@@ -196,6 +203,6 @@ describe("KOReader progress route default handler", () => {
         "x-auth-user": "reader",
         "x-auth-key": "secret",
       } }),
-    } as Partial<H3Event> as H3Event)).rejects.toThrow(expect.objectContaining({ statusCode: 400 }));
+    } as Partial<H3Event> as H3Event)).rejects.toThrow(expect.objectContaining({ status: 400 }));
   });
 });

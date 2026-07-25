@@ -34,7 +34,7 @@ const createCredentialSchema = z.object({
 export const createOpdsCredentialServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(createCredentialSchema)
+  .validator(createCredentialSchema)
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
     const { hashPassword } = await import("@bookhouse/opds");
@@ -68,7 +68,7 @@ const toggleCredentialSchema = z.object({
 export const toggleOpdsCredentialServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(toggleCredentialSchema)
+  .validator(toggleCredentialSchema)
   .handler(async ({ data }) => {
     const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
@@ -100,7 +100,7 @@ const deleteCredentialSchema = z.object({
 export const deleteOpdsCredentialServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(deleteCredentialSchema)
+  .validator(deleteCredentialSchema)
   .handler(async ({ data }) => {
     const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");

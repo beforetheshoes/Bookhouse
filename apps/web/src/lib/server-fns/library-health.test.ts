@@ -17,11 +17,11 @@ vi.mock("@bookhouse/ingest", () => ({
 vi.mock("@tanstack/react-start", () => ({
   createServerFn: () => {
     type Builder = {
-      inputValidator: () => Builder;
+      validator: () => Builder;
       handler: (fn: (a: object) => object | Promise<object>) => (a?: object) => object | Promise<object>;
     };
     const b: Builder = {
-      inputValidator: () => b,
+      validator: () => b,
       handler: (fn) => (a) => fn(a ?? {}),
     };
     return b;

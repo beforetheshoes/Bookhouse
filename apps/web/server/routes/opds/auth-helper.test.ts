@@ -3,11 +3,14 @@ import type { OpdsAuthDeps } from "./auth-helper";
 import type { H3Event } from "h3";
 
 vi.mock("h3", () => ({
-  createError: (opts: { statusCode: number; statusMessage: string; message: string }) => {
-    const err = new Error(opts.message) as Error & { statusCode: number; statusMessage: string };
-    err.statusCode = opts.statusCode;
-    err.statusMessage = opts.statusMessage;
-    return err;
+  HTTPError: class HTTPError extends Error {
+    status: number;
+    statusText: string | undefined;
+    constructor(opts: { status: number; statusText?: string; message?: string }) {
+      super(opts.message ?? opts.statusText);
+      this.status = opts.status;
+      this.statusText = opts.statusText;
+    }
   },
 }));
 
@@ -64,8 +67,8 @@ describe("createOpdsAuth", () => {
       await auth(event);
       expect.fail("Should have thrown");
     } catch (e) {
-      const err = e as Error & { statusCode: number };
-      expect(err.statusCode).toBe(401);
+      const err = e as Error & { status: number };
+      expect(err.status).toBe(401);
       expect(event.res.headers.get("WWW-Authenticate")).toBe('Basic realm="Bookhouse OPDS"');
     }
   });
@@ -79,8 +82,8 @@ describe("createOpdsAuth", () => {
       await auth(event);
       expect.fail("Should have thrown");
     } catch (e) {
-      const err = e as Error & { statusCode: number };
-      expect(err.statusCode).toBe(401);
+      const err = e as Error & { status: number };
+      expect(err.status).toBe(401);
       expect(event.res.headers.get("WWW-Authenticate")).toBe('Basic realm="Bookhouse OPDS"');
     }
   });
@@ -92,8 +95,8 @@ describe("createOpdsAuth", () => {
       await auth(makeEvent(`Basic ${Buffer.from("nocolon").toString("base64")}`));
       expect.fail("Should have thrown");
     } catch (e) {
-      const err = e as Error & { statusCode: number };
-      expect(err.statusCode).toBe(401);
+      const err = e as Error & { status: number };
+      expect(err.status).toBe(401);
     }
   });
 
@@ -107,8 +110,8 @@ describe("createOpdsAuth", () => {
       await auth(makeEvent(basicAuth("unknown", "password")));
       expect.fail("Should have thrown");
     } catch (e) {
-      const err = e as Error & { statusCode: number };
-      expect(err.statusCode).toBe(401);
+      const err = e as Error & { status: number };
+      expect(err.status).toBe(401);
     }
   });
 
@@ -122,8 +125,8 @@ describe("createOpdsAuth", () => {
       await auth(makeEvent(basicAuth("reader", "wrong")));
       expect.fail("Should have thrown");
     } catch (e) {
-      const err = e as Error & { statusCode: number };
-      expect(err.statusCode).toBe(401);
+      const err = e as Error & { status: number };
+      expect(err.status).toBe(401);
     }
   });
 
@@ -140,8 +143,8 @@ describe("createOpdsAuth", () => {
       await auth(makeEvent(basicAuth("reader", "password")));
       expect.fail("Should have thrown");
     } catch (e) {
-      const err = e as Error & { statusCode: number };
-      expect(err.statusCode).toBe(403);
+      const err = e as Error & { status: number };
+      expect(err.status).toBe(403);
       expect(err.message).toBe("Credential is disabled");
     }
   });

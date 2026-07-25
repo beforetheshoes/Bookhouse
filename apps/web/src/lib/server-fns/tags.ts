@@ -9,7 +9,7 @@ const updateWorkTagsSchema = z.object({
 export const updateWorkTagsServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(updateWorkTagsSchema)
+  .validator(updateWorkTagsSchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
@@ -71,7 +71,7 @@ const tagSuggestionsSchema = z.object({
 export const getTagSuggestionsServerFn = createServerFn({
   method: "GET",
 })
-  .inputValidator(tagSuggestionsSchema)
+  .validator(tagSuggestionsSchema)
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
 

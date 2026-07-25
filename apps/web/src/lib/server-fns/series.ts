@@ -44,7 +44,7 @@ const getSeriesDetailSchema = z.object({
 export const getSeriesDetailServerFn = createServerFn({
   method: "GET",
 })
-  .inputValidator(getSeriesDetailSchema)
+  .validator(getSeriesDetailSchema)
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
     return db.series.findUniqueOrThrow({

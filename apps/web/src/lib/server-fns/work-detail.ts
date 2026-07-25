@@ -8,7 +8,7 @@ const getWorkDetailSchema = z.object({
 export const getWorkDetailServerFn = createServerFn({
   method: "GET",
 })
-  .inputValidator(getWorkDetailSchema)
+  .validator(getWorkDetailSchema)
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
 

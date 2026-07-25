@@ -1,4 +1,4 @@
-import { createError } from "h3";
+import { HTTPError } from "h3";
 import type { H3Event } from "h3";
 
 export interface OpdsAuthDeps {
@@ -20,7 +20,7 @@ export interface OpdsAuthResult {
 
 function throw401(event: H3Event, message: string): never {
   event.res.headers.set("WWW-Authenticate", 'Basic realm="Bookhouse OPDS"');
-  throw createError({ statusCode: 401, statusMessage: "Unauthorized", message });
+  throw new HTTPError({ status: 401, statusText: "Unauthorized", message });
 }
 
 export function createOpdsAuth(deps: OpdsAuthDeps) {
@@ -52,7 +52,7 @@ export function createOpdsAuth(deps: OpdsAuthDeps) {
     }
 
     if (!credential.isEnabled) {
-      throw createError({ statusCode: 403, statusMessage: "Forbidden", message: "Credential is disabled" });
+      throw new HTTPError({ status: 403, statusText: "Forbidden", message: "Credential is disabled" });
     }
 
     const valid = await deps.verifyPassword(password, credential.passwordHash);

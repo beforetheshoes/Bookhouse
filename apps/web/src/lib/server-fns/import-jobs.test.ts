@@ -10,11 +10,11 @@ vi.mock("./_guards", () => ({
 vi.mock("@tanstack/react-start", () => ({
   createServerFn: () => {
     type Builder = {
-      inputValidator: () => Builder;
+      validator: () => Builder;
       handler: <T extends Record<string, string | number | boolean | null | string[] | Date | undefined>>(fn: (a: T) => T | Promise<T>) => (a: T) => T | Promise<T>;
     };
     const b: Builder = {
-      inputValidator: () => b,
+      validator: () => b,
       handler: (fn) => (a) => fn(a),
     };
     return b;
@@ -555,7 +555,7 @@ describe("stopAllJobsServerFn", () => {
   it("obliterates queue and marks active jobs as FAILED", async () => {
     updateManyMock.mockResolvedValue({ count: 5 });
 
-    const result = await stopAllJobsServerFn({} as never);
+    const result = await stopAllJobsServerFn({});
 
     expect(obliterateLibraryQueueMock).toHaveBeenCalledTimes(1);
     expect(updateManyMock).toHaveBeenCalledWith({

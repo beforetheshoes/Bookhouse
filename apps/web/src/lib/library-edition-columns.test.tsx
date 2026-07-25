@@ -177,14 +177,14 @@ describe("getEditionNarrators", () => {
         { role: "NARRATOR", contributor: { nameDisplay: "Charlie" } },
       ],
     };
-    expect(getEditionNarrators(edition as Parameters<typeof getEditionNarrators>[0])).toBe("Bob, Charlie");
+    expect(getEditionNarrators(edition)).toBe("Bob, Charlie");
   });
 
   it("returns em dash when no narrators", () => {
     const edition = {
       contributors: [{ role: "AUTHOR", contributor: { nameDisplay: "Alice" } }],
     };
-    expect(getEditionNarrators(edition as Parameters<typeof getEditionNarrators>[0])).toBe("\u2014");
+    expect(getEditionNarrators(edition)).toBe("\u2014");
   });
 });
 
@@ -253,7 +253,7 @@ describe("getEditionColumns", () => {
     const columns = getEditionColumns(false, mockRouter);
     const col = columns.find((c) => c.id === colId);
     const accessorFn = (col as { accessorFn?: (row: LibraryEdition) => string }).accessorFn;
-    expect(accessorFn?.(makeEdition({ [colId]: null } as Partial<LibraryEdition>))).toBe("\u2014");
+    expect(accessorFn?.(makeEdition({ [colId]: null }))).toBe("\u2014");
     expect(accessorFn?.(makeEdition())).toBe(expectedFn(makeEdition()));
   });
 

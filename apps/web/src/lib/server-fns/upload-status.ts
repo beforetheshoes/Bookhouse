@@ -30,7 +30,7 @@ export type UploadStatusResult =
 export const getUploadStatusServerFn = createServerFn({
   method: "GET",
 })
-  .inputValidator(uploadStatusSchema)
+  .validator(uploadStatusSchema)
   .handler(async ({ data }): Promise<UploadStatusResult> => {
     await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");

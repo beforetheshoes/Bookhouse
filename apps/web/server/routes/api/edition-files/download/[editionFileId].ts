@@ -28,7 +28,7 @@ export default defineEventHandler(async (event) => {
     createReadStream,
     setResponseHeader,
     sendStream: (_event, stream) =>
-      Readable.toWeb(stream as Readable) as ReadableStream,
+      Readable.toWeb(stream) as ReadableStream,
   });
 
   return handler(event);

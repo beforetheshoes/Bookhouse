@@ -43,7 +43,7 @@ const searchSchema = z.object({
 export const searchEnrichmentServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(searchSchema)
+  .validator(searchSchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
@@ -115,7 +115,7 @@ const getSchema = z.object({
 export const getEnrichmentDataServerFn = createServerFn({
   method: "GET",
 })
-  .inputValidator(getSchema)
+  .validator(getSchema)
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
 
@@ -158,7 +158,7 @@ const applySchema = z.object({
 export const applyEnrichmentServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(applySchema)
+  .validator(applySchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
@@ -387,7 +387,7 @@ const coverUrlSchema = z.object({
 export const applyCoverFromUrlServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(coverUrlSchema)
+  .validator(coverUrlSchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
@@ -413,7 +413,7 @@ export const applyCoverFromUrlServerFn = createServerFn({
           { sharp: sharpModule.default as never, mkdir, writeFile },
         );
       },
-      extractColors: (buf) => extractDominantColors(buf, sharpModule.default as never),
+      extractColors: (buf) => extractDominantColors(buf, sharpModule.default),
     };
 
     const dbDeps: CoverFromUrlDbDeps = {

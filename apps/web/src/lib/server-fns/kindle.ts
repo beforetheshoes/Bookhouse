@@ -33,7 +33,7 @@ const saveKindleConfigSchema = z.object({
 export const saveKindleConfigServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(saveKindleConfigSchema)
+  .validator(saveKindleConfigSchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
@@ -65,7 +65,7 @@ const sendToKindleSchema = z.object({
 export const sendToKindleServerFn = createServerFn({
   method: "POST",
 })
-  .inputValidator(sendToKindleSchema)
+  .validator(sendToKindleSchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
