@@ -210,11 +210,14 @@ jobs:
           apt-get update -qq
           apt-get install -y --no-install-recommends postgresql-client-17
 
+      # Server output goes to files, not the step log: backgrounded stdout
+      # interleaves unreadably with Playwright's, and a server-side failure
+      # otherwise shows up only as an assertion timeout with no cause.
       - name: Start app and worker
         run: |
-          mkdir -p "$COVER_CACHE_DIR"
-          node apps/web/.output/server/index.mjs &
-          pnpm --filter @bookhouse/library-worker exec tsx src/index.ts &
+          mkdir -p "$COVER_CACHE_DIR" e2e-logs
+          node apps/web/.output/server/index.mjs > e2e-logs/app.log 2>&1 &
+          pnpm --filter @bookhouse/library-worker exec tsx src/index.ts > e2e-logs/worker.log 2>&1 &
 
       # tcp:, not http:. An HTTP probe of / follows the 307 to /auth/login, which
       # performs OIDC discovery against the mock on :9090 — and that mock is not
@@ -226,10 +229,18 @@ jobs:
       - name: Run E2E tests
         run: pnpm e2e
 
+      - name: Show server logs
+        if: failure()
+        run: |
+          echo "===== app.log (tail) ====="; tail -100 e2e-logs/app.log || true
+          echo "===== worker.log (tail) ====="; tail -50 e2e-logs/worker.log || true
+
       - name: Upload test results
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report
-          path: test-results/
+          path: |
+            test-results/
+            e2e-logs/
           retention-days: 7
