@@ -229,19 +229,22 @@ describe("restoreBackup", () => {
     await expect(restoreBackup(deps, archive)).rejects.toThrow("EPERM");
   });
 
-  it("cleans up temp database file", async () => {
+  it("leaves no temp database file behind", async () => {
     const archive = await createArchive([
       { name: "manifest.json", data: JSON.stringify(VALID_MANIFEST) },
       { name: "database.sql", data: "SQL" },
     ]);
-    const deps = createMockDeps();
+    const mkdtemp = vi.fn().mockResolvedValue("/data/.bookhouse-restore-abc");
+    const deps = createMockDeps({ mkdtemp });
 
     await restoreBackup(deps, archive);
 
-    expect(deps.rm).toHaveBeenCalledWith(
-      expect.stringContaining("database.sql"),
-      expect.objectContaining({ force: true }),
-    );
+    // The dump lives inside the staging directory, so removing that removes
+    // the dump too — one cleanup that also covers the failure path.
+    expect(deps.rm).toHaveBeenCalledWith("/data/.bookhouse-restore-abc", {
+      recursive: true,
+      force: true,
+    });
   });
 
   it("ignores unknown entries in archive", async () => {
@@ -267,5 +270,63 @@ describe("restoreBackup", () => {
     });
 
     await expect(restoreBackup(deps, archive)).rejects.toThrow("psql: connection refused");
+  });
+
+  it("stages beside the cover cache so the final rename cannot cross devices", async () => {
+    const archive = await createArchive([
+      { name: "manifest.json", data: JSON.stringify(VALID_MANIFEST) },
+      { name: "database.sql", data: "SQL" },
+      { name: "covers/work-1/thumb.webp", data: "img" },
+    ]);
+    const mkdtemp = vi.fn().mockResolvedValue("/data/.bookhouse-restore-abc");
+    const deps = createMockDeps({ mkdtemp, coverCacheDir: "/data/covers" });
+
+    await restoreBackup(deps, archive);
+
+    // A relative prefix stages in the process cwd, which is a different
+    // filesystem from the cover cache in every container deployment — the
+    // rename then fails with EXDEV.
+    expect(mkdtemp).toHaveBeenCalledWith(expect.stringMatching(/^\/data\//));
+  });
+
+  it("removes the staging directory after a successful restore", async () => {
+    const archive = await createArchive([
+      { name: "manifest.json", data: JSON.stringify(VALID_MANIFEST) },
+      { name: "database.sql", data: "SQL" },
+    ]);
+    const rm = vi.fn().mockResolvedValue(undefined);
+    const deps = createMockDeps({
+      rm,
+      mkdtemp: vi.fn().mockResolvedValue("/data/.bookhouse-restore-abc"),
+    });
+
+    await restoreBackup(deps, archive);
+
+    expect(rm).toHaveBeenCalledWith("/data/.bookhouse-restore-abc", {
+      recursive: true,
+      force: true,
+    });
+  });
+
+  it("removes the staging directory when the restore fails", async () => {
+    const archive = await createArchive([
+      { name: "manifest.json", data: JSON.stringify(VALID_MANIFEST) },
+      { name: "database.sql", data: "SQL" },
+    ]);
+    const rm = vi.fn().mockResolvedValue(undefined);
+    const deps = createMockDeps({
+      rm,
+      mkdtemp: vi.fn().mockResolvedValue("/data/.bookhouse-restore-abc"),
+      execFile: vi.fn().mockRejectedValue(new Error("psql: connection refused")),
+    });
+
+    // Nine stranded bookhouse-restore-* directories in the repo root say this
+    // matters: every failed restore used to leave one behind.
+    await expect(restoreBackup(deps, archive)).rejects.toThrow("psql: connection refused");
+
+    expect(rm).toHaveBeenCalledWith("/data/.bookhouse-restore-abc", {
+      recursive: true,
+      force: true,
+    });
   });
 });

@@ -127,7 +127,120 @@ jobs:
           AUTH_OIDC_CLIENT_SECRET: placeholder
           APP_URL: http://localhost:3000
 
-# NOTE: the E2E job was dropped from CI for now — cdn.playwright.dev browser
-# downloads stall from GitHub runners, which made the job unreliable. The suite
-# is unchanged and passes locally; run it before pushing with `./scripts/e2e.sh`
-# (needs Docker for the Postgres/Valkey services).
+  e2e:
+    name: E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Runs inside the official Playwright image so browsers are prebaked, which
+    # removes the cdn.playwright.dev download that used to stall runners.
+    #
+    # This tag and `@playwright/test` in package.json MUST move together, and the
+    # package follows the image, not the reverse — a mismatch makes Playwright
+    # fetch its own browser revisions and reintroduces exactly the download this
+    # avoids. Only stable tags qualify; check that one exists before bumping:
+    #   curl -s https://mcr.microsoft.com/v2/playwright/tags/list
+    container:
+      image: mcr.microsoft.com/playwright:v1.61.1-noble
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: bookhouse
+          POSTGRES_PASSWORD: bookhouse
+          POSTGRES_DB: bookhouse_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U bookhouse"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=5
+      valkey:
+        image: valkey/valkey:8
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="valkey-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      # Container jobs reach service containers by label hostname, not localhost.
+      DATABASE_URL: postgresql://bookhouse:bookhouse@postgres:5432/bookhouse_test
+      QUEUE_URL: redis://valkey:6379
+      AUTH_SECRET: e2e-test-secret-at-least-32-chars!!
+      # The OIDC mock runs in this container, started by Playwright's globalSetup.
+      AUTH_OIDC_ISSUER: http://localhost:9090
+      AUTH_OIDC_CLIENT_ID: e2e-client
+      AUTH_OIDC_CLIENT_SECRET: e2e-secret
+      APP_URL: http://localhost:3000
+      COVER_CACHE_DIR: /tmp/e2e-covers
+      PG_DUMP_PATH: /usr/lib/postgresql/17/bin/pg_dump
+      PSQL_PATH: /usr/lib/postgresql/17/bin/psql
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      # No setup-node: the Playwright image already ships Node 24.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Run database migrations
+        run: pnpm db:migrate
+
+      - name: Build
+        run: pnpm build
+
+      - name: Link Prisma client into server output
+        run: |
+          mkdir -p apps/web/.output/server/node_modules/@prisma
+          ln -sfn "$(pwd)/packages/db/node_modules/@prisma/client" apps/web/.output/server/node_modules/@prisma/client
+
+      - name: Install PostgreSQL 17 client tools
+        run: |
+          apt-get update -qq
+          apt-get install -y --no-install-recommends curl ca-certificates gnupg
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | gpg --dearmor -o /usr/share/keyrings/postgresql-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/postgresql-keyring.gpg] https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo $VERSION_CODENAME)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
+          apt-get update -qq
+          apt-get install -y --no-install-recommends postgresql-client-17
+
+      # Server output goes to files, not the step log: backgrounded stdout
+      # interleaves unreadably with Playwright's, and a server-side failure
+      # otherwise shows up only as an assertion timeout with no cause.
+      - name: Start app and worker
+        run: |
+          mkdir -p "$COVER_CACHE_DIR" e2e-logs
+          node apps/web/.output/server/index.mjs > e2e-logs/app.log 2>&1 &
+          pnpm --filter @bookhouse/library-worker exec tsx src/index.ts > e2e-logs/worker.log 2>&1 &
+
+      # tcp:, not http:. An HTTP probe of / follows the 307 to /auth/login, which
+      # performs OIDC discovery against the mock on :9090 — and that mock is not
+      # started until Playwright's globalSetup, after this point. The probe then
+      # sees a 500 and times out even though the app is up and healthy.
+      - name: Wait for app
+        run: pnpm exec wait-on tcp:3000 --timeout 30000
+
+      - name: Run E2E tests
+        run: pnpm e2e
+
+      - name: Show server logs
+        if: failure()
+        run: |
+          echo "===== app.log (tail) ====="; tail -100 e2e-logs/app.log || true
+          echo "===== worker.log (tail) ====="; tail -50 e2e-logs/worker.log || true
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: |
+            test-results/
+            e2e-logs/
+          retention-days: 7
