@@ -103,8 +103,30 @@ export async function restoreBackup(
   const { manifest, databaseSql, coverFiles } = await extractArchive(archiveBuffer);
   const conn = parseDatabaseUrl(deps.databaseUrl);
 
-  // Write database dump to temp file
-  const tempDir = await deps.mkdtemp("bookhouse-restore-");
+  // Stage beside the cover cache, not in the process's working directory. The
+  // swap below renames the staged covers into place, and rename cannot cross
+  // filesystems — staging as a sibling makes it same-device by construction.
+  // A bare "bookhouse-restore-" prefix resolves against cwd, which in every
+  // container deployment is a different device from the cover volume, so the
+  // restore died with EXDEV and left the directory behind.
+  const coversParent = path.dirname(deps.coverCacheDir);
+  await deps.mkdir(coversParent, { recursive: true });
+  const tempDir = await deps.mkdtemp(path.join(coversParent, ".bookhouse-restore-"));
+
+  try {
+    return await runRestore(deps, { manifest, databaseSql, coverFiles }, conn, tempDir);
+  } finally {
+    // Always: a failed restore used to strand its staging directory forever.
+    await deps.rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function runRestore(
+  deps: RestoreBackupDeps,
+  { manifest, databaseSql, coverFiles }: ExtractedArchive,
+  conn: ReturnType<typeof parseDatabaseUrl>,
+  tempDir: string,
+): Promise<{ manifest: BackupManifest }> {
   const dumpPath = path.join(tempDir, "database.sql");
   await deps.writeFile(dumpPath, databaseSql);
 
@@ -147,8 +169,6 @@ export async function restoreBackup(
   await deps.rename(tempCoversDir, deps.coverCacheDir);
   await deps.rm(oldCoversPath, { recursive: true, force: true });
 
-  // Clean up temp database file
-  await deps.rm(dumpPath, { force: true });
-
+  // The dump file goes with the staging directory the caller removes.
   return { manifest };
 }
