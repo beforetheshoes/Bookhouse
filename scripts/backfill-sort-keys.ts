@@ -3,7 +3,9 @@
  *
  * - Sets Work.sortTitle using generateSortTitle(titleDisplay) where sortTitle IS NULL
  *   and "sortTitle" is not in editedFields (user hasn't manually set it).
- * - Sets Contributor.nameSort using generateNameSort(nameDisplay) where nameSort IS NULL.
+ * - Recomputes Contributor.nameSort using generateNameSort(nameDisplay) for every
+ *   contributor, writing only the rows whose key changes. Idempotent, and safe
+ *   to re-run whenever generateNameSort changes.
  *
  * Usage: npx tsx scripts/backfill-sort-keys.ts
  */
@@ -37,19 +39,30 @@ async function main() {
 
   console.log(`Updated ${String(workUpdated)} works`);
 
-  // Backfill Contributor.nameSort
+  // Backfill Contributor.nameSort. Every row is recomputed, not just the null
+  // ones: names carrying a comma or a credential were previously filed under
+  // the wrong word, so a null-only pass would leave those wrong values in
+  // place. Only rows whose key actually changes are written, so this is
+  // idempotent and safe to re-run after any generateNameSort change.
   const contributors = await db.contributor.findMany({
-    where: { nameSort: null },
-    select: { id: true, nameDisplay: true },
+    select: { id: true, nameDisplay: true, nameSort: true },
   });
 
-  console.log(`Found ${String(contributors.length)} contributors with null nameSort`);
+  const contribToUpdate = contributors
+    .map((c) => ({ ...c, nextNameSort: generateNameSort(c.nameDisplay) }))
+    .filter((c) => c.nameSort !== c.nextNameSort);
+
+  const nullCount = contribToUpdate.filter((c) => c.nameSort === null).length;
+  console.log(
+    `Found ${String(contributors.length)} contributors; ${String(contribToUpdate.length)} need updating ` +
+      `(${String(nullCount)} null, ${String(contribToUpdate.length - nullCount)} incorrect)`,
+  );
 
   let contribUpdated = 0;
-  for (const contrib of contributors) {
+  for (const contrib of contribToUpdate) {
     await db.contributor.update({
       where: { id: contrib.id },
-      data: { nameSort: generateNameSort(contrib.nameDisplay) },
+      data: { nameSort: contrib.nextNameSort },
     });
     contribUpdated++;
   }
