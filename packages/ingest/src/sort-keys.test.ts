@@ -89,4 +89,59 @@ describe("generateNameSort", () => {
       "márquez, gabriel garcía",
     );
   });
+
+  // Real shapes found in the library — 54 of 1209 contributors carry a comma.
+  it("leaves an already-inverted name inverted", () => {
+    // Naive last-word-first double-inverts this to "molly, crabapple,".
+    expect(generateNameSort("Crabapple, Molly")).toBe("crabapple, molly");
+  });
+
+  it("normalizes spacing in an already-inverted name", () => {
+    expect(generateNameSort("Le Guin,   Ursula K.")).toBe("le guin, ursula k.");
+  });
+
+  it("sorts a multi-author string by the first author's surname", () => {
+    // Naive handling hoists the very last word, filing five authors under
+    // "jefferson" — the surname of the person listed last.
+    expect(
+      generateNameSort("John Clarke, Brian Roberts, Stuart Hall, Chas Critcher, Tony Jefferson"),
+    ).toBe("clarke, john");
+  });
+
+  it("ignores a trailing credential", () => {
+    expect(generateNameSort("John Gottman, PhD")).toBe("gottman, john");
+  });
+
+  it("ignores a trailing credential after a multi-word surname", () => {
+    expect(generateNameSort("Julie Schwartz Gottman, PhD")).toBe(
+      "gottman, julie schwartz",
+    );
+  });
+
+  it("keeps a generational suffix with the given names", () => {
+    expect(generateNameSort("Martin Luther King Jr.")).toBe(
+      "king, martin luther jr.",
+    );
+  });
+
+  it("ignores a music-doctorate credential", () => {
+    expect(generateNameSort("Amelia Nagoski, DMA")).toBe("nagoski, amelia");
+  });
+
+  it("files a semicolon-separated author list under the first author", () => {
+    expect(generateNameSort("Bookchin, Murray;Price, Andy;")).toBe("bookchin");
+  });
+
+  it("handles a surname with nothing but a suffix after it", () => {
+    expect(generateNameSort("King Jr.")).toBe("king jr.");
+  });
+
+  it("handles input that is only punctuation", () => {
+    expect(generateNameSort(",")).toBe(",");
+  });
+
+  it("returns a bare credential unchanged", () => {
+    // Junk contributor rows exist ("PhD", "MD"); they must not throw.
+    expect(generateNameSort("PhD")).toBe("phd");
+  });
 });
