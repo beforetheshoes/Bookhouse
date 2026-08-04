@@ -203,14 +203,23 @@ shadow DB, so it is unaffected by the MOBI issue. An empty diff
 
 ### Diagnostics
 
+From a repo checkout:
+
 ```sh
 # user/role state
-pnpm --filter @bookhouse/web exec tsx ../../scripts/check-user-roles.ts
+pnpm exec tsx scripts/check-user-roles.ts
 # Kobo device → shelf → edition chain
-pnpm --filter @bookhouse/web exec tsx ../../scripts/check-kobo-sync.ts
+pnpm exec tsx scripts/check-kobo-sync.ts
 # orphaned / dangling rows (add --strict for a non-zero exit on findings)
-pnpm --filter @bookhouse/web exec tsx ../../scripts/detect-orphans.ts
+pnpm exec tsx scripts/detect-orphans.ts
 # confirm DB matches schema (empty output = in sync)
 cd packages/db && pnpm exec prisma migrate diff \
   --from-config-datasource ./prisma.config.ts --to-schema ./prisma/schema.prisma --script
+```
+
+Inside the published web image the same scripts ship under `/app/scripts`, but
+there is no workspace manifest to filter against — invoke `tsx` directly:
+
+```sh
+docker compose exec web node_modules/.bin/tsx scripts/check-user-roles.ts
 ```
