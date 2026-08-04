@@ -131,6 +131,23 @@ export function normalizeOidcClaims(
   };
 }
 
+/**
+ * Rebuilds the callback URL from `APP_URL`, keeping only the query parameters
+ * the provider sent back.
+ *
+ * openid-client derives the token request's `redirect_uri` from the URL handed
+ * to `authorizationCodeGrant`, while the authorize request sent
+ * `getOidcCallbackUrl(config)`. Behind a TLS-terminating reverse proxy the
+ * inbound request URL is the container's internal origin, so the two values
+ * disagree and the provider rejects the exchange with `invalid_grant`.
+ */
+function toConfiguredCallbackUrl(config: AuthConfig, currentUrl: URL): URL {
+  const callbackUrl = new URL(getOidcCallbackUrl(config));
+  callbackUrl.search = currentUrl.search;
+
+  return callbackUrl;
+}
+
 export async function exchangeAuthorizationCode(input: {
   config: AuthConfig;
   currentUrl: URL;
@@ -142,7 +159,8 @@ export async function exchangeAuthorizationCode(input: {
   endSessionUrl: string | null;
 }> {
   const oidcConfig = await getOidcConfiguration(input.config);
-  const tokens = await oidc.authorizationCodeGrant(oidcConfig, input.currentUrl, {
+  const callbackUrl = toConfiguredCallbackUrl(input.config, input.currentUrl);
+  const tokens = await oidc.authorizationCodeGrant(oidcConfig, callbackUrl, {
     pkceCodeVerifier: input.codeVerifier,
     expectedState: input.expectedState,
     expectedNonce: input.expectedNonce,

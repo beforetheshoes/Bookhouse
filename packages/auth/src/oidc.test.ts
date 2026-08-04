@@ -205,6 +205,37 @@ describe("oidc helpers", () => {
     );
   });
 
+  it("exchanges against the configured callback URL when a proxy rewrites the request origin", async () => {
+    discoveryMock.mockResolvedValue({
+      serverMetadata: () => ({}),
+    });
+    authorizationCodeGrantMock.mockResolvedValue({
+      access_token: undefined,
+      claims: () => ({ sub: "subject-3" }),
+    });
+
+    const { exchangeAuthorizationCode } = await import("./oidc");
+
+    await exchangeAuthorizationCode({
+      config: { ...authConfig, appUrl: "https://books.example.com" },
+      // What the container sees behind a TLS-terminating reverse proxy.
+      currentUrl: new URL("http://10.0.0.4:3000/auth/callback?code=abc&state=state"),
+      codeVerifier: "verifier",
+      expectedState: "state",
+      expectedNonce: "nonce",
+    });
+
+    expect(authorizationCodeGrantMock).toHaveBeenCalledWith(
+      expect.anything(),
+      new URL("https://books.example.com/auth/callback?code=abc&state=state"),
+      {
+        pkceCodeVerifier: "verifier",
+        expectedState: "state",
+        expectedNonce: "nonce",
+      },
+    );
+  });
+
   it("rejects claims without a subject", async () => {
     const { normalizeOidcClaims } = await import("./oidc");
 
