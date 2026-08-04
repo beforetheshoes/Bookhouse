@@ -47,6 +47,37 @@ COPY --from=build /app/packages/db/prisma packages/db/prisma
 COPY --from=build /app/packages/db/prisma.config.ts packages/db/prisma.config.ts
 COPY --from=build /app/packages/db/package.json packages/db/package.json
 COPY --from=build /app/packages/db/node_modules packages/db/node_modules
+
+# Operator scripts (promote-owner, check-user-roles, the backfills) and the
+# workspace sources they import. Without these the documented procedures are
+# impossible to run against a real deployment: the scripts simply are not in
+# the image, so the only way to reach them is to clone the repo and install a
+# toolchain, which is not something an operator of a published image can do.
+#
+# @bookhouse/db and @bookhouse/ingest export TypeScript directly
+# (exports: "./src/index.ts"), which is why the sources ship rather than a
+# build output, and why tsx is a root devDependency — that is what puts it in
+# node_modules/.bin above.
+#
+# scripts/ has no node_modules of its own, so its bare specifiers resolve from
+# the root. Only packages listed in the root package.json get linked there,
+# which is why @bookhouse/ingest and ioredis are root devDependencies: without
+# them the two backfills and queue-check fail to resolve, in this image and on
+# a dev checkout alike.
+COPY --from=build /app/packages/db/src packages/db/src
+COPY --from=build /app/packages/ingest/src packages/ingest/src
+COPY --from=build /app/packages/ingest/package.json packages/ingest/package.json
+COPY --from=build /app/packages/ingest/node_modules packages/ingest/node_modules
+COPY --from=build /app/packages/domain packages/domain
+COPY --from=build /app/packages/shared/src packages/shared/src
+COPY --from=build /app/packages/shared/package.json packages/shared/package.json
+COPY --from=build /app/packages/shared/node_modules packages/shared/node_modules
+COPY --from=build /app/scripts scripts
+# The workspace root manifest, purely for its "type": "module". Without it the
+# nearest manifest above scripts/ is absent, tsx transforms the scripts as CJS,
+# and every one using top-level await dies in esbuild. The server is unaffected
+# either way — .output/server/package.json declares its own type.
+COPY --from=build /app/package.json package.json
 COPY scripts/web-entrypoint.sh /usr/local/bin/web-entrypoint.sh
 RUN chmod +x /usr/local/bin/web-entrypoint.sh
 CMD ["/usr/local/bin/web-entrypoint.sh"]
