@@ -2832,14 +2832,143 @@ describe("ingest services", () => {
     });
   });
 
-  it("throws when the library root does not exist", async () => {
+  it("skips quietly when the library root is already gone", async () => {
     const services = createIngestServices({
       db: createTestDb(createEmptyState("/tmp/root")),
     });
 
+    // A queued scan whose root was deleted before the worker picked it up is
+    // the same situation as a root deleted mid-scan, and gets the same clean
+    // exit — throwing here would fail the job and have BullMQ retry it.
     await expect(
       services.scanLibraryRoot({ libraryRootId: "missing-root" }),
-    ).rejects.toThrow('Library root "missing-root" was not found');
+    ).resolves.toEqual({
+      createdStubWorkIds: [],
+      discoveredPaths: [],
+      enqueuedHashJobs: [],
+      enqueuedRecoveryJobs: [],
+      missingFileAssetIds: [],
+      scannedFileAssetIds: [],
+    });
+  });
+
+  describe("library root removed mid-scan", () => {
+    /** Shaped like the Prisma error the database raises for this condition. */
+    function prismaError(code: string): Error & { code: string } {
+      return Object.assign(new Error(`Prisma error ${code}`), { code });
+    }
+
+    /**
+     * A root that exists when the scan starts and is gone by the time the scan
+     * writes — the window the race lives in.
+     */
+    function createVanishingRootDb(state: TestState): IngestDb {
+      const db = createTestDb(state);
+      const realFindUnique = db.libraryRoot.findUnique.bind(db.libraryRoot);
+      let calls = 0;
+      db.libraryRoot.findUnique = async (args) => {
+        calls++;
+        if (calls === 1) return realFindUnique(args);
+        return Promise.resolve(null);
+      };
+      return db;
+    }
+
+    async function createScanDirectoryWithFile(): Promise<string> {
+      const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-scan-vanish-"));
+      tempDirectories.push(directory);
+      await writeFile(path.join(directory, "book.epub"), "book");
+      return directory;
+    }
+
+    it("stops quietly when the upsert hits the foreign key on a deleted root", async () => {
+      const directory = await createScanDirectoryWithFile();
+      const state = createEmptyState(directory, "FULL");
+      const db = createVanishingRootDb(state);
+      db.fileAsset.upsert = () => Promise.reject(prismaError("P2003"));
+
+      const services = createIngestServices({
+        db,
+        enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      });
+
+      const result = await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+      // Everything the scan collected referenced rows the cascade has removed,
+      // so nothing is reported for downstream jobs to act on.
+      expect(result).toEqual({
+        createdStubWorkIds: [],
+        discoveredPaths: [],
+        enqueuedHashJobs: [],
+        enqueuedRecoveryJobs: [],
+        missingFileAssetIds: [],
+        scannedFileAssetIds: [],
+      });
+    });
+
+    it("stops quietly when the closing root update finds no row", async () => {
+      const directory = await createScanDirectoryWithFile();
+      const state = createEmptyState(directory, "FULL");
+      const db = createVanishingRootDb(state);
+      db.libraryRoot.update = () => Promise.reject(prismaError("P2025"));
+
+      const services = createIngestServices({
+        db,
+        enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      });
+
+      const result = await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+      expect(result.scannedFileAssetIds).toEqual([]);
+    });
+
+    it("rethrows when the root still exists, so real failures are not swallowed", async () => {
+      const directory = await createScanDirectoryWithFile();
+      const state = createEmptyState(directory, "FULL");
+      const db = createTestDb(state);
+      db.fileAsset.upsert = () => Promise.reject(prismaError("P2003"));
+
+      const services = createIngestServices({
+        db,
+        enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      });
+
+      await expect(
+        services.scanLibraryRoot({ libraryRootId: "root-1" }),
+      ).rejects.toThrow("Prisma error P2003");
+    });
+
+    it("rethrows database errors that are not the tolerated codes", async () => {
+      const directory = await createScanDirectoryWithFile();
+      const state = createEmptyState(directory, "FULL");
+      const db = createVanishingRootDb(state);
+      db.fileAsset.upsert = () => Promise.reject(prismaError("P1001"));
+
+      const services = createIngestServices({
+        db,
+        enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      });
+
+      await expect(
+        services.scanLibraryRoot({ libraryRootId: "root-1" }),
+      ).rejects.toThrow("Prisma error P1001");
+    });
+
+    it("rethrows errors that carry no Prisma code", async () => {
+      const directory = await createScanDirectoryWithFile();
+      const state = createEmptyState(directory, "FULL");
+      const db = createVanishingRootDb(state);
+      db.fileAsset.upsert = () => Promise.reject(new Error("disk exploded"));
+
+      const services = createIngestServices({
+        db,
+        enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      });
+
+      await expect(
+        services.scanLibraryRoot({ libraryRootId: "root-1" }),
+      ).rejects.toThrow("disk exploded");
+    });
   });
 
   it("creates services with default runtime dependencies", () => {
