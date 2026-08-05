@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { BookOpen, ChevronDown, FolderOpen, GitMerge, Headphones, Loader2, Trash2, Wand2, X } from "lucide-react";
+import { BookCheck, BookOpen, ChevronDown, FolderOpen, GitMerge, Headphones, Loader2, Trash2, Wand2, X } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -21,6 +21,7 @@ import {
 } from "~/components/ui/dropdown-menu";
 import { bulkDeleteWorksServerFn, bulkDeleteEditionsByFormatForWorksServerFn, deleteAllEditionsByFormatServerFn } from "~/lib/server-fns/deletion";
 import { bulkAddToShelfServerFn } from "~/lib/server-fns/shelves";
+import { markWorksAsReadServerFn } from "~/lib/server-fns/reading-progress";
 import { mergeWorksServerFn } from "~/lib/server-fns/work-management";
 import { BulkEnrichDialog } from "~/components/bulk-enrich-dialog";
 
@@ -37,6 +38,7 @@ interface LibrarySelectionToolbarProps {
   onMerged: () => void;
   onAddedToShelf: () => void;
   onEnrichStarted: () => void;
+  onMarkedAsRead: () => void;
   onClearSelection: () => void;
 }
 
@@ -53,6 +55,7 @@ export function LibrarySelectionToolbar({
   onMerged,
   onAddedToShelf,
   onEnrichStarted,
+  onMarkedAsRead,
   onClearSelection,
 }: LibrarySelectionToolbarProps) {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
@@ -64,6 +67,7 @@ export function LibrarySelectionToolbar({
   const [bulkEnrichOpen, setBulkEnrichOpen] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
   const [merging, setMerging] = useState(false);
+  const [markingRead, setMarkingRead] = useState(false);
 
   const defaultTargetId = selectedWorks.length > 0
     ? ([...selectedWorks].sort((a, b) => b.editionCount - a.editionCount)[0] as (typeof selectedWorks)[number]).id
@@ -122,6 +126,24 @@ export function LibrarySelectionToolbar({
     }
   }
 
+  async function handleMarkAsRead() {
+    setMarkingRead(true);
+    try {
+      const result = await markWorksAsReadServerFn({ data: { workIds: selectedWorkIds } });
+      const marked = result.markedWorkIds.length;
+      const skipped = selectedWorkIds.length - marked;
+      toast.success(
+        `${String(marked)} work${marked === 1 ? "" : "s"} marked as read`
+        + (skipped > 0 ? ` (${String(skipped)} skipped — no editions)` : ""),
+      );
+      onMarkedAsRead();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to mark as read");
+    } finally {
+      setMarkingRead(false);
+    }
+  }
+
   async function handleMerge() {
     setMerging(true);
     try {
@@ -166,6 +188,18 @@ export function LibrarySelectionToolbar({
           <Button variant="outline" size="sm" onClick={() => { setAddToShelfOpen(true); }} data-testid="bulk-add-to-shelf-btn">
             <FolderOpen className="mr-1.5 size-3.5" />
             Add to Shelf
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => { void handleMarkAsRead(); }}
+            disabled={markingRead}
+            data-testid="bulk-mark-read-btn"
+          >
+            {markingRead
+              ? <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+              : <BookCheck className="mr-1.5 size-3.5" />}
+            Mark as Read
           </Button>
           <Button variant="outline" size="sm" onClick={() => { setBulkEnrichOpen(true); }} data-testid="bulk-enrich-btn">
             <Wand2 className="mr-1.5 size-3.5" />

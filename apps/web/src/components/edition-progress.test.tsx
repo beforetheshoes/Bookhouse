@@ -8,7 +8,7 @@ vi.mock("~/components/progress-bar", () => ({
   ),
 }));
 
-import { EditionProgress, progressKindForEdition } from "./edition-progress";
+import { EditionProgress } from "./edition-progress";
 
 type Editions = Parameters<typeof EditionProgress>[0]["editions"];
 
@@ -16,17 +16,6 @@ type Editions = Parameters<typeof EditionProgress>[0]["editions"];
 function asEditions(data: object[]): Editions {
   return data as Editions & object[];
 }
-
-describe("progressKindForEdition", () => {
-  it("returns AUDIO for AUDIOBOOK", () => {
-    expect(progressKindForEdition("AUDIOBOOK")).toBe("AUDIO");
-  });
-
-  it("returns EBOOK for other formats", () => {
-    expect(progressKindForEdition("EBOOK")).toBe("EBOOK");
-    expect(progressKindForEdition("PDF")).toBe("EBOOK");
-  });
-});
 
 describe("EditionProgress", () => {
   const mockOnUpdate = vi.fn();

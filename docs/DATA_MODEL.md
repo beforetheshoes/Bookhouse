@@ -98,6 +98,18 @@ ebook are distinct rows and do not clobber each other. Consequences:
   row; merging positions across sources is an explicit product decision, not an
   accidental side effect of a shared key.
 
+There is no separate "read" flag. **Finished means `percent >= 100`** — the
+bucket `filterByReadingStatus` uses in `apps/web/src/lib/library-filter-helpers.ts`,
+and what the library's reading filter and the work-level rollup both read. Work
+progress is the `max` percent across the work's editions.
+
+Marking a work read (`markWorksAsReadServerFn`, from the book detail page or the
+library's bulk selection toolbar) therefore upserts a 100% **manual** row for
+*every* edition of the work — a work-level statement, so a book with both an
+ebook and an audiobook does not end up with one full bar beside one empty one.
+Kobo and KOReader rows for those editions keep their own positions, per the
+per-source key above.
+
 The migration `20260625130000_reading_progress_unique_source` backfilled
 `source` (null → `manual`), de-duplicated existing rows (keeping the newest per
 tuple), set the column `NOT NULL`, then added the unique index — in that order,

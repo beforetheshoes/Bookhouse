@@ -291,6 +291,7 @@ function LibraryPage() {
         onMerged={handleSelectionDone}
         onAddedToShelf={handleSelectionDone}
         onEnrichStarted={handleSelectionDone}
+        onMarkedAsRead={handleSelectionDone}
         onClearSelection={() => { setRowSelection({}); setAllWorkIds(null); }}
       />
     </div>

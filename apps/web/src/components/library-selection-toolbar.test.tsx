@@ -17,6 +17,10 @@ vi.mock("~/lib/server-fns/shelves", () => ({
   bulkAddToShelfServerFn: vi.fn(),
 }));
 
+vi.mock("~/lib/server-fns/reading-progress", () => ({
+  markWorksAsReadServerFn: vi.fn(),
+}));
+
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
@@ -30,6 +34,7 @@ import { toast } from "sonner";
 import { bulkDeleteWorksServerFn, bulkDeleteEditionsByFormatForWorksServerFn, deleteAllEditionsByFormatServerFn } from "~/lib/server-fns/deletion";
 import { bulkAddToShelfServerFn } from "~/lib/server-fns/shelves";
 import { mergeWorksServerFn } from "~/lib/server-fns/work-management";
+import { markWorksAsReadServerFn } from "~/lib/server-fns/reading-progress";
 import { LibrarySelectionToolbar } from "./library-selection-toolbar";
 
 const bulkDeleteWorksServerFnMock = vi.mocked(bulkDeleteWorksServerFn);
@@ -38,6 +43,7 @@ const deleteAllByFormatMock = vi.mocked(deleteAllEditionsByFormatServerFn);
 const bulkAddToShelfServerFnMock = vi.mocked(bulkAddToShelfServerFn);
 const mergeWorksServerFnMock = vi.mocked(mergeWorksServerFn);
 const mockToast = vi.mocked(toast);
+const markWorksAsReadServerFnMock = vi.mocked(markWorksAsReadServerFn);
 
 const defaultProps = {
   selectedCount: 1,
@@ -52,6 +58,7 @@ const defaultProps = {
   onMerged: vi.fn(),
   onAddedToShelf: vi.fn(),
   onEnrichStarted: vi.fn(),
+  onMarkedAsRead: vi.fn(),
   onClearSelection: vi.fn(),
 };
 
@@ -520,6 +527,97 @@ describe("LibrarySelectionToolbar", () => {
       const bookARadio = radios.find((r) => (r as HTMLInputElement).value === "w1") as HTMLInputElement;
       fireEvent.click(bookARadio);
       expect(bookARadio.checked).toBe(true);
+    });
+  });
+
+  describe("mark as read", () => {
+    it("marks the selected works as read and reports the count", async () => {
+      markWorksAsReadServerFnMock.mockResolvedValue({ markedWorkIds: ["w1", "w2"], markedEditionCount: 3 });
+      const onMarkedAsRead = vi.fn();
+      render(
+        <LibrarySelectionToolbar
+          {...defaultProps}
+          selectedCount={2}
+          selectedWorkIds={["w1", "w2"]}
+          onMarkedAsRead={onMarkedAsRead}
+        />,
+      );
+
+      fireEvent.click(screen.getByTestId("bulk-mark-read-btn"));
+
+      await waitFor(() => {
+        expect(markWorksAsReadServerFnMock).toHaveBeenCalledWith({ data: { workIds: ["w1", "w2"] } });
+      });
+      expect(mockToast.success).toHaveBeenCalledWith("2 works marked as read");
+      expect(onMarkedAsRead).toHaveBeenCalled();
+    });
+
+    it("uses the singular form for one work", async () => {
+      markWorksAsReadServerFnMock.mockResolvedValue({ markedWorkIds: ["w1"], markedEditionCount: 1 });
+      render(<LibrarySelectionToolbar {...defaultProps} />);
+
+      fireEvent.click(screen.getByTestId("bulk-mark-read-btn"));
+
+      await waitFor(() => {
+        expect(mockToast.success).toHaveBeenCalledWith("1 work marked as read");
+      });
+    });
+
+    it("reports works skipped for having no editions", async () => {
+      markWorksAsReadServerFnMock.mockResolvedValue({ markedWorkIds: ["w1"], markedEditionCount: 1 });
+      render(
+        <LibrarySelectionToolbar {...defaultProps} selectedCount={2} selectedWorkIds={["w1", "w2"]} />,
+      );
+
+      fireEvent.click(screen.getByTestId("bulk-mark-read-btn"));
+
+      await waitFor(() => {
+        expect(mockToast.success).toHaveBeenCalledWith("1 work marked as read (1 skipped — no editions)");
+      });
+    });
+
+    it("shows an error toast and keeps the selection when the call fails", async () => {
+      markWorksAsReadServerFnMock.mockRejectedValue(new Error("nope"));
+      const onMarkedAsRead = vi.fn();
+      render(<LibrarySelectionToolbar {...defaultProps} onMarkedAsRead={onMarkedAsRead} />);
+
+      fireEvent.click(screen.getByTestId("bulk-mark-read-btn"));
+
+      await waitFor(() => {
+        expect(mockToast.error).toHaveBeenCalledWith("nope");
+      });
+      expect(onMarkedAsRead).not.toHaveBeenCalled();
+    });
+
+    it("falls back to a generic message for a non-Error rejection", async () => {
+      markWorksAsReadServerFnMock.mockRejectedValue("boom");
+      render(<LibrarySelectionToolbar {...defaultProps} />);
+
+      fireEvent.click(screen.getByTestId("bulk-mark-read-btn"));
+
+      await waitFor(() => {
+        expect(mockToast.error).toHaveBeenCalledWith("Failed to mark as read");
+      });
+    });
+
+    it("disables the button while the request is in flight", async () => {
+      let resolve: (v: { markedWorkIds: string[]; markedEditionCount: number }) => void = () => undefined;
+      markWorksAsReadServerFnMock.mockReturnValue(
+        new Promise((r) => { resolve = r; }),
+      );
+      render(<LibrarySelectionToolbar {...defaultProps} />);
+
+      const btn = screen.getByTestId<HTMLButtonElement>("bulk-mark-read-btn");
+      fireEvent.click(btn);
+
+      await waitFor(() => {
+        expect(btn.disabled).toBe(true);
+      });
+
+      resolve({ markedWorkIds: ["w1"], markedEditionCount: 1 });
+      await waitFor(() => {
+        expect(btn.disabled).toBe(false);
+      });
     });
   });
 });
