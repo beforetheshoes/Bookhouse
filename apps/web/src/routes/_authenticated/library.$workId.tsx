@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { BookOpen, ChevronRight, Headphones, Sparkles, Trash2 } from "lucide-react";
+import { BookCheck, BookOpen, ChevronRight, Headphones, Loader2, Sparkles, Trash2 } from "lucide-react";
 import { WorkCover } from "~/components/work-cover";
 import { Button } from "~/components/ui/button";
 import {
@@ -27,7 +27,7 @@ import {
   getWorkDetailServerFn,
   type WorkDetail,
 } from "~/lib/server-fns/work-detail";
-import { getReadingProgressServerFn, updateReadingProgressServerFn } from "~/lib/server-fns/reading-progress";
+import { getReadingProgressServerFn, markWorksAsReadServerFn, updateReadingProgressServerFn } from "~/lib/server-fns/reading-progress";
 import { deleteWorkServerFn, deleteEditionServerFn } from "~/lib/server-fns/deletion";
 import { splitEditionToWorkServerFn, splitEditionFilesServerFn } from "~/lib/server-fns/work-management";
 import { SplitEditionDialog } from "~/components/split-edition-dialog";
@@ -106,6 +106,7 @@ function WorkDetailPage() {
   const [splittingToWork, setSplittingToWork] = useState(false);
   const [splitFilesEditionId, setSplitFilesEditionId] = useState<string | null>(null);
   const [splittingFiles, setSplittingFiles] = useState(false);
+  const [markingRead, setMarkingRead] = useState(false);
   const formatFamilies = [...new Set(work.editions.map((e) => e.formatFamily))];
   const [activeFormat, setActiveFormat] = useState<string>(formatFamilies[0] ?? "EBOOK");
   const editionsByFormat: Record<string, WorkDetail["editions"]> = {};
@@ -124,10 +125,25 @@ function WorkDetailPage() {
   const maxPercent = progress.length > 0
     ? Math.max(...progress.map((p) => p.percent ?? 0))
     : null;
+  // Matches the "finished" bucket the library's reading filter uses.
+  const isFinished = maxPercent !== null && maxPercent >= 100;
 
   async function handleUpdateProgress(editionId: string, percent: number, progressKind: string) {
     await updateReadingProgressServerFn({ data: { editionId, percent, progressKind: progressKind as "EBOOK" | "AUDIO" | "READALOUD" } });
     void router.invalidate();
+  }
+
+  async function handleMarkAsRead() {
+    setMarkingRead(true);
+    try {
+      await markWorksAsReadServerFn({ data: { workIds: [work.id] } });
+      toast.success("Marked as read");
+      void router.invalidate();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to mark as read");
+    } finally {
+      setMarkingRead(false);
+    }
   }
 
   const firstPublishYear = (() => {
@@ -446,14 +462,28 @@ function WorkDetailPage() {
           <h2 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
             Reading Progress
           </h2>
-          {maxPercent !== null && (
-            <span
-              className="font-display text-sm font-medium"
-              style={{ color: "var(--bh-accent, var(--foreground))" }}
+          <div className="flex items-center gap-3">
+            {maxPercent !== null && (
+              <span
+                className="font-display text-sm font-medium"
+                style={{ color: "var(--bh-accent, var(--foreground))" }}
+              >
+                {maxPercent}%
+              </span>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { void handleMarkAsRead(); }}
+              disabled={markingRead || isFinished}
+              data-testid="mark-work-read-btn"
             >
-              {maxPercent}%
-            </span>
-          )}
+              {markingRead
+                ? <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                : <BookCheck className="mr-1.5 size-3.5" />}
+              {isFinished ? "Read" : "Mark as read"}
+            </Button>
+          </div>
         </div>
         <div className="h-1.5 overflow-hidden rounded-full bg-muted">
           <div

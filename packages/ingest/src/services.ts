@@ -1165,6 +1165,52 @@ async function walkRegularFiles(
   return files.sort();
 }
 
+/** Prisma codes a scan raises once its library root has gone out from under it. */
+const PRISMA_FOREIGN_KEY_VIOLATION = "P2003";
+const PRISMA_RECORD_NOT_FOUND = "P2025";
+
+/**
+ * A scan holds no lock on its library root, so the root can be deleted between
+ * the check at the top of the scan and any write later in it — an operator
+ * removing a root while a scan runs, or a test truncating between specs.
+ * Deleting a root cascades to its FileAssets, so a write then either violates
+ * the foreign key (P2003) or matches no row (P2025).
+ *
+ * Both mean there is nothing left to scan. The root is re-read before the error
+ * is tolerated, so the same codes with the root still in place stay a real
+ * failure rather than a silently successful job.
+ */
+async function libraryRootWasRemoved(
+  ingestDb: IngestDb,
+  libraryRootId: string,
+  errorCode: string | undefined,
+): Promise<boolean> {
+  if (
+    errorCode !== PRISMA_FOREIGN_KEY_VIOLATION
+    && errorCode !== PRISMA_RECORD_NOT_FOUND
+  ) {
+    return false;
+  }
+
+  const libraryRoot = await ingestDb.libraryRoot.findUnique({
+    where: { id: libraryRootId },
+  });
+
+  return libraryRoot === null;
+}
+
+/** A scan that found nothing to do, in the shape callers expect. */
+function emptyScanResult(): ScanLibraryRootResult {
+  return {
+    createdStubWorkIds: [],
+    discoveredPaths: [],
+    enqueuedHashJobs: [],
+    enqueuedRecoveryJobs: [],
+    missingFileAssetIds: [],
+    scannedFileAssetIds: [],
+  };
+}
+
 async function getExistingLibraryRootOrThrow(ingestDb: IngestDb, libraryRootId: string): Promise<LibraryRootRecord> {
   const libraryRoot = await ingestDb.libraryRoot.findUnique({
     where: { id: libraryRootId },
@@ -1836,10 +1882,50 @@ export function createIngestServices(
   const enqueueJob = dependencies.enqueueLibraryJob ?? enqueueLibraryJob;
   const logger = dependencies.logger ?? createLogger("ingest");
 
+  /**
+   * Stops the scan cleanly if the library root is deleted while it runs, rather
+   * than letting the failed write surface as a failed — and retried — job.
+   * Anything the scan collected before that point referenced rows the cascade
+   * has already removed, so an empty result is returned: reporting those ids
+   * would hand downstream jobs entities that no longer exist.
+   */
   async function scanLibraryRoot(input: ScanLibraryRootInput): Promise<ScanLibraryRootResult> {
+    try {
+      return await runScanLibraryRoot(input);
+    } catch (error) {
+      const errorCode = typeof error === "object" && error !== null && "code" in error
+        ? (error as { code?: string }).code
+        : undefined;
+
+      if (!await libraryRootWasRemoved(ingestDb, input.libraryRootId, errorCode)) {
+        throw error;
+      }
+
+      logger.warn(
+        { libraryRootId: input.libraryRootId },
+        "Library root was removed during the scan; stopping without changes",
+      );
+
+      return emptyScanResult();
+    }
+  }
+
+  async function runScanLibraryRoot(input: ScanLibraryRootInput): Promise<ScanLibraryRootResult> {
     const now = input.now ?? new Date();
     const reportProgress = input.reportProgress;
-    const libraryRoot = await getExistingLibraryRootOrThrow(ingestDb, input.libraryRootId);
+    // A queued scan whose root was deleted before the worker reached it is the
+    // same situation as one deleted mid-scan: nothing to do, and failing the
+    // job would only have BullMQ retry a root that is never coming back.
+    const libraryRoot = await ingestDb.libraryRoot.findUnique({
+      where: { id: input.libraryRootId },
+    });
+    if (libraryRoot === null) {
+      logger.warn(
+        { libraryRootId: input.libraryRootId },
+        "Library root no longer exists; skipping scan",
+      );
+      return emptyScanResult();
+    }
     const effectiveScanMode = input.scanMode ?? libraryRoot.scanMode;
     const normalizedRootPath = normalizeRootPath(libraryRoot.path);
     const existingFileAssets = await ingestDb.fileAsset.findMany({

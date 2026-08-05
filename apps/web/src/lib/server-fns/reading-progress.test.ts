@@ -24,10 +24,12 @@ const readingProgressFindManyMock = vi.fn();
 const readingProgressUpsertMock = vi.fn();
 const workProgressPreferenceFindUniqueMock = vi.fn();
 const userPreferenceFindUniqueMock = vi.fn();
+const editionFindManyMock = vi.fn();
 
 vi.mock("@bookhouse/db", () => ({
   db: {
     work: { findUniqueOrThrow: workFindUniqueOrThrowMock },
+    edition: { findMany: editionFindManyMock },
     readingProgress: {
       findMany: readingProgressFindManyMock,
       upsert: readingProgressUpsertMock,
@@ -41,6 +43,7 @@ import {
   getReadingProgressServerFn,
   updateReadingProgressServerFn,
   getBulkReadingProgressServerFn,
+  markWorksAsReadServerFn,
 } from "./reading-progress";
 
 describe("getReadingProgressServerFn", () => {
@@ -207,5 +210,101 @@ describe("getBulkReadingProgressServerFn", () => {
 
     const result = await getBulkReadingProgressServerFn();
     expect(result).toEqual({});
+  });
+});
+
+describe("markWorksAsReadServerFn", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it("throws when user not authenticated", async () => {
+    getCurrentUserMock.mockResolvedValue(null);
+    await expect(
+      markWorksAsReadServerFn({ data: { workIds: ["w1"] } }),
+    ).rejects.toThrow("Not authenticated");
+  });
+
+  it("upserts 100% manual progress for every edition of every work", async () => {
+    getCurrentUserMock.mockResolvedValue({ id: "user-1" });
+    editionFindManyMock.mockResolvedValue([
+      { id: "e1", workId: "w1", formatFamily: "EBOOK" },
+      { id: "e2", workId: "w1", formatFamily: "AUDIOBOOK" },
+      { id: "e3", workId: "w2", formatFamily: "EBOOK" },
+    ]);
+    readingProgressUpsertMock.mockResolvedValue({});
+
+    const result = await markWorksAsReadServerFn({ data: { workIds: ["w1", "w2"] } });
+
+    expect(editionFindManyMock).toHaveBeenCalledWith({
+      where: { workId: { in: ["w1", "w2"] } },
+      select: { id: true, workId: true, formatFamily: true },
+    });
+    expect(readingProgressUpsertMock).toHaveBeenCalledTimes(3);
+    expect(readingProgressUpsertMock).toHaveBeenCalledWith({
+      where: {
+        userId_editionId_progressKind_source: {
+          userId: "user-1",
+          editionId: "e1",
+          progressKind: "EBOOK",
+          source: "manual",
+        },
+      },
+      create: {
+        userId: "user-1",
+        editionId: "e1",
+        progressKind: "EBOOK",
+        percent: 100,
+        locator: {},
+        source: "manual",
+      },
+      update: { percent: 100, locator: {} },
+    });
+    expect(result).toEqual({ markedWorkIds: ["w1", "w2"], markedEditionCount: 3 });
+  });
+
+  it("derives the progress kind from each edition's format family", async () => {
+    getCurrentUserMock.mockResolvedValue({ id: "user-1" });
+    editionFindManyMock.mockResolvedValue([
+      { id: "e2", workId: "w1", formatFamily: "AUDIOBOOK" },
+    ]);
+    readingProgressUpsertMock.mockResolvedValue({});
+
+    await markWorksAsReadServerFn({ data: { workIds: ["w1"] } });
+
+    expect(readingProgressUpsertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          userId_editionId_progressKind_source: {
+            userId: "user-1",
+            editionId: "e2",
+            progressKind: "AUDIO",
+            source: "manual",
+          },
+        },
+      }),
+    );
+  });
+
+  it("reports only works that actually had editions", async () => {
+    getCurrentUserMock.mockResolvedValue({ id: "user-1" });
+    editionFindManyMock.mockResolvedValue([
+      { id: "e1", workId: "w1", formatFamily: "EBOOK" },
+    ]);
+    readingProgressUpsertMock.mockResolvedValue({});
+
+    const result = await markWorksAsReadServerFn({ data: { workIds: ["w1", "w-empty"] } });
+
+    expect(result).toEqual({ markedWorkIds: ["w1"], markedEditionCount: 1 });
+  });
+
+  it("does nothing when none of the works have editions", async () => {
+    getCurrentUserMock.mockResolvedValue({ id: "user-1" });
+    editionFindManyMock.mockResolvedValue([]);
+
+    const result = await markWorksAsReadServerFn({ data: { workIds: ["w-empty"] } });
+
+    expect(readingProgressUpsertMock).not.toHaveBeenCalled();
+    expect(result).toEqual({ markedWorkIds: [], markedEditionCount: 0 });
   });
 });

@@ -77,6 +77,61 @@ export const updateReadingProgressServerFn = createServerFn({
     });
   });
 
+/**
+ * Marking a work read is a statement about the book, not about one file, so
+ * every edition is set to 100% — a work with both an ebook and an audiobook
+ * would otherwise show one full bar beside one empty bar. Only the manual row
+ * is touched; kobo/koreader rows for the same edition keep their own state.
+ */
+export const markWorksAsReadServerFn = createServerFn({
+  method: "POST",
+})
+  .validator(z.object({ workIds: z.array(z.string().min(1)).min(1) }))
+  .handler(async ({ data }) => {
+    const { getCurrentUser } = await import("~/lib/auth-server");
+    const user = await getCurrentUser();
+    if (!user) throw new Error("Not authenticated");
+
+    const { db } = await import("@bookhouse/db");
+    const { progressKindForEdition } = await import("~/lib/progress-kind");
+
+    const editions = await db.edition.findMany({
+      where: { workId: { in: data.workIds } },
+      select: { id: true, workId: true, formatFamily: true },
+    });
+
+    for (const edition of editions) {
+      const progressKind = progressKindForEdition(edition.formatFamily);
+      await db.readingProgress.upsert({
+        where: {
+          userId_editionId_progressKind_source: {
+            userId: user.id,
+            editionId: edition.id,
+            progressKind,
+            source: "manual",
+          },
+        },
+        create: {
+          userId: user.id,
+          editionId: edition.id,
+          progressKind,
+          percent: 100,
+          locator: {},
+          source: "manual",
+        },
+        update: { percent: 100, locator: {} },
+      });
+    }
+
+    // A requested work with no editions has nothing to mark, so it is left out
+    // of the count the caller reports back to the user.
+    const markedWorkIds = data.workIds.filter((workId) =>
+      editions.some((edition: { workId: string }) => edition.workId === workId),
+    );
+
+    return { markedWorkIds, markedEditionCount: editions.length };
+  });
+
 export const getBulkReadingProgressServerFn = createServerFn({
   method: "GET",
 }).handler(async () => {

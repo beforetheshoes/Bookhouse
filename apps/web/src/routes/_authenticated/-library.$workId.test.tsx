@@ -139,9 +139,11 @@ vi.mock("~/lib/server-fns/work-detail", () => ({
 
 const getReadingProgressServerFnMock = vi.fn();
 const updateReadingProgressServerFnMock = vi.fn();
+const markWorksAsReadServerFnMock = vi.fn();
 vi.mock("~/lib/server-fns/reading-progress", () => ({
   getReadingProgressServerFn: getReadingProgressServerFnMock,
   updateReadingProgressServerFn: updateReadingProgressServerFnMock,
+  markWorksAsReadServerFn: markWorksAsReadServerFnMock,
 }));
 
 const deleteWorkServerFnMock = vi.fn();
@@ -2269,6 +2271,63 @@ describe("WorkDetailPage", () => {
       const Page = Route.options.component as React.ComponentType;
       render(<Page />);
       expect(screen.getByTestId("reading-progress-strip")).toBeTruthy();
+    });
+  });
+
+  describe("mark as read", () => {
+    it("marks the work as read and refreshes", async () => {
+      markWorksAsReadServerFnMock.mockResolvedValue({ markedWorkIds: ["work-1"], markedEditionCount: 1 });
+      const { Route } = await import("./library.$workId");
+      const Page = Route.options.component as React.ComponentType;
+      render(<Page />);
+
+      fireEvent.click(screen.getByTestId("mark-work-read-btn"));
+
+      await waitFor(() => {
+        expect(markWorksAsReadServerFnMock).toHaveBeenCalledWith({ data: { workIds: ["work-1"] } });
+      });
+      expect(mockInvalidate).toHaveBeenCalled();
+    });
+
+    it("disables the button when the work is already finished", async () => {
+      mockLoaderData.progress = [
+        { id: "prog-1", editionId: "edition-1", percent: 100, progressKind: "EBOOK" },
+      ];
+      const { Route } = await import("./library.$workId");
+      const Page = Route.options.component as React.ComponentType;
+      render(<Page />);
+
+      const btn = screen.getByTestId<HTMLButtonElement>("mark-work-read-btn");
+      expect(btn.disabled).toBe(true);
+      fireEvent.click(btn);
+      expect(markWorksAsReadServerFnMock).not.toHaveBeenCalled();
+    });
+
+    it("surfaces an error and does not refresh when the call fails", async () => {
+      markWorksAsReadServerFnMock.mockRejectedValue(new Error("nope"));
+      const { Route } = await import("./library.$workId");
+      const Page = Route.options.component as React.ComponentType;
+      render(<Page />);
+
+      fireEvent.click(screen.getByTestId("mark-work-read-btn"));
+
+      await waitFor(() => {
+        expect(mockToast.error).toHaveBeenCalledWith("nope");
+      });
+      expect(mockInvalidate).not.toHaveBeenCalled();
+    });
+
+    it("falls back to a generic message for a non-Error rejection", async () => {
+      markWorksAsReadServerFnMock.mockRejectedValue("boom");
+      const { Route } = await import("./library.$workId");
+      const Page = Route.options.component as React.ComponentType;
+      render(<Page />);
+
+      fireEvent.click(screen.getByTestId("mark-work-read-btn"));
+
+      await waitFor(() => {
+        expect(mockToast.error).toHaveBeenCalledWith("Failed to mark as read");
+      });
     });
   });
 });

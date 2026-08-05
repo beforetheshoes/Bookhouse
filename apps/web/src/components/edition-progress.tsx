@@ -3,12 +3,8 @@ import { Loader2, Pencil } from "lucide-react";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { ProgressBar } from "~/components/progress-bar";
+import { progressKindForEdition } from "~/lib/progress-kind";
 import type { WorkDetail } from "~/lib/server-fns/work-detail";
-
-export function progressKindForEdition(formatFamily: string): "EBOOK" | "AUDIO" | "READALOUD" {
-  if (formatFamily === "AUDIOBOOK") return "AUDIO";
-  return "EBOOK";
-}
 
 interface EditionProgressProps {
   progress: { editionId: string; progressKind: string; percent: number | null; source: string | null }[];
