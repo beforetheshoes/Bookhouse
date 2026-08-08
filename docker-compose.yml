@@ -10,7 +10,7 @@ services:
       - pgdata:/var/lib/postgresql/data
 
   queue:
-    image: valkey/valkey:8
+    image: valkey/valkey:9
     restart: unless-stopped
     volumes:
       - queuedata:/data
