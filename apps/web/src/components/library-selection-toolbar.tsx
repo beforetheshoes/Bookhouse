@@ -24,6 +24,7 @@ import { bulkAddToShelfServerFn } from "~/lib/server-fns/shelves";
 import { markWorksAsReadServerFn } from "~/lib/server-fns/reading-progress";
 import { mergeWorksServerFn } from "~/lib/server-fns/work-management";
 import { BulkEnrichDialog } from "~/components/bulk-enrich-dialog";
+import { FloatingActionBar } from "~/components/floating-action-bar";
 
 interface LibrarySelectionToolbarProps {
   selectedCount: number;
@@ -164,7 +165,7 @@ export function LibrarySelectionToolbar({
 
   return (
     <>
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-1.5 rounded-lg border bg-background p-3 shadow-lg">
+      <FloatingActionBar>
         {allPageRowsSelected && selectedCount < totalCount && (
           <div className="text-xs text-muted-foreground" data-testid="select-all-banner">
             All {selectedCount} on this page selected.{" "}
@@ -183,7 +184,7 @@ export function LibrarySelectionToolbar({
             </button>
           </div>
         )}
-        <div className="flex items-center gap-3">
+        <div className="flex w-full flex-wrap items-center justify-center gap-2 md:w-auto md:flex-nowrap md:gap-3">
           <span className="text-sm font-medium">{selectedCount} work{selectedCount === 1 ? "" : "s"} selected</span>
           <Button variant="outline" size="sm" onClick={() => { setAddToShelfOpen(true); }} data-testid="bulk-add-to-shelf-btn">
             <FolderOpen className="mr-1.5 size-3.5" />
@@ -260,7 +261,7 @@ export function LibrarySelectionToolbar({
             Clear
           </Button>
         </div>
-      </div>
+      </FloatingActionBar>
 
       <Dialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
         <DialogContent>

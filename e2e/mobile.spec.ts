@@ -82,6 +82,25 @@ test.describe("Mobile layout", () => {
     await expectNoHorizontalOverflow(page);
   });
 
+  test("shelf bulk actions stay inside the viewport", async ({ page }) => {
+    await seedWork({ title: "The Great Gatsby" });
+    await page.goto("/shelves");
+
+    // Selection is a >=md affordance on the library, but shelf pages keep
+    // their own selection bar — it must not overhang the viewport edges.
+    const bar = page.getByTestId("selection-bar");
+    if (await bar.isVisible().catch(() => false)) {
+      const viewport = page.viewportSize();
+      const box = await bar.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box?.x).toBeGreaterThanOrEqual(0);
+      expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(
+        (viewport?.width ?? 0) + 1,
+      );
+    }
+    await expectNoHorizontalOverflow(page);
+  });
+
   test("facet filters are reachable through the filters sheet", async ({
     page,
   }) => {

@@ -29,6 +29,7 @@ import {
 } from "~/lib/server-fns/shelves";
 import type { SortValue } from "~/components/library-toolbar";
 import type { ReadingFilter } from "~/lib/sort-filter-works";
+import { FloatingActionBar } from "~/components/floating-action-bar";
 
 export const Route = createFileRoute("/_authenticated/shelves/$shelfId")({
   loader: async ({ params }) => {
@@ -234,23 +235,25 @@ function ShelfDetailPage() {
       )}
 
       {selectedCount > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-lg border bg-background p-3 shadow-lg" data-testid="selection-bar">
-          <span className="text-sm font-medium">{selectedCount} edition{selectedCount === 1 ? "" : "s"} selected</span>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => { void handleRemoveSelected(); }}
-            disabled={removing}
-            data-testid="remove-selected-btn"
-          >
-            <Trash2 className="mr-1.5 size-3.5" />
-            {removing ? "Removing..." : "Remove from Shelf"}
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => { setRowSelection({}); }}>
-            <X className="mr-1.5 size-3.5" />
-            Clear
-          </Button>
-        </div>
+        <FloatingActionBar data-testid="selection-bar">
+          <div className="flex w-full flex-wrap items-center justify-center gap-2 md:w-auto md:flex-nowrap md:gap-3">
+            <span className="text-sm font-medium">{selectedCount} edition{selectedCount === 1 ? "" : "s"} selected</span>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => { void handleRemoveSelected(); }}
+              disabled={removing}
+              data-testid="remove-selected-btn"
+            >
+              <Trash2 className="mr-1.5 size-3.5" />
+              {removing ? "Removing..." : "Remove from Shelf"}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => { setRowSelection({}); }}>
+              <X className="mr-1.5 size-3.5" />
+              Clear
+            </Button>
+          </div>
+        </FloatingActionBar>
       )}
 
       <AddEditionsDialog
