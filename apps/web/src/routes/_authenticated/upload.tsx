@@ -198,7 +198,7 @@ export function UploadForm({ libraryRoots }: UploadFormProps) {
             </p>
           ) : (
             <Select value={libraryRootId} onValueChange={setLibraryRootId}>
-              <SelectTrigger id="library-root">
+              <SelectTrigger id="library-root" className="w-full">
                 <SelectValue placeholder="Choose a library" />
               </SelectTrigger>
               <SelectContent>

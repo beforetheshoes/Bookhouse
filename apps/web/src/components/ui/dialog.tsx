@@ -68,9 +68,12 @@ function DialogContent({
         // to, but that would otherwise hand it the opening focus. Move focus
         // past it to the first real control.
         onOpenAutoFocus={(event) => {
-          const content = event.currentTarget as HTMLElement | null;
-          const first = content?.querySelector<HTMLElement>(
-            '[data-slot="dialog-close"] ~ * a[href], [data-slot="dialog-close"] ~ * button:not([disabled]), [data-slot="dialog-close"] ~ * input:not([disabled]), [data-slot="dialog-close"] ~ * textarea:not([disabled]), [data-slot="dialog-close"] ~ * [tabindex]:not([tabindex="-1"])',
+          const content = event.currentTarget as HTMLElement;
+          const focusable = content.querySelectorAll<HTMLElement>(
+            'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+          );
+          const first = Array.from(focusable).find(
+            (el) => el.dataset.slot !== "dialog-close",
           );
           if (first) {
             event.preventDefault();

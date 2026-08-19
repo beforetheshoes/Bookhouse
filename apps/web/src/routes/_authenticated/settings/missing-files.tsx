@@ -156,6 +156,7 @@ function MissingFilesPage() {
               <TableHead className="w-10">
                 <input
                   type="checkbox"
+                  className="size-5 md:size-4"
                   checked={selected.size === missingFiles.items.length}
                   onChange={toggleSelectAll}
                   aria-label="Select all"
@@ -175,6 +176,7 @@ function MissingFilesPage() {
                   <TableCell>
                     <input
                       type="checkbox"
+                      className="size-5 md:size-4"
                       checked={selected.has(file.id)}
                       onChange={() => { toggleSelect(file.id); }}
                       aria-label={`Select ${file.relativePath}`}

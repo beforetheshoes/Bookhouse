@@ -179,3 +179,35 @@ export async function seedShelf(
   }
   return shelf;
 }
+
+/**
+ * A work attached to a long-named series, in a long-named library root.
+ *
+ * Both shapes reach the UI through Badge and SelectTrigger, which size to
+ * their content: a long series name overflowed work detail to 535px and a long
+ * root name overflowed /upload to 601px while the suite was green on tidy data.
+ */
+export async function seedHostileWork() {
+  const root = await db.libraryRoot.upsert({
+    where: { path: "/mnt/media/books/calibre-library-with-a-long-path" },
+    create: {
+      name: "Downstairs Calibre Library Including Audiobooks And Comics",
+      path: "/mnt/media/books/calibre-library-with-a-long-path",
+      kind: "EBOOKS",
+      scanMode: "FULL",
+    },
+    update: {},
+  });
+  const series = await db.series.create({
+    data: { name: "The Extremely Long Chronicles Of A Series Name That Will Not Fit" },
+  });
+  const work = await seedWork({
+    title:
+      "A Genuinely Very Long Book Title That Keeps Going Well Past What Any Card Was Designed To Hold",
+  });
+  await db.work.update({
+    where: { id: work.id },
+    data: { seriesId: series.id, seriesPosition: 1 },
+  });
+  return { work, series, root };
+}

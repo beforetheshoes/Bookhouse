@@ -51,7 +51,7 @@ export function WorkCard({ id, title, authors, enrichmentStatus, scanActive, for
             </Badge>
           ))}
           {series && (
-            <Badge data-testid="series-badge" variant="outline" className={isSmall ? "px-1 py-0 text-[10px] md:text-[8px]" : "px-1.5 py-0 text-[10px]"}>
+            <Badge data-testid="series-badge" title={series} variant="outline" className={isSmall ? "truncate px-1 py-0 text-[10px] md:text-[8px]" : "truncate px-1.5 py-0 text-[10px]"}>
               {series}
             </Badge>
           )}

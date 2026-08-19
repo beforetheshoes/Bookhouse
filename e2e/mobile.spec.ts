@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { seedShelf, seedWork, cleanTestData } from "./helpers/seed";
+import { seedHostileWork, seedShelf, seedWork, cleanTestData } from "./helpers/seed";
 
 /**
  * Asserts the document does not scroll horizontally.
@@ -108,10 +108,7 @@ test.describe("Mobile layout", () => {
         // Short, tidy data hides real overflow: /authors and the work
         // detail shelf badges both overflowed with realistic lengths while
         // this suite was green.
-        const w = await seedWork({
-          title:
-            "A Genuinely Very Long Book Title That Keeps Going Well Past What Any Card Was Designed To Hold",
-        });
+        const { work: w } = await seedHostileWork();
         await seedShelf({
           name: "Currently Reading And Also Some Other Long Shelf Name",
           editionIds: w.editions.map((e) => e.id),
@@ -269,10 +266,7 @@ test.describe("Mobile layout", () => {
   test("work detail fits the viewport with long titles and shelf names", async ({
     page,
   }) => {
-    const work = await seedWork({
-      title:
-        "A Genuinely Very Long Book Title That Keeps Going Well Past What Any Card Was Designed To Hold",
-    });
+    const { work } = await seedHostileWork();
     await seedShelf({
       name: "Currently Reading And Also Some Other Long Shelf Name",
       editionIds: work.editions.map((e) => e.id),
