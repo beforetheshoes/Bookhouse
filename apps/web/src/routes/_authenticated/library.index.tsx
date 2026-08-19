@@ -220,10 +220,10 @@ function LibraryPage() {
           </div>
         )}
       </div>
-      <div className="flex flex-col gap-4 md:flex-row md:gap-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:gap-6">
         <aside
           data-testid="library-filters-rail"
-          className="hidden md:block md:w-56 md:shrink-0"
+          className="hidden lg:block lg:w-56 lg:shrink-0"
         >
           <LibraryFilters
             facetCounts={facetCounts}

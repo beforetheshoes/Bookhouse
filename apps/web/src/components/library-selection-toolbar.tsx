@@ -171,7 +171,7 @@ export function LibrarySelectionToolbar({
             All {selectedCount} on this page selected.{" "}
             <button
               type="button"
-              className="inline-flex min-h-9 items-center px-1 underline font-medium text-foreground hover:text-primary md:min-h-0 md:px-0"
+              className="inline-flex min-h-9 items-center px-1 underline font-medium text-foreground hover:text-primary lg:min-h-0 lg:px-0"
               onClick={onSelectAll}
               disabled={selectingAll}
               data-testid="select-all-btn"

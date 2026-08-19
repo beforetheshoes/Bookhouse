@@ -29,10 +29,10 @@ function renderSheet(filters: LibraryFilterValues = {}) {
 }
 
 describe("LibraryFiltersSheet", () => {
-  it("renders a trigger that is hidden from md up", () => {
+  it("renders a trigger that is hidden from lg up", () => {
     renderSheet();
     const trigger = screen.getByRole("button", { name: /Filters/ });
-    expect(trigger.className).toContain("md:hidden");
+    expect(trigger.className).toContain("lg:hidden");
   });
 
   it("shows no badge when no filters are active", () => {

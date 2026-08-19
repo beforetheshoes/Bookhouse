@@ -707,7 +707,7 @@ describe("LibraryPage", () => {
     expect(screen.getByTestId("library-filters")).toBeTruthy();
   });
 
-  it("hides the desktop filter rail below md and stacks the row", async () => {
+  it("hides the desktop filter rail below lg and stacks the row", async () => {
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       editionsResult: null,
@@ -722,11 +722,11 @@ describe("LibraryPage", () => {
     // A 224px rail leaves ~79px of a 375px phone for everything else.
     const rail = container.querySelector('[data-testid="library-filters-rail"]');
     expect(rail?.className).toContain("hidden");
-    expect(rail?.className).toContain("md:block");
+    expect(rail?.className).toContain("lg:block");
 
     const row = rail?.parentElement;
     expect(row?.className).toContain("flex-col");
-    expect(row?.className).toContain("md:flex-row");
+    expect(row?.className).toContain("lg:flex-row");
   });
 
   it("offers the filters sheet as the mobile route into faceting", async () => {

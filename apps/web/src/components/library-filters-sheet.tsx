@@ -45,7 +45,7 @@ export function LibraryFiltersSheet({
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <Button variant="outline" size="sm" className="md:hidden">
+        <Button variant="outline" size="sm" className="lg:hidden">
           <SlidersHorizontal className="mr-2 size-4" />
           Filters
           {activeCount > 0 && (

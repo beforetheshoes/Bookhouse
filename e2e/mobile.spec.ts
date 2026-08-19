@@ -122,7 +122,19 @@ test.describe("Mobile layout", () => {
     }
   });
 
-  const TAP_ROUTES = ["/library", "/settings", "/shelves", "/upload", "/authors", "/series", "/settings/missing-files"];
+  const TAP_ROUTES = [
+  "/library",
+  "/settings",
+  "/shelves",
+  "/upload",
+  "/authors",
+  "/series",
+  "/settings/missing-files",
+  "/duplicates",
+  "/health",
+  "/match-suggestions",
+  "/settings/users",
+];
 
   for (const route of TAP_ROUTES) {
   test(`interactive controls on ${route} meet a real tap-target floor`, async ({ page }) => {
@@ -314,19 +326,23 @@ test.describe("Mobile layout", () => {
     const roomBelowChrome = vh - top;
     if (roomBelowChrome >= 320) {
       expect(r?.bottom ?? 0).toBeLessThanOrEqual(vh + 1);
-      // ...and the pagination that follows it must be reachable without
-      // scrolling past a nested scroller.
+      // ...and the page controls must be reachable. Assert on the next-page
+      // ARROW's bottom edge: an earlier version of this looked for a testid
+      // that only existed in a vitest mock and fell back to the outermost
+      // matching div at top 0, so it could never fail.
       const pager = await page.evaluate(() => {
-        const el = document.querySelector('[data-testid="library-pagination"]')
-          ?? Array.from(document.querySelectorAll("div")).find((d) =>
-            /row\(s\) total/.test(d.textContent ?? ""));
-        if (!el) return null;
-        const b = el.getBoundingClientRect();
-        return { top: Math.round(b.top), vh: window.innerHeight };
+        const row = document.querySelector('[data-testid="library-pagination"]');
+        if (!row) return null;
+        const arrow = row.querySelector<HTMLElement>('[aria-label="Go to next page"]');
+        if (!arrow) return null;
+        const b = arrow.getBoundingClientRect();
+        return { bottom: Math.round(b.bottom), top: Math.round(b.top), vh: window.innerHeight };
       });
-      if (pager) {
-        expect(pager.top, "pagination is below the fold").toBeLessThan(pager.vh);
-      }
+      expect(pager, "pagination row not found - is the testid still there?").not.toBeNull();
+      expect(
+        pager?.bottom ?? Number.MAX_SAFE_INTEGER,
+        `next-page arrow sits below the fold (top ${String(pager?.top)}, viewport ${String(pager?.vh)})`,
+      ).toBeLessThanOrEqual((pager?.vh ?? 0) + 1);
     } else {
       expect(r?.bottom ?? 0).toBeGreaterThanOrEqual(top + 320);
     }

@@ -142,7 +142,7 @@ function AuthorDetailPage() {
           </div>
           <button
             type="button"
-            className="mt-1 flex min-h-9 items-center gap-1 py-2 text-xs text-muted-foreground hover:text-foreground md:min-h-0 md:py-0"
+            className="mt-1 flex min-h-9 items-center gap-1 py-2 text-xs text-muted-foreground hover:text-foreground lg:min-h-0 lg:py-0"
             onClick={() => { setShowUrlInput((v) => !v); }}
             data-testid="link-photo-button"
           >
