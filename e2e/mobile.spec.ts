@@ -82,6 +82,16 @@ test.describe("Mobile layout", () => {
     await expectNoHorizontalOverflow(page);
   });
 
+  test.describe("admin surfaces fit the viewport", () => {
+    for (const path of ["/settings", "/upload", "/duplicates", "/health"]) {
+      test(`${path} renders without horizontal overflow`, async ({ page }) => {
+        await page.goto(path);
+        await page.waitForLoadState("networkidle");
+        await expectNoHorizontalOverflow(page);
+      });
+    }
+  });
+
   test("shelf bulk actions stay inside the viewport", async ({ page }) => {
     await seedWork({ title: "The Great Gatsby" });
     await page.goto("/shelves");

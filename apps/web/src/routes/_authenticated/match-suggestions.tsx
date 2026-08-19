@@ -280,7 +280,7 @@ function MatchSuggestionCard({
         </Badge>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
           <WorkPanel work={link.targetWork} label="Work A" />
           <WorkPanel work={link.suggestedWork} label="Work B" />
         </div>
@@ -387,7 +387,7 @@ function MatchSuggestionsPage() {
         {" "}<span className="text-muted-foreground/60">{String(filtered.length)} {activeTab === "ALL" ? "total" : activeTab.toLowerCase()}</span>
       </p>
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <Tabs
           value={activeTab}
           onValueChange={(v) => { setActiveTab(v as StatusTab); }}

@@ -195,7 +195,7 @@ function FieldComparisonRow({
           {isEdited && <Badge variant="outline" className="text-[10px] px-1.5 py-0">Edited</Badge>}
           {matches && <span className="text-xs text-muted-foreground italic">Already matches</span>}
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground/60 mb-0.5">Current</div>
             <p className="text-sm text-muted-foreground break-words">{currentValue || "—"}</p>
@@ -229,7 +229,7 @@ function CoverFieldRow({
           <span className="text-sm font-medium">Cover Image</span>
           {currentCoverPath && <span className="text-xs text-muted-foreground italic">Has existing cover</span>}
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground/60 mb-0.5">Current</div>
             {currentCoverPath ? (

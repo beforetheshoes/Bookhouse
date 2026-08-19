@@ -153,7 +153,7 @@ export function CoverSearchDialog({
               <Loader2 className="size-4 animate-spin" />
               Searching for covers...
             </div>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
               <Skeleton className="aspect-[2/3] w-full" />
               <Skeleton className="aspect-[2/3] w-full" />
               <Skeleton className="aspect-[2/3] w-full" />
@@ -180,7 +180,7 @@ export function CoverSearchDialog({
         {/* Cover Grid */}
         {status === "success" && covers.length > 0 && (
           <div className="overflow-y-auto max-h-[50vh]">
-            <div className="grid grid-cols-3 gap-4 py-2">
+            <div className="grid grid-cols-2 gap-4 py-2 sm:grid-cols-3">
               {covers.map((cover) => {
                 const isSelected = selected?.coverUrl === cover.coverUrl;
                 return (

@@ -152,7 +152,7 @@ export function EditionCard({
 
       <div className="space-y-6 p-4">
         {/* Actions */}
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
           {isAudiobook && presentFiles.length > 0 && (
             <Button variant="outline" size="sm" asChild>
               <a href={`/api/editions/download-all/${edition.id}`} download aria-label="Download all audio files">

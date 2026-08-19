@@ -39,7 +39,7 @@ export function LibraryTableView<T>({
 }: LibraryTableViewProps<T>) {
   return (
     <>
-      <div className="flex items-center gap-2 justify-end">
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <div className="flex items-center rounded-md border mr-auto">
           <Button
             variant="ghost"

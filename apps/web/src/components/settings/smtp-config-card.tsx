@@ -299,7 +299,7 @@ function SmtpForm({
 }) {
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1">
           <label className="text-sm text-muted-foreground">Host</label>
           <Input
@@ -318,7 +318,7 @@ function SmtpForm({
           />
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1">
           <label className="text-sm text-muted-foreground">Username</label>
           <Input
@@ -337,7 +337,7 @@ function SmtpForm({
           />
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1">
           <label className="text-sm text-muted-foreground">From Address</label>
           <Input
