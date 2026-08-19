@@ -70,3 +70,18 @@ it("renders TableCell with correct data-slot attribute", () => {
   const cell = screen.getByText("CellData");
   expect(cell.getAttribute("data-slot")).toBe("table-cell");
 });
+
+it("forwards containerClassName to the scroll wrapper", () => {
+  // The wrapper's overflow-x-auto computes overflow-y to auto, which makes it
+  // the scrollport for any sticky descendant. Callers that own their own
+  // scroller need to neutralise it or their sticky headers silently die.
+  const { container } = render(<Table containerClassName="overflow-visible" />);
+  const wrapper = container.querySelector('[data-slot="table-container"]');
+  expect(wrapper?.className).toContain("overflow-visible");
+});
+
+it("keeps the default overflow wrapper when no containerClassName is given", () => {
+  const { container } = render(<Table />);
+  const wrapper = container.querySelector('[data-slot="table-container"]');
+  expect(wrapper?.className).toContain("overflow-x-auto");
+});

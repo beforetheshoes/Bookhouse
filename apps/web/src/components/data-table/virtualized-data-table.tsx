@@ -122,6 +122,10 @@ export function VirtualizedDataTable<TData, TValue>({
       >
         <Table
           className="table-fixed"
+          // This component owns the scroll container above, which already
+          // scrolls both axes. Leaving the default wrapper in place would
+          // make it the sticky scrollport and the header would scroll away.
+          containerClassName="overflow-visible"
           // `table-fixed` at width:100% scales column widths down to fit
           // rather than overflowing, so without this every cell collapses to
           // an ellipsis once the columns stop fitting. getTotalSize() sums the
