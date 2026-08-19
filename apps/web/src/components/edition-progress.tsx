@@ -116,7 +116,7 @@ export function EditionProgress({ progress, editions, onUpdate }: EditionProgres
                         </div>
                       ) : (
                         <button
-                          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground group"
+                          className="group flex min-h-9 items-center gap-1 text-sm text-muted-foreground hover:text-foreground lg:min-h-0"
                           onClick={() => { setEditingId(edition.id); setEditValue(String(percent)); }}
                           data-testid={`progress-edit-${edition.id}`}
                           aria-label={`Edit progress for ${edition.formatFamily}`}

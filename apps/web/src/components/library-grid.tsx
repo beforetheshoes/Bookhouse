@@ -45,6 +45,8 @@ export function LibraryGrid({ works, progressMap, scanActive, tileSize = "small"
   const [columnCount, setColumnCount] = useState(5);
   const observerRef = useRef<ResizeObserver | null>(null);
 
+  const [maxHeight, setMaxHeight] = useState("70vh");
+
   const containerRef = useCallback((node: HTMLDivElement | null) => {
     if (observerRef.current) {
       observerRef.current.disconnect();
@@ -59,6 +61,12 @@ export function LibraryGrid({ works, progressMap, scanActive, tileSize = "small"
         if (entry) {
           setColumnCount(getColumnCount(entry.contentRect.width, tileSize));
         }
+        // Derive the height from where this element actually sits rather than
+        // from a constant: the chrome above it differs per page and grows as
+        // the toolbar wraps, so any fixed guess puts the scroller's bottom
+        // below the fold on some page or viewport.
+        const top = node.getBoundingClientRect().top + window.scrollY;
+        setMaxHeight(`max(20rem, calc(100dvh - ${String(Math.round(top))}px - 1rem))`);
       });
       observer.observe(node);
       observerRef.current = observer;
@@ -81,12 +89,9 @@ export function LibraryGrid({ works, progressMap, scanActive, tileSize = "small"
   return (
     <div
       ref={containerRef}
-      // This element is the virtualizer's scroll container, so it has to keep
-      // scrolling - the fix for the nested-scroll problem is to size it to the
-      // space actually left below the header and toolbar, not to remove it.
-      // 20rem is calibrated against the measured container top (~310px at
-      // 360x740); e2e asserts the bottom edge stays within the viewport.
-      className="min-h-80 max-h-[calc(100dvh-20rem)] overflow-auto pr-2 md:max-h-[70vh]"
+      data-virtualized="true"
+      className="overflow-auto pr-2"
+      style={{ maxHeight }}
     >
       {works.length === 0 ? (
         <div className="flex h-24 items-center justify-center text-muted-foreground">

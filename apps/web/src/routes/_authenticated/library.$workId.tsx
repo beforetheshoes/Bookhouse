@@ -262,7 +262,7 @@ function WorkDetailPage() {
   return (
     <div className="relative space-y-6">
       <CoverAmbience />
-      <nav className="flex items-center gap-1 text-sm text-muted-foreground">
+      <nav className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
         <Link to="/library" search={{ page: 1, pageSize: 50, sort: "title-asc" as const, view: "works" as const }} className="hover:text-foreground">
           Library
         </Link>
@@ -293,7 +293,7 @@ function WorkDetailPage() {
           </div>
         </div>
 
-        <div className="flex-1 space-y-4">
+        <div className="min-w-0 flex-1 space-y-4">
           <div>
             <div className="flex flex-wrap items-start gap-3">
               <h1

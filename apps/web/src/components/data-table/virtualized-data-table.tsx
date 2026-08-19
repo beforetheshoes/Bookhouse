@@ -117,6 +117,7 @@ export function VirtualizedDataTable<TData, TValue>({
       />
       <div
         ref={scrollRef}
+        data-virtualized="true"
         className="rounded-md border overflow-auto"
         style={{ maxHeight: containerHeight }}
       >

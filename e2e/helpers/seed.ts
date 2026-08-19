@@ -207,7 +207,16 @@ export async function seedHostileWork() {
   });
   await db.work.update({
     where: { id: work.id },
-    data: { seriesId: series.id, seriesPosition: 1 },
+    data: {
+      seriesId: series.id,
+      seriesPosition: 1,
+      // A URL and an underscore path are the shapes that actually set the page
+      // width: neither offers a break opportunity, so a read-mode field with
+      // the wrong overflow-wrap value renders at their full min-content width.
+      description:
+        "See https://example.com/a/very/long/reference/path/that/never/breaks?with=query&and=more " +
+        "or /mnt/media/books/some_long_underscore_separated_file_name_here.epub",
+    },
   });
   return { work, series, root };
 }

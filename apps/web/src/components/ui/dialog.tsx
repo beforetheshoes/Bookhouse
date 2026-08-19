@@ -55,6 +55,7 @@ function DialogContent({
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
 }) {
+  const previouslyFocused = React.useRef<HTMLElement | null>(null)
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
@@ -68,6 +69,8 @@ function DialogContent({
         // to, but that would otherwise hand it the opening focus. Move focus
         // past it to the first real control.
         onOpenAutoFocus={(event) => {
+          previouslyFocused.current =
+            document.activeElement as HTMLElement | null
           const content = event.currentTarget as HTMLElement;
           const focusable = content.querySelectorAll<HTMLElement>(
             'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
@@ -75,10 +78,14 @@ function DialogContent({
           const first = Array.from(focusable).find(
             (el) => el.dataset.slot !== "dialog-close",
           );
-          if (first) {
-            event.preventDefault();
-            first.focus({ preventScroll: true });
-          }
+          event.preventDefault();
+          // Dialogs whose body loads async have no candidate at mount; focus
+          // the content itself rather than leaving the close button holding it.
+          (first ?? content).focus({ preventScroll: true });
+        }}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault()
+          previouslyFocused.current?.focus({ preventScroll: true })
         }}
         {...props}
       >
@@ -92,7 +99,7 @@ function DialogContent({
           <div className="sticky top-0 z-10 h-0 self-stretch">
           <DialogPrimitive.Close
             data-slot="dialog-close"
-            className="absolute -top-1 right-0 flex size-9 shrink-0 items-center justify-center rounded-sm opacity-70 md:size-auto ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+            className="absolute -top-1 right-0 flex size-9 shrink-0 items-center justify-center rounded-sm opacity-70 md:size-8 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
           >
             <XIcon />
             <span className="sr-only">Close</span>
@@ -109,7 +116,7 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-header"
-      className={cn("flex flex-col gap-2 text-center sm:text-left", className)}
+      className={cn("flex flex-col gap-2 pr-10 text-center sm:text-left md:pr-8", className)}
       {...props}
     />
   )
