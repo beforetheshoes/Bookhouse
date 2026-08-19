@@ -168,6 +168,55 @@ test.describe("Mobile layout", () => {
   });
   }
 
+  test("normalises ?view=editions without looping or fetching one item", async ({
+    page,
+  }) => {
+    for (let i = 0; i < 3; i++) await seedWork({ title: `Editions Book ${String(i)}` });
+
+    let navCount = 0;
+    page.on("framenavigated", () => { navCount += 1; });
+
+    await page.goto("/library?view=editions");
+    await page.waitForLoadState("domcontentloaded");
+    await page.waitForTimeout(2500);
+
+    // The loader fetches works with pageSize: 1 for the editions view, so a
+    // phone forced onto the grid would render a one-item library.
+    expect(page.url()).not.toContain("view=editions");
+    expect(await page.locator('a[href^="/library/"]').count()).toBeGreaterThan(1);
+
+    // The effect depends on the search object, which is new every render.
+    expect(navCount, "normalise effect appears to be looping").toBeLessThan(6);
+    // replace: true, so no back-button trap.
+    expect(await page.evaluate(() => history.length)).toBeLessThan(4);
+  });
+
+  test("landscape phone has no horizontal overflow", async ({ page }) => {
+    await seedWork({ title: "Landscape Book" });
+    await page.setViewportSize({ width: 740, height: 360 });
+
+    for (const path of ["/library", "/settings"]) {
+      await page.goto(path);
+      await page.waitForLoadState("domcontentloaded");
+      await page.waitForTimeout(700);
+      await expectNoHorizontalOverflow(page);
+    }
+  });
+
+  test("tablet width has no horizontal overflow", async ({ page }) => {
+    await seedWork({ title: "Tablet Book" });
+    // 768-1024 is the band where md: has kicked in but space is still tight,
+    // and no other test covers it.
+    await page.setViewportSize({ width: 820, height: 1024 });
+
+    for (const path of ["/library", "/settings", "/match-suggestions"]) {
+      await page.goto(path);
+      await page.waitForLoadState("domcontentloaded");
+      await page.waitForTimeout(700);
+      await expectNoHorizontalOverflow(page);
+    }
+  });
+
   test("shelf detail page fits the viewport", async ({ page }) => {
     const work = await seedWork({ title: "Shelf Bar Book" });
     // Seed the shelf properly. The previous version navigated to the shelves
