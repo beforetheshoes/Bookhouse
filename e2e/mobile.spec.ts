@@ -98,12 +98,24 @@ test.describe("Mobile layout", () => {
       "/series",
       "/settings/missing-files",
       "/settings/users",
+      "/authors/",
+      "/series/",
     ]) {
       test(`${path} renders without horizontal overflow`, async ({ page }) => {
         // Seed first. An empty page has no cards, no tables and no long file
         // paths, so checking the empty state proves almost nothing — three
         // pages passed this check while overflowing by 10-53px with data.
-        await seedWork({ title: "Overflow Probe Book" });
+        // Short, tidy data hides real overflow: /authors and the work
+        // detail shelf badges both overflowed with realistic lengths while
+        // this suite was green.
+        const w = await seedWork({
+          title:
+            "A Genuinely Very Long Book Title That Keeps Going Well Past What Any Card Was Designed To Hold",
+        });
+        await seedShelf({
+          name: "Currently Reading And Also Some Other Long Shelf Name",
+          editionIds: w.editions.map((e) => e.id),
+        });
 
         await page.goto(path);
         await page.waitForLoadState("domcontentloaded");
@@ -172,27 +184,20 @@ test.describe("Mobile layout", () => {
   });
   }
 
-  test("normalises ?view=editions without looping or fetching one item", async ({
+  test("?view=editions still renders a full library on a phone", async ({
     page,
   }) => {
     for (let i = 0; i < 3; i++) await seedWork({ title: `Editions Book ${String(i)}` });
 
-    let navCount = 0;
-    page.on("framenavigated", () => { navCount += 1; });
-
     await page.goto("/library?view=editions");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2500);
+    await page.waitForTimeout(1500);
 
-    // The loader fetches works with pageSize: 1 for the editions view, so a
-    // phone forced onto the grid would render a one-item library.
-    expect(page.url()).not.toContain("view=editions");
+    // The loader used to truncate the works fetch to pageSize 1 for this view.
+    // A phone is forced onto the grid, so that one-item response rendered as
+    // the entire library beneath a full-library total count.
     expect(await page.locator('a[href^="/library/"]').count()).toBeGreaterThan(1);
-
-    // The effect depends on the search object, which is new every render.
-    expect(navCount, "normalise effect appears to be looping").toBeLessThan(6);
-    // replace: true, so no back-button trap.
-    expect(await page.evaluate(() => history.length)).toBeLessThan(4);
+    await expectNoHorizontalOverflow(page);
   });
 
   test("landscape phone has no horizontal overflow", async ({ page }) => {
@@ -259,6 +264,28 @@ test.describe("Mobile layout", () => {
     // The md: cap does not apply at 740px wide, so without a floor the
     // viewport-derived height collapses to about one clipped row.
     expect(h).toBeGreaterThan(240);
+  });
+
+  test("work detail fits the viewport with long titles and shelf names", async ({
+    page,
+  }) => {
+    const work = await seedWork({
+      title:
+        "A Genuinely Very Long Book Title That Keeps Going Well Past What Any Card Was Designed To Hold",
+    });
+    await seedShelf({
+      name: "Currently Reading And Also Some Other Long Shelf Name",
+      editionIds: work.editions.map((e) => e.id),
+    });
+
+    await page.goto("/library");
+    await page.getByText("A Genuinely Very Long").click();
+    await page.waitForLoadState("domcontentloaded");
+    await page.waitForTimeout(900);
+
+    // A shelf badge is whitespace-nowrap and shrink-0; a long shelf name set
+    // the page width before it was allowed to wrap.
+    await expectNoHorizontalOverflow(page);
   });
 
   test("shelf detail page fits the viewport", async ({ page }) => {

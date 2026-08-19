@@ -64,6 +64,19 @@ function DialogContent({
           "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border bg-background p-6 shadow-lg duration-200 outline-none max-h-[calc(100dvh-2rem)] overflow-y-auto data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg",
           className
         )}
+        // Close is first in the DOM so `sticky top-0` has something to stick
+        // to, but that would otherwise hand it the opening focus. Move focus
+        // past it to the first real control.
+        onOpenAutoFocus={(event) => {
+          const content = event.currentTarget as HTMLElement | null;
+          const first = content?.querySelector<HTMLElement>(
+            '[data-slot="dialog-close"] ~ * a[href], [data-slot="dialog-close"] ~ * button:not([disabled]), [data-slot="dialog-close"] ~ * input:not([disabled]), [data-slot="dialog-close"] ~ * textarea:not([disabled]), [data-slot="dialog-close"] ~ * [tabindex]:not([tabindex="-1"])',
+          );
+          if (first) {
+            event.preventDefault();
+            first.focus();
+          }
+        }}
         {...props}
       >
         {showCloseButton && (
@@ -72,7 +85,7 @@ function DialogContent({
             // sticky, not absolute: the container scrolls now, and an absolute
             // child scrolls away with the content - on a long dialog the close
             // button ends up hundreds of pixels above the visible area.
-            className="sticky top-0 z-10 -mb-6 flex size-9 items-center justify-center justify-self-end rounded-sm opacity-70 md:size-auto ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+            className="sticky top-0 z-10 -mb-10 flex size-9 items-center justify-center self-end justify-self-end rounded-sm opacity-70 md:-mb-8 md:size-auto ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
           >
             <XIcon />
             <span className="sr-only">Close</span>

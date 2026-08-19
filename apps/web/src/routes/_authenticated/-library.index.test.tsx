@@ -189,9 +189,6 @@ vi.mock("~/components/library-toolbar", () => ({
   },
 }));
 
-let mockIsMobile = false;
-vi.mock("~/hooks/use-mobile", () => ({ useIsMobile: () => mockIsMobile }));
-
 vi.mock("~/components/library-filters-sheet", () => ({
   LibraryFiltersSheet: () => <div data-testid="library-filters-sheet" />,
 }));
@@ -380,8 +377,9 @@ describe("LibraryPage", () => {
     const { Route } = await import("./library.index");
     const deps = { page: 1, pageSize: 50, sort: "title-asc", view: "editions" };
     const result = await asLoader<Record<string, string | object>, object>(Route.options.loader as object)({ deps });
-    // Works are fetched with pageSize: 1 for facet counts only
-    expect(getFilteredLibraryWorksServerFnMock).toHaveBeenCalledWith({ data: { ...deps, pageSize: 1 } });
+    // Works are fetched in full: the loader knows neither the viewport nor
+    // the stored view preference, so it cannot safely truncate this.
+    expect(getFilteredLibraryWorksServerFnMock).toHaveBeenCalledWith({ data: deps });
     expect(getFilteredLibraryEditionsServerFnMock).toHaveBeenCalledWith({ data: deps });
     expect(result).toEqual({
       libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
@@ -729,53 +727,6 @@ describe("LibraryPage", () => {
     const row = rail?.parentElement;
     expect(row?.className).toContain("flex-col");
     expect(row?.className).toContain("md:flex-row");
-  });
-
-  it("normalises ?view=editions away when the effective view is not the table", async () => {
-    // The loader fetches works with pageSize: 1 for the editions view, so a
-    // phone forced onto the grid would otherwise render a one-item library
-    // beneath a full-library total count.
-    mockIsMobile = true;
-    mockView = "grid";
-    mockSearch = { page: 1, pageSize: 50, sort: "title-asc", view: "editions" };
-    mockLoaderData = {
-      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
-      editionsResult: null,
-      activeJobCount: 0,
-      progressMap: {},
-      shelves: [],
-    };
-    const { Route } = await import("./library.index");
-    const LibraryPage = Route.options.component as React.ComponentType;
-    render(<LibraryPage />);
-
-    expect(mockNavigate).toHaveBeenCalledWith(
-      expect.objectContaining({ replace: true }),
-    );
-    const call = mockNavigate.mock.calls.at(-1)?.[0] as { search: (p: object) => { view?: string } };
-    expect(call.search({ page: 1, view: "editions" }).view).toBeUndefined();
-  });
-
-  it("leaves ?view=editions alone on a desktop grid user", async () => {
-    // `view` defaults to "grid", so keying the effect off it would strip the
-    // param for every desktop user who never opened the table.
-    mockIsMobile = false;
-    mockView = "grid";
-    mockSearch = { page: 1, pageSize: 50, sort: "title-asc", view: "editions" };
-    mockLoaderData = {
-      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
-      editionsResult: { editions: [], totalCount: 0 },
-      activeJobCount: 0,
-      progressMap: {},
-      shelves: [],
-    };
-    const { Route } = await import("./library.index");
-    const LibraryPage = Route.options.component as React.ComponentType;
-    render(<LibraryPage />);
-
-    expect(mockNavigate).not.toHaveBeenCalledWith(
-      expect.objectContaining({ replace: true }),
-    );
   });
 
   it("offers the filters sheet as the mobile route into faceting", async () => {

@@ -240,7 +240,7 @@ function SettingsPage() {
       <h1 className="text-2xl font-bold">Settings</h1>
 
       <Tabs defaultValue={isOwner ? "library" : "devices"}>
-        <TabsList className="md:h-10">
+        <TabsList className="lg:h-10">
           {isOwner && <TabsTrigger value="library" className="px-4 lg:py-1.5">Library</TabsTrigger>}
           {isOwner && <TabsTrigger value="appearance" className="px-4">Appearance</TabsTrigger>}
           {isOwner && <TabsTrigger value="jobs" className="px-4">Jobs</TabsTrigger>}

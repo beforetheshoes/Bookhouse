@@ -97,7 +97,7 @@ function AuthorsListPage() {
           <p className="mt-4">No authors found</p>
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
           {filtered.map((author: AuthorListItem) => (
             <Link
               key={author.id}
