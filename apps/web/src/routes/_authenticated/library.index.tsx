@@ -128,6 +128,16 @@ function LibraryPage() {
       : {}),
   });
 
+  // rowSelection is keyed by index into filteredByReading, so any change to
+  // what that list contains silently repoints the selection at different
+  // works. Left alone, changing the sort or paging with a selection pending
+  // would send a bulk delete at the wrong books.
+  const listSignature = JSON.stringify([search, readingFilter]);
+  useEffect(() => {
+    setRowSelection({});
+    setAllWorkIds(null);
+  }, [listSignature]);
+
   const handleToggleGridSelect = useCallback((index: number) => {
     setAllWorkIds(null);
     setRowSelection((prev) => {

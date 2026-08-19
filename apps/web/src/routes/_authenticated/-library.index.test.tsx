@@ -819,6 +819,32 @@ describe("LibraryPage", () => {
     expect(screen.queryByTestId("bulk-add-to-shelf-btn")).toBeNull();
   });
 
+  it("drops the selection when the underlying list changes", async () => {
+    mockView = "grid";
+    mockSearch = { page: 1, pageSize: 50, sort: "title-asc" };
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Alpha"), makeWork("Beta")], totalCount: 2, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    const { rerender } = render(<LibraryPage />);
+
+    fireEvent.click(screen.getByLabelText("toolbar-select-mode"));
+    fireEvent.click(screen.getByLabelText("toggle-row-0"));
+    expect(screen.getByTestId("library-grid").getAttribute("data-selected-count")).toBe("1");
+
+    // rowSelection is keyed by INDEX into the filtered list. If the list
+    // changes underneath it - a new sort, page, query or facet - index 0 is a
+    // different work, and a pending bulk delete would hit the wrong book.
+    mockSearch = { page: 2, pageSize: 50, sort: "title-asc" };
+    rerender(<LibraryPage />);
+    expect(screen.getByTestId("library-grid").getAttribute("data-selected-count")).toBe("0");
+  });
+
   it("offers the filters sheet as the mobile route into faceting", async () => {
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },

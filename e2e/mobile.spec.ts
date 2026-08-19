@@ -170,6 +170,29 @@ test.describe("Mobile layout", () => {
     ).toBeLessThanOrEqual(reachable.barTop + 1);
   });
 
+  test("a stale selection cannot outlive the list it indexes", async ({
+    page,
+  }) => {
+    for (let i = 0; i < 4; i++) await seedWork({ title: `Stale Book ${String(i)}` });
+
+    await page.goto("/library");
+    await expect(page.getByText("Stale Book 0")).toBeVisible();
+    await page.getByRole("button", { name: "Select works" }).click();
+    await page.getByRole("button", { name: "Select Stale Book 0" }).click();
+    await expect(page.getByText("1 work selected")).toBeVisible();
+
+    // Selection is keyed by index into the filtered list. Changing the sort
+    // makes index 0 a different book, so a pending bulk delete would hit the
+    // wrong one unless the selection is dropped.
+    await page.getByRole("combobox", { name: /Title A-Z/i }).or(
+      page.locator('[data-slot="select-trigger"]', { hasText: "Title A-Z" }),
+    ).first().click();
+    await page.getByRole("option").filter({ hasText: /Z-A/i }).first().click();
+    await page.waitForTimeout(1000);
+
+    await expect(page.getByText(/\d+ works? selected/)).toHaveCount(0);
+  });
+
   test("detail routes fit the viewport", async ({ page }) => {
     // Author and series DETAIL pages carry the longest user strings and had no
     // coverage: the suite's "/authors/" and "/series/" entries were index
