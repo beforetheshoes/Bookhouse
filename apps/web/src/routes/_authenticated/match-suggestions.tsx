@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~
 import { Tabs, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { TablePageSkeleton } from "~/components/skeletons/table-page-skeleton";
 import { runMutation } from "~/lib/mutation";
+import { useIsMobile } from "~/hooks/use-mobile";
 import {
   getMatchSuggestionsServerFn,
   acceptMatchSuggestionServerFn,
@@ -308,6 +309,11 @@ function MatchSuggestionsPage() {
   const [activeTab, setActiveTab] = useState<StatusTab>("ALL");
   const [sort, setSort] = useState<SortOption>("title-asc");
   const [view, setView] = useState<ViewMode>("card");
+  // The comparison table is 1080px of columns; below md it collapses to
+  // unreadable ellipses, so phones stay on cards - same gate the library and
+  // shelf pages use via useEffectiveLibraryView.
+  const isMobile = useIsMobile();
+  const effectiveView: ViewMode = isMobile ? "card" : view;
   const [isStarting, setIsStarting] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -415,7 +421,7 @@ function MatchSuggestionsPage() {
               "Re-scan Matches"
             )}
           </Button>
-          {view === "card" && (
+          {effectiveView === "card" && (
             <Select value={sort} onValueChange={(v) => { setSort(v as SortOption); }}>
               <SelectTrigger className="w-full sm:w-40">
                 <SelectValue />
@@ -429,7 +435,7 @@ function MatchSuggestionsPage() {
               </SelectContent>
             </Select>
           )}
-          <div className="flex items-center rounded-md border">
+          <div className="hidden items-center rounded-md border md:flex">
             <Button
               variant="ghost"
               size="sm"
@@ -459,7 +465,7 @@ function MatchSuggestionsPage() {
           <p className="py-8 text-center text-muted-foreground">
             No match suggestions found
           </p>
-        ) : view === "card" ? (
+        ) : effectiveView === "card" ? (
           <div className="flex flex-col gap-4">
             {filtered.map((link) => (
               <MatchSuggestionCard

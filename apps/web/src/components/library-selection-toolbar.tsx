@@ -171,7 +171,7 @@ export function LibrarySelectionToolbar({
             All {selectedCount} on this page selected.{" "}
             <button
               type="button"
-              className="underline font-medium text-foreground hover:text-primary"
+              className="inline-flex min-h-9 items-center px-1 underline font-medium text-foreground hover:text-primary md:min-h-0 md:px-0"
               onClick={onSelectAll}
               disabled={selectingAll}
               data-testid="select-all-btn"
@@ -315,7 +315,7 @@ export function LibrarySelectionToolbar({
           <DialogHeader>
             <DialogTitle>Add {selectedCount} Work{selectedCount === 1 ? "" : "s"} to Shelf</DialogTitle>
           </DialogHeader>
-          <div className="space-y-2" data-testid="shelf-picker">
+          <div className="max-h-[50dvh] space-y-2 overflow-y-auto" data-testid="shelf-picker">
             {shelves.length === 0 ? (
               <p className="text-sm text-muted-foreground">No shelves created yet. Create one from the Shelves page.</p>
             ) : (

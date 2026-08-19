@@ -109,10 +109,23 @@ test.describe("Mobile layout", () => {
     }
   });
 
-  test("interactive controls meet a real tap-target floor", async ({ page }) => {
+  const TAP_ROUTES = ["/library", "/settings", "/shelves", "/upload", "/authors"];
+
+  for (const route of TAP_ROUTES) {
+  test(`interactive controls on ${route} meet a real tap-target floor`, async ({ page }) => {
     await seedWork({ title: "Tap Target Book" });
-    await page.goto("/library");
-    await expect(page.getByText("Tap Target Book")).toBeVisible();
+    await page.goto(route);
+    await page.waitForLoadState("domcontentloaded");
+    await page.waitForTimeout(800);
+
+    // Open the transient surfaces too. The earlier version measured only
+    // /library at rest, so it never saw a tab, a menu row or a sheet - and
+    // 32px settings tabs sailed past a check whose selector included [role=tab].
+    const menu = page.locator('[data-slot="dropdown-menu-trigger"]').first();
+    if (await menu.count()) {
+      await menu.click({ trial: false }).catch(() => undefined);
+      await page.waitForTimeout(300);
+    }
 
     // Measured from computed layout, not class strings. Asserting on
     // classNames cannot catch a utility that loses on CSS specificity or gets
@@ -125,7 +138,13 @@ test.describe("Mobile layout", () => {
         .forEach((el) => {
           const r = el.getBoundingClientRect();
           if (r.width === 0 || r.height === 0) return;
-          if (getComputedStyle(el).visibility === "hidden") return;
+          const cs = getComputedStyle(el);
+          if (cs.visibility === "hidden" || cs.opacity === "0") return;
+          // Radix renders a 1px aria-hidden native <select> alongside its own
+          // trigger for form compatibility. Nothing aria-hidden or
+          // pointer-events:none is a tap target by definition.
+          if (el.closest("[aria-hidden='true']")) return;
+          if (cs.pointerEvents === "none") return;
           seen += 1;
           if (r.height < 36) {
             bad.push({
@@ -139,9 +158,15 @@ test.describe("Mobile layout", () => {
     });
 
     // Guard against the check silently passing on a page that rendered nothing.
-    expect(inspected).toBeGreaterThan(10);
-    expect(tooSmall, `controls under 36px: ${JSON.stringify(tooSmall, null, 2)}`).toEqual([]);
+    // Sparse routes legitimately have only a handful of controls, so this is a
+    // did-anything-render floor, not a coverage target.
+    expect(inspected).toBeGreaterThan(2);
+    expect(
+      tooSmall,
+      `${route} controls under 36px: ${JSON.stringify(tooSmall, null, 2)}`,
+    ).toEqual([]);
   });
+  }
 
   test("shelf detail page fits the viewport", async ({ page }) => {
     const work = await seedWork({ title: "Shelf Bar Book" });

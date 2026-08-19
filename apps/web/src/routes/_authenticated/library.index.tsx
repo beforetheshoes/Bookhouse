@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { useSSE } from "~/hooks/use-sse";
 import { useEffectiveLibraryView } from "~/hooks/use-library-view-preference";
+import type { LibrarySearchParams } from "~/lib/library-search-schema";
 import { useLibraryTablePreferences } from "~/hooks/use-library-table-preferences";
 import { useGridTileSize } from "~/hooks/use-grid-tile-size";
 import { useLibraryFilters } from "~/hooks/use-library-filters";
@@ -72,6 +73,20 @@ function LibraryPage() {
   // phone opens a ?view=editions link — where the toggle that would normally
   // reset it is hidden.
   const isEditionsView = search.view === "editions" && view === "table";
+
+  // The loader runs before the viewport is known, so ?view=editions makes it
+  // fetch works with pageSize: 1. On a phone the view is forced to "grid", so
+  // that one-item response would render as the whole library under a total
+  // count taken from the full query. Normalise the URL so the loader refetches.
+  useEffect(() => {
+    if (search.view === "editions" && view !== "table") {
+      void navigate({
+        to: ".",
+        search: (prev) => ({ ...(prev as LibrarySearchParams), view: undefined }),
+        replace: true,
+      });
+    }
+  }, [search, view, navigate]);
   const workColumns = useMemo(() => getColumns(isScanning, editMode, router, progressMap), [isScanning, editMode, router, progressMap]);
   const editionColumns = useMemo(() => getEditionColumns(editMode, router), [editMode, router]);
   const newCount = totalCount - prevCount;

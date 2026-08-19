@@ -79,7 +79,7 @@ export function WorkCover({
                 className="size-full object-cover"
               />
             )}
-            <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+            <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-100 md:opacity-0 transition-opacity group-hover:opacity-100">
               {uploadingCover ? (
                 <Loader2 className="size-8 animate-spin text-white" />
               ) : (

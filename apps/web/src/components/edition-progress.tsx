@@ -122,7 +122,7 @@ export function EditionProgress({ progress, editions, onUpdate }: EditionProgres
                           aria-label={`Edit progress for ${edition.formatFamily}`}
                         >
                           <span>{String(percent)}%</span>
-                          <Pencil className="size-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          <Pencil className="size-3 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity" />
                         </button>
                       )
                     ) : (

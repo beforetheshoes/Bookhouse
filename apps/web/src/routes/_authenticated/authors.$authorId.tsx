@@ -112,7 +112,7 @@ function AuthorDetailPage() {
             className="size-16"
             cacheVersion={photoVersion}
           />
-          <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+          <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-100 md:opacity-0 transition-opacity group-hover:opacity-100">
             <Camera className="size-5 text-white" />
           </div>
         </div>
@@ -142,7 +142,7 @@ function AuthorDetailPage() {
           </div>
           <button
             type="button"
-            className="mt-1 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            className="mt-1 flex min-h-9 items-center gap-1 py-2 text-xs text-muted-foreground hover:text-foreground md:min-h-0 md:py-0"
             onClick={() => { setShowUrlInput((v) => !v); }}
             data-testid="link-photo-button"
           >
@@ -171,7 +171,7 @@ function AuthorDetailPage() {
       {author.works.length === 0 ? (
         <p className="text-muted-foreground">No works by this author</p>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           {author.works.map((work) => (
             <WorkCard
               key={work.id}

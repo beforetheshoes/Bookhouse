@@ -69,7 +69,7 @@ const columns: ColumnDef<SeriesListItem>[] = [
       return (
         <Popover>
           <PopoverTrigger asChild>
-            <button className="hover:underline">{count}</button>
+            <button className="min-h-9 px-2 hover:underline md:min-h-0 md:px-0">{count}</button>
           </PopoverTrigger>
           <PopoverContent className="w-80" align="start">
             <ul className="space-y-1.5">

@@ -31,6 +31,9 @@ let mockLoaderData: {
   }[];
 } = { matchSuggestions: [] };
 
+let mockIsMobile = false;
+vi.mock("~/hooks/use-mobile", () => ({ useIsMobile: () => mockIsMobile }));
+
 vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
@@ -862,4 +865,18 @@ describe("MatchSuggestionsPage", () => {
     await user.click(screen.getByRole("button", { name: /re-scan matches/i }));
     expect(toast.error).toHaveBeenCalledWith("Something went wrong", undefined);
   });
+});
+
+it("keeps phones on the card view instead of the 1080px table", async () => {
+  mockIsMobile = true;
+  try {
+    const { Route } = await import("./match-suggestions");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    // The comparison table collapses to ellipses at phone widths, so the
+    // toggle is hidden and the card view wins regardless of local state.
+    expect(document.querySelector("table")).toBeNull();
+  } finally {
+    mockIsMobile = false;
+  }
 });

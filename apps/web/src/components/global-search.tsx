@@ -78,7 +78,7 @@ export function GlobalSearch() {
       </Button>
 
       <Dialog open={open} onOpenChange={() => { handleClose(); }}>
-        <DialogContent className="gap-0 p-0 sm:max-w-lg">
+        <DialogContent showCloseButton={false} className="gap-0 p-0 sm:max-w-lg">
           <DialogTitle className="sr-only">Search Library</DialogTitle>
           <div className="flex items-center border-b px-3">
             <Search className="size-4 shrink-0 text-muted-foreground" />

@@ -310,7 +310,7 @@ export function EditionCard({
             <div className="space-y-1 text-sm">
               {contentFiles.map((ef) => (
                 <div key={ef.id} className="flex items-center gap-2">
-                  <span className="font-mono text-xs">{ef.fileAsset.basename}</span>
+                  <span className="min-w-0 break-all font-mono text-xs">{ef.fileAsset.basename}</span>
                   <span className="text-muted-foreground">
                     {formatBytes(ef.fileAsset.sizeBytes)}
                   </span>

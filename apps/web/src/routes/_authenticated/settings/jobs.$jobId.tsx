@@ -131,7 +131,7 @@ function JobDetailPage() {
           {job.error && (
             <div>
               <span className="text-sm text-muted-foreground">Error</span>
-              <pre className="mt-1 overflow-x-auto whitespace-pre-wrap break-all rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
+              <pre className="mt-1 overflow-x-auto whitespace-pre-wrap break-all md:whitespace-pre md:break-normal rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
                 {job.error}
               </pre>
             </div>
@@ -140,7 +140,7 @@ function JobDetailPage() {
           {job.payload && (
             <div>
               <span className="text-sm text-muted-foreground">Payload</span>
-              <pre className="mt-1 overflow-x-auto whitespace-pre-wrap break-all rounded-md border bg-muted/50 p-3 text-sm">
+              <pre className="mt-1 overflow-x-auto whitespace-pre-wrap break-all md:whitespace-pre md:break-normal rounded-md border bg-muted/50 p-3 text-sm">
                 {JSON.stringify(job.payload, null, 2)}
               </pre>
             </div>

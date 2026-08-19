@@ -240,7 +240,7 @@ function CoverFieldRow({
               />
             ) : (
               <div className="w-16 aspect-[2/3] rounded bg-muted flex items-center justify-center">
-                <BookOpen className="size-5 text-muted-foreground" />
+                <BookOpen className="size-9 md:size-5 text-muted-foreground" />
               </div>
             )}
           </div>
@@ -435,7 +435,7 @@ export function EnrichmentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col">
+      <DialogContent className="sm:max-w-4xl max-h-[90dvh] flex flex-col">
         <DialogHeader>
           <DialogTitle>{dialogTitle}</DialogTitle>
           <DialogDescription>
@@ -476,7 +476,7 @@ export function EnrichmentDialog({
               {results.map((r) => {
                 const sel = getSelection(selections, r.provider);
                 return (
-                  <TabsContent key={r.provider} value={r.provider} className="overflow-y-auto max-h-[55vh] pr-1">
+                  <TabsContent key={r.provider} value={r.provider} className="flex-1 min-h-0 overflow-y-auto pr-1">
                     <div className="space-y-6 py-3">
                       <SourceHeader result={r} />
 

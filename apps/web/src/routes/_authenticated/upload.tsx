@@ -257,7 +257,7 @@ export function UploadForm({ libraryRoots }: UploadFormProps) {
                     type="button"
                     onClick={() => { removeFile(i); }}
                     aria-label={`Remove ${file.name}`}
-                    className="text-muted-foreground hover:text-foreground"
+                    className="flex size-9 shrink-0 items-center justify-center text-muted-foreground hover:text-foreground md:size-auto"
                   >
                     <X className="size-4" />
                   </button>

@@ -728,6 +728,49 @@ describe("LibraryPage", () => {
     expect(row?.className).toContain("md:flex-row");
   });
 
+  it("normalises ?view=editions away when the effective view is not the table", async () => {
+    // The loader fetches works with pageSize: 1 for the editions view, so a
+    // phone forced onto the grid would otherwise render a one-item library
+    // beneath a full-library total count.
+    mockView = "grid";
+    mockSearch = { page: 1, pageSize: 50, sort: "title-asc", view: "editions" };
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    expect(mockNavigate).toHaveBeenCalledWith(
+      expect.objectContaining({ replace: true }),
+    );
+    const call = mockNavigate.mock.calls.at(-1)?.[0] as { search: (p: object) => { view?: string } };
+    expect(call.search({ page: 1, view: "editions" }).view).toBeUndefined();
+  });
+
+  it("leaves ?view=editions alone when the table is actually showing", async () => {
+    mockView = "table";
+    mockSearch = { page: 1, pageSize: 50, sort: "title-asc", view: "editions" };
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: { editions: [], totalCount: 0 },
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    expect(mockNavigate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ replace: true }),
+    );
+  });
+
   it("offers the filters sheet as the mobile route into faceting", async () => {
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },

@@ -201,19 +201,19 @@ export function SmtpConfigCard({ configured }: { configured: boolean }) {
         {!loading && !loadError && !editing && config && (
           <>
             <div className="space-y-1 text-sm">
-              <div className="flex gap-4">
+              <div className="flex min-w-0 flex-wrap gap-4">
                 <span className="text-muted-foreground">Server:</span>
                 <span>{config.host}:{config.port}</span>
               </div>
-              <div className="flex gap-4">
+              <div className="flex min-w-0 flex-wrap gap-4">
                 <span className="text-muted-foreground">Username:</span>
                 <span>{config.username}</span>
               </div>
-              <div className="flex gap-4">
+              <div className="flex min-w-0 flex-wrap gap-4">
                 <span className="text-muted-foreground">From:</span>
                 <span>{config.fromAddress}</span>
               </div>
-              <div className="flex gap-4">
+              <div className="flex min-w-0 flex-wrap gap-4">
                 <span className="text-muted-foreground">Security:</span>
                 <span>{SECURITY_LABELS[config.security]}</span>
               </div>

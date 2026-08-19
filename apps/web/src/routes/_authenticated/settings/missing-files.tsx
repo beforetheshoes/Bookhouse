@@ -117,14 +117,14 @@ function MissingFilesPage() {
         </Link>
       </div>
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Missing Files</h1>
           <p className="text-sm text-muted-foreground">
             These files were not found during the last scan. Cleaning up removes their library entries. Files on disk are not affected.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {selected.size > 0 && (
             <Button
               variant="destructive"

@@ -138,7 +138,7 @@ export function CoverSearchDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col">
+      <DialogContent className="sm:max-w-2xl max-h-[90dvh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Find Cover Image</DialogTitle>
           <DialogDescription>
@@ -179,7 +179,7 @@ export function CoverSearchDialog({
 
         {/* Cover Grid */}
         {status === "success" && covers.length > 0 && (
-          <div className="overflow-y-auto max-h-[50vh]">
+          <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="grid grid-cols-2 gap-4 py-2 sm:grid-cols-3">
               {covers.map((cover) => {
                 const isSelected = selected?.coverUrl === cover.coverUrl;
