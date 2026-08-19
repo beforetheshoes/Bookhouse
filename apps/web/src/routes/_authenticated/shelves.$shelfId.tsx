@@ -184,16 +184,16 @@ function ShelfDetailPage() {
   return (
     <div className="space-y-6">
       <nav className="flex items-center gap-1 text-sm text-muted-foreground">
-        <Link to="/shelves" className="hover:text-foreground">
+        <Link to="/shelves" className="flex min-h-9 shrink-0 items-center hover:text-foreground lg:min-h-0">
           Shelves
         </Link>
         <ChevronRight className="size-4" />
-        <span className="text-foreground">{shelf.name}</span>
+        <span className="min-w-0 [overflow-wrap:anywhere] text-foreground">{shelf.name}</span>
       </nav>
 
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold">{shelf.name}</h1>
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
+          <h1 className="min-w-0 text-2xl font-bold [overflow-wrap:anywhere]">{shelf.name}</h1>
           <Badge variant="secondary" data-testid="shelf-format-badge">
             {shelf.formatFilter === "ALL" ? "All Formats" : shelf.formatFilter === "EBOOK" ? "Ebooks" : "Audiobooks"}
           </Badge>

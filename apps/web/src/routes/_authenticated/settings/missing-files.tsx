@@ -110,7 +110,7 @@ function MissingFilesPage() {
       <div className="flex items-center gap-4">
         <Link
           to="/settings/libraries"
-          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          className="flex min-h-9 items-center gap-1 text-sm text-muted-foreground hover:text-foreground lg:min-h-0"
         >
           <ArrowLeft className="size-4" />
           Back to Libraries
@@ -185,7 +185,7 @@ function MissingFilesPage() {
                   <TableCell className="font-mono text-xs">{file.relativePath}</TableCell>
                   <TableCell>
                     {edition ? (
-                      <Link to="/library/$workId" params={{ workId: edition.work.id }} search={{ page: 1, pageSize: 50, sort: "title-asc" as const }} className="hover:underline">
+                      <Link to="/library/$workId" params={{ workId: edition.work.id }} search={{ page: 1, pageSize: 50, sort: "title-asc" as const }} className="flex min-h-9 items-center hover:underline lg:min-h-0">
                         {edition.work.titleDisplay}
                       </Link>
                     ) : "—"}

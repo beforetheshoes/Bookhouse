@@ -262,12 +262,12 @@ function WorkDetailPage() {
   return (
     <div className="relative space-y-6">
       <CoverAmbience />
-      <nav className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
-        <Link to="/library" search={{ page: 1, pageSize: 50, sort: "title-asc" as const, view: "works" as const }} className="hover:text-foreground">
+      <nav className="flex items-center gap-1 text-sm text-muted-foreground">
+        <Link to="/library" search={{ page: 1, pageSize: 50, sort: "title-asc" as const, view: "works" as const }} className="flex min-h-9 shrink-0 items-center hover:text-foreground lg:min-h-0">
           Library
         </Link>
         <ChevronRight className="size-4" />
-        <span className="text-foreground">{work.titleDisplay}</span>
+        <span className="min-w-0 [overflow-wrap:anywhere] text-foreground">{work.titleDisplay}</span>
       </nav>
 
       <div className="flex flex-col gap-6 md:flex-row md:gap-8">

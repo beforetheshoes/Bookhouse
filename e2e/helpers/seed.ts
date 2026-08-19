@@ -202,8 +202,13 @@ export async function seedHostileWork() {
     data: { name: "The Extremely Long Chronicles Of A Series Name That Will Not Fit" },
   });
   const work = await seedWork({
+    // The trailing token has no break opportunity. Long names *with spaces*
+    // wrap on their own; it takes an unbreakable run to set the page width,
+    // which is how the breadcrumb and heading overflows survived several
+    // rounds of "long name" fixtures.
     title:
-      "A Genuinely Very Long Book Title That Keeps Going Well Past What Any Card Was Designed To Hold",
+      "A Genuinely Very Long Book Title That Keeps Going Past What Any Card Holds " +
+      "Untitled_Manuscript_Draft_Seventeen_Final_Revised_v2",
   });
   await db.work.update({
     where: { id: work.id },

@@ -47,7 +47,7 @@ const columns: ColumnDef<SeriesListItem>[] = [
       <Link
         to="/series/$seriesId"
         params={{ seriesId: row.original.id }}
-        className="hover:underline"
+        className="flex min-h-9 items-center hover:underline lg:min-h-0"
       >
         {row.original.name}
       </Link>
@@ -69,7 +69,7 @@ const columns: ColumnDef<SeriesListItem>[] = [
       return (
         <Popover>
           <PopoverTrigger asChild>
-            <button className="min-h-9 px-2 hover:underline md:min-h-0 md:px-0">{count}</button>
+            <button className="min-h-9 px-2 hover:underline lg:min-h-0 lg:px-0">{count}</button>
           </PopoverTrigger>
           <PopoverContent className="w-80" align="start">
             <ul className="space-y-1.5">

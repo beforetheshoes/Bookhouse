@@ -84,8 +84,13 @@ function DialogContent({
           (first ?? content).focus({ preventScroll: true });
         }}
         onCloseAutoFocus={(event) => {
-          event.preventDefault()
-          previouslyFocused.current?.focus({ preventScroll: true })
+          // Only take over the restore when there is a live element to return
+          // to; otherwise let Radix's own fallback run rather than stranding
+          // focus on <body>.
+          if (previouslyFocused.current?.isConnected) {
+            event.preventDefault()
+            previouslyFocused.current.focus({ preventScroll: true })
+          }
         }}
         {...props}
       >
@@ -99,7 +104,7 @@ function DialogContent({
           <div className="sticky top-0 z-10 h-0 self-stretch">
           <DialogPrimitive.Close
             data-slot="dialog-close"
-            className="absolute -top-1 right-0 flex size-9 shrink-0 items-center justify-center rounded-sm opacity-70 md:size-8 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+            className="absolute -top-1 right-0 flex size-9 shrink-0 items-center justify-center rounded-sm opacity-70 lg:size-8 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
           >
             <XIcon />
             <span className="sr-only">Close</span>
@@ -116,7 +121,7 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-header"
-      className={cn("flex flex-col gap-2 pr-10 text-center sm:text-left md:pr-8", className)}
+      className={cn("flex flex-col gap-2 pr-10 text-center sm:text-left lg:pr-10", className)}
       {...props}
     />
   )

@@ -280,7 +280,7 @@ export function EditionCard({
             <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Authors</h4>
             <div className="text-sm space-y-0.5">
               {edition.contributors.filter((c) => c.role === "AUTHOR").map((c) => (
-                <div key={`${c.role}-${c.contributor.nameDisplay}`}>
+                <div key={`${c.role}-${c.contributor.nameDisplay}`} className="[overflow-wrap:anywhere]">
                   {c.contributor.nameDisplay}
                 </div>
               ))}

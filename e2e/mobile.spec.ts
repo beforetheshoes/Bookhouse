@@ -122,28 +122,26 @@ test.describe("Mobile layout", () => {
     }
   });
 
-  const TAP_ROUTES = ["/library", "/settings", "/shelves", "/upload", "/authors"];
+  const TAP_ROUTES = ["/library", "/settings", "/shelves", "/upload", "/authors", "/series", "/settings/missing-files"];
 
   for (const route of TAP_ROUTES) {
   test(`interactive controls on ${route} meet a real tap-target floor`, async ({ page }) => {
-    await seedWork({ title: "Tap Target Book" });
+    const tapWork = await seedWork({ title: "Tap Target Book" });
+    // /shelves and /series render nothing without a shelf, so the name links
+    // on them were never measured.
+    await seedShelf({
+      name: "Tap Target Shelf",
+      editionIds: tapWork.editions.map((e) => e.id),
+    });
     await page.goto(route);
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(800);
 
-    // Open the transient surfaces too. The earlier version measured only
-    // /library at rest, so it never saw a tab, a menu row or a sheet - and
-    // 32px settings tabs sailed past a check whose selector included [role=tab].
-    const menu = page.locator('[data-slot="dropdown-menu-trigger"]').first();
-    if (await menu.count()) {
-      await menu.click({ trial: false }).catch(() => undefined);
-      await page.waitForTimeout(300);
-    }
 
     // Measured from computed layout, not class strings. Asserting on
     // classNames cannot catch a utility that loses on CSS specificity or gets
     // stripped by tailwind-merge - both of which happened on this branch.
-    const { tooSmall, inspected } = await page.evaluate(() => {
+    const measure = () => page.evaluate(() => {
       const bad: { label: string; h: number; cls: string }[] = [];
       let seen = 0;
       document
@@ -154,10 +152,10 @@ test.describe("Mobile layout", () => {
           const cs = getComputedStyle(el);
           if (cs.visibility === "hidden" || cs.opacity === "0") return;
           // Radix renders a 1px aria-hidden native <select> alongside its own
-          // trigger for form compatibility. Nothing aria-hidden or
-          // pointer-events:none is a tap target by definition.
+          // trigger for form compatibility - not a tap target. Do NOT also
+          // filter on pointer-events: an open Radix menu sets it to none on
+          // the whole body, which would silently empty this sweep.
           if (el.closest("[aria-hidden='true']")) return;
-          if (cs.pointerEvents === "none") return;
           seen += 1;
           if (r.height < 36) {
             bad.push({
@@ -169,6 +167,28 @@ test.describe("Mobile layout", () => {
         });
       return { tooSmall: bad, inspected: seen };
     });
+
+    // Measure at rest first. Opening a Radix menu marks the rest of the page
+    // aria-hidden, which the filter below excludes - so measuring only with a
+    // menu open silently inspects nothing.
+    const { tooSmall, inspected } = await measure();
+
+    // Then the transient surface, on its own terms.
+    const menuTrigger = page.locator('[data-slot="dropdown-menu-trigger"]').first();
+    if (await menuTrigger.count()) {
+      await menuTrigger.click().catch(() => undefined);
+      await page.waitForTimeout(400);
+      const menuRows = await page.evaluate(() => {
+        const rows = Array.from(
+          document.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemcheckbox"]'),
+        );
+        return rows
+          .map((el) => ({ h: Math.round(el.getBoundingClientRect().height), label: (el.textContent ?? "").trim().slice(0, 30) }))
+          .filter((r) => r.h > 0 && r.h < 36);
+      });
+      expect(menuRows, `${route} menu rows under 36px: ${JSON.stringify(menuRows)}`).toEqual([]);
+      await page.keyboard.press("Escape");
+    }
 
     // Guard against the check silently passing on a page that rendered nothing.
     // Sparse routes legitimately have only a handful of controls, so this is a
@@ -313,12 +333,15 @@ test.describe("Mobile layout", () => {
   });
 
   test("shelf detail page fits the viewport", async ({ page }) => {
-    const work = await seedWork({ title: "Shelf Bar Book" });
+    const work = await seedWork({
+      title: "Shelf Bar Book",
+    });
     // Seed the shelf properly. The previous version navigated to the shelves
     // INDEX (which has no selection bar) and guarded on is-visible, so it
     // could only ever pass.
     const shelf = await seedShelf({
-      name: "Mobile Shelf",
+      // Unbreakable token: the breadcrumb and h1 both set the page width here.
+      name: "Mobile Shelf Recommendations_From_Everyone_I_Know_2026",
       editionIds: work.editions.map((e) => e.id),
     });
 

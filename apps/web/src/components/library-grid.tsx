@@ -89,7 +89,6 @@ export function LibraryGrid({ works, progressMap, scanActive, tileSize = "small"
   return (
     <div
       ref={containerRef}
-      data-virtualized="true"
       className="overflow-auto pr-2"
       style={{ maxHeight }}
     >

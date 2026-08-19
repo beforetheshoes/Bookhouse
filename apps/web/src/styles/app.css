@@ -163,37 +163,3 @@
     animation-iteration-count: infinite !important;
   }
 }
-
-/* Printing rendered the nav rail and clipped the library to the first screen
-   of its inner scroller. */
-@media print {
-  [data-slot="sidebar"],
-  [data-slot="sidebar-wrapper"] > [data-slot="sidebar"],
-  header,
-  [data-slot="dialog-overlay"],
-  [data-slot="sheet-overlay"] {
-    display: none !important;
-  }
-
-  [data-slot="sidebar-inset"],
-  main {
-    margin: 0 !important;
-    padding: 0 !important;
-  }
-
-  /* Inner scrollers must not clip their content on paper - except virtualized
-     ones. Unclipping those grows the box to the full scroll height while the
-     virtualizer still renders only the rows around scrollTop 0, which prints
-     a handful of rows followed by pages of blank paper. */
-  [class*="overflow-auto"]:not([data-virtualized]),
-  [class*="overflow-y-auto"]:not([data-virtualized]) {
-    max-height: none !important;
-    overflow: visible !important;
-  }
-
-  /* Floating bars sit over the first page otherwise. */
-  .fixed {
-    display: none !important;
-  }
-}
-
