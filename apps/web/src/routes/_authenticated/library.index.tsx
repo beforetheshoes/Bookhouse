@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { useSSE } from "~/hooks/use-sse";
-import { useLibraryViewPreference } from "~/hooks/use-library-view-preference";
+import { useEffectiveLibraryView } from "~/hooks/use-library-view-preference";
 import { useLibraryTablePreferences } from "~/hooks/use-library-table-preferences";
 import { useGridTileSize } from "~/hooks/use-grid-tile-size";
 import { useLibraryFilters } from "~/hooks/use-library-filters";
@@ -54,7 +54,7 @@ function LibraryPage() {
   const { works, totalCount, facetCounts, totalFacetCounts } = libraryResult;
   const search = Route.useSearch();
   const navigate = useNavigate();
-  const [view, setView] = useLibraryViewPreference();
+  const [view, setView] = useEffectiveLibraryView();
   const [tileSize, setTileSize] = useGridTileSize();
   const [tablePrefs, setTablePrefs] = useLibraryTablePreferences();
   const [readingFilter, setReadingFilter] = useState<ReadingFilter>("all");
@@ -170,7 +170,12 @@ function LibraryPage() {
     void router.invalidate();
   };
 
-  const effectiveTotalCount = isEditionsView && editionsResult ? editionsResult.totalCount : totalCount;
+  // On a phone `view` is forced to "grid", which makes the editions branch
+  // below unreachable — pagination must count works, not editions.
+  const effectiveTotalCount =
+    isEditionsView && editionsResult && view === "table"
+      ? editionsResult.totalCount
+      : totalCount;
 
   if (totalCount === 0 && !isEditionsView && !isScanning && !search.q && !search.format && !search.authorId && !search.seriesId && search.hasCover === undefined && search.enriched === undefined && search.hasDescription === undefined && search.inSeries === undefined) {
     return (

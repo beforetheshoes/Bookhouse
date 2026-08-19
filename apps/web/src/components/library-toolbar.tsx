@@ -117,7 +117,7 @@ export function LibraryToolbar({
             </SelectContent>
           </Select>
         )}
-        <div className="flex items-center rounded-md border">
+        <div className="hidden items-center rounded-md border md:flex">
           <Button
             variant="ghost"
             size="sm"

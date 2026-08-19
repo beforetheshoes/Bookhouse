@@ -120,7 +120,14 @@ export function VirtualizedDataTable<TData, TValue>({
         className="rounded-md border overflow-auto"
         style={{ maxHeight: containerHeight }}
       >
-        <Table className="table-fixed">
+        <Table
+          className="table-fixed"
+          // `table-fixed` at width:100% scales column widths down to fit
+          // rather than overflowing, so without this every cell collapses to
+          // an ellipsis once the columns stop fitting. getTotalSize() sums the
+          // *visible* leaf columns, so hiding columns shrinks it for free.
+          style={{ minWidth: table.getTotalSize() }}
+        >
           <TableHeader className="sticky top-0 z-10 bg-background">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>

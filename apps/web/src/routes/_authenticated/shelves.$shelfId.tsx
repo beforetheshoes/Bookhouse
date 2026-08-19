@@ -17,7 +17,7 @@ import { VirtualizedDataTable, DataTableColumnHeader } from "~/components/data-t
 import { LibraryGrid } from "~/components/library-grid";
 import { LibraryToolbar } from "~/components/library-toolbar";
 import { GridPageSkeleton } from "~/components/skeletons/grid-page-skeleton";
-import { useLibraryViewPreference } from "~/hooks/use-library-view-preference";
+import { useEffectiveLibraryView } from "~/hooks/use-library-view-preference";
 import { useGridTileSize } from "~/hooks/use-grid-tile-size";
 import {
   getShelfDetailServerFn,
@@ -143,7 +143,7 @@ export function getTableColumns(): ColumnDef<ShelfEdition>[] {
 function ShelfDetailPage() {
   const { shelf } = Route.useLoaderData();
   const router = useRouter();
-  const [view, setView] = useLibraryViewPreference();
+  const [view, setView] = useEffectiveLibraryView();
   const [tileSize, setTileSize] = useGridTileSize();
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [sortValue, setSortValue] = useState<SortValue>("title-asc");

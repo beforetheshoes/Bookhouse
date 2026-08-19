@@ -158,6 +158,7 @@ let mockView = "grid" as "grid" | "table";
 const mockSetView = vi.fn();
 vi.mock("~/hooks/use-library-view-preference", () => ({
   useLibraryViewPreference: () => [mockView, mockSetView],
+  useEffectiveLibraryView: () => [mockView, mockSetView],
 }));
 
 let mockTileSize = "small" as "small" | "large";

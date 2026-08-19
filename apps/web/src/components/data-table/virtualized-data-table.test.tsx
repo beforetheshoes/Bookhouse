@@ -340,4 +340,13 @@ describe("VirtualizedDataTable", () => {
     );
     expect(screen.getByTestId("sort-indicator").textContent).toBe("ascending");
   });
+
+  it("lets the table exceed its container instead of squeezing columns", () => {
+    // `table-fixed` at width:100% turns per-column pixel sizes into
+    // proportions, so without a minWidth every cell collapses to an ellipsis
+    // once the columns no longer fit.
+    const { container } = render(<VirtualizedDataTable columns={columns} data={data} />);
+    const table = container.querySelector("table");
+    expect(table?.style.minWidth).toBeTruthy();
+  });
 });

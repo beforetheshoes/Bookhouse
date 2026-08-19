@@ -106,6 +106,7 @@ vi.mock("~/components/library-toolbar", () => ({
 
 vi.mock("~/hooks/use-library-view-preference", () => ({
   useLibraryViewPreference: () => [mockView, (v: string) => { mockView = v; }],
+  useEffectiveLibraryView: () => [mockView, (v: string) => { mockView = v; }],
 }));
 
 vi.mock("~/hooks/use-grid-tile-size", () => ({

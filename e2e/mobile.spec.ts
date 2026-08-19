@@ -54,6 +54,23 @@ test.describe("Mobile layout", () => {
     await expectNoHorizontalOverflow(page);
   });
 
+  test("serves the grid on phones even when table view is stored", async ({
+    page,
+  }) => {
+    await seedWork({ title: "The Great Gatsby" });
+    await page.addInitScript(() => {
+      localStorage.setItem("library-view", "table");
+    });
+
+    await page.goto("/library");
+    await expect(page.getByText("The Great Gatsby")).toBeVisible();
+
+    // An 800px-wide table squeezed into 360px renders every cell as an
+    // ellipsis, so phones get the grid regardless of the stored preference.
+    await expect(page.locator("table")).toHaveCount(0);
+    await expectNoHorizontalOverflow(page);
+  });
+
   test("work detail stacks without horizontal overflow", async ({ page }) => {
     await seedWork({ title: "The Great Gatsby" });
     await page.goto("/library");
