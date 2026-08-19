@@ -181,3 +181,22 @@ describe("LibraryToolbar", () => {
   });
 
 });
+
+it("stacks and wraps its control groups on phones", () => {
+  const { container } = render(<LibraryToolbar {...defaultProps} />);
+  // ~520px of intrinsic width in a single non-wrapping row was unreachable
+  // on a 375px phone.
+  const row = container.firstElementChild;
+  expect(row?.className).toContain("flex-col");
+  expect(row?.className).toContain("md:flex-row");
+  Array.from(row?.children ?? []).forEach((group) => {
+    expect(group.className).toContain("flex-wrap");
+  });
+});
+
+it("lets the search input use the full width on phones", () => {
+  render(<LibraryToolbar {...defaultProps} />);
+  const input = screen.getByPlaceholderText("Filter by title or author...");
+  expect(input.className).toContain("w-full");
+  expect(input.className).toContain("md:w-[150px]");
+});

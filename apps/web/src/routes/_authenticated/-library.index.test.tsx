@@ -188,6 +188,10 @@ vi.mock("~/components/library-toolbar", () => ({
   },
 }));
 
+vi.mock("~/components/library-filters-sheet", () => ({
+  LibraryFiltersSheet: () => <div data-testid="library-filters-sheet" />,
+}));
+
 let capturedFiltersProps: Record<string, string | number | boolean | object | (() => void)> = {};
 vi.mock("~/components/library-filters", () => ({
   LibraryFilters: (props: Record<string, string | number | boolean | object | (() => void)>) => {
@@ -699,6 +703,42 @@ describe("LibraryPage", () => {
     const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
     expect(screen.getByTestId("library-filters")).toBeTruthy();
+  });
+
+  it("hides the desktop filter rail below md and stacks the row", async () => {
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    const { container } = render(<LibraryPage />);
+
+    // A 224px rail leaves ~79px of a 375px phone for everything else.
+    const rail = container.querySelector('[data-testid="library-filters-rail"]');
+    expect(rail?.className).toContain("hidden");
+    expect(rail?.className).toContain("md:block");
+
+    const row = rail?.parentElement;
+    expect(row?.className).toContain("flex-col");
+    expect(row?.className).toContain("md:flex-row");
+  });
+
+  it("offers the filters sheet as the mobile route into faceting", async () => {
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.getByTestId("library-filters-sheet")).toBeTruthy();
   });
 
   it("renders LibraryPagination", async () => {

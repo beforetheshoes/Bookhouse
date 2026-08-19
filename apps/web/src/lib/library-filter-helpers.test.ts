@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  countActiveFilters,
   filterByReadingStatus,
   columnSortToParam,
   COLUMN_SORT_MAP,
@@ -95,4 +96,24 @@ describe("SORT_TO_COLUMN", () => {
     expect(SORT_TO_COLUMN["format-desc"]).toEqual({ id: "formats", desc: true });
   });
 
+});
+
+describe("countActiveFilters", () => {
+  it("counts every populated list entry and every set boolean", () => {
+    expect(
+      countActiveFilters({
+        format: ["EBOOK", "AUDIOBOOK"],
+        authorId: ["a1"],
+        seriesId: ["s1"],
+        hasCover: true,
+        enriched: false,
+        hasDescription: true,
+        inSeries: false,
+      }),
+    ).toBe(8);
+  });
+
+  it("returns 0 when nothing is set", () => {
+    expect(countActiveFilters({})).toBe(0);
+  });
 });

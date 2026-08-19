@@ -31,7 +31,7 @@ export function LibraryPagination({
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 px-2">
+    <div className="flex flex-wrap items-center justify-center gap-4 px-2 md:justify-between">
       <div className="text-sm text-muted-foreground">
         {String(totalCount)} row(s) total
       </div>

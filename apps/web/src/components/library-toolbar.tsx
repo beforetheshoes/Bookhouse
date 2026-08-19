@@ -71,26 +71,26 @@ export function LibraryToolbar({
   }, [searchValue]);
 
   return (
-    <div className="flex items-center justify-between gap-2">
-      <div className="flex flex-1 items-center gap-2">
+    <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-1 flex-wrap items-center gap-2">
         <Input
           placeholder="Filter by title or author..."
           value={localSearch}
           onChange={(e) => { setLocalSearch(e.target.value); }}
-          className="h-8 w-[150px] lg:w-[250px]"
+          className="h-9 w-full md:h-8 md:w-[150px] lg:w-[250px]"
         />
         {localSearch && (
           <Button
             variant="ghost"
             onClick={() => { setLocalSearch(""); }}
-            className="h-8 px-2"
+            className="h-9 px-2 md:h-8"
             aria-label="Clear search"
           >
             <X className="size-4" />
           </Button>
         )}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Select value={filterValue} onValueChange={(v) => { onFilterChange(v as ReadingFilter); }}>
           <SelectTrigger size="sm">
             <SelectValue />

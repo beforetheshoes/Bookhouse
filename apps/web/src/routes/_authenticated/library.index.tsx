@@ -17,6 +17,7 @@ import { EDITION_COLUMN_SORT_MAP, EDITION_SORT_TO_COLUMN } from "~/lib/library-e
 import { LibraryToolbar } from "~/components/library-toolbar";
 import { LibraryGrid } from "~/components/library-grid";
 import { LibraryFilters } from "~/components/library-filters";
+import { LibraryFiltersSheet } from "~/components/library-filters-sheet";
 import { LibraryPagination } from "~/components/library-pagination";
 import { librarySearchSchema } from "~/lib/library-search-schema";
 import type { ReadingFilter } from "~/lib/sort-filter-works";
@@ -208,8 +209,11 @@ function LibraryPage() {
           </div>
         )}
       </div>
-      <div className="flex gap-6">
-        <aside className="w-56 shrink-0">
+      <div className="flex flex-col gap-4 md:flex-row md:gap-6">
+        <aside
+          data-testid="library-filters-rail"
+          className="hidden md:block md:w-56 md:shrink-0"
+        >
           <LibraryFilters
             facetCounts={facetCounts}
             totalFacetCounts={totalFacetCounts}
@@ -218,6 +222,12 @@ function LibraryPage() {
           />
         </aside>
         <div className="flex-1 min-w-0 space-y-4">
+          <LibraryFiltersSheet
+            facetCounts={facetCounts}
+            totalFacetCounts={totalFacetCounts}
+            filters={currentFilters}
+            onFiltersChange={handleFiltersChange}
+          />
           <LibraryToolbar
             searchValue={search.q ?? ""}
             onSearchChange={handleSearchChange}

@@ -53,6 +53,21 @@ test.describe("Mobile layout", () => {
     await expect(page.getByText("The Great Gatsby")).toBeVisible();
     await expectNoHorizontalOverflow(page);
   });
+
+  test("facet filters are reachable through the filters sheet", async ({
+    page,
+  }) => {
+    await seedWork({ title: "The Great Gatsby" });
+    await page.goto("/library");
+    await expect(page.getByText("The Great Gatsby")).toBeVisible();
+
+    // The 224px desktop rail is hidden below md; this button replaces it.
+    await page.getByRole("button", { name: /Filters/ }).click();
+
+    const sheet = page.getByRole("dialog");
+    await expect(sheet.getByText("Format")).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+  });
 });
 
 export { expectNoHorizontalOverflow };
