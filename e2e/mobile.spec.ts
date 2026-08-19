@@ -10,15 +10,19 @@ import { seedShelf, seedWork, cleanTestData } from "./helpers/seed";
  * reliable signal that something is overflowing the viewport.
  */
 async function expectNoHorizontalOverflow(page: Page) {
-  const { scrollWidth, innerWidth } = await page.evaluate(() => ({
+  // Compare against clientWidth, the layout viewport. window.innerWidth is
+  // unreliable here: under Playwright's mobile device emulation it tracks the
+  // visual viewport, so an overflowing page could report innerWidth == the
+  // overflowed width and the check would pass while the page scrolled.
+  const { scrollWidth, clientWidth } = await page.evaluate(() => ({
     scrollWidth: document.documentElement.scrollWidth,
-    innerWidth: window.innerWidth,
+    clientWidth: document.documentElement.clientWidth,
   }));
   // +1 absorbs sub-pixel rounding in the layout engine.
   expect(
     scrollWidth,
-    `document scrollWidth ${String(scrollWidth)}px exceeds viewport ${String(innerWidth)}px`,
-  ).toBeLessThanOrEqual(innerWidth + 1);
+    `document scrollWidth ${String(scrollWidth)}px exceeds layout viewport ${String(clientWidth)}px`,
+  ).toBeLessThanOrEqual(clientWidth + 1);
 }
 
 test.describe("Mobile layout", () => {
@@ -215,6 +219,46 @@ test.describe("Mobile layout", () => {
       await page.waitForTimeout(700);
       await expectNoHorizontalOverflow(page);
     }
+  });
+
+  test("sheet close button stays reachable when the panel scrolls", async ({
+    page,
+  }) => {
+    await seedWork({ title: "Sheet Scroll Book" });
+    await page.goto("/library");
+    await page.getByRole("button", { name: /Filters/ }).click();
+    await page.waitForTimeout(500);
+
+    const r = await page.evaluate(() => {
+      const c = document.querySelector('[data-slot="sheet-content"]') as HTMLElement;
+      const close = Array.from(c.querySelectorAll("button")).find((b) =>
+        b.textContent?.includes("Close"),
+      ) as HTMLElement;
+      const scroller = c.querySelector('[class*="overflow-y-auto"]') as HTMLElement | null;
+      if (scroller) scroller.scrollTop = 9999;
+      const box = close.getBoundingClientRect();
+      return { top: Math.round(box.top), h: window.innerHeight };
+    });
+
+    // An absolutely-positioned close inside a scrolling container scrolls away
+    // with the content; it must stay in view.
+    expect(r.top).toBeGreaterThanOrEqual(0);
+    expect(r.top).toBeLessThan(r.h);
+  });
+
+  test("landscape grid keeps a usable height", async ({ page }) => {
+    for (let i = 0; i < 6; i++) await seedWork({ title: `Landscape Grid ${String(i)}` });
+    await page.setViewportSize({ width: 740, height: 360 });
+    await page.goto("/library");
+    await page.waitForTimeout(900);
+
+    const h = await page.evaluate(() => {
+      const el = document.querySelector('[class*="overflow-auto"][class*="pr-2"]');
+      return el ? Math.round(el.getBoundingClientRect().height) : -1;
+    });
+    // The md: cap does not apply at 740px wide, so without a floor the
+    // viewport-derived height collapses to about one clipped row.
+    expect(h).toBeGreaterThan(240);
   });
 
   test("shelf detail page fits the viewport", async ({ page }) => {

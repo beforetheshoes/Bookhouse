@@ -189,6 +189,9 @@ vi.mock("~/components/library-toolbar", () => ({
   },
 }));
 
+let mockIsMobile = false;
+vi.mock("~/hooks/use-mobile", () => ({ useIsMobile: () => mockIsMobile }));
+
 vi.mock("~/components/library-filters-sheet", () => ({
   LibraryFiltersSheet: () => <div data-testid="library-filters-sheet" />,
 }));
@@ -732,6 +735,7 @@ describe("LibraryPage", () => {
     // The loader fetches works with pageSize: 1 for the editions view, so a
     // phone forced onto the grid would otherwise render a one-item library
     // beneath a full-library total count.
+    mockIsMobile = true;
     mockView = "grid";
     mockSearch = { page: 1, pageSize: 50, sort: "title-asc", view: "editions" };
     mockLoaderData = {
@@ -752,8 +756,11 @@ describe("LibraryPage", () => {
     expect(call.search({ page: 1, view: "editions" }).view).toBeUndefined();
   });
 
-  it("leaves ?view=editions alone when the table is actually showing", async () => {
-    mockView = "table";
+  it("leaves ?view=editions alone on a desktop grid user", async () => {
+    // `view` defaults to "grid", so keying the effect off it would strip the
+    // param for every desktop user who never opened the table.
+    mockIsMobile = false;
+    mockView = "grid";
     mockSearch = { page: 1, pageSize: 50, sort: "title-asc", view: "editions" };
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },

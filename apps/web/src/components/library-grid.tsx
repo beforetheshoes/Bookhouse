@@ -85,7 +85,7 @@ export function LibraryGrid({ works, progressMap, scanActive, tileSize = "small"
       // interaction there is. Sizing it to the rest of the viewport makes it
       // read as page scroll while keeping the single virtualizer intact; dvh
       // absorbs collapsing browser chrome.
-      className="max-h-[calc(100dvh-14rem)] overflow-auto pr-2 md:max-h-[70vh]"
+      className="min-h-80 max-h-[calc(100dvh-14rem)] overflow-auto pr-2 md:max-h-[70vh]"
     >
       {works.length === 0 ? (
         <div className="flex h-24 items-center justify-center text-muted-foreground">

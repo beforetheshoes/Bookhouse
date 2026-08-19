@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { useSSE } from "~/hooks/use-sse";
 import { useEffectiveLibraryView } from "~/hooks/use-library-view-preference";
+import { useIsMobile } from "~/hooks/use-mobile";
 import type { LibrarySearchParams } from "~/lib/library-search-schema";
 import { useLibraryTablePreferences } from "~/hooks/use-library-table-preferences";
 import { useGridTileSize } from "~/hooks/use-grid-tile-size";
@@ -56,6 +57,7 @@ function LibraryPage() {
   const search = Route.useSearch();
   const navigate = useNavigate();
   const [view, setView] = useEffectiveLibraryView();
+  const isMobile = useIsMobile();
   const [tileSize, setTileSize] = useGridTileSize();
   const [tablePrefs, setTablePrefs] = useLibraryTablePreferences();
   const [readingFilter, setReadingFilter] = useState<ReadingFilter>("all");
@@ -79,14 +81,14 @@ function LibraryPage() {
   // that one-item response would render as the whole library under a total
   // count taken from the full query. Normalise the URL so the loader refetches.
   useEffect(() => {
-    if (search.view === "editions" && view !== "table") {
+    if (search.view === "editions" && isMobile) {
       void navigate({
         to: ".",
         search: (prev) => ({ ...(prev as LibrarySearchParams), view: undefined }),
         replace: true,
       });
     }
-  }, [search, view, navigate]);
+  }, [search, isMobile, navigate]);
   const workColumns = useMemo(() => getColumns(isScanning, editMode, router, progressMap), [isScanning, editMode, router, progressMap]);
   const editionColumns = useMemo(() => getEditionColumns(editMode, router), [editMode, router]);
   const newCount = totalCount - prevCount;

@@ -58,11 +58,11 @@ export function LibraryFiltersSheet({
           )}
         </Button>
       </SheetTrigger>
-      <SheetContent side="left" className="w-[85vw] overflow-y-auto sm:max-w-sm">
+      <SheetContent side="left" className="w-[85vw]">
         <SheetHeader>
           <SheetTitle>Filters</SheetTitle>
         </SheetHeader>
-        <div className="px-4 pb-8">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-8">
           <LibraryFilters
             facetCounts={facetCounts}
             totalFacetCounts={totalFacetCounts}

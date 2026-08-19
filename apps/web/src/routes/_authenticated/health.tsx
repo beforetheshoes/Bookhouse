@@ -204,7 +204,7 @@ function HealthPage() {
   const totalIssues = checks.reduce((sum, c) => sum + c.count, 0);
 
   return (
-    <div className="flex flex-1 flex-col gap-6 md:p-2">
+    <div className="flex flex-1 flex-col gap-6">
       <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-200">
         <strong>Experimental.</strong> This page is a work in progress — counts may be misleading and some checks are not yet actionable.
       </div>

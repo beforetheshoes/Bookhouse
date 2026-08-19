@@ -92,7 +92,7 @@ export function UsersPage() {
   }
 
   return (
-    <div className="container mx-auto space-y-8 md:p-2">
+    <div className="container mx-auto space-y-8">
       <div>
         <h1 className="text-2xl font-bold">Users</h1>
         <p className="text-muted-foreground">

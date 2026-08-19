@@ -46,7 +46,7 @@ function SeriesDetailPage() {
       {series.works.length === 0 ? (
         <p className="text-muted-foreground">No works in this series</p>
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           {series.works.map((work) => (
             <div key={work.id} className="space-y-1">
               {work.seriesPosition != null && (

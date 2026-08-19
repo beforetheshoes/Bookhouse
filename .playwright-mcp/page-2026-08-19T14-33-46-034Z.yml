@@ -1,0 +1,14 @@
+- generic [ref=f2e2]:
+  - generic [ref=f2e3]: sidebar
+  - main [ref=f2e4]:
+    - generic [ref=f2e5]: header
+    - generic [ref=f2e7]:
+      - heading "Settings" [level=1] [ref=f2e8]
+      - generic [ref=f2e10]:
+        - button "Library" [ref=f2e11]
+        - button "Appearance" [ref=f2e12]
+        - button "Jobs" [ref=f2e13]
+        - button "Integrations" [ref=f2e14]
+        - button "Backup" [ref=f2e15]
+        - button "Devices" [ref=f2e16]
+        - button "Users" [ref=f2e17]
