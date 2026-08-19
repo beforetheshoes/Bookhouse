@@ -70,7 +70,7 @@ export function EditableField({
     return (
       <div
         className={cn(
-          "flex min-h-9 cursor-pointer items-center rounded px-1 -mx-1 border border-transparent transition-colors hover:border-border hover:bg-accent/50 md:block md:min-h-0",
+          "flex min-h-9 cursor-pointer items-center break-words [overflow-wrap:anywhere] rounded px-1 -mx-1 border border-transparent transition-colors hover:border-border hover:bg-accent/50 md:block md:min-h-0",
           !value && "text-muted-foreground italic",
           className,
         )}

@@ -81,11 +81,12 @@ export function LibraryGrid({ works, progressMap, scanActive, tileSize = "small"
   return (
     <div
       ref={containerRef}
-      // A 70vh inner scroller nested inside page scroll is the worst mobile
-      // interaction there is. Sizing it to the rest of the viewport makes it
-      // read as page scroll while keeping the single virtualizer intact; dvh
-      // absorbs collapsing browser chrome.
-      className="min-h-80 max-h-[calc(100dvh-14rem)] overflow-auto pr-2 md:max-h-[70vh]"
+      // This element is the virtualizer's scroll container, so it has to keep
+      // scrolling - the fix for the nested-scroll problem is to size it to the
+      // space actually left below the header and toolbar, not to remove it.
+      // 20rem is calibrated against the measured container top (~310px at
+      // 360x740); e2e asserts the bottom edge stays within the viewport.
+      className="min-h-80 max-h-[calc(100dvh-20rem)] overflow-auto pr-2 md:max-h-[70vh]"
     >
       {works.length === 0 ? (
         <div className="flex h-24 items-center justify-center text-muted-foreground">

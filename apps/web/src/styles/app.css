@@ -140,3 +140,42 @@
     transition: background 0.5s ease;
   }
 }
+
+/* Respect the OS "reduce motion" setting. Only the shimmer keyframe honoured
+   it before, so sheets, dialogs and the sidebar still animated fully. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Printing rendered the nav rail and clipped the library to the first screen
+   of its inner scroller. */
+@media print {
+  [data-slot="sidebar"],
+  [data-slot="sidebar-wrapper"] > [data-slot="sidebar"],
+  header,
+  [data-slot="dialog-overlay"],
+  [data-slot="sheet-overlay"] {
+    display: none !important;
+  }
+
+  [data-slot="sidebar-inset"],
+  main {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Inner scrollers must not clip their content on paper. */
+  [class*="overflow-auto"],
+  [class*="overflow-y-auto"] {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+}
+

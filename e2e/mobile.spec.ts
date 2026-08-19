@@ -263,6 +263,27 @@ test.describe("Mobile layout", () => {
     expect(h).toBeGreaterThan(240);
   });
 
+  test("grid scroller ends within the viewport, not below the fold", async ({
+    page,
+  }) => {
+    for (let i = 0; i < 12; i++) await seedWork({ title: `Fold Book ${String(i)}` });
+    await page.goto("/library");
+    await page.waitForTimeout(1000);
+
+    const r = await page.evaluate(() => {
+      const el = document.querySelector('[class*="overflow-auto"][class*="pr-2"]');
+      if (!el) return null;
+      const b = el.getBoundingClientRect();
+      return { top: Math.round(b.top), bottom: Math.round(b.bottom), vh: window.innerHeight };
+    });
+
+    expect(r).not.toBeNull();
+    // The height is derived from a constant guess at the chrome above it. If
+    // that guess drifts, the scroller's own bottom falls below the fold and
+    // the page gets two competing scrollbars.
+    expect(r?.bottom ?? 0).toBeLessThanOrEqual((r?.vh ?? 0) + 1);
+  });
+
   test("work detail fits the viewport with long titles and shelf names", async ({
     page,
   }) => {

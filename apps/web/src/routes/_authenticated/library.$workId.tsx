@@ -63,7 +63,7 @@ function WorkDetailSkeleton() {
       <Skeleton className="h-6 w-48" />
       <div className="flex flex-col gap-6 md:flex-row md:gap-8">
         <Skeleton className="h-60 w-40 md:h-72 md:w-48" />
-        <div className="flex-1 space-y-4">
+        <div className="min-w-0 flex-1 space-y-4">
           <Skeleton className="h-8 w-full max-w-96" />
           <Skeleton className="h-4 w-64" />
           <Skeleton className="h-24 w-full" />

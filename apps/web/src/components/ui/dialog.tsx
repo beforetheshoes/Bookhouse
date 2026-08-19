@@ -77,22 +77,27 @@ function DialogContent({
           );
           if (first) {
             event.preventDefault();
-            first.focus();
+            first.focus({ preventScroll: true });
           }
         }}
         {...props}
       >
         {showCloseButton && (
+          // A zero-height sticky strip rather than a laid-out child: as a grid
+          // or flex item the close consumed a row (the negative margin that
+          // cancelled it overshot in flex), could be flex-shrunk below its tap
+          // size, and overlapped long titles. The strip still contributes one
+          // `gap-4`, so dialogs sit 16px taller; a negative margin cannot
+          // reclaim it because grid tracks clamp at zero.
+          <div className="sticky top-0 z-10 h-0 self-stretch">
           <DialogPrimitive.Close
             data-slot="dialog-close"
-            // sticky, not absolute: the container scrolls now, and an absolute
-            // child scrolls away with the content - on a long dialog the close
-            // button ends up hundreds of pixels above the visible area.
-            className="sticky top-0 z-10 -mb-10 flex size-9 items-center justify-center self-end justify-self-end rounded-sm opacity-70 md:-mb-8 md:size-auto ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+            className="absolute -top-1 right-0 flex size-9 shrink-0 items-center justify-center rounded-sm opacity-70 md:size-auto ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
           >
             <XIcon />
             <span className="sr-only">Close</span>
           </DialogPrimitive.Close>
+          </div>
         )}
         {children}
       </DialogPrimitive.Content>
