@@ -77,13 +77,13 @@ export function LibraryToolbar({
           placeholder="Filter by title or author..."
           value={localSearch}
           onChange={(e) => { setLocalSearch(e.target.value); }}
-          className="h-9 w-full md:h-8 md:w-[150px] lg:w-[250px]"
+          className="h-9 w-full md:w-[150px] lg:h-8 lg:w-[250px]"
         />
         {localSearch && (
           <Button
             variant="ghost"
             onClick={() => { setLocalSearch(""); }}
-            className="h-9 px-2 md:h-8"
+            className="h-9 px-2 lg:h-8"
             aria-label="Clear search"
           >
             <X className="size-4" />

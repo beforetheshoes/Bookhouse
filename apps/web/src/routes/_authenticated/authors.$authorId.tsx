@@ -93,7 +93,7 @@ function AuthorDetailPage() {
           Authors
         </Link>
         <ChevronRight className="size-4" />
-        <span className="text-foreground">{author.nameDisplay}</span>
+        <span className="min-w-0 [overflow-wrap:anywhere] text-foreground">{author.nameDisplay}</span>
       </nav>
 
       <div className="flex items-center gap-4">
@@ -126,7 +126,7 @@ function AuthorDetailPage() {
           disabled={uploading}
         />
         <div>
-          <h1 className="text-2xl font-bold">{author.nameDisplay}</h1>
+          <h1 className="min-w-0 [overflow-wrap:anywhere] text-2xl font-bold">{author.nameDisplay}</h1>
           <div className="mt-0.5 text-xs text-muted-foreground">
             <span className="mr-1">Sort as:</span>
             <EditableField

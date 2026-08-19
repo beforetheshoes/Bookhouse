@@ -154,13 +154,15 @@ function MissingFilesPage() {
           <TableHeader>
             <TableRow>
               <TableHead className="w-10">
+                <label className="flex min-h-9 items-center justify-center lg:min-h-0">
                 <input
                   type="checkbox"
-                  className="size-5 md:size-4"
+                  className="size-5 lg:size-4"
                   checked={selected.size === missingFiles.items.length}
                   onChange={toggleSelectAll}
                   aria-label="Select all"
                 />
+                </label>
               </TableHead>
               <TableHead>File Path</TableHead>
               <TableHead>Work</TableHead>
@@ -174,13 +176,15 @@ function MissingFilesPage() {
               return (
                 <TableRow key={file.id}>
                   <TableCell>
-                    <input
-                      type="checkbox"
-                      className="size-5 md:size-4"
-                      checked={selected.has(file.id)}
-                      onChange={() => { toggleSelect(file.id); }}
-                      aria-label={`Select ${file.relativePath}`}
-                    />
+                    <label className="flex min-h-9 items-center justify-center lg:min-h-0">
+                      <input
+                        type="checkbox"
+                        className="size-5 lg:size-4"
+                        checked={selected.has(file.id)}
+                        onChange={() => { toggleSelect(file.id); }}
+                        aria-label={`Select ${file.relativePath}`}
+                      />
+                    </label>
                   </TableCell>
                   <TableCell className="font-mono text-xs">{file.relativePath}</TableCell>
                   <TableCell>

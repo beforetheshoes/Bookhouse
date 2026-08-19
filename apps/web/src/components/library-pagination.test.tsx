@@ -120,7 +120,7 @@ describe("LibraryPagination", () => {
     // 32x32 pagination arrows are the hardest control in the app to hit.
     const prev = screen.getByLabelText("Go to previous page");
     expect(prev.className).toContain("size-9");
-    expect(prev.className).toContain("md:size-8");
+    expect(prev.className).toContain("lg:size-8");
   });
 
   it("leaves the rows-per-page select on the responsive default size", () => {
@@ -133,7 +133,7 @@ describe("LibraryPagination", () => {
     expect(trigger?.getAttribute("data-size")).toBe("default");
     // The responsive height rides on the variant's data-size selector.
     expect(trigger?.className).toContain("data-[size=default]:h-10");
-    expect(trigger?.className).toContain("md:data-[size=default]:h-9");
+    expect(trigger?.className).toContain("lg:data-[size=default]:h-9");
     // ...and the call site must not add a bare height that would lose to it.
     expect(/(^|\s)h-\d/.test(trigger?.className ?? "")).toBe(false);
   });

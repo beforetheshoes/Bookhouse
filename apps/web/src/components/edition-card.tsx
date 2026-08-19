@@ -118,10 +118,10 @@ export function EditionCard({
     <div className="rounded-lg border border-border">
       {/* Card Header */}
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <h3 className="text-sm font-semibold">{edition.publisher ?? "Unknown Publisher"}</h3>
+        <h3 className="min-w-0 [overflow-wrap:anywhere] text-sm font-semibold">{edition.publisher ?? "Unknown Publisher"}</h3>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="size-9 p-0 md:size-8" aria-label="Edition actions">
+            <Button variant="ghost" size="sm" className="size-9 p-0 lg:size-8" aria-label="Edition actions">
               <EllipsisVertical className="size-4" />
             </Button>
           </DropdownMenuTrigger>

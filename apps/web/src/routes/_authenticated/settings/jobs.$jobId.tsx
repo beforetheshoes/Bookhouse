@@ -92,7 +92,7 @@ function JobDetailPage() {
             </div>
             <div>
               <span className="text-muted-foreground">Library Root</span>
-              <p>{job.libraryRoot?.name ?? "—"}</p>
+              <p className="[overflow-wrap:anywhere]">{job.libraryRoot?.name ?? "—"}</p>
             </div>
             <div>
               <span className="text-muted-foreground">BullMQ Job ID</span>

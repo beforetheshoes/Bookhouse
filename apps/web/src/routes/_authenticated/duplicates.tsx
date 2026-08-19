@@ -234,7 +234,7 @@ function SidePanel({
       )}
       <div className="min-w-0 flex-1">
         <p className="font-medium break-words">{label}</p>
-        {authors && <p className="text-sm text-muted-foreground">{authors}</p>}
+        {authors && <p className="text-sm text-muted-foreground [overflow-wrap:anywhere]">{authors}</p>}
         {filePath && (
           <p className="break-all text-xs text-muted-foreground">{filePath}</p>
         )}

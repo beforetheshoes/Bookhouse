@@ -583,7 +583,7 @@ describe("Sidebar", () => {
   });
 });
 
-it("SidebarTrigger is a 36px tap target on mobile and 28px from md up", () => {
+it("SidebarTrigger is a 36px tap target on mobile and 28px from lg up", () => {
   render(
     <SidebarProvider>
       <SidebarTrigger />
@@ -593,5 +593,5 @@ it("SidebarTrigger is a 36px tap target on mobile and 28px from md up", () => {
   // smallest tap target in the app.
   const trigger = screen.getByRole("button", { name: "Toggle Sidebar" });
   expect(trigger.className).toContain("size-9");
-  expect(trigger.className).toContain("md:size-7");
+  expect(trigger.className).toContain("lg:size-7");
 });

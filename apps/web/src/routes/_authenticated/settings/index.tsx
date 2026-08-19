@@ -568,7 +568,7 @@ function ColorCard() {
                 value={option.value}
                 checked={colorMode === option.value}
                 onChange={() => { setColorMode(option.value); }}
-                className="mt-1"
+                className="mt-1 size-5 lg:size-4"
               />
               <div>
                 <p className="text-sm font-medium">{option.label}</p>
@@ -587,7 +587,7 @@ function ColorCard() {
                 setHexInput(value);
                 setAccentColor(value);
               }}
-              className="size-9 cursor-pointer rounded-md border-0 p-0 md:size-8"
+              className="size-9 cursor-pointer rounded-md border-0 p-0 lg:size-8"
             />
             <Input
               type="text"
@@ -859,7 +859,7 @@ function MissingFileBehaviorCard({ initialBehavior }: { initialBehavior: Missing
               checked={behavior === "manual"}
               onChange={() => { void handleChange("manual"); }}
               disabled={saving}
-              className="mt-1"
+              className="mt-1 size-5 lg:size-4"
             />
             <div>
               <p className="text-sm font-medium">Manual review</p>
@@ -876,7 +876,7 @@ function MissingFileBehaviorCard({ initialBehavior }: { initialBehavior: Missing
               checked={behavior === "auto-cleanup"}
               onChange={() => { void handleChange("auto-cleanup"); }}
               disabled={saving}
-              className="mt-1"
+              className="mt-1 size-5 lg:size-4"
             />
             <div>
               <p className="text-sm font-medium">Auto-cleanup during scan</p>
@@ -959,8 +959,8 @@ function LibraryRootCard({ root }: { root: LibraryRootWithExtras }) {
         <CardHeader>
           <div className="flex flex-col items-start justify-between gap-3 sm:flex-row">
             <div className="min-w-0 space-y-1">
-              <CardTitle className="flex items-center gap-2">
-                {root.name}
+              <CardTitle className="flex min-w-0 flex-wrap items-center gap-2">
+                <span className="min-w-0 [overflow-wrap:anywhere]">{root.name}</span>
                 {!root.isEnabled && (
                   <Badge variant="secondary">Disabled</Badge>
                 )}

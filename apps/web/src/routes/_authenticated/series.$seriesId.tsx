@@ -38,10 +38,10 @@ function SeriesDetailPage() {
           Series
         </Link>
         <ChevronRight className="size-4" />
-        <span className="text-foreground">{series.name}</span>
+        <span className="min-w-0 [overflow-wrap:anywhere] text-foreground">{series.name}</span>
       </nav>
 
-      <h1 className="text-2xl font-bold">{series.name}</h1>
+      <h1 className="min-w-0 [overflow-wrap:anywhere] text-2xl font-bold">{series.name}</h1>
 
       {series.works.length === 0 ? (
         <p className="text-muted-foreground">No works in this series</p>

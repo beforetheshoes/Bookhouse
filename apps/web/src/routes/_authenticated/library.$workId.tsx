@@ -297,7 +297,7 @@ function WorkDetailPage() {
           <div>
             <div className="flex flex-wrap items-start gap-3">
               <h1
-                className="w-full min-w-0 font-display text-2xl font-medium tracking-tight md:w-auto md:flex-1 md:text-3xl"
+                className="w-full min-w-0 font-display text-2xl font-medium tracking-tight md:flex-1 md:text-3xl"
                 style={{ color: "var(--bh-text, inherit)" }}
               >
                 <EditableField

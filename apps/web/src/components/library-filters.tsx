@@ -62,7 +62,7 @@ export function LibraryFilters({
 
   return (
     <div className="space-y-4">
-      <div data-testid="clear-all-spacer" className="h-9 md:h-8">
+      <div data-testid="clear-all-spacer" className="h-9 lg:h-8">
         {filtersActive && (
           <Button variant="ghost" size="sm" onClick={clearAll} className="gap-1">
             <X className="size-3" />

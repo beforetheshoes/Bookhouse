@@ -145,9 +145,15 @@ test.describe("Mobile layout", () => {
       const bad: { label: string; h: number; cls: string }[] = [];
       let seen = 0;
       document
-        .querySelectorAll<HTMLElement>('button, a[href], select, [role="tab"], [data-slot="select-trigger"]')
+        .querySelectorAll<HTMLElement>(
+          'button, a[href], select, input[type="checkbox"], input[type="radio"], [role="tab"], [cmdk-item], [data-slot="select-trigger"]',
+        )
         .forEach((el) => {
-          const r = el.getBoundingClientRect();
+          // A native input wrapped in a <label> inherits the label's hit area -
+          // clicking anywhere in it activates the control - so measure the
+          // label. Measuring the 13px input would be the wrong model.
+          const target = el.closest("label") ?? el;
+          const r = target.getBoundingClientRect();
           if (r.width === 0 || r.height === 0) return;
           const cs = getComputedStyle(el);
           if (cs.visibility === "hidden" || cs.opacity === "0") return;
@@ -308,6 +314,19 @@ test.describe("Mobile layout", () => {
     const roomBelowChrome = vh - top;
     if (roomBelowChrome >= 320) {
       expect(r?.bottom ?? 0).toBeLessThanOrEqual(vh + 1);
+      // ...and the pagination that follows it must be reachable without
+      // scrolling past a nested scroller.
+      const pager = await page.evaluate(() => {
+        const el = document.querySelector('[data-testid="library-pagination"]')
+          ?? Array.from(document.querySelectorAll("div")).find((d) =>
+            /row\(s\) total/.test(d.textContent ?? ""));
+        if (!el) return null;
+        const b = el.getBoundingClientRect();
+        return { top: Math.round(b.top), vh: window.innerHeight };
+      });
+      if (pager) {
+        expect(pager.top, "pagination is below the fold").toBeLessThan(pager.vh);
+      }
     } else {
       expect(r?.bottom ?? 0).toBeGreaterThanOrEqual(top + 320);
     }

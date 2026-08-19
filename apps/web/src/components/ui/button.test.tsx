@@ -43,14 +43,14 @@ it("renders with different sizes via data-size attribute", () => {
 // Touch targets: every size is mobile-first and taller on phones, with `md:`
 // restoring the exact desktop pixels the app was designed around.
 it.each([
-  ["default", "h-10", "md:h-9"],
-  ["xs", "h-8", "md:h-6"],
-  ["sm", "h-9", "md:h-8"],
-  ["lg", "h-11", "md:h-10"],
-  ["icon", "size-11", "md:size-9"],
-  ["icon-xs", "size-8", "md:size-6"],
-  ["icon-sm", "size-9", "md:size-8"],
-  ["icon-lg", "size-11", "md:size-10"],
+  ["default", "h-10", "lg:h-9"],
+  ["xs", "h-8", "lg:h-6"],
+  ["sm", "h-9", "lg:h-8"],
+  ["lg", "h-11", "lg:h-10"],
+  ["icon", "size-11", "lg:size-9"],
+  ["icon-xs", "size-8", "lg:size-6"],
+  ["icon-sm", "size-9", "lg:size-8"],
+  ["icon-lg", "size-11", "lg:size-10"],
 ] as const)(
   "size %s is %s on mobile and %s from md up",
   (size, mobileClass, desktopClass) => {

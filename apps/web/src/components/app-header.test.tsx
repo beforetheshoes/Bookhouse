@@ -72,5 +72,5 @@ it("uses a shorter header bar on phones", () => {
   );
   const header = container.querySelector("header");
   expect(header?.className).toContain("h-14");
-  expect(header?.className).toContain("md:h-16");
+  expect(header?.className).toContain("lg:h-16");
 });
