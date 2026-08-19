@@ -587,7 +587,7 @@ function ColorCard() {
                 setHexInput(value);
                 setAccentColor(value);
               }}
-              className="size-8 cursor-pointer rounded-md border-0 p-0"
+              className="size-9 cursor-pointer rounded-md border-0 p-0 md:size-8"
             />
             <Input
               type="text"

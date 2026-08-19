@@ -121,7 +121,7 @@ export function EditionCard({
         <h3 className="text-sm font-semibold">{edition.publisher ?? "Unknown Publisher"}</h3>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="size-8 p-0" aria-label="Edition actions">
+            <Button variant="ghost" size="sm" className="size-9 p-0 md:size-8" aria-label="Edition actions">
               <EllipsisVertical className="size-4" />
             </Button>
           </DropdownMenuTrigger>

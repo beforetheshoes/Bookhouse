@@ -114,4 +114,19 @@ describe("LibraryPagination", () => {
     await user.click(screen.getByRole("option", { name: "20" }));
     expect(onPageSizeChange).toHaveBeenCalledWith(20);
   });
+
+  it("gives page navigation buttons a full mobile tap target", () => {
+    renderPagination({ page: 2 });
+    // 32x32 pagination arrows are the hardest control in the app to hit.
+    const prev = screen.getByLabelText("Go to previous page");
+    expect(prev.className).toContain("size-9");
+    expect(prev.className).toContain("md:size-8");
+  });
+
+  it("gives the rows-per-page select a full mobile tap target", () => {
+    const { container } = renderPagination();
+    const trigger = container.querySelector('[data-slot="select-trigger"]');
+    expect(trigger?.className).toContain("h-9");
+    expect(trigger?.className).toContain("md:h-8");
+  });
 });

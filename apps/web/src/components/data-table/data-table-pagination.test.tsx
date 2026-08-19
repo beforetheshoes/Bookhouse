@@ -130,4 +130,19 @@ describe("DataTablePagination", () => {
     await user.click(option);
     expect(setPageSize).toHaveBeenCalledWith(10);
   });
+
+  it("gives page navigation buttons and the size select mobile tap targets", () => {
+    const { table } = makeMockTable();
+    const { container } = render(<DataTablePagination table={asTable(table)} />);
+
+    const navBtn = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.querySelector(".sr-only")?.textContent === "Go to previous page"
+    );
+    expect(navBtn?.className).toContain("size-9");
+    expect(navBtn?.className).toContain("md:size-8");
+
+    const trigger = container.querySelector('[data-slot="select-trigger"]');
+    expect(trigger?.className).toContain("h-9");
+    expect(trigger?.className).toContain("md:h-8");
+  });
 });

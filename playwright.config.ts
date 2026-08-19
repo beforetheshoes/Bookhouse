@@ -43,9 +43,21 @@ export default defineConfig({
     },
     {
       name: "chromium",
-      testIgnore: /auth-redirect/,
+      testIgnore: /auth-redirect|mobile\.spec/,
       use: {
         ...devices["Desktop Chrome"],
+        storageState: "e2e/.auth/state.json",
+      },
+      dependencies: ["auth-setup"],
+    },
+    {
+      // Scoped to e2e/mobile.spec.ts only. The other specs assert data flows,
+      // not layout, and `workers: 1` makes a full second pass expensive.
+      // Galaxy S8 is 360px wide — the harshest viewport we support.
+      name: "mobile-chrome",
+      testMatch: /mobile\.spec\.ts/,
+      use: {
+        ...devices["Galaxy S8"],
         storageState: "e2e/.auth/state.json",
       },
       dependencies: ["auth-setup"],

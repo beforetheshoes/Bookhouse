@@ -44,7 +44,7 @@ export function LibraryPagination({
               onPageSizeChange(Number(value));
             }}
           >
-            <SelectTrigger className="h-8 w-[70px]">
+            <SelectTrigger className="h-9 w-[70px] md:h-8">
               <SelectValue placeholder={String(pageSize)} />
             </SelectTrigger>
             <SelectContent side="top">
@@ -62,7 +62,7 @@ export function LibraryPagination({
         <div className="flex items-center gap-1">
           <Button
             variant="outline"
-            className="hidden h-8 w-8 p-0 lg:flex"
+            className="hidden size-9 p-0 md:size-8 lg:flex"
             onClick={() => { onPageChange(1); }}
             disabled={page <= 1}
             aria-label="Go to first page"
@@ -71,7 +71,7 @@ export function LibraryPagination({
           </Button>
           <Button
             variant="outline"
-            className="h-8 w-8 p-0"
+            className="size-9 p-0 md:size-8"
             onClick={() => { onPageChange(page - 1); }}
             disabled={page <= 1}
             aria-label="Go to previous page"
@@ -80,7 +80,7 @@ export function LibraryPagination({
           </Button>
           <Button
             variant="outline"
-            className="h-8 w-8 p-0"
+            className="size-9 p-0 md:size-8"
             onClick={() => { onPageChange(page + 1); }}
             disabled={page >= totalPages}
             aria-label="Go to next page"
@@ -89,7 +89,7 @@ export function LibraryPagination({
           </Button>
           <Button
             variant="outline"
-            className="hidden h-8 w-8 p-0 lg:flex"
+            className="hidden size-9 p-0 md:size-8 lg:flex"
             onClick={() => { onPageChange(totalPages); }}
             disabled={page >= totalPages}
             aria-label="Go to last page"
