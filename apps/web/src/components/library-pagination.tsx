@@ -44,7 +44,7 @@ export function LibraryPagination({
               onPageSizeChange(Number(value));
             }}
           >
-            <SelectTrigger className="h-9 w-[70px] md:h-8">
+            <SelectTrigger className="w-[70px]">
               <SelectValue placeholder={String(pageSize)} />
             </SelectTrigger>
             <SelectContent side="top">

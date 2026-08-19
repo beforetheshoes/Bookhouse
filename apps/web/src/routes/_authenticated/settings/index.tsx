@@ -957,19 +957,19 @@ function LibraryRootCard({ root }: { root: LibraryRootWithExtras }) {
     <>
       <Card>
         <CardHeader>
-          <div className="flex items-start justify-between">
-            <div className="space-y-1">
+          <div className="flex flex-col items-start justify-between gap-3 sm:flex-row">
+            <div className="min-w-0 space-y-1">
               <CardTitle className="flex items-center gap-2">
                 {root.name}
                 {!root.isEnabled && (
                   <Badge variant="secondary">Disabled</Badge>
                 )}
               </CardTitle>
-              <p className="text-sm text-muted-foreground font-mono">
+              <p className="text-sm text-muted-foreground font-mono break-all">
                 {root.path}
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
@@ -1030,7 +1030,7 @@ function LibraryRootCard({ root }: { root: LibraryRootWithExtras }) {
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="flex gap-4 text-sm">
+          <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
             <div className="flex items-center gap-1.5">
               <span className="text-muted-foreground">Kind:</span>
               <Badge variant="outline">{root.kind}</Badge>

@@ -271,7 +271,7 @@ function WorkDetailPage() {
       </nav>
 
       <div className="flex flex-col gap-6 md:flex-row md:gap-8">
-        <div className="relative flex-none" data-testid="cover-halo">
+        <div className="relative flex-none self-center md:self-auto" data-testid="cover-halo">
           <div
             aria-hidden="true"
             className="pointer-events-none absolute -inset-3 blur-md md:-inset-5"
@@ -297,7 +297,7 @@ function WorkDetailPage() {
           <div>
             <div className="flex flex-wrap items-start gap-3">
               <h1
-                className="flex-1 font-display text-3xl font-medium tracking-tight"
+                className="w-full min-w-0 font-display text-2xl font-medium tracking-tight md:w-auto md:flex-1 md:text-3xl"
                 style={{ color: "var(--bh-text, inherit)" }}
               >
                 <EditableField

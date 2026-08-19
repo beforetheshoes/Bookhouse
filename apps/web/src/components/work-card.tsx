@@ -42,7 +42,7 @@ export function WorkCard({ id, title, authors, enrichmentStatus, scanActive, for
         )}
       </div>
       <div className={isSmall ? "space-y-0.5 p-2" : "space-y-1 p-3"}>
-        <h3 className={isSmall ? "line-clamp-2 text-xs font-medium leading-tight" : "line-clamp-2 text-sm font-medium leading-tight"}>{title}</h3>
+        <h3 className={isSmall ? "line-clamp-2 text-sm font-medium leading-tight md:text-xs" : "line-clamp-2 text-sm font-medium leading-tight"}>{title}</h3>
         <p className={isSmall ? "line-clamp-1 text-xs text-muted-foreground md:text-[10px]" : "line-clamp-1 text-xs text-muted-foreground"}>{authors}</p>
         <div className="flex flex-wrap gap-1">
           {formats.map((f) => (

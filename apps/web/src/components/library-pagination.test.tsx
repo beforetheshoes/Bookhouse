@@ -123,10 +123,18 @@ describe("LibraryPagination", () => {
     expect(prev.className).toContain("md:size-8");
   });
 
-  it("gives the rows-per-page select a full mobile tap target", () => {
+  it("leaves the rows-per-page select on the responsive default size", () => {
     const { container } = renderPagination();
     const trigger = container.querySelector('[data-slot="select-trigger"]');
-    expect(trigger?.className).toContain("h-9");
-    expect(trigger?.className).toContain("md:h-8");
+    // Height comes from the variant's data-size selector, which outranks any
+    // `md:h-*` utility passed here (attribute selectors are more specific), so
+    // the call site must NOT try to set a height. Real pixel heights are
+    // asserted in e2e/mobile.spec.ts against computed layout.
+    expect(trigger?.getAttribute("data-size")).toBe("default");
+    // The responsive height rides on the variant's data-size selector.
+    expect(trigger?.className).toContain("data-[size=default]:h-10");
+    expect(trigger?.className).toContain("md:data-[size=default]:h-9");
+    // ...and the call site must not add a bare height that would lose to it.
+    expect(/(^|\s)h-\d/.test(trigger?.className ?? "")).toBe(false);
   });
 });

@@ -204,12 +204,12 @@ function HealthPage() {
   const totalIssues = checks.reduce((sum, c) => sum + c.count, 0);
 
   return (
-    <div className="flex flex-1 flex-col gap-6 p-6">
+    <div className="flex flex-1 flex-col gap-6 md:p-2">
       <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-200">
         <strong>Experimental.</strong> This page is a work in progress — counts may be misleading and some checks are not yet actionable.
       </div>
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Library Health</h1>
           <p className="text-muted-foreground">

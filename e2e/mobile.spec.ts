@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { seedWork, cleanTestData } from "./helpers/seed";
+import { seedShelf, seedWork, cleanTestData } from "./helpers/seed";
 
 /**
  * Asserts the document does not scroll horizontally.
@@ -83,31 +83,80 @@ test.describe("Mobile layout", () => {
   });
 
   test.describe("admin surfaces fit the viewport", () => {
-    for (const path of ["/settings", "/upload", "/duplicates", "/health"]) {
+    for (const path of [
+      "/settings",
+      "/upload",
+      "/duplicates",
+      "/health",
+      "/match-suggestions",
+      "/shelves",
+      "/authors",
+      "/series",
+      "/settings/missing-files",
+      "/settings/users",
+    ]) {
       test(`${path} renders without horizontal overflow`, async ({ page }) => {
+        // Seed first. An empty page has no cards, no tables and no long file
+        // paths, so checking the empty state proves almost nothing — three
+        // pages passed this check while overflowing by 10-53px with data.
+        await seedWork({ title: "Overflow Probe Book" });
+
         await page.goto(path);
-        await page.waitForLoadState("networkidle");
+        await page.waitForLoadState("domcontentloaded");
+        await page.waitForTimeout(800);
         await expectNoHorizontalOverflow(page);
       });
     }
   });
 
-  test("shelf bulk actions stay inside the viewport", async ({ page }) => {
-    await seedWork({ title: "The Great Gatsby" });
-    await page.goto("/shelves");
+  test("interactive controls meet a real tap-target floor", async ({ page }) => {
+    await seedWork({ title: "Tap Target Book" });
+    await page.goto("/library");
+    await expect(page.getByText("Tap Target Book")).toBeVisible();
 
-    // Selection is a >=md affordance on the library, but shelf pages keep
-    // their own selection bar — it must not overhang the viewport edges.
-    const bar = page.getByTestId("selection-bar");
-    if (await bar.isVisible().catch(() => false)) {
-      const viewport = page.viewportSize();
-      const box = await bar.boundingBox();
-      expect(box).not.toBeNull();
-      expect(box?.x).toBeGreaterThanOrEqual(0);
-      expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(
-        (viewport?.width ?? 0) + 1,
-      );
-    }
+    // Measured from computed layout, not class strings. Asserting on
+    // classNames cannot catch a utility that loses on CSS specificity or gets
+    // stripped by tailwind-merge - both of which happened on this branch.
+    const { tooSmall, inspected } = await page.evaluate(() => {
+      const bad: { label: string; h: number; cls: string }[] = [];
+      let seen = 0;
+      document
+        .querySelectorAll<HTMLElement>('button, a[href], select, [role="tab"], [data-slot="select-trigger"]')
+        .forEach((el) => {
+          const r = el.getBoundingClientRect();
+          if (r.width === 0 || r.height === 0) return;
+          if (getComputedStyle(el).visibility === "hidden") return;
+          seen += 1;
+          if (r.height < 36) {
+            bad.push({
+              label: (el.getAttribute("aria-label") ?? el.textContent ?? el.tagName).trim().slice(0, 40),
+              h: Math.round(r.height),
+              cls: el.className.toString().slice(0, 80),
+            });
+          }
+        });
+      return { tooSmall: bad, inspected: seen };
+    });
+
+    // Guard against the check silently passing on a page that rendered nothing.
+    expect(inspected).toBeGreaterThan(10);
+    expect(tooSmall, `controls under 36px: ${JSON.stringify(tooSmall, null, 2)}`).toEqual([]);
+  });
+
+  test("shelf detail page fits the viewport", async ({ page }) => {
+    const work = await seedWork({ title: "Shelf Bar Book" });
+    // Seed the shelf properly. The previous version navigated to the shelves
+    // INDEX (which has no selection bar) and guarded on is-visible, so it
+    // could only ever pass.
+    const shelf = await seedShelf({
+      name: "Mobile Shelf",
+      editionIds: work.editions.map((e) => e.id),
+    });
+
+    await page.goto(`/shelves/${shelf.id}`);
+    await expect(
+      page.getByRole("heading", { name: "Mobile Shelf" }),
+    ).toBeVisible();
     await expectNoHorizontalOverflow(page);
   });
 

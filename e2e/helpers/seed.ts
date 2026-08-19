@@ -157,3 +157,25 @@ export async function findE2EUser() {
     where: { email: "e2e@bookhouse.test" },
   });
 }
+
+/**
+ * A shelf (backed by Collection) owned by the e2e user, containing the given
+ * editions. Needed by any test that has to reach a shelf DETAIL page — the
+ * shelves index alone renders no selection UI.
+ */
+export async function seedShelf(
+  overrides: { name?: string; editionIds?: string[] } = {},
+) {
+  const owner = await findE2EUser();
+  const shelf = await db.collection.create({
+    data: {
+      name: overrides.name ?? "E2E Shelf",
+      kind: "MANUAL",
+      ...(owner ? { ownerUserId: owner.id } : {}),
+    },
+  });
+  for (const editionId of overrides.editionIds ?? []) {
+    await db.collectionItem.create({ data: { collectionId: shelf.id, editionId } });
+  }
+  return shelf;
+}

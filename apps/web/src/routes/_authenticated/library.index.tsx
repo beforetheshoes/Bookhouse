@@ -66,7 +66,12 @@ function LibraryPage() {
   const [selectingAll, setSelectingAll] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const isScanning = activeJobCount > 0;
-  const isEditionsView = search.view === "editions";
+  // The editions view only exists inside the table, and `view` is forced to
+  // "grid" on phones. Deriving this from the *effective* view keeps the sort
+  // map, the pagination count and the rendered list from disagreeing when a
+  // phone opens a ?view=editions link — where the toggle that would normally
+  // reset it is hidden.
+  const isEditionsView = search.view === "editions" && view === "table";
   const workColumns = useMemo(() => getColumns(isScanning, editMode, router, progressMap), [isScanning, editMode, router, progressMap]);
   const editionColumns = useMemo(() => getEditionColumns(editMode, router), [editMode, router]);
   const newCount = totalCount - prevCount;
@@ -173,9 +178,7 @@ function LibraryPage() {
   // On a phone `view` is forced to "grid", which makes the editions branch
   // below unreachable — pagination must count works, not editions.
   const effectiveTotalCount =
-    isEditionsView && editionsResult && view === "table"
-      ? editionsResult.totalCount
-      : totalCount;
+    isEditionsView && editionsResult ? editionsResult.totalCount : totalCount;
 
   if (totalCount === 0 && !isEditionsView && !isScanning && !search.q && !search.format && !search.authorId && !search.seriesId && search.hasCover === undefined && search.enriched === undefined && search.hasDescription === undefined && search.inSeries === undefined) {
     return (

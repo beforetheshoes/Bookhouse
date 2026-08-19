@@ -142,7 +142,13 @@ describe("DataTablePagination", () => {
     expect(navBtn?.className).toContain("md:size-8");
 
     const trigger = container.querySelector('[data-slot="select-trigger"]');
-    expect(trigger?.className).toContain("h-9");
-    expect(trigger?.className).toContain("md:h-8");
+    // See library-pagination.test.tsx: the height lives in the variant's
+    // data-size selector, not in a class passed from here.
+    expect(trigger?.getAttribute("data-size")).toBe("default");
+    // The responsive height rides on the variant's data-size selector.
+    expect(trigger?.className).toContain("data-[size=default]:h-10");
+    expect(trigger?.className).toContain("md:data-[size=default]:h-9");
+    // ...and the call site must not add a bare height that would lose to it.
+    expect(/(^|\s)h-\d/.test(trigger?.className ?? "")).toBe(false);
   });
 });
