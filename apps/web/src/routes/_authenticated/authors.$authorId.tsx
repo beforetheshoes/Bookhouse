@@ -112,7 +112,7 @@ function AuthorDetailPage() {
             className="size-16"
             cacheVersion={photoVersion}
           />
-          <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-100 md:opacity-0 transition-opacity group-hover:opacity-100">
+          <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-100 can-hover:opacity-0 transition-opacity group-hover:opacity-100">
             <Camera className="size-5 text-white" />
           </div>
         </div>

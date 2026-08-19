@@ -25,7 +25,7 @@ interface LibraryFiltersSheetProps {
 /**
  * The library facet filters, reachable on phones.
  *
- * Below `md` the desktop 224px rail is hidden and this trigger takes its
+ * Below `lg` the desktop 224px rail is hidden and this trigger takes its
  * place. The sheet is deliberately uncontrolled: people set several facets in
  * one pass, so closing on the first selection would be hostile.
  *

@@ -101,7 +101,7 @@ function DialogContent({
           // size, and overlapped long titles. The strip still contributes one
           // `gap-4`, so dialogs sit 16px taller; a negative margin cannot
           // reclaim it because grid tracks clamp at zero.
-          <div className="sticky top-0 z-10 h-0 self-stretch">
+          <div className="sticky top-0 z-10 h-0">
           <DialogPrimitive.Close
             data-slot="dialog-close"
             className="absolute -top-1 right-0 flex size-9 shrink-0 items-center justify-center rounded-sm opacity-70 lg:size-8 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"

@@ -43,9 +43,26 @@ export default defineConfig({
     },
     {
       name: "chromium",
-      testIgnore: /auth-redirect|mobile\.spec/,
+      testIgnore: /auth-redirect|mobile\.spec|touch-band\.spec/,
       use: {
         ...devices["Desktop Chrome"],
+        storageState: "e2e/.auth/state.json",
+      },
+      dependencies: ["auth-setup"],
+    },
+    {
+      // The touch band. 768 and 1023 are iPad-portrait territory: hover is
+      // unavailable but the layout has crossed md, and the suite previously
+      // asserted things about this band without ever rendering it.
+      name: "tablet-chrome",
+      testMatch: /touch-band\.spec\.ts/,
+      use: {
+        // Chromium with touch, not a WebKit iPad profile - only Chromium is
+        // installed here, and the spec sets the exact widths it needs.
+        ...devices["Desktop Chrome"],
+        viewport: { width: 768, height: 1024 },
+        hasTouch: true,
+        isMobile: false,
         storageState: "e2e/.auth/state.json",
       },
       dependencies: ["auth-setup"],

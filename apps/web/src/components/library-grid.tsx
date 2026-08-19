@@ -66,10 +66,11 @@ export function LibraryGrid({ works, progressMap, scanActive, tileSize = "small"
         // the toolbar wraps, so any fixed guess puts the scroller's bottom
         // below the fold on some page or viewport.
         const top = node.getBoundingClientRect().top + window.scrollY;
-        // Pagination is sticky, so nothing below needs reserving - just the
-        // grid's own breathing room.
+        // Pagination is sticky at the bottom of the viewport, so the grid must
+        // stop above it or its last row renders underneath the bar. 4rem covers
+        // the one-line bar plus its border and the grid's own margin.
         setMaxHeight(
-          `max(20rem, calc(100dvh - ${String(Math.round(top))}px - 1rem))`,
+          `max(20rem, calc(100dvh - ${String(Math.round(top))}px - 4rem))`,
         );
       });
       observer.observe(node);

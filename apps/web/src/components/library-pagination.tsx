@@ -33,14 +33,14 @@ export function LibraryPagination({
   return (
     <div
       data-testid="library-pagination"
-      className="sticky bottom-0 z-20 flex flex-wrap items-center justify-center gap-4 border-t bg-background px-2 py-2 md:static md:justify-between md:border-0 md:py-0"
+      className="sticky bottom-0 z-20 flex flex-wrap items-center justify-center gap-2 border-t bg-background px-2 py-1.5 sm:gap-4 md:static md:justify-between md:border-0 md:py-0"
     >
-      <div className="text-sm text-muted-foreground">
+      <div className="hidden text-sm text-muted-foreground sm:block">
         {String(totalCount)} row(s) total
       </div>
-      <div className="flex flex-wrap items-center gap-4">
+      <div data-testid="library-pagination-nav" className="flex flex-wrap items-center gap-2 sm:gap-4">
         <div className="flex items-center gap-2">
-          <p className="text-sm font-medium whitespace-nowrap">Rows per page</p>
+          <p className="hidden text-sm font-medium whitespace-nowrap sm:block">Rows per page</p>
           <Select
             value={String(pageSize)}
             onValueChange={(value) => {

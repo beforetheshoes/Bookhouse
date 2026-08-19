@@ -98,8 +98,6 @@ test.describe("Mobile layout", () => {
       "/series",
       "/settings/missing-files",
       "/settings/users",
-      "/authors/",
-      "/series/",
     ]) {
       test(`${path} renders without horizontal overflow`, async ({ page }) => {
         // Seed first. An empty page has no cards, no tables and no long file
@@ -122,6 +120,28 @@ test.describe("Mobile layout", () => {
     }
   });
 
+  test("detail routes fit the viewport", async ({ page }) => {
+    // Author and series DETAIL pages carry the longest user strings and had no
+    // coverage: the suite's "/authors/" and "/series/" entries were index
+    // routes wearing detail-route clothing.
+    const { work, series } = await seedHostileWork();
+
+    await page.goto(`/library/${work.id}`);
+    await page.waitForTimeout(900);
+    await expectNoHorizontalOverflow(page);
+
+    await page.goto(`/series/${series.id}`);
+    await page.waitForTimeout(900);
+    await expectNoHorizontalOverflow(page);
+
+    const authorLink = page.locator('a[href^="/authors/"]').first();
+    if (await authorLink.count()) {
+      await authorLink.click();
+      await page.waitForTimeout(900);
+      await expectNoHorizontalOverflow(page);
+    }
+  });
+
   const TAP_ROUTES = [
   "/library",
   "/settings",
@@ -131,7 +151,9 @@ test.describe("Mobile layout", () => {
   "/series",
   "/settings/missing-files",
   "/duplicates",
-  "/health",
+  // /health is intentionally absent: it is a read-only dashboard with no
+  // controls beyond the app shell, so a tap-target sweep there measures
+  // nothing. Its layout is covered by the overflow suite.
   "/match-suggestions",
   "/settings/users",
 ];
@@ -194,8 +216,12 @@ test.describe("Mobile layout", () => {
     // Then the transient surface, on its own terms.
     const menuTrigger = page.locator('[data-slot="dropdown-menu-trigger"]').first();
     if (await menuTrigger.count()) {
-      await menuTrigger.click().catch(() => undefined);
+      await menuTrigger.click();
       await page.waitForTimeout(400);
+      // Without this, a menu that failed to open yields an empty row list and
+      // the check below passes having measured nothing.
+      const opened = await page.locator('[role="menu"]').count();
+      expect(opened, `${route}: menu trigger did not open a menu`).toBeGreaterThan(0);
       const menuRows = await page.evaluate(() => {
         const rows = Array.from(
           document.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemcheckbox"]'),
@@ -209,9 +235,13 @@ test.describe("Mobile layout", () => {
     }
 
     // Guard against the check silently passing on a page that rendered nothing.
-    // Sparse routes legitimately have only a handful of controls, so this is a
-    // did-anything-render floor, not a coverage target.
-    expect(inspected).toBeGreaterThan(2);
+    // The app shell alone renders exactly three buttons (sidebar trigger,
+    // search, theme), so a floor of 3 would pass on a route whose body
+    // rendered nothing. Require controls beyond the shell.
+    expect(
+      inspected,
+      `${route} rendered no controls beyond the app shell`,
+    ).toBeGreaterThan(3);
     expect(
       tooSmall,
       `${route} controls under 36px: ${JSON.stringify(tooSmall, null, 2)}`,
@@ -261,7 +291,7 @@ test.describe("Mobile layout", () => {
     }
   });
 
-  test("sheet close button stays reachable when the panel scrolls", async ({
+  test("filters sheet close is a real target inside the panel", async ({
     page,
   }) => {
     await seedWork({ title: "Sheet Scroll Book" });
@@ -274,16 +304,23 @@ test.describe("Mobile layout", () => {
       const close = Array.from(c.querySelectorAll("button")).find((b) =>
         b.textContent?.includes("Close"),
       ) as HTMLElement;
-      const scroller = c.querySelector('[class*="overflow-y-auto"]') as HTMLElement | null;
-      if (scroller) scroller.scrollTop = 9999;
-      const box = close.getBoundingClientRect();
-      return { top: Math.round(box.top), h: window.innerHeight };
+      const cb = close.getBoundingClientRect();
+      const sb = c.getBoundingClientRect();
+      return {
+        h: Math.round(cb.height),
+        w: Math.round(cb.width),
+        insideRight: cb.right <= sb.right + 1,
+        insideTop: cb.top >= sb.top - 1,
+      };
     });
 
-    // An absolutely-positioned close inside a scrolling container scrolls away
-    // with the content; it must stay in view.
-    expect(r.top).toBeGreaterThanOrEqual(0);
-    expect(r.top).toBeLessThan(r.h);
+    // The Close is a sibling of the scrolling body, not inside it, so an
+    // earlier version of this test - which scrolled and asserted it had not
+    // moved - could never fail.
+    expect(r.h).toBeGreaterThanOrEqual(36);
+    expect(r.w).toBeGreaterThanOrEqual(36);
+    expect(r.insideRight).toBe(true);
+    expect(r.insideTop).toBe(true);
   });
 
   test("landscape grid keeps a usable height", async ({ page }) => {
@@ -333,16 +370,26 @@ test.describe("Mobile layout", () => {
       const pager = await page.evaluate(() => {
         const row = document.querySelector('[data-testid="library-pagination"]');
         if (!row) return null;
-        const arrow = row.querySelector<HTMLElement>('[aria-label="Go to next page"]');
-        if (!arrow) return null;
-        const b = arrow.getBoundingClientRect();
-        return { bottom: Math.round(b.bottom), top: Math.round(b.top), vh: window.innerHeight };
+        const grid = document.querySelector('[class*="overflow-auto"][class*="pr-2"]');
+        if (!grid) return null;
+        // Scroll the grid to its end so its last row is at the bottom edge.
+        (grid as HTMLElement).scrollTop = (grid as HTMLElement).scrollHeight;
+        const pb = row.getBoundingClientRect();
+        const gb = grid.getBoundingClientRect();
+        return {
+          pagerTop: Math.round(pb.top),
+          gridBottom: Math.round(gb.bottom),
+          barHeight: Math.round(pb.height),
+        };
       });
       expect(pager, "pagination row not found - is the testid still there?").not.toBeNull();
+      // `sticky bottom-0` makes "the arrow is inside the viewport" true by
+      // construction, so asserting that proves nothing. The bar is opaque, so
+      // what matters is that it does not paint over the grid's last row.
       expect(
-        pager?.bottom ?? Number.MAX_SAFE_INTEGER,
-        `next-page arrow sits below the fold (top ${String(pager?.top)}, viewport ${String(pager?.vh)})`,
-      ).toBeLessThanOrEqual((pager?.vh ?? 0) + 1);
+        pager?.pagerTop ?? 0,
+        `sticky pagination (${String(pager?.barHeight)}px) covers the grid's last row`,
+      ).toBeGreaterThanOrEqual((pager?.gridBottom ?? 0) - 1);
     } else {
       expect(r?.bottom ?? 0).toBeGreaterThanOrEqual(top + 320);
     }
