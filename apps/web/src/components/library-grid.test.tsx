@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getColumnCount as _getColumnCount } from "./library-grid";
+import { LibraryGrid, getColumnCount as _getColumnCount } from "./library-grid";
 
 let mockVirtualizerArgs: { count: number };
 
@@ -28,8 +28,18 @@ vi.mock("@tanstack/react-virtual", () => ({
 }));
 
 vi.mock("~/components/work-card", () => ({
-  WorkCard: ({ title, progressPercent, tileSize }: { title: string; progressPercent?: number; tileSize?: string }) => (
-    <div data-testid="work-card" data-progress={progressPercent != null ? String(progressPercent) : undefined} data-tile-size={tileSize ?? "small"}>{title}</div>
+  WorkCard: ({ title, progressPercent, tileSize, selectable, selected, onSelectChange }: { title: string; progressPercent?: number; tileSize?: string; selectable?: boolean; selected?: boolean; onSelectChange?: (v: boolean) => void }) => (
+    <div data-testid="work-card" data-progress={progressPercent != null ? String(progressPercent) : undefined} data-tile-size={tileSize ?? "small"}>
+      {title}
+      {selectable === true && (
+        <button
+          type="button"
+          aria-label={`Select ${title}`}
+          aria-pressed={selected === true}
+          onClick={() => { onSelectChange?.(selected !== true); }}
+        />
+      )}
+    </div>
   ),
 }));
 
@@ -257,5 +267,37 @@ describe("getColumnCount on phone-width containers", () => {
 
   it("keeps large tiles at 2 columns between 400 and 480px", () => {
     expect(_getColumnCount(440, "large")).toBe(2);
+  });
+});
+
+describe("LibraryGrid selection", () => {
+  // Reuse the file's own factory rather than casting a literal.
+  const works = [makeWork("Alpha"), makeWork("Beta")];
+
+  it("renders no selection controls by default", () => {
+    render(<LibraryGrid works={works as never[]} />);
+    expect(screen.queryByRole("button", { name: /^Select / })).toBeNull();
+  });
+
+  it("marks the rows named in rowSelection", () => {
+    render(<LibraryGrid works={works as never[]} selectable rowSelection={{ 1: true }} />);
+    expect(screen.getByRole("button", { name: "Select Alpha" }).getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("button", { name: "Select Beta" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("reports the row index that was toggled", () => {
+    const onToggleSelect = vi.fn();
+    render(<LibraryGrid works={works as never[]} selectable onToggleSelect={onToggleSelect} />);
+    fireEvent.click(screen.getByRole("button", { name: "Select Beta" }));
+    // rowSelection is keyed by index into the same array the table uses, so the
+    // grid must report indexes, not ids.
+    expect(onToggleSelect).toHaveBeenCalledWith(1);
+  });
+
+  it("tolerates a missing toggle handler", () => {
+    render(<LibraryGrid works={works as never[]} selectable />);
+    expect(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Select Alpha" }));
+    }).not.toThrow();
   });
 });

@@ -174,8 +174,17 @@ vi.mock("~/hooks/use-library-table-preferences", () => ({
 }));
 
 vi.mock("~/components/library-grid", () => ({
-  LibraryGrid: ({ works, progressMap, tileSize }: { works: object[]; progressMap?: Record<string, number>; tileSize?: string }) => (
-    <div data-testid="library-grid" data-progress-map={progressMap ? JSON.stringify(progressMap) : undefined} data-tile-size={tileSize ?? "small"}>Grid: {String(works.length)} works</div>
+  LibraryGrid: ({ works, progressMap, tileSize, selectable, rowSelection, onToggleSelect }: { works: object[]; progressMap?: Record<string, number>; tileSize?: string; selectable?: boolean; rowSelection?: Record<string, boolean>; onToggleSelect?: (i: number) => void }) => (
+    <div
+      data-testid="library-grid"
+      data-progress-map={progressMap ? JSON.stringify(progressMap) : undefined}
+      data-tile-size={tileSize ?? "small"}
+      data-selectable={selectable === true ? "true" : "false"}
+      data-selected-count={String(Object.keys(rowSelection ?? {}).length)}
+    >
+      Grid: {String(works.length)} works
+      <button type="button" aria-label="toggle-row-0" onClick={() => { onToggleSelect?.(0); }} />
+    </div>
   ),
 }));
 
@@ -184,7 +193,18 @@ vi.mock("~/components/library-toolbar", () => ({
   LibraryToolbar: (props: Record<string, string | number | boolean | object | (() => void)>) => {
     capturedToolbarProps = props;
     return (
-      <div data-testid="library-toolbar" data-view={props.view as string} data-filter={props.filterValue as string} />
+      <div data-testid="library-toolbar" data-view={props.view as string} data-filter={props.filterValue as string}>
+        <button
+          type="button"
+          aria-label="toolbar-select-mode"
+          onClick={() => { (props.onSelectModeChange as ((v: boolean) => void) | undefined)?.(true); }}
+        />
+        <button
+          type="button"
+          aria-label="toolbar-select-mode-off"
+          onClick={() => { (props.onSelectModeChange as ((v: boolean) => void) | undefined)?.(false); }}
+        />
+      </div>
     );
   },
 }));
@@ -727,6 +747,76 @@ describe("LibraryPage", () => {
     const row = rail?.parentElement;
     expect(row?.className).toContain("flex-col");
     expect(row?.className).toContain("lg:flex-row");
+  });
+
+  it("puts the grid into select mode from the toolbar and collects selections", async () => {
+    mockView = "grid";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Alpha"), makeWork("Beta")], totalCount: 2, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    // Phones are forced onto the grid, so without this the bulk actions are
+    // unreachable there: the grid had no selection affordance at all.
+    expect(screen.getByTestId("library-grid").getAttribute("data-selectable")).toBe("false");
+
+    fireEvent.click(screen.getByLabelText("toolbar-select-mode"));
+    expect(screen.getByTestId("library-grid").getAttribute("data-selectable")).toBe("true");
+
+    fireEvent.click(screen.getByLabelText("toggle-row-0"));
+    expect(screen.getByTestId("library-grid").getAttribute("data-selected-count")).toBe("1");
+    // The real bulk toolbar renders only when something is selected.
+    expect(screen.getByTestId("bulk-add-to-shelf-btn")).toBeTruthy();
+  });
+
+  it("clears a grid selection when the same row is toggled again", async () => {
+    mockView = "grid";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Alpha")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    fireEvent.click(screen.getByLabelText("toolbar-select-mode"));
+    fireEvent.click(screen.getByLabelText("toggle-row-0"));
+    expect(screen.getByTestId("library-grid").getAttribute("data-selected-count")).toBe("1");
+    fireEvent.click(screen.getByLabelText("toggle-row-0"));
+    expect(screen.getByTestId("library-grid").getAttribute("data-selected-count")).toBe("0");
+  });
+
+  it("drops the selection when select mode is turned off", async () => {
+    mockView = "grid";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Alpha")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    fireEvent.click(screen.getByLabelText("toolbar-select-mode"));
+    fireEvent.click(screen.getByLabelText("toggle-row-0"));
+    expect(screen.getByTestId("library-grid").getAttribute("data-selected-count")).toBe("1");
+
+    // Leaving select mode must clear the selection, or the bulk bar lingers
+    // over a grid with no visible checkboxes.
+    fireEvent.click(screen.getByLabelText("toolbar-select-mode-off"));
+    expect(screen.getByTestId("library-grid").getAttribute("data-selected-count")).toBe("0");
+    expect(screen.queryByTestId("bulk-add-to-shelf-btn")).toBeNull();
   });
 
   it("offers the filters sheet as the mobile route into faceting", async () => {

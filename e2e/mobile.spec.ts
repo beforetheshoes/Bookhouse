@@ -120,6 +120,56 @@ test.describe("Mobile layout", () => {
     }
   });
 
+  test("bulk actions are reachable on a phone", async ({ page }) => {
+    for (let i = 0; i < 3; i++) await seedWork({ title: `Bulk Book ${String(i)}` });
+
+    await page.goto("/library");
+    await expect(page.getByText("Bulk Book 0")).toBeVisible();
+
+    // Phones are forced onto the grid, which had no selection affordance at
+    // all - so delete, merge, add-to-shelf, enrich and mark-as-read were
+    // unreachable below md.
+    await page.getByRole("button", { name: "Select works" }).click();
+    await page.getByRole("button", { name: "Select Bulk Book 0" }).click();
+    await page.getByRole("button", { name: "Select Bulk Book 1" }).click();
+
+    await expect(page.getByText("2 works selected")).toBeVisible();
+    await expect(page.getByTestId("bulk-add-to-shelf-btn")).toBeVisible();
+    await expect(page.getByTestId("bulk-mark-read-btn")).toBeVisible();
+    await expect(page.getByTestId("bulk-delete-works-btn")).toBeVisible();
+
+    // Tapping a card in select mode must not navigate away.
+    expect(page.url()).toContain("/library");
+    await expectNoHorizontalOverflow(page);
+
+    // Every action in the bar has to be inside the viewport to be usable.
+    const offscreen = await page.evaluate(() => {
+      const bar = document.querySelector('[data-testid="bulk-add-to-shelf-btn"]')?.closest("div")?.parentElement;
+      if (!bar) return ["bar not found"];
+      return Array.from(bar.querySelectorAll("button"))
+        .map((b) => ({ label: (b.textContent ?? "").trim().slice(0, 20), r: b.getBoundingClientRect() }))
+        .filter((x) => x.r.width > 0 && (x.r.left < 0 || x.r.right > window.innerWidth + 1))
+        .map((x) => x.label);
+    });
+    expect(offscreen, "bulk actions outside the viewport").toEqual([]);
+
+    // The bar is fixed over the bottom of the screen, so the grid must be able
+    // to scroll its last cards clear of it - otherwise they cannot be selected.
+    const reachable = await page.evaluate(() => {
+      const grid = document.querySelector('[class*="overflow-auto"][class*="pr-2"]') as HTMLElement;
+      grid.scrollTop = grid.scrollHeight;
+      const bar = document.querySelector('[data-testid="bulk-add-to-shelf-btn"]')?.closest("div")?.parentElement;
+      const barTop = bar?.getBoundingClientRect().top ?? window.innerHeight;
+      const cards = Array.from(document.querySelectorAll('a[href^="/library/"]'));
+      const last = cards[cards.length - 1]?.getBoundingClientRect();
+      return { lastCardBottom: Math.round(last?.bottom ?? 0), barTop: Math.round(barTop) };
+    });
+    expect(
+      reachable.lastCardBottom,
+      "the last card cannot be scrolled clear of the bulk bar",
+    ).toBeLessThanOrEqual(reachable.barTop + 1);
+  });
+
   test("detail routes fit the viewport", async ({ page }) => {
     // Author and series DETAIL pages carry the longest user strings and had no
     // coverage: the suite's "/authors/" and "/series/" entries were index

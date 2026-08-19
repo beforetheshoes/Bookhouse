@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Grid2x2, Grid3x3, LayoutGrid, Table2, X } from "lucide-react";
+import { Grid2x2, Grid3x3, LayoutGrid, Table2, X, CheckSquare } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { useDebounce } from "~/hooks/use-debounce";
@@ -29,6 +29,9 @@ interface LibraryToolbarProps {
   showSort?: boolean;
   tileSize?: GridTileSize;
   onTileSizeChange?: (size: GridTileSize) => void;
+  /** Grid select mode. Omit the handler to hide the toggle. */
+  selectMode?: boolean;
+  onSelectModeChange?: (on: boolean) => void;
 }
 
 const FILTER_OPTIONS: { value: ReadingFilter; label: string }[] = [
@@ -58,6 +61,8 @@ export function LibraryToolbar({
   showSort = true,
   tileSize,
   onTileSizeChange,
+  selectMode,
+  onSelectModeChange,
 }: LibraryToolbarProps) {
   const [localSearch, setLocalSearch] = useState(searchValue);
   const debouncedSearch = useDebounce(localSearch, 300);
@@ -139,6 +144,19 @@ export function LibraryToolbar({
             <Table2 className="size-4" />
           </Button>
         </div>
+        {view === "grid" && onSelectModeChange && (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label="Select works"
+            aria-pressed={selectMode === true}
+            onClick={() => { onSelectModeChange(selectMode !== true); }}
+            className="rounded-md border data-[active=true]:bg-muted"
+            data-active={selectMode === true}
+          >
+            <CheckSquare className="size-4" />
+          </Button>
+        )}
         {view === "grid" && tileSize && onTileSizeChange && (
           <div className="flex items-center rounded-md border">
             <Button

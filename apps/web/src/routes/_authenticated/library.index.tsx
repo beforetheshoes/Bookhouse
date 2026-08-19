@@ -67,6 +67,7 @@ function LibraryPage() {
   const [allWorkIds, setAllWorkIds] = useState<string[] | null>(null);
   const [selectingAll, setSelectingAll] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
   const isScanning = activeJobCount > 0;
   // The editions view only exists inside the table, and `view` is forced to
   // "grid" on phones. Deriving this from the *effective* view keeps the sort
@@ -126,6 +127,27 @@ function LibraryPage() {
       ? { sortMap: EDITION_COLUMN_SORT_MAP, sortToColumn: EDITION_SORT_TO_COLUMN }
       : {}),
   });
+
+  const handleToggleGridSelect = useCallback((index: number) => {
+    setAllWorkIds(null);
+    setRowSelection((prev) => {
+      const key = String(index);
+      if (prev[key] === true) {
+        return Object.fromEntries(
+          Object.entries(prev).filter(([rowKey]) => rowKey !== key),
+        );
+      }
+      return { ...prev, [key]: true };
+    });
+  }, []);
+
+  const handleSelectModeChange = useCallback((on: boolean) => {
+    setSelectMode(on);
+    if (!on) {
+      setRowSelection({});
+      setAllWorkIds(null);
+    }
+  }, []);
 
   const handleEditModeToggle = useCallback(() => { setEditMode(!editMode); }, [editMode]);
 
@@ -249,11 +271,21 @@ function LibraryPage() {
             filterValue={readingFilter}
             onFilterChange={setReadingFilter}
             showSort={view !== "table"}
+            selectMode={selectMode}
+            onSelectModeChange={handleSelectModeChange}
             tileSize={tileSize}
             onTileSizeChange={setTileSize}
           />
           {view === "grid" ? (
-            <LibraryGrid works={filteredByReading} progressMap={progressMap} scanActive={isScanning} tileSize={tileSize} />
+            <LibraryGrid
+              works={filteredByReading}
+              progressMap={progressMap}
+              scanActive={isScanning}
+              tileSize={tileSize}
+              selectable={selectMode}
+              rowSelection={rowSelection}
+              onToggleSelect={handleToggleGridSelect}
+            />
           ) : isEditionsView && editionsResult ? (
             <LibraryTableView
               works={editionsResult.editions}

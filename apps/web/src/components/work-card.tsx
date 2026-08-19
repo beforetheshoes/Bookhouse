@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { BookOpen } from "lucide-react";
+import { BookOpen, Check } from "lucide-react";
 import { Badge } from "~/components/ui/badge";
 import { ProgressBar } from "~/components/progress-bar";
 import type { GridTileSize } from "~/hooks/use-grid-tile-size";
@@ -16,16 +16,41 @@ export interface WorkCardProps {
   coverPath?: string | null;
   progressPercent?: number | null;
   tileSize?: GridTileSize;
+  /** Renders a full-card selection target instead of navigating on tap. */
+  selectable?: boolean;
+  selected?: boolean;
+  onSelectChange?: (selected: boolean) => void;
 }
 
-export function WorkCard({ id, title, authors, enrichmentStatus, scanActive, formats, series, coverPath, progressPercent, tileSize = "small" }: WorkCardProps) {
+export function WorkCard({ id, title, authors, enrichmentStatus, scanActive, formats, series, coverPath, progressPercent, tileSize = "small", selectable, selected, onSelectChange }: WorkCardProps) {
   const [imgFailed, setImgFailed] = useState(false);
   const showPlaceholder = !coverPath || imgFailed;
   const coverSize = tileSize === "large" ? "medium" : "thumb";
   const isSmall = tileSize === "small";
 
   return (
-    <Link to="/library/$workId" params={{ workId: id }} search={{ page: 1, pageSize: 50, sort: "title-asc" as const }} className="flex flex-col overflow-hidden rounded-lg border bg-card">
+    <Link to="/library/$workId" params={{ workId: id }} search={{ page: 1, pageSize: 50, sort: "title-asc" as const }} className="relative flex flex-col overflow-hidden rounded-lg border bg-card">
+      {selectable && (
+        // A full-card target rather than a small checkbox: on a phone the
+        // cover is the only comfortable thing to aim at. preventDefault stops
+        // the surrounding link from navigating.
+        <button
+          type="button"
+          aria-label={`Select ${title}`}
+          aria-pressed={selected === true}
+          onClick={(event) => {
+            event.preventDefault();
+            onSelectChange?.(selected !== true);
+          }}
+          className={`absolute inset-0 z-10 flex items-start justify-end p-2 transition-colors ${selected === true ? "bg-primary/20 ring-2 ring-primary ring-inset" : "bg-transparent"}`}
+        >
+          <span
+            className={`flex size-6 items-center justify-center rounded-md border-2 bg-background/90 ${selected === true ? "border-primary text-primary" : "border-muted-foreground/50"}`}
+          >
+            {selected === true && <Check className="size-4" />}
+          </span>
+        </button>
+      )}
       <div className="relative aspect-[2/3] shrink-0 overflow-hidden bg-muted">
         {showPlaceholder ? (
           <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">

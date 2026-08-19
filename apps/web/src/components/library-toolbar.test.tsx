@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
 import { LibraryToolbar, type SortValue } from "./library-toolbar";
@@ -199,4 +199,32 @@ it("lets the search input use the full width on phones", () => {
   const input = screen.getByPlaceholderText("Filter by title or author...");
   expect(input.className).toContain("w-full");
   expect(input.className).toContain("md:w-[150px]");
+});
+
+it("offers a select toggle in grid view", () => {
+  const onSelectModeChange = vi.fn();
+  render(
+    <LibraryToolbar {...defaultProps} view="grid" onSelectModeChange={onSelectModeChange} />,
+  );
+  const toggle = screen.getByRole("button", { name: "Select works" });
+  expect(toggle.getAttribute("aria-pressed")).toBe("false");
+  fireEvent.click(toggle);
+  expect(onSelectModeChange).toHaveBeenCalledWith(true);
+});
+
+it("reflects active select mode", () => {
+  render(<LibraryToolbar {...defaultProps} view="grid" selectMode onSelectModeChange={vi.fn()} />);
+  expect(
+    screen.getByRole("button", { name: "Select works" }).getAttribute("aria-pressed"),
+  ).toBe("true");
+});
+
+it("hides the select toggle in table view, which has its own checkboxes", () => {
+  render(<LibraryToolbar {...defaultProps} view="table" onSelectModeChange={vi.fn()} />);
+  expect(screen.queryByRole("button", { name: "Select works" })).toBeNull();
+});
+
+it("hides the select toggle when no handler is supplied", () => {
+  render(<LibraryToolbar {...defaultProps} view="grid" />);
+  expect(screen.queryByRole("button", { name: "Select works" })).toBeNull();
 });

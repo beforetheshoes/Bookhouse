@@ -179,4 +179,46 @@ describe("WorkCard", () => {
     expect(badge.className).toContain("text-[10px]");
     expect(badge.className).toContain("md:text-[8px]");
   });
+
+  it("renders no selection control by default", () => {
+    render(<WorkCard {...baseProps} />);
+    expect(screen.queryByRole("button", { name: /^Select / })).toBeNull();
+  });
+
+  it("renders a selection control in select mode", () => {
+    render(<WorkCard {...baseProps} selectable />);
+    const toggle = screen.getByRole("button", { name: "Select The Great Gatsby" });
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("reflects the selected state", () => {
+    render(<WorkCard {...baseProps} selectable selected />);
+    expect(
+      screen.getByRole("button", { name: "Select The Great Gatsby" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
+  it("toggles selection instead of navigating", () => {
+    const onSelectChange = vi.fn();
+    render(<WorkCard {...baseProps} selectable onSelectChange={onSelectChange} />);
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+    screen.getByRole("button", { name: "Select The Great Gatsby" }).dispatchEvent(event);
+    expect(onSelectChange).toHaveBeenCalledWith(true);
+    // The card is a link; selecting must not follow it.
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("reports deselection when already selected", () => {
+    const onSelectChange = vi.fn();
+    render(<WorkCard {...baseProps} selectable selected onSelectChange={onSelectChange} />);
+    fireEvent.click(screen.getByRole("button", { name: "Select The Great Gatsby" }));
+    expect(onSelectChange).toHaveBeenCalledWith(false);
+  });
+
+  it("tolerates a missing change handler", () => {
+    render(<WorkCard {...baseProps} selectable />);
+    expect(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Select The Great Gatsby" }));
+    }).not.toThrow();
+  });
 });

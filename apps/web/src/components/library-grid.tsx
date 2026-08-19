@@ -9,6 +9,11 @@ interface LibraryGridProps {
   progressMap?: Record<string, number>;
   scanActive?: boolean;
   tileSize?: GridTileSize;
+  /** Select mode: cards toggle selection instead of opening. */
+  selectable?: boolean;
+  /** Keyed by index into `works`, matching the table's RowSelectionState. */
+  rowSelection?: Record<string, boolean>;
+  onToggleSelect?: (index: number) => void;
 }
 
 function getAuthors(work: LibraryWork): string {
@@ -40,7 +45,7 @@ export function getColumnCount(width: number, tileSize: GridTileSize = "small"):
   return 6;
 }
 
-export function LibraryGrid({ works, progressMap, scanActive, tileSize = "small" }: LibraryGridProps) {
+export function LibraryGrid({ works, progressMap, scanActive, tileSize = "small", selectable, rowSelection, onToggleSelect }: LibraryGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [columnCount, setColumnCount] = useState(5);
   const observerRef = useRef<ResizeObserver | null>(null);
@@ -94,7 +99,10 @@ export function LibraryGrid({ works, progressMap, scanActive, tileSize = "small"
   return (
     <div
       ref={containerRef}
-      className="overflow-auto pr-2"
+      // In select mode the floating bulk bar is fixed over the bottom of the
+      // screen, so without this the last cards cannot be scrolled clear of it
+      // and are unselectable.
+      className={selectable === true ? "overflow-auto pr-2 pb-48" : "overflow-auto pr-2"}
       style={{ maxHeight }}
     >
       {works.length === 0 ? (
@@ -120,10 +128,13 @@ export function LibraryGrid({ works, progressMap, scanActive, tileSize = "small"
                   gridTemplateColumns: `repeat(${String(columnCount)}, 1fr)`,
                 }}
               >
-                {rowWorks.map((work) => (
+                {rowWorks.map((work, offset) => (
                   <WorkCard
                     key={work.id}
                     id={work.id}
+                    selectable={selectable}
+                    selected={rowSelection?.[String(startIdx + offset)] === true}
+                    onSelectChange={() => { onToggleSelect?.(startIdx + offset); }}
                     title={work.titleDisplay}
                     authors={getAuthors(work)}
                     enrichmentStatus={work.enrichmentStatus}
