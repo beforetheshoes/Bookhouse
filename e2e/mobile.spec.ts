@@ -54,6 +54,17 @@ test.describe("Mobile layout", () => {
     await expectNoHorizontalOverflow(page);
   });
 
+  test("work detail stacks without horizontal overflow", async ({ page }) => {
+    await seedWork({ title: "The Great Gatsby" });
+    await page.goto("/library");
+    await page.getByText("The Great Gatsby").click();
+
+    await expect(
+      page.getByRole("heading", { name: "The Great Gatsby" }),
+    ).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+  });
+
   test("facet filters are reachable through the filters sheet", async ({
     page,
   }) => {

@@ -61,10 +61,10 @@ function WorkDetailSkeleton() {
   return (
     <div data-testid="work-detail-skeleton" className="space-y-6">
       <Skeleton className="h-6 w-48" />
-      <div className="flex gap-8">
-        <Skeleton className="h-72 w-48" />
+      <div className="flex flex-col gap-6 md:flex-row md:gap-8">
+        <Skeleton className="h-60 w-40 md:h-72 md:w-48" />
         <div className="flex-1 space-y-4">
-          <Skeleton className="h-8 w-96" />
+          <Skeleton className="h-8 w-full max-w-96" />
           <Skeleton className="h-4 w-64" />
           <Skeleton className="h-24 w-full" />
         </div>
@@ -270,11 +270,11 @@ function WorkDetailPage() {
         <span className="text-foreground">{work.titleDisplay}</span>
       </nav>
 
-      <div className="flex gap-8">
+      <div className="flex flex-col gap-6 md:flex-row md:gap-8">
         <div className="relative flex-none" data-testid="cover-halo">
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute -inset-5 blur-md"
+            className="pointer-events-none absolute -inset-3 blur-md md:-inset-5"
             style={{
               background:
                 "radial-gradient(ellipse, var(--bh-glow, transparent) 0%, transparent 70%)",
@@ -295,7 +295,7 @@ function WorkDetailPage() {
 
         <div className="flex-1 space-y-4">
           <div>
-            <div className="flex items-start gap-3">
+            <div className="flex flex-wrap items-start gap-3">
               <h1
                 className="flex-1 font-display text-3xl font-medium tracking-tight"
                 style={{ color: "var(--bh-text, inherit)" }}
@@ -323,7 +323,7 @@ function WorkDetailPage() {
                 {formatFamilies.map((fmt) => (
                   <span
                     key={fmt}
-                    className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider"
+                    className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold uppercase tracking-wider md:text-[10px]"
                     style={{
                       background: "var(--bh-chip, var(--muted))",
                       color: "var(--bh-chip-text, var(--muted-foreground))",

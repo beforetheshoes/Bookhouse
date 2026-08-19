@@ -59,7 +59,7 @@ export function WorkCover({
   }
 
   return (
-    <div className="w-48 shrink-0">
+    <div className="mx-auto w-40 sm:w-48 md:shrink-0">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <div
