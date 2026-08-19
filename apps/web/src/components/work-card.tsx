@@ -43,20 +43,20 @@ export function WorkCard({ id, title, authors, enrichmentStatus, scanActive, for
       </div>
       <div className={isSmall ? "space-y-0.5 p-2" : "space-y-1 p-3"}>
         <h3 className={isSmall ? "line-clamp-2 text-xs font-medium leading-tight" : "line-clamp-2 text-sm font-medium leading-tight"}>{title}</h3>
-        <p className={isSmall ? "line-clamp-1 text-[10px] text-muted-foreground" : "line-clamp-1 text-xs text-muted-foreground"}>{authors}</p>
+        <p className={isSmall ? "line-clamp-1 text-xs text-muted-foreground md:text-[10px]" : "line-clamp-1 text-xs text-muted-foreground"}>{authors}</p>
         <div className="flex flex-wrap gap-1">
           {formats.map((f) => (
-            <Badge key={f} variant="secondary" className={isSmall ? "px-1 py-0 text-[8px]" : "px-1.5 py-0 text-[10px]"}>
+            <Badge key={f} variant="secondary" className={isSmall ? "px-1 py-0 text-[10px] md:text-[8px]" : "px-1.5 py-0 text-[10px]"}>
               {f}
             </Badge>
           ))}
           {series && (
-            <Badge data-testid="series-badge" variant="outline" className={isSmall ? "px-1 py-0 text-[8px]" : "px-1.5 py-0 text-[10px]"}>
+            <Badge data-testid="series-badge" variant="outline" className={isSmall ? "px-1 py-0 text-[10px] md:text-[8px]" : "px-1.5 py-0 text-[10px]"}>
               {series}
             </Badge>
           )}
           {enrichmentStatus === "STUB" && scanActive && (
-            <Badge variant="outline" className={isSmall ? "animate-pulse px-1 py-0 text-[8px]" : "animate-pulse px-1.5 py-0 text-[10px]"}>
+            <Badge variant="outline" className={isSmall ? "animate-pulse px-1 py-0 text-[10px] md:text-[8px]" : "animate-pulse px-1.5 py-0 text-[10px]"}>
               Processing&hellip;
             </Badge>
           )}

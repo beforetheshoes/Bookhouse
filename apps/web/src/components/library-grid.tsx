@@ -25,12 +25,14 @@ function getFormats(work: LibraryWork): string[] {
 
 export function getColumnCount(width: number, tileSize: GridTileSize = "small"): number {
   if (tileSize === "small") {
+    if (width < 400) return 2;
     if (width < 480) return 3;
     if (width < 640) return 4;
     if (width < 1024) return 6;
     if (width < 1280) return 7;
     return 8;
   }
+  if (width < 400) return 1;
   if (width < 480) return 2;
   if (width < 640) return 3;
   if (width < 1024) return 4;
@@ -79,8 +81,11 @@ export function LibraryGrid({ works, progressMap, scanActive, tileSize = "small"
   return (
     <div
       ref={containerRef}
-      className="overflow-auto pr-2"
-      style={{ maxHeight: "70vh" }}
+      // A 70vh inner scroller nested inside page scroll is the worst mobile
+      // interaction there is. Sizing it to the rest of the viewport makes it
+      // read as page scroll while keeping the single virtualizer intact; dvh
+      // absorbs collapsing browser chrome.
+      className="max-h-[calc(100dvh-14rem)] overflow-auto pr-2 md:max-h-[70vh]"
     >
       {works.length === 0 ? (
         <div className="flex h-24 items-center justify-center text-muted-foreground">

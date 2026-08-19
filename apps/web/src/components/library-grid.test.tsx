@@ -240,3 +240,22 @@ describe("LibraryGrid", () => {
     expect(screen.getByText("Test")).toBeTruthy();
   });
 });
+
+describe("getColumnCount on phone-width containers", () => {
+  it("drops small tiles to 2 columns below 400px", () => {
+    // 3 covers across a 360px phone is ~110px each — unreadable.
+    expect(_getColumnCount(360, "small")).toBe(2);
+  });
+
+  it("keeps small tiles at 3 columns between 400 and 480px", () => {
+    expect(_getColumnCount(440, "small")).toBe(3);
+  });
+
+  it("drops large tiles to a single column below 400px", () => {
+    expect(_getColumnCount(360, "large")).toBe(1);
+  });
+
+  it("keeps large tiles at 2 columns between 400 and 480px", () => {
+    expect(_getColumnCount(440, "large")).toBe(2);
+  });
+});

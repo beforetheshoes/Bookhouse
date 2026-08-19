@@ -166,4 +166,17 @@ describe("WorkCard", () => {
     render(<WorkCard {...baseProps} />);
     expect(screen.queryByRole("progressbar")).toBeNull();
   });
+
+  it("keeps small-tile text legible on phones", () => {
+    render(<WorkCard {...baseProps} tileSize="small" />);
+    // 8px badges and 10px author lines only make sense at desktop tile
+    // density; on a phone they are below any legible floor.
+    const authors = screen.getByText("F. Scott Fitzgerald");
+    expect(authors.className).toContain("text-xs");
+    expect(authors.className).toContain("md:text-[10px]");
+
+    const badge = screen.getByText("EBOOK");
+    expect(badge.className).toContain("text-[10px]");
+    expect(badge.className).toContain("md:text-[8px]");
+  });
 });
