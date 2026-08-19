@@ -278,10 +278,19 @@ test.describe("Mobile layout", () => {
     });
 
     expect(r).not.toBeNull();
-    // The height is derived from a constant guess at the chrome above it. If
-    // that guess drifts, the scroller's own bottom falls below the fold and
-    // the page gets two competing scrollbars.
-    expect(r?.bottom ?? 0).toBeLessThanOrEqual((r?.vh ?? 0) + 1);
+    const top = r?.top ?? 0;
+    const vh = r?.vh ?? 0;
+    // The height is measured from where the grid actually sits, so its bottom
+    // should land inside the viewport - but only when there is room for a
+    // usable grid below the chrome. A scroller shorter than one row of covers
+    // is worse than letting the page scroll, so below that floor the grid
+    // deliberately extends past the fold.
+    const roomBelowChrome = vh - top;
+    if (roomBelowChrome >= 320) {
+      expect(r?.bottom ?? 0).toBeLessThanOrEqual(vh + 1);
+    } else {
+      expect(r?.bottom ?? 0).toBeGreaterThanOrEqual(top + 320);
+    }
   });
 
   test("work detail fits the viewport with long titles and shelf names", async ({
