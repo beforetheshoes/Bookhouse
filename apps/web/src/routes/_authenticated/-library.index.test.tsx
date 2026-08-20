@@ -197,6 +197,10 @@ vi.mock("~/components/library-toolbar", () => ({
     capturedToolbarProps = props;
     return (
       <div data-testid="library-toolbar" data-view={props.view as string} data-filter={props.filterValue as string}>
+        {/* The filters sheet is passed in as `leading` and rendered inside
+            this row, so the mock has to render it or the page appears to have
+            no route into faceting. */}
+        {props.leading as React.ReactNode}
         <button
           type="button"
           aria-label="toolbar-select-mode"
