@@ -914,6 +914,32 @@ describe("LibraryPage", () => {
     });
   });
 
+  it("toggles selection exactly once when the padded label is tapped", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Alpha")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    const { container } = render(<LibraryPage />);
+
+    // The checkbox is wrapped in a padded label so it is a real tap target.
+    // A label forwards its click to the input, so a naive wrapper can toggle
+    // twice and land back on unselected.
+    const rowCheckbox = screen.getAllByLabelText("Select row")[0];
+    if (!rowCheckbox) throw new Error("expected row checkbox");
+    const label = rowCheckbox.closest("label");
+    expect(label).not.toBeNull();
+
+    fireEvent.click(rowCheckbox);
+    expect(screen.getByText("1 work selected")).toBeTruthy();
+    void container;
+  });
+
   it("offers the filters sheet as the mobile route into faceting", async () => {
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
