@@ -173,11 +173,11 @@ describe("WorkCard", () => {
     // density; on a phone they are below any legible floor.
     const authors = screen.getByText("F. Scott Fitzgerald");
     expect(authors.className).toContain("text-xs");
-    expect(authors.className).toContain("md:text-[10px]");
+    expect(authors.className).toContain("lg:text-[10px]");
 
     const badge = screen.getByText("EBOOK");
     expect(badge.className).toContain("text-[10px]");
-    expect(badge.className).toContain("md:text-[8px]");
+    expect(badge.className).toContain("lg:text-[8px]");
   });
 
   it("renders no selection control by default", () => {

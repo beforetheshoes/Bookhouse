@@ -429,4 +429,23 @@ describe("cleanupMissingFilesServerFn union contract", () => {
     ).rejects.toThrow("Not all specified files have MISSING status");
   });
 });
+
+describe("cleanupMissingFilesServerFn rejects mixed modes", () => {
+  it("refuses all:true alongside an id list", async () => {
+    // z.object would strip the ids and clean the whole library while the UI
+    // named one file; strictObject rejects the payload outright.
+    await expect(
+      // Deliberately malformed: the type forbids it, the validator must too.
+      cleanupMissingFilesServerFn({
+        data: { all: true, fileAssetIds: ["fa-1"] },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("refuses an empty id list", async () => {
+    await expect(
+      cleanupMissingFilesServerFn({ data: { fileAssetIds: [] } }),
+    ).rejects.toThrow();
+  });
+});
 });

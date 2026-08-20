@@ -253,9 +253,12 @@ export const cleanupMissingFilesServerFn = createServerFn({
   // Either clean everything, or clean an explicit list - never both. The UI's
   // "Clean Up All N" button could only ever send the page it had loaded, at
   // most 100, so above that it cleaned a fraction of what it named.
+  // strictObject, not object: z.object STRIPS unknown keys, so
+  // { all: true, fileAssetIds: [...] } parsed as { all: true } and cleaned the
+  // whole library while the UI named one file. Only strict rejects it.
   .validator(z.union([
-    z.object({ all: z.literal(true) }),
-    z.object({ fileAssetIds: z.array(z.string().min(1)) }),
+    z.strictObject({ all: z.literal(true) }),
+    z.strictObject({ fileAssetIds: z.array(z.string().min(1)).min(1) }),
   ]))
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();

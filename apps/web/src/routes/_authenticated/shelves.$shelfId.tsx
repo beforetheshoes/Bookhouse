@@ -77,20 +77,26 @@ export function getTableColumns(): ColumnDef<ShelfEdition>[] {
       size: 40,
       maxSize: 40,
       header: ({ table }) => (
-        <input
-          type="checkbox"
+        <label className="flex min-h-9 min-w-9 items-center justify-center lg:min-h-0 lg:min-w-0">
+          <input
+            type="checkbox"
+            className="size-5 lg:size-4"
           checked={table.getIsAllPageRowsSelected()}
-          onChange={(e) => { table.toggleAllPageRowsSelected(e.target.checked); }}
-          aria-label="Select all"
+            onChange={(e) => { table.toggleAllPageRowsSelected(e.target.checked); }}
+            aria-label="Select all"
         />
+        </label>
       ),
       cell: ({ row }) => (
-        <input
-          type="checkbox"
+        <label className="flex min-h-9 min-w-9 items-center justify-center lg:min-h-0 lg:min-w-0">
+          <input
+            type="checkbox"
+            className="size-5 lg:size-4"
           checked={row.getIsSelected()}
-          onChange={(e) => { row.toggleSelected(e.target.checked); }}
-          aria-label="Select row"
+            onChange={(e) => { row.toggleSelected(e.target.checked); }}
+            aria-label="Select row"
         />
+        </label>
       ),
       enableSorting: false,
     },
@@ -100,7 +106,7 @@ export function getTableColumns(): ColumnDef<ShelfEdition>[] {
       accessorFn: (row) => row.work.titleDisplay,
       header: ({ column }) => <DataTableColumnHeader column={column} title="Title" />,
       cell: ({ row }) => (
-        <Link to="/library/$workId" params={{ workId: row.original.work.id }} className="font-medium hover:underline">
+        <Link to="/library/$workId" params={{ workId: row.original.work.id }} className="flex min-h-9 items-center font-medium hover:underline lg:min-h-0">
           {row.original.work.titleDisplay}
         </Link>
       ),
@@ -199,13 +205,17 @@ function ShelfDetailPage() {
       for (const workId of gridSelectedWorkIds) {
         await removeWorkEditionsFromShelfServerFn({ data: { shelfId: shelf.id, workId } });
       }
-      toast.success(`Removed ${String(gridSelectedWorkIds.length)} from shelf`);
+      const n = gridSelectedWorkIds.length;
+      toast.success(`Removed ${String(n)} work${n === 1 ? "" : "s"} from shelf`);
       setGridSelection({});
-      void router.invalidate();
     } catch {
       toast.error("Failed to remove editions");
     } finally {
       setRemoving(false);
+      // In the finally: a partial failure has already committed earlier
+      // removals, so the list must refresh either way or the bar keeps
+      // counting rows that no longer exist.
+      void router.invalidate();
     }
   };
 
@@ -215,13 +225,14 @@ function ShelfDetailPage() {
       for (const editionId of selectedEditionIds) {
         await removeEditionFromShelfServerFn({ data: { shelfId: shelf.id, editionId } });
       }
-      toast.success(`Removed ${String(selectedEditionIds.length)} from shelf`);
+      const n = selectedEditionIds.length;
+      toast.success(`Removed ${String(n)} edition${n === 1 ? "" : "s"} from shelf`);
       setRowSelection({});
-      void router.invalidate();
     } catch {
       toast.error("Failed to remove editions");
     } finally {
       setRemoving(false);
+      void router.invalidate();
     }
   };
 
@@ -428,12 +439,15 @@ function AddEditionsDialog({
           {!loading && filtered.length > 0 && (
             <>
               <label className="flex items-center gap-2 rounded p-2 hover:bg-muted cursor-pointer">
-                <input
-                  type="checkbox"
+                <label className="flex min-h-9 min-w-9 items-center justify-center lg:min-h-0 lg:min-w-0">
+                  <input
+                    type="checkbox"
+                    className="size-5 lg:size-4"
                   checked={selected.size === filtered.length && filtered.length > 0}
-                  onChange={handleSelectAll}
-                  data-testid="select-all-editions"
+                    onChange={handleSelectAll}
+                    data-testid="select-all-editions"
                 />
+                </label>
                 <span className="text-sm font-medium">Select all ({String(filtered.length)})</span>
               </label>
 
@@ -443,12 +457,15 @@ function AddEditionsDialog({
                   className="flex items-center gap-2 rounded p-2 hover:bg-muted cursor-pointer"
                   data-testid={`edition-row-${edition.id}`}
                 >
-                  <input
-                    type="checkbox"
+                  <label className="flex min-h-9 min-w-9 items-center justify-center lg:min-h-0 lg:min-w-0">
+                    <input
+                      type="checkbox"
+                      className="size-5 lg:size-4"
                     checked={selected.has(edition.id)}
-                    onChange={() => { handleToggle(edition.id); }}
-                    data-testid={`edition-check-${edition.id}`}
+                      onChange={() => { handleToggle(edition.id); }}
+                      data-testid={`edition-check-${edition.id}`}
                   />
+                  </label>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{edition.work.titleDisplay}</p>
                     <p className="text-xs text-muted-foreground truncate">

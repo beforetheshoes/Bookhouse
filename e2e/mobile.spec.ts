@@ -180,10 +180,20 @@ test.describe("Mobile layout", () => {
       grid.scrollTop = grid.scrollHeight;
       const bar = document.querySelector('[data-testid="bulk-add-to-shelf-btn"]')?.closest("div")?.parentElement;
       const barTop = bar?.getBoundingClientRect().top ?? window.innerHeight;
-      const cards = Array.from(document.querySelectorAll('a[href^="/library/"]'));
+      // In select mode a card is a role=checkbox div, NOT a link - measuring
+      // anchors here found zero elements, so this assertion passed on 0 <= barTop
+      // and never tested anything.
+      const cards = Array.from(
+        document.querySelectorAll('[role="checkbox"][aria-label^="Select "]'),
+      );
       const last = cards[cards.length - 1]?.getBoundingClientRect();
-      return { lastCardBottom: Math.round(last?.bottom ?? 0), barTop: Math.round(barTop) };
+      return {
+        cardCount: cards.length,
+        lastCardBottom: Math.round(last?.bottom ?? 0),
+        barTop: Math.round(barTop),
+      };
     });
+    expect(reachable.cardCount, "no selectable cards were measured").toBeGreaterThan(0);
     expect(
       reachable.lastCardBottom,
       "the last card cannot be scrolled clear of the bulk bar",

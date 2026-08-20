@@ -145,8 +145,8 @@
   }
 }
 
-/* Respect the OS "reduce motion" setting. Only the shimmer keyframe honoured
-   it before, so sheets, dialogs and the sidebar still animated fully. */
+/* Respect the OS "reduce motion" setting. Nothing honoured it before, so
+   sheets, dialogs and the sidebar animated fully regardless. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -161,8 +161,7 @@
      spinner after one rotation reads as a hung app, so keep them looping -
      slowed down rather than stopped. */
   .animate-spin,
-  .animate-pulse,
-  .shimmer {
+  .animate-pulse {
     animation-duration: 1.5s !important;
     animation-iteration-count: infinite !important;
   }

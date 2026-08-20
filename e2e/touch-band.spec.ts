@@ -24,6 +24,10 @@ test.describe("Touch band", () => {
       });
       await page.setViewportSize({ width, height: 1024 });
 
+      // Table view is reachable from md up - this band - and its select column
+      // held 13px checkboxes that no sweep ever entered table view to find.
+      await page.addInitScript(() => { localStorage.setItem("library-view", "table"); });
+
       for (const path of ["/library", "/settings", "/authors", "/upload", "/shelves"]) {
         await page.goto(path);
         await page.waitForLoadState("domcontentloaded");
