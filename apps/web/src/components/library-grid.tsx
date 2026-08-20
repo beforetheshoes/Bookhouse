@@ -9,6 +9,13 @@ interface LibraryGridProps {
   progressMap?: Record<string, number>;
   scanActive?: boolean;
   tileSize?: GridTileSize;
+  /** Select mode: cards toggle selection instead of opening. */
+  selectable?: boolean;
+  /** Keyed by work id, matching the table's getRowId-keyed RowSelectionState. */
+  rowSelection?: Record<string, boolean>;
+  onToggleSelect?: (id: string) => void;
+  /** True while the fixed bulk bar is on screen. */
+  selectionActive?: boolean;
 }
 
 function getAuthors(work: LibraryWork): string {
@@ -25,12 +32,14 @@ function getFormats(work: LibraryWork): string[] {
 
 export function getColumnCount(width: number, tileSize: GridTileSize = "small"): number {
   if (tileSize === "small") {
+    if (width < 400) return 2;
     if (width < 480) return 3;
     if (width < 640) return 4;
     if (width < 1024) return 6;
     if (width < 1280) return 7;
     return 8;
   }
+  if (width < 400) return 1;
   if (width < 480) return 2;
   if (width < 640) return 3;
   if (width < 1024) return 4;
@@ -38,10 +47,12 @@ export function getColumnCount(width: number, tileSize: GridTileSize = "small"):
   return 6;
 }
 
-export function LibraryGrid({ works, progressMap, scanActive, tileSize = "small" }: LibraryGridProps) {
+export function LibraryGrid({ works, progressMap, scanActive, tileSize = "small", selectable, rowSelection, onToggleSelect, selectionActive }: LibraryGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [columnCount, setColumnCount] = useState(5);
   const observerRef = useRef<ResizeObserver | null>(null);
+
+  const [maxHeight, setMaxHeight] = useState("70vh");
 
   const containerRef = useCallback((node: HTMLDivElement | null) => {
     if (observerRef.current) {
@@ -57,6 +68,17 @@ export function LibraryGrid({ works, progressMap, scanActive, tileSize = "small"
         if (entry) {
           setColumnCount(getColumnCount(entry.contentRect.width, tileSize));
         }
+        // Derive the height from where this element actually sits rather than
+        // from a constant: the chrome above it differs per page and grows as
+        // the toolbar wraps, so any fixed guess puts the scroller's bottom
+        // below the fold on some page or viewport.
+        const top = node.getBoundingClientRect().top + window.scrollY;
+        // Pagination is sticky at the bottom of the viewport, so the grid must
+        // stop above it or its last row renders underneath the bar. 4rem covers
+        // the one-line bar plus its border and the grid's own margin.
+        setMaxHeight(
+          `max(20rem, calc(100dvh - ${String(Math.round(top))}px - 4rem))`,
+        );
       });
       observer.observe(node);
       observerRef.current = observer;
@@ -79,8 +101,11 @@ export function LibraryGrid({ works, progressMap, scanActive, tileSize = "small"
   return (
     <div
       ref={containerRef}
-      className="overflow-auto pr-2"
-      style={{ maxHeight: "70vh" }}
+      // In select mode the floating bulk bar is fixed over the bottom of the
+      // screen, so without this the last cards cannot be scrolled clear of it
+      // and are unselectable.
+      className={selectionActive === true ? "overflow-auto pr-2 pb-48" : "overflow-auto pr-2"}
+      style={{ maxHeight }}
     >
       {works.length === 0 ? (
         <div className="flex h-24 items-center justify-center text-muted-foreground">
@@ -108,6 +133,9 @@ export function LibraryGrid({ works, progressMap, scanActive, tileSize = "small"
                 {rowWorks.map((work) => (
                   <WorkCard
                     key={work.id}
+                    selectable={selectable}
+                    selected={rowSelection?.[work.id] === true}
+                    onSelectChange={() => { onToggleSelect?.(work.id); }}
                     id={work.id}
                     title={work.titleDisplay}
                     authors={getAuthors(work)}

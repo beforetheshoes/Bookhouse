@@ -166,4 +166,88 @@ describe("WorkCard", () => {
     render(<WorkCard {...baseProps} />);
     expect(screen.queryByRole("progressbar")).toBeNull();
   });
+
+  it("keeps small-tile text legible on phones", () => {
+    render(<WorkCard {...baseProps} tileSize="small" />);
+    // 8px badges and 10px author lines only make sense at desktop tile
+    // density; on a phone they are below any legible floor.
+    const authors = screen.getByText("F. Scott Fitzgerald");
+    expect(authors.className).toContain("text-xs");
+    expect(authors.className).toContain("lg:text-[10px]");
+
+    const badge = screen.getByText("EBOOK");
+    expect(badge.className).toContain("text-[10px]");
+    expect(badge.className).toContain("lg:text-[8px]");
+  });
+
+  it("renders no selection control by default", () => {
+    render(<WorkCard {...baseProps} />);
+    expect(screen.queryByRole("checkbox", { name: /^Select / })).toBeNull();
+  });
+
+  it("renders a selection control in select mode", () => {
+    render(<WorkCard {...baseProps} selectable />);
+    const toggle = screen.getByRole("checkbox", { name: "Select The Great Gatsby" });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("reflects the selected state", () => {
+    render(<WorkCard {...baseProps} selectable selected />);
+    expect(
+      screen.getByRole("checkbox", { name: "Select The Great Gatsby" }).getAttribute("aria-checked"),
+    ).toBe("true");
+  });
+
+  it("toggles selection instead of navigating", () => {
+    const onSelectChange = vi.fn();
+    const { container } = render(
+      <WorkCard {...baseProps} selectable onSelectChange={onSelectChange} />,
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select The Great Gatsby" }));
+    expect(onSelectChange).toHaveBeenCalledWith(true);
+    // In select mode the card is not a link at all, so there is nothing to
+    // navigate to.
+    expect(container.querySelector("a[href]")).toBeNull();
+  });
+
+  it("toggles from the keyboard with Space and Enter", () => {
+    const onSelectChange = vi.fn();
+    render(<WorkCard {...baseProps} selectable onSelectChange={onSelectChange} />);
+    const box = screen.getByRole("checkbox", { name: "Select The Great Gatsby" });
+    fireEvent.keyDown(box, { key: " " });
+    fireEvent.keyDown(box, { key: "Enter" });
+    fireEvent.keyDown(box, { key: "a" });
+    expect(onSelectChange).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports deselection when already selected", () => {
+    const onSelectChange = vi.fn();
+    render(<WorkCard {...baseProps} selectable selected onSelectChange={onSelectChange} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select The Great Gatsby" }));
+    expect(onSelectChange).toHaveBeenCalledWith(false);
+  });
+
+  it("tolerates a missing change handler", () => {
+    render(<WorkCard {...baseProps} selectable />);
+    expect(() => {
+      fireEvent.click(screen.getByRole("checkbox", { name: "Select The Great Gatsby" }));
+    }).not.toThrow();
+  });
+
+  it("does not nest a control inside the card link", () => {
+    // Render in LINK mode - the only mode with an <a> - and prove nothing
+    // interactive lives inside it. Interactive content inside <a> is invalid
+    // HTML and leaves the link independently focusable, so Enter navigates
+    // instead of selecting.
+    const { container } = render(<WorkCard {...baseProps} />);
+    const link = container.querySelector("a[href]");
+    expect(link).not.toBeNull();
+    expect(link?.querySelectorAll('button, [role="checkbox"]').length ?? -1).toBe(0);
+  });
+
+  it("is not a link at all in select mode", () => {
+    const { container } = render(<WorkCard {...baseProps} selectable />);
+    expect(container.querySelector("a[href]")).toBeNull();
+  });
+
 });

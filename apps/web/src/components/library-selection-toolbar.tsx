@@ -19,11 +19,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
-import { bulkDeleteWorksServerFn, bulkDeleteEditionsByFormatForWorksServerFn, deleteAllEditionsByFormatServerFn } from "~/lib/server-fns/deletion";
+import { bulkDeleteWorksServerFn, bulkDeleteEditionsByFormatForWorksServerFn } from "~/lib/server-fns/deletion";
 import { bulkAddToShelfServerFn } from "~/lib/server-fns/shelves";
 import { markWorksAsReadServerFn } from "~/lib/server-fns/reading-progress";
 import { mergeWorksServerFn } from "~/lib/server-fns/work-management";
 import { BulkEnrichDialog } from "~/components/bulk-enrich-dialog";
+import { FloatingActionBar } from "~/components/floating-action-bar";
 
 interface LibrarySelectionToolbarProps {
   selectedCount: number;
@@ -41,6 +42,13 @@ interface LibrarySelectionToolbarProps {
   onMarkedAsRead: () => void;
   onClearSelection: () => void;
 }
+
+/** Matches the `.max(100)` on the server fn validator. */
+const BULK_WORK_ID_LIMIT = 100;
+
+/** mergeWorksServerFn caps sourceWorkIds at 99, and a merge cannot be split
+ *  into batches - there is exactly one surviving target. */
+const MERGE_MAX_SELECTED = 100;
 
 export function LibrarySelectionToolbar({
   selectedCount,
@@ -79,7 +87,13 @@ export function LibrarySelectionToolbar({
   async function handleBulkDelete() {
     setBulkDeleting(true);
     try {
-      await bulkDeleteWorksServerFn({ data: { workIds: selectedWorkIds } });
+      // Same 100-id cap as the by-format path, so a selection larger than
+      // that was rejected outright and could not be deleted at all.
+      for (let i = 0; i < selectedWorkIds.length; i += BULK_WORK_ID_LIMIT) {
+        await bulkDeleteWorksServerFn({
+          data: { workIds: selectedWorkIds.slice(i, i + BULK_WORK_ID_LIMIT) },
+        });
+      }
       toast.success(`${String(selectedWorkIds.length)} work${selectedWorkIds.length === 1 ? "" : "s"} deleted`);
       setBulkDeleteOpen(false);
       onDeleted();
@@ -93,9 +107,24 @@ export function LibrarySelectionToolbar({
   async function handleBulkDeleteByFormat(format: "EBOOK" | "AUDIOBOOK") {
     setDeletingByFormat(true);
     try {
-      const result = selectedWorkIds.length > 100 || selectedCount >= totalCount
-        ? await deleteAllEditionsByFormatServerFn({ data: { format } })
-        : await bulkDeleteEditionsByFormatForWorksServerFn({ data: { workIds: selectedWorkIds, format } });
+      // Always scoped to the selection. The old shortcut took a library-wide
+      // path when more than 100 works were selected, or when the selection
+      // covered totalCount - but totalCount is the count for the *current
+      // query*, so selecting everything under a search or facet deleted every
+      // edition of that format in the whole library while the dialog named
+      // only the selection.
+      //
+      // The server fn caps workIds at 100, which is what that shortcut was
+      // working around, so send the selection in batches instead.
+      const result = { deletedEditionIds: [] as string[], deletedWorkIds: [] as string[] };
+      for (let i = 0; i < selectedWorkIds.length; i += BULK_WORK_ID_LIMIT) {
+        const batch = selectedWorkIds.slice(i, i + BULK_WORK_ID_LIMIT);
+        const batchResult = await bulkDeleteEditionsByFormatForWorksServerFn({
+          data: { workIds: batch, format },
+        });
+        result.deletedEditionIds.push(...batchResult.deletedEditionIds);
+        result.deletedWorkIds.push(...batchResult.deletedWorkIds);
+      }
       const label = format === "EBOOK" ? "ebook" : "audiobook";
       const editionCount = result.deletedEditionIds.length;
       const workCount = result.deletedWorkIds.length;
@@ -144,6 +173,15 @@ export function LibrarySelectionToolbar({
     }
   }
 
+  // The merge dialog lists only the works on the current page, but the merge
+  // sends every selected id - so a cross-page selection silently consumed
+  // works the user never saw. Refuse unless the selection is exactly what the
+  // dialog can show, and small enough for the server to accept.
+  const mergeBlocked =
+    selectedWorks.length < 2 ||
+    selectedWorkIds.length !== selectedWorks.length ||
+    selectedWorkIds.length > MERGE_MAX_SELECTED;
+
   async function handleMerge() {
     setMerging(true);
     try {
@@ -164,13 +202,13 @@ export function LibrarySelectionToolbar({
 
   return (
     <>
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-1.5 rounded-lg border bg-background p-3 shadow-lg">
+      <FloatingActionBar data-testid="library-selection-toolbar">
         {allPageRowsSelected && selectedCount < totalCount && (
           <div className="text-xs text-muted-foreground" data-testid="select-all-banner">
             All {selectedCount} on this page selected.{" "}
             <button
               type="button"
-              className="underline font-medium text-foreground hover:text-primary"
+              className="inline-flex min-h-9 items-center px-1 underline font-medium text-foreground hover:text-primary lg:min-h-0 lg:px-0"
               onClick={onSelectAll}
               disabled={selectingAll}
               data-testid="select-all-btn"
@@ -183,7 +221,7 @@ export function LibrarySelectionToolbar({
             </button>
           </div>
         )}
-        <div className="flex items-center gap-3">
+        <div className="flex w-full flex-wrap items-center justify-center gap-2 md:gap-3">
           <span className="text-sm font-medium">{selectedCount} work{selectedCount === 1 ? "" : "s"} selected</span>
           <Button variant="outline" size="sm" onClick={() => { setAddToShelfOpen(true); }} data-testid="bulk-add-to-shelf-btn">
             <FolderOpen className="mr-1.5 size-3.5" />
@@ -206,7 +244,7 @@ export function LibrarySelectionToolbar({
             Enrich Metadata
           </Button>
           {selectedCount >= 2 && (
-            <Button variant="outline" size="sm" onClick={() => { setMergeTargetId(defaultTargetId); setMergeOpen(true); }} data-testid="merge-works-btn">
+            <Button variant="outline" size="sm" disabled={mergeBlocked} onClick={() => { setMergeTargetId(defaultTargetId); setMergeOpen(true); }} data-testid="merge-works-btn">
               <GitMerge className="mr-1.5 size-3.5" />
               Merge
             </Button>
@@ -227,7 +265,7 @@ export function LibrarySelectionToolbar({
                 <Button
                   variant="destructive"
                   size="sm"
-                  className="rounded-l-none px-1.5"
+                  className="rounded-l-none has-[>svg]:px-3 lg:has-[>svg]:px-1.5"
                   aria-label="More delete options"
                   data-testid="bulk-delete-dropdown-trigger"
                 >
@@ -260,7 +298,7 @@ export function LibrarySelectionToolbar({
             Clear
           </Button>
         </div>
-      </div>
+      </FloatingActionBar>
 
       <Dialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
         <DialogContent>
@@ -314,7 +352,7 @@ export function LibrarySelectionToolbar({
           <DialogHeader>
             <DialogTitle>Add {selectedCount} Work{selectedCount === 1 ? "" : "s"} to Shelf</DialogTitle>
           </DialogHeader>
-          <div className="space-y-2" data-testid="shelf-picker">
+          <div className="max-h-[50dvh] space-y-2 overflow-y-auto" data-testid="shelf-picker">
             {shelves.length === 0 ? (
               <p className="text-sm text-muted-foreground">No shelves created yet. Create one from the Shelves page.</p>
             ) : (

@@ -64,28 +64,6 @@ export const EDITION_COLUMN_PICKER_ITEMS = [
 export function getEditionColumns(editMode: boolean, router: { invalidate: () => void }): ColumnDef<LibraryEdition>[] {
   return [
     {
-      id: "select",
-      header: ({ table }) => (
-        <input
-          type="checkbox"
-          checked={table.getIsAllPageRowsSelected()}
-          onChange={(e) => { table.toggleAllPageRowsSelected(e.target.checked); }}
-          aria-label="Select all"
-        />
-      ),
-      cell: ({ row }) => (
-        <input
-          type="checkbox"
-          checked={row.getIsSelected()}
-          onChange={(e) => { row.toggleSelected(e.target.checked); }}
-          aria-label="Select row"
-        />
-      ),
-      size: 40,
-      enableSorting: false,
-      enableHiding: false,
-    },
-    {
       id: "titleDisplay",
       accessorFn: (row) => row.work.titleDisplay,
       header: ({ column }) => (
@@ -96,7 +74,7 @@ export function getEditionColumns(editMode: boolean, router: { invalidate: () =>
           to="/library/$workId"
           params={{ workId: row.original.workId }}
           search={{ page: 1, pageSize: 50, sort: "title-asc" as const }}
-          className="flex items-center gap-2"
+          className="flex min-h-9 items-center gap-2 lg:min-h-0"
         >
           {row.original.work.titleDisplay}
         </Link>

@@ -69,4 +69,36 @@ describe("Dialog", () => {
     expect(screen.getByText("Footer content")).toBeTruthy();
     expect(screen.getByText("Close")).toBeTruthy();
   });
+
+  it("moves opening focus past the close button to the first real control", async () => {
+    const user = userEvent.setup();
+    render(
+      <Dialog>
+        <DialogTrigger>Open</DialogTrigger>
+        <DialogContent>
+          <DialogTitle>Focus Test</DialogTitle>
+          <input aria-label="First field" />
+        </DialogContent>
+      </Dialog>
+    );
+    await user.click(screen.getByText("Open"));
+    // Close is first in the DOM so `sticky top-0` has something to stick to,
+    // which would otherwise hand it the opening focus.
+    expect(document.activeElement).toBe(screen.getByLabelText("First field"));
+  });
+
+  it("leaves focus alone when the close button is the only control", async () => {
+    const user = userEvent.setup();
+    render(
+      <Dialog>
+        <DialogTrigger>Open</DialogTrigger>
+        <DialogContent>
+          <DialogTitle>No Controls</DialogTitle>
+          <p>Nothing focusable here.</p>
+        </DialogContent>
+      </Dialog>
+    );
+    await user.click(screen.getByText("Open"));
+    expect(screen.getByText("No Controls")).toBeTruthy();
+  });
 });

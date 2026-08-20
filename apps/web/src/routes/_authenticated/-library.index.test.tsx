@@ -158,6 +158,7 @@ let mockView = "grid" as "grid" | "table";
 const mockSetView = vi.fn();
 vi.mock("~/hooks/use-library-view-preference", () => ({
   useLibraryViewPreference: () => [mockView, mockSetView],
+  useEffectiveLibraryView: () => [mockView, mockSetView],
 }));
 
 let mockTileSize = "small" as "small" | "large";
@@ -173,8 +174,20 @@ vi.mock("~/hooks/use-library-table-preferences", () => ({
 }));
 
 vi.mock("~/components/library-grid", () => ({
-  LibraryGrid: ({ works, progressMap, tileSize }: { works: object[]; progressMap?: Record<string, number>; tileSize?: string }) => (
-    <div data-testid="library-grid" data-progress-map={progressMap ? JSON.stringify(progressMap) : undefined} data-tile-size={tileSize ?? "small"}>Grid: {String(works.length)} works</div>
+  LibraryGrid: ({ works, progressMap, tileSize, selectable, rowSelection, onToggleSelect }: { works: { id: string }[]; progressMap?: Record<string, number>; tileSize?: string; selectable?: boolean; rowSelection?: Record<string, boolean>; onToggleSelect?: (id: string) => void }) => (
+    <div
+      data-testid="library-grid"
+      data-progress-map={progressMap ? JSON.stringify(progressMap) : undefined}
+      data-tile-size={tileSize ?? "small"}
+      data-selectable={selectable === true ? "true" : "false"}
+      data-selected-count={String(Object.keys(rowSelection ?? {}).length)}
+      data-selected-ids={Object.keys(rowSelection ?? {}).sort().join(",")}
+    >
+      Grid: {String(works.length)} works
+      {works.map((w, i) => (
+        <button key={w.id} type="button" aria-label={`toggle-row-${String(i)}`} onClick={() => { onToggleSelect?.(w.id); }} />
+      ))}
+    </div>
   ),
 }));
 
@@ -183,9 +196,24 @@ vi.mock("~/components/library-toolbar", () => ({
   LibraryToolbar: (props: Record<string, string | number | boolean | object | (() => void)>) => {
     capturedToolbarProps = props;
     return (
-      <div data-testid="library-toolbar" data-view={props.view as string} data-filter={props.filterValue as string} />
+      <div data-testid="library-toolbar" data-view={props.view as string} data-filter={props.filterValue as string}>
+        <button
+          type="button"
+          aria-label="toolbar-select-mode"
+          onClick={() => { (props.onSelectModeChange as ((v: boolean) => void) | undefined)?.(true); }}
+        />
+        <button
+          type="button"
+          aria-label="toolbar-select-mode-off"
+          onClick={() => { (props.onSelectModeChange as ((v: boolean) => void) | undefined)?.(false); }}
+        />
+      </div>
     );
   },
+}));
+
+vi.mock("~/components/library-filters-sheet", () => ({
+  LibraryFiltersSheet: () => <div data-testid="library-filters-sheet" />,
 }));
 
 let capturedFiltersProps: Record<string, string | number | boolean | object | (() => void)> = {};
@@ -372,8 +400,9 @@ describe("LibraryPage", () => {
     const { Route } = await import("./library.index");
     const deps = { page: 1, pageSize: 50, sort: "title-asc", view: "editions" };
     const result = await asLoader<Record<string, string | object>, object>(Route.options.loader as object)({ deps });
-    // Works are fetched with pageSize: 1 for facet counts only
-    expect(getFilteredLibraryWorksServerFnMock).toHaveBeenCalledWith({ data: { ...deps, pageSize: 1 } });
+    // Works are fetched in full: the loader knows neither the viewport nor
+    // the stored view preference, so it cannot safely truncate this.
+    expect(getFilteredLibraryWorksServerFnMock).toHaveBeenCalledWith({ data: deps });
     expect(getFilteredLibraryEditionsServerFnMock).toHaveBeenCalledWith({ data: deps });
     expect(result).toEqual({
       libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
@@ -699,6 +728,227 @@ describe("LibraryPage", () => {
     const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
     expect(screen.getByTestId("library-filters")).toBeTruthy();
+  });
+
+  it("hides the desktop filter rail below lg and stacks the row", async () => {
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    const { container } = render(<LibraryPage />);
+
+    // A 224px rail leaves ~79px of a 375px phone for everything else.
+    const rail = container.querySelector('[data-testid="library-filters-rail"]');
+    expect(rail?.className).toContain("hidden");
+    expect(rail?.className).toContain("lg:block");
+
+    const row = rail?.parentElement;
+    expect(row?.className).toContain("flex-col");
+    expect(row?.className).toContain("lg:flex-row");
+  });
+
+  it("puts the grid into select mode from the toolbar and collects selections", async () => {
+    mockView = "grid";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Alpha"), makeWork("Beta")], totalCount: 2, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    // Phones are forced onto the grid, so without this the bulk actions are
+    // unreachable there: the grid had no selection affordance at all.
+    expect(screen.getByTestId("library-grid").getAttribute("data-selectable")).toBe("false");
+
+    fireEvent.click(screen.getByLabelText("toolbar-select-mode"));
+    expect(screen.getByTestId("library-grid").getAttribute("data-selectable")).toBe("true");
+
+    fireEvent.click(screen.getByLabelText("toggle-row-0"));
+    expect(screen.getByTestId("library-grid").getAttribute("data-selected-count")).toBe("1");
+    // The real bulk toolbar renders only when something is selected.
+    expect(screen.getByTestId("bulk-add-to-shelf-btn")).toBeTruthy();
+  });
+
+  it("clears a grid selection when the same row is toggled again", async () => {
+    mockView = "grid";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Alpha")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    fireEvent.click(screen.getByLabelText("toolbar-select-mode"));
+    fireEvent.click(screen.getByLabelText("toggle-row-0"));
+    expect(screen.getByTestId("library-grid").getAttribute("data-selected-count")).toBe("1");
+    fireEvent.click(screen.getByLabelText("toggle-row-0"));
+    expect(screen.getByTestId("library-grid").getAttribute("data-selected-count")).toBe("0");
+  });
+
+  it("drops the selection when select mode is turned off", async () => {
+    mockView = "grid";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Alpha")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    fireEvent.click(screen.getByLabelText("toolbar-select-mode"));
+    fireEvent.click(screen.getByLabelText("toggle-row-0"));
+    expect(screen.getByTestId("library-grid").getAttribute("data-selected-count")).toBe("1");
+
+    // Leaving select mode must clear the selection, or the bulk bar lingers
+    // over a grid with no visible checkboxes.
+    fireEvent.click(screen.getByLabelText("toolbar-select-mode-off"));
+    expect(screen.getByTestId("library-grid").getAttribute("data-selected-count")).toBe("0");
+    expect(screen.queryByTestId("bulk-add-to-shelf-btn")).toBeNull();
+  });
+
+  it("keeps a selection on the same work when the list is refreshed underneath it", async () => {
+    mockView = "grid";
+    mockSearch = { page: 1, pageSize: 50, sort: "title-asc" };
+    const alpha = makeWork("Alpha");
+    const beta = makeWork("Beta");
+    mockLoaderData = {
+      libraryResult: { works: [alpha, beta], totalCount: 2, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    const { rerender } = render(<LibraryPage />);
+
+    fireEvent.click(screen.getByLabelText("toolbar-select-mode"));
+    fireEvent.click(screen.getByLabelText("toggle-row-0"));
+    expect(screen.getByTestId("library-grid").getAttribute("data-selected-ids")).toBe(alpha.id);
+
+    // An SSE scan calls router.invalidate(), which rewrites the list without
+    // touching search - so an index-keyed selection would silently repoint at
+    // whatever now sits at that position, and a bulk delete would hit it.
+    mockLoaderData = {
+      ...mockLoaderData,
+      libraryResult: { works: [beta, alpha], totalCount: 2, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+    };
+    rerender(<LibraryPage />);
+    expect(screen.getByTestId("library-grid").getAttribute("data-selected-ids")).toBe(alpha.id);
+  });
+
+  it("counts only selections that are still in the list", async () => {
+    mockView = "grid";
+    mockSearch = { page: 1, pageSize: 50, sort: "title-asc" };
+    const alpha = makeWork("Alpha");
+    const beta = makeWork("Beta");
+    mockLoaderData = {
+      libraryResult: { works: [alpha, beta], totalCount: 2, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    const { rerender } = render(<LibraryPage />);
+
+    fireEvent.click(screen.getByLabelText("toolbar-select-mode"));
+    fireEvent.click(screen.getByLabelText("toggle-row-0"));
+    fireEvent.click(screen.getByLabelText("toggle-row-1"));
+    expect(screen.getByText("2 works selected")).toBeTruthy();
+
+    // Beta leaves the list - a scan removed it, or a filter narrowed. The ids
+    // sent to the mutation are filtered against the current list, so the count
+    // must be too, or the bar claims more than it will act on.
+    mockLoaderData = {
+      ...mockLoaderData,
+      libraryResult: { works: [alpha], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+    };
+    rerender(<LibraryPage />);
+    expect(screen.getByText("1 work selected")).toBeTruthy();
+  });
+
+  it("abandons a select-all when any row is unchecked", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Alpha"), makeWork("Beta")], totalCount: 5, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    getAllFilteredWorkIdsServerFnMock.mockResolvedValue(["w1", "w2", "w3", "w4", "w5"]);
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    const selectAllCheckbox = screen.getAllByLabelText("Select all")[0];
+    if (!selectAllCheckbox) throw new Error("expected select-all checkbox");
+    fireEvent.click(selectAllCheckbox);
+    fireEvent.click(screen.getByTestId("select-all-btn"));
+    await waitFor(() => { expect(screen.getByText("5 works selected")).toBeTruthy(); });
+
+    // Unchecking a row must abandon the cross-page selection. Otherwise the
+    // bulk action still runs against all five and deletes the work the user
+    // just deselected.
+    fireEvent.click(selectAllCheckbox);
+    await waitFor(() => {
+      expect(screen.queryByText("5 works selected")).toBeNull();
+    });
+  });
+
+  it("wraps the row checkbox in exactly one label", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Alpha")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    // One label, not two: a nested label is invalid HTML and gives the input
+    // an ambiguous accessible name. Whether tapping the label's *padding*
+    // toggles once is not expressible here - happy-dom implements neither
+    // label activation behaviour nor layout - so that lives in
+    // e2e/touch-band.spec.ts, where the click lands on measured coordinates.
+    const rowCheckbox = screen.getAllByLabelText("Select row")[0] as HTMLInputElement | undefined;
+    if (!rowCheckbox) throw new Error("expected row checkbox");
+    expect(rowCheckbox.labels?.length).toBe(1);
+  });
+
+  it("offers the filters sheet as the mobile route into faceting", async () => {
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.getByTestId("library-filters-sheet")).toBeTruthy();
   });
 
   it("renders LibraryPagination", async () => {

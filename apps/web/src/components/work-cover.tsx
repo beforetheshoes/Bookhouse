@@ -59,7 +59,7 @@ export function WorkCover({
   }
 
   return (
-    <div className="w-48 shrink-0">
+    <div className="mx-auto w-40 sm:w-48 md:shrink-0">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <div
@@ -79,7 +79,7 @@ export function WorkCover({
                 className="size-full object-cover"
               />
             )}
-            <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+            <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-100 can-hover:opacity-0 transition-opacity group-hover:opacity-100">
               {uploadingCover ? (
                 <Loader2 className="size-8 animate-spin text-white" />
               ) : (

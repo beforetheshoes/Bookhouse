@@ -2399,7 +2399,48 @@ export function createIngestServices(
     }
   }
 
+  /**
+   * The existence check inside `parseMetadataForPresentAsset` holds no lock, so
+   * the FileAsset can go between that read and any write below it: an operator
+   * deleting the work or its library root cascades to the asset, and a test
+   * truncating between specs does the same. The write then raises P2025 and
+   * failed the BullMQ job for an entity nobody is waiting on any more.
+   *
+   * The asset is re-read before the error is tolerated, so a P2025 with the row
+   * still in place stays a real failure rather than a silently successful job.
+   */
   async function parseFileAssetMetadata(
+    input: ParseFileAssetMetadataInput,
+  ): Promise<ParseFileAssetMetadataResult> {
+    try {
+      return await parseMetadataForPresentAsset(input);
+    } catch (error) {
+      // Object() rather than a typeof/null/in chain: a catch parameter can be
+      // any value, and this reads .code off all of them without branching on
+      // shapes no test can produce without throwing a non-Error.
+      const { code } = Object(error) as { code?: string };
+      if (code !== PRISMA_RECORD_NOT_FOUND) {
+        throw error;
+      }
+      const stillThere = await ingestDb.fileAsset.findUnique({
+        where: { id: input.fileAssetId },
+      });
+      if (stillThere !== null) {
+        throw error;
+      }
+      logger.info(
+        { fileAssetId: input.fileAssetId },
+        "Skipping parse for file asset deleted mid-parse",
+      );
+      return {
+        availabilityStatus: AvailabilityStatus.MISSING,
+        fileAssetId: input.fileAssetId,
+        skipped: true,
+      };
+    }
+  }
+
+  async function parseMetadataForPresentAsset(
     input: ParseFileAssetMetadataInput,
   ): Promise<ParseFileAssetMetadataResult> {
     const now = input.now ?? new Date();

@@ -229,7 +229,7 @@ export function BackupTab({ history, onBackupComplete }: BackupTabProps) {
           {history.length === 0 ? (
             <p className="text-sm text-muted-foreground">No backups yet.</p>
           ) : (
-            <div className="rounded-md border">
+            <div className="rounded-md border overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/50">

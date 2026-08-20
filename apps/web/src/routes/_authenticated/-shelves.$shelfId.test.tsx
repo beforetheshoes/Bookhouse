@@ -67,18 +67,28 @@ vi.mock("@tanstack/react-router", async () => {
 });
 
 const removeEditionFromShelfServerFnMock = vi.fn().mockResolvedValue({});
+const removeWorkEditionsFromShelfServerFnMock = vi.fn().mockResolvedValue({});
 
 vi.mock("~/lib/server-fns/shelves", () => ({
   getShelfDetailServerFn: getShelfDetailServerFnMock,
   removeEditionFromShelfServerFn: removeEditionFromShelfServerFnMock,
+  removeWorkEditionsFromShelfServerFn: removeWorkEditionsFromShelfServerFnMock,
   getAvailableEditionsServerFn: getAvailableEditionsServerFnMock,
   addEditionToShelfServerFn: addEditionToShelfServerFnMock,
 }));
 
+type GridProps = {
+  works: object[];
+  tileSize?: string;
+  selectable?: boolean;
+  onToggleSelect?: (id: string) => void;
+};
+let capturedGridProps: GridProps = { works: [] };
 vi.mock("~/components/library-grid", () => ({
-  LibraryGrid: ({ works, tileSize }: { works: object[]; tileSize?: string }) => (
-    <div data-testid="library-grid" data-tile-size={tileSize ?? "small"}>Grid: {String(works.length)} works</div>
-  ),
+  LibraryGrid: (props: GridProps) => {
+    capturedGridProps = props;
+    return <div data-testid="library-grid" data-tile-size={props.tileSize ?? "small"}>Grid: {String(props.works.length)} works</div>;
+  },
 }));
 
 let capturedOnRowSelectionChange: ((sel: Record<string, boolean>) => void) | null = null;
@@ -87,8 +97,11 @@ vi.mock("~/components/data-table", async () => {
   const actual = await vi.importActual<typeof DataTableModule>("~/components/data-table");
   return {
     ...actual,
-    VirtualizedDataTable: ({ data, onRowSelectionChange }: { data: { id: string }[]; onRowSelectionChange?: (sel: Record<string, boolean>) => void }) => {
+    VirtualizedDataTable: ({ data, onRowSelectionChange, getRowId }: { data: { id: string }[]; onRowSelectionChange?: (sel: Record<string, boolean>) => void; getRowId?: (row: { id: string }) => string }) => {
       capturedOnRowSelectionChange = onRowSelectionChange ?? null;
+      // Selection is keyed by edition id, so exercise the accessor the real
+      // table would call for every row.
+      data.forEach((row) => getRowId?.(row));
       return <div data-testid="data-table">{String(data.length)} rows</div>;
     },
   };
@@ -98,14 +111,18 @@ vi.mock("~/components/skeletons/grid-page-skeleton", () => ({
   GridPageSkeleton: () => <div>Loading...</div>,
 }));
 
+type ToolbarProps = { view: string; onSelectModeChange?: (on: boolean) => void };
+let capturedToolbarProps: ToolbarProps = { view: "grid" };
 vi.mock("~/components/library-toolbar", () => ({
-  LibraryToolbar: ({ view }: { view: string }) => (
-    <div data-testid="library-toolbar" data-view={view} />
-  ),
+  LibraryToolbar: (props: ToolbarProps) => {
+    capturedToolbarProps = props;
+    return <div data-testid="library-toolbar" data-view={props.view} />;
+  },
 }));
 
 vi.mock("~/hooks/use-library-view-preference", () => ({
   useLibraryViewPreference: () => [mockView, (v: string) => { mockView = v; }],
+  useEffectiveLibraryView: () => [mockView, (v: string) => { mockView = v; }],
 }));
 
 vi.mock("~/hooks/use-grid-tile-size", () => ({
@@ -378,7 +395,7 @@ describe("ShelfDetailPage", () => {
     render(<Page />);
 
     expect(capturedOnRowSelectionChange).toBeTruthy();
-    act(() => { (capturedOnRowSelectionChange as (sel: Record<string, boolean>) => void)({ "0": true }); });
+    act(() => { (capturedOnRowSelectionChange as (sel: Record<string, boolean>) => void)({ "e1": true }); });
 
     expect(screen.getByTestId("selection-bar")).toBeTruthy();
     expect(screen.getByText("1 edition selected")).toBeTruthy();
@@ -400,7 +417,7 @@ describe("ShelfDetailPage", () => {
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
 
-    act(() => { (capturedOnRowSelectionChange as (sel: Record<string, boolean>) => void)({ "0": true, "1": true }); });
+    act(() => { (capturedOnRowSelectionChange as (sel: Record<string, boolean>) => void)({ "e1": true, "e2": true }); });
     expect(screen.getByText("2 editions selected")).toBeTruthy();
   });
 
@@ -414,7 +431,7 @@ describe("ShelfDetailPage", () => {
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
 
-    act(() => { (capturedOnRowSelectionChange as (sel: Record<string, boolean>) => void)({ "0": true }); });
+    act(() => { (capturedOnRowSelectionChange as (sel: Record<string, boolean>) => void)({ "e1": true }); });
     fireEvent.click(screen.getByTestId("remove-selected-btn"));
 
     await waitFor(() => {
@@ -434,7 +451,7 @@ describe("ShelfDetailPage", () => {
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
 
-    act(() => { (capturedOnRowSelectionChange as (sel: Record<string, boolean>) => void)({ "0": true }); });
+    act(() => { (capturedOnRowSelectionChange as (sel: Record<string, boolean>) => void)({ "e1": true }); });
     fireEvent.click(screen.getByTestId("remove-selected-btn"));
 
     await waitFor(() => {
@@ -451,14 +468,14 @@ describe("ShelfDetailPage", () => {
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
 
-    act(() => { (capturedOnRowSelectionChange as (sel: Record<string, boolean>) => void)({ "0": true }); });
+    act(() => { (capturedOnRowSelectionChange as (sel: Record<string, boolean>) => void)({ "e1": true }); });
     expect(screen.getByTestId("selection-bar")).toBeTruthy();
 
     fireEvent.click(screen.getByText("Clear"));
     expect(screen.queryByTestId("selection-bar")).toBeNull();
   });
 
-  it("filters out undefined edition ids from selection", async () => {
+  it("filters out selections whose row is no longer in the list", async () => {
     mockView = "table";
     mockLoaderData = {
       shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [{ id: "ci1", edition: mockEdition }] },
@@ -468,8 +485,8 @@ describe("ShelfDetailPage", () => {
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
 
-    // Select an out-of-range index along with a valid one
-    act(() => { (capturedOnRowSelectionChange as (sel: Record<string, boolean>) => void)({ "0": true, "99": true }); });
+    // A stale id - its row was removed while still selected.
+    act(() => { (capturedOnRowSelectionChange as (sel: Record<string, boolean>) => void)({ "e1": true, "gone-edition": true }); });
     fireEvent.click(screen.getByTestId("remove-selected-btn"));
 
     await waitFor(() => {
@@ -691,5 +708,155 @@ describe("editionLabel", () => {
       ],
     };
     expect(editionLabel(edition as never)).toBe("Orwell");
+  });
+
+  it("offers grid select mode so shelf removal is reachable on a phone", async () => {
+    mockView = "grid";
+    mockLoaderData = {
+      shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [{ id: "ci1", edition: mockEdition }] },
+    };
+    const { Route } = await import("./shelves.$shelfId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+
+    // Phones are forced onto the grid, which had no selection affordance -
+    // so removing an edition from a shelf was impossible below md.
+    expect(capturedGridProps.selectable).toBe(false);
+    act(() => { capturedToolbarProps.onSelectModeChange?.(true); });
+    expect(capturedGridProps.selectable).toBe(true);
+  });
+
+  it("removes every edition of a work selected in the grid", async () => {
+    mockView = "grid";
+    mockLoaderData = {
+      shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [{ id: "ci1", edition: mockEdition }] },
+    };
+    removeWorkEditionsFromShelfServerFnMock.mockResolvedValue({});
+    const { Route } = await import("./shelves.$shelfId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+
+    act(() => { capturedToolbarProps.onSelectModeChange?.(true); });
+    act(() => { capturedGridProps.onToggleSelect?.(mockEdition.work.id); });
+
+    expect(screen.getByText(/1 work selected/)).toBeTruthy();
+    fireEvent.click(screen.getByTestId("remove-selected-btn"));
+
+    // The grid shows works; the shelf stores editions. Removing a work must
+    // take all of its editions off the shelf.
+    await waitFor(() => {
+      expect(removeWorkEditionsFromShelfServerFnMock).toHaveBeenCalledWith({
+        data: { shelfId: "s1", workId: mockEdition.work.id },
+      });
+    });
+  });
+
+  it("deselects a work that is toggled twice in the grid", async () => {
+    mockView = "grid";
+    mockLoaderData = {
+      shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [{ id: "ci1", edition: mockEdition }] },
+    };
+    const { Route } = await import("./shelves.$shelfId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+
+    act(() => { capturedToolbarProps.onSelectModeChange?.(true); });
+    act(() => { capturedGridProps.onToggleSelect?.(mockEdition.work.id); });
+    expect(screen.getByText(/1 work selected/)).toBeTruthy();
+    act(() => { capturedGridProps.onToggleSelect?.(mockEdition.work.id); });
+    expect(screen.queryByText(/work selected/)).toBeNull();
+  });
+
+  it("reports a failure when removing a selected work fails", async () => {
+    mockView = "grid";
+    mockLoaderData = {
+      shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [{ id: "ci1", edition: mockEdition }] },
+    };
+    removeWorkEditionsFromShelfServerFnMock.mockRejectedValueOnce(new Error("nope"));
+    const { Route } = await import("./shelves.$shelfId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+
+    act(() => { capturedToolbarProps.onSelectModeChange?.(true); });
+    act(() => { capturedGridProps.onToggleSelect?.(mockEdition.work.id); });
+    fireEvent.click(screen.getByTestId("remove-selected-btn"));
+
+    const { toast } = await import("sonner");
+    await waitFor(() => {
+      expect(vi.mocked(toast.error)).toHaveBeenCalledWith("Failed to remove editions");
+    });
+  });
+
+  it("drops the grid selection when select mode is turned off", async () => {
+    mockView = "grid";
+    mockLoaderData = {
+      shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [{ id: "ci1", edition: mockEdition }] },
+    };
+    const { Route } = await import("./shelves.$shelfId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+
+    act(() => { capturedToolbarProps.onSelectModeChange?.(true); });
+    act(() => { capturedGridProps.onToggleSelect?.(mockEdition.work.id); });
+    expect(screen.getByText(/1 work selected/)).toBeTruthy();
+
+    act(() => { capturedToolbarProps.onSelectModeChange?.(false); });
+    expect(screen.queryByText(/work selected/)).toBeNull();
+  });
+
+  it("pluralises the grid selection count", async () => {
+    mockView = "grid";
+    const second = { ...mockEdition, id: "e2", work: { ...mockEdition.work, id: "w2", titleDisplay: "Second" } };
+    mockLoaderData = {
+      shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [{ id: "ci1", edition: mockEdition }, { id: "ci2", edition: second }] },
+    };
+    const { Route } = await import("./shelves.$shelfId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+
+    act(() => { capturedToolbarProps.onSelectModeChange?.(true); });
+    act(() => { capturedGridProps.onToggleSelect?.(mockEdition.work.id); });
+    act(() => { capturedGridProps.onToggleSelect?.("w2"); });
+    expect(screen.getByText(/2 works selected/)).toBeTruthy();
+  });
+
+  it("pluralises the grid removal toast", async () => {
+    mockView = "grid";
+    const second = { ...mockEdition, id: "e2", work: { ...mockEdition.work, id: "w2", titleDisplay: "Second" } };
+    mockLoaderData = {
+      shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [{ id: "ci1", edition: mockEdition }, { id: "ci2", edition: second }] },
+    };
+    const { Route } = await import("./shelves.$shelfId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+
+    act(() => { capturedToolbarProps.onSelectModeChange?.(true); });
+    act(() => { capturedGridProps.onToggleSelect?.(mockEdition.work.id); });
+    act(() => { capturedGridProps.onToggleSelect?.("w2"); });
+    fireEvent.click(screen.getByTestId("remove-selected-btn"));
+
+    const { toast } = await import("sonner");
+    await waitFor(() => {
+      expect(vi.mocked(toast.success)).toHaveBeenCalledWith("Removed 2 works from shelf");
+    });
+  });
+
+  it("pluralises the table removal toast", async () => {
+    mockView = "table";
+    const second = { ...mockEdition, id: "e2" };
+    mockLoaderData = {
+      shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [{ id: "ci1", edition: mockEdition }, { id: "ci2", edition: second }] },
+    };
+    const { Route } = await import("./shelves.$shelfId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+
+    act(() => { (capturedOnRowSelectionChange as (sel: Record<string, boolean>) => void)({ "e1": true, "e2": true }); });
+    fireEvent.click(screen.getByTestId("remove-selected-btn"));
+
+    const { toast } = await import("sonner");
+    await waitFor(() => {
+      expect(vi.mocked(toast.success)).toHaveBeenCalledWith("Removed 2 editions from shelf");
+    });
   });
 });

@@ -215,7 +215,6 @@ describe("getEditionColumns", () => {
     const columns = getEditionColumns(false, mockRouter);
     const ids = columns.map((c) => c.id ?? (c as { accessorKey?: string }).accessorKey);
     expect(ids).toEqual([
-      "select",
       "titleDisplay",
       "authors",
       "format",
@@ -227,14 +226,6 @@ describe("getEditionColumns", () => {
       "isbn10",
       "asin",
     ]);
-  });
-
-  it("select column is not sortable or hideable", () => {
-    const columns = getEditionColumns(false, mockRouter);
-    const select = columns.find((c) => c.id === "select");
-    expect(select).toBeDefined();
-    expect(select?.enableSorting).toBe(false);
-    expect(select?.enableHiding).toBe(false);
   });
 
   it("titleDisplay column is not hideable", () => {
@@ -339,21 +330,6 @@ describe("edition columns rendering", () => {
     render(<TestTable data={[makeEdition({ publishedAt: null })]} />);
     const cells = screen.getAllByText("\u2014");
     expect(cells.length).toBeGreaterThan(0);
-  });
-
-  it("select all checkbox toggles all rows", () => {
-    render(<TestTable data={[makeEdition()]} />);
-    const selectAll = screen.getByLabelText("Select all");
-    fireEvent.click(selectAll);
-    const rowCheckbox = screen.getByLabelText("Select row");
-    expect((rowCheckbox as HTMLInputElement).checked).toBe(true);
-  });
-
-  it("select row checkbox toggles individual row", () => {
-    render(<TestTable data={[makeEdition()]} />);
-    const rowCheckbox = screen.getByLabelText("Select row");
-    fireEvent.click(rowCheckbox);
-    expect((rowCheckbox as HTMLInputElement).checked).toBe(true);
   });
 
   it("renders column headers including ISBN and ASIN", () => {

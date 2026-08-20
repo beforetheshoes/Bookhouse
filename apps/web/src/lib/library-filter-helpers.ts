@@ -1,6 +1,7 @@
 import type { SortingState } from "@tanstack/react-table";
 import type { LibrarySearchParams } from "~/lib/library-search-schema";
 import type { ReadingFilter } from "~/lib/sort-filter-works";
+import type { LibraryFilterValues } from "~/components/library-filters";
 
 export function filterByReadingStatus<T extends { id: string }>(
   works: T[],
@@ -46,3 +47,24 @@ export const SORT_TO_COLUMN: Record<string, { id: string; desc: boolean }> = {
   "format-asc": { id: "formats", desc: false },
   "format-desc": { id: "formats", desc: true },
 };
+
+/**
+ * How many individual facet selections are active.
+ *
+ * Written over arrays rather than as a chain of `?.length ?? 0` so it carries
+ * two branches instead of fourteen — the 100% branch threshold makes the naive
+ * form disproportionately expensive to cover.
+ */
+export function countActiveFilters(filters: LibraryFilterValues): number {
+  const lists = [filters.format, filters.authorId, filters.seriesId];
+  const booleans = [
+    filters.hasCover,
+    filters.enriched,
+    filters.hasDescription,
+    filters.inSeries,
+  ];
+  return (
+    lists.reduce<number>((total, list) => total + (list ? list.length : 0), 0) +
+    booleans.filter((value) => value !== undefined).length
+  );
+}

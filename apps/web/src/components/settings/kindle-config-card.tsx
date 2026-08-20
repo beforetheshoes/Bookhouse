@@ -132,7 +132,7 @@ export function KindleConfigCard({ configured }: { configured: boolean }) {
         {!loading && !loadError && !editing && storedEmail && (
           <>
             <div className="space-y-1 text-sm">
-              <div className="flex gap-4">
+              <div className="flex min-w-0 flex-wrap gap-4">
                 <span className="text-muted-foreground">Kindle email:</span>
                 <span>{storedEmail}</span>
               </div>

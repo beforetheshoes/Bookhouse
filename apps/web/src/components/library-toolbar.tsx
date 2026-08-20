@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Grid2x2, Grid3x3, LayoutGrid, Table2, X } from "lucide-react";
+import { useEffect, useState, useRef } from "react";
+import { Grid2x2, Grid3x3, LayoutGrid, Table2, X, CheckSquare } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { useDebounce } from "~/hooks/use-debounce";
@@ -29,6 +29,9 @@ interface LibraryToolbarProps {
   showSort?: boolean;
   tileSize?: GridTileSize;
   onTileSizeChange?: (size: GridTileSize) => void;
+  /** Grid select mode. Omit the handler to hide the toggle. */
+  selectMode?: boolean;
+  onSelectModeChange?: (on: boolean) => void;
 }
 
 const FILTER_OPTIONS: { value: ReadingFilter; label: string }[] = [
@@ -58,11 +61,20 @@ export function LibraryToolbar({
   showSort = true,
   tileSize,
   onTileSizeChange,
+  selectMode,
+  onSelectModeChange,
 }: LibraryToolbarProps) {
   const [localSearch, setLocalSearch] = useState(searchValue);
   const debouncedSearch = useDebounce(localSearch, 300);
 
+  const isFirstSearchSync = useRef(true);
   useEffect(() => {
+    // Skip the mount run: updateSearch resets page to 1, so firing here made
+    // any link, reload or back-navigation to page 2+ snap to page 1.
+    if (isFirstSearchSync.current) {
+      isFirstSearchSync.current = false;
+      return;
+    }
     onSearchChange(debouncedSearch);
   }, [debouncedSearch, onSearchChange]);
 
@@ -71,26 +83,26 @@ export function LibraryToolbar({
   }, [searchValue]);
 
   return (
-    <div className="flex items-center justify-between gap-2">
-      <div className="flex flex-1 items-center gap-2">
+    <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-1 flex-wrap items-center gap-2">
         <Input
           placeholder="Filter by title or author..."
           value={localSearch}
           onChange={(e) => { setLocalSearch(e.target.value); }}
-          className="h-8 w-[150px] lg:w-[250px]"
+          className="h-9 w-full md:w-[150px] lg:h-8 lg:w-[250px]"
         />
         {localSearch && (
           <Button
             variant="ghost"
             onClick={() => { setLocalSearch(""); }}
-            className="h-8 px-2"
+            className="h-9 px-2 lg:h-8"
             aria-label="Clear search"
           >
             <X className="size-4" />
           </Button>
         )}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Select value={filterValue} onValueChange={(v) => { onFilterChange(v as ReadingFilter); }}>
           <SelectTrigger size="sm">
             <SelectValue />
@@ -117,7 +129,7 @@ export function LibraryToolbar({
             </SelectContent>
           </Select>
         )}
-        <div className="flex items-center rounded-md border">
+        <div className="hidden items-center rounded-md border md:flex">
           <Button
             variant="ghost"
             size="sm"
@@ -139,6 +151,19 @@ export function LibraryToolbar({
             <Table2 className="size-4" />
           </Button>
         </div>
+        {view === "grid" && onSelectModeChange && (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label="Select works"
+            aria-pressed={selectMode === true}
+            onClick={() => { onSelectModeChange(selectMode !== true); }}
+            className="rounded-md border data-[active=true]:bg-muted"
+            data-active={selectMode === true}
+          >
+            <CheckSquare className="size-4" />
+          </Button>
+        )}
         {view === "grid" && tileSize && onTileSizeChange && (
           <div className="flex items-center rounded-md border">
             <Button

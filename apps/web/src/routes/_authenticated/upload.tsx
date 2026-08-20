@@ -180,7 +180,7 @@ export function UploadForm({ libraryRoots }: UploadFormProps) {
   }
 
   return (
-    <div className="container mx-auto max-w-2xl space-y-6 p-6">
+    <div className="mx-auto max-w-2xl space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Upload a book</h1>
         <p className="text-sm text-muted-foreground">
@@ -198,7 +198,7 @@ export function UploadForm({ libraryRoots }: UploadFormProps) {
             </p>
           ) : (
             <Select value={libraryRootId} onValueChange={setLibraryRootId}>
-              <SelectTrigger id="library-root">
+              <SelectTrigger id="library-root" className="w-full">
                 <SelectValue placeholder="Choose a library" />
               </SelectTrigger>
               <SelectContent>
@@ -257,7 +257,7 @@ export function UploadForm({ libraryRoots }: UploadFormProps) {
                     type="button"
                     onClick={() => { removeFile(i); }}
                     aria-label={`Remove ${file.name}`}
-                    className="text-muted-foreground hover:text-foreground"
+                    className="flex size-9 shrink-0 items-center justify-center text-muted-foreground hover:text-foreground lg:size-auto"
                   >
                     <X className="size-4" />
                   </button>
@@ -287,7 +287,7 @@ export function UploadForm({ libraryRoots }: UploadFormProps) {
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="space-y-2">
             <label className="text-sm font-medium" htmlFor="upload-series">Series (optional)</label>
             <Input

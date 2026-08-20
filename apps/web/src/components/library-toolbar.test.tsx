@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
 import { LibraryToolbar, type SortValue } from "./library-toolbar";
@@ -180,4 +180,69 @@ describe("LibraryToolbar", () => {
     expect(screen.queryByLabelText("Large tiles")).toBeNull();
   });
 
+});
+
+it("stacks and wraps its control groups on phones", () => {
+  const { container } = render(<LibraryToolbar {...defaultProps} />);
+  // ~520px of intrinsic width in a single non-wrapping row was unreachable
+  // on a 375px phone.
+  const row = container.firstElementChild;
+  expect(row?.className).toContain("flex-col");
+  expect(row?.className).toContain("md:flex-row");
+  Array.from(row?.children ?? []).forEach((group) => {
+    expect(group.className).toContain("flex-wrap");
+  });
+});
+
+it("lets the search input use the full width on phones", () => {
+  render(<LibraryToolbar {...defaultProps} />);
+  const input = screen.getByPlaceholderText("Filter by title or author...");
+  expect(input.className).toContain("w-full");
+  expect(input.className).toContain("md:w-[150px]");
+});
+
+it("offers a select toggle in grid view", () => {
+  const onSelectModeChange = vi.fn();
+  render(
+    <LibraryToolbar {...defaultProps} view="grid" onSelectModeChange={onSelectModeChange} />,
+  );
+  const toggle = screen.getByRole("button", { name: "Select works" });
+  expect(toggle.getAttribute("aria-pressed")).toBe("false");
+  fireEvent.click(toggle);
+  expect(onSelectModeChange).toHaveBeenCalledWith(true);
+});
+
+it("reflects active select mode", () => {
+  render(<LibraryToolbar {...defaultProps} view="grid" selectMode onSelectModeChange={vi.fn()} />);
+  expect(
+    screen.getByRole("button", { name: "Select works" }).getAttribute("aria-pressed"),
+  ).toBe("true");
+});
+
+it("hides the select toggle in table view, which has its own checkboxes", () => {
+  render(<LibraryToolbar {...defaultProps} view="table" onSelectModeChange={vi.fn()} />);
+  expect(screen.queryByRole("button", { name: "Select works" })).toBeNull();
+});
+
+it("hides the select toggle when no handler is supplied", () => {
+  render(<LibraryToolbar {...defaultProps} view="grid" />);
+  expect(screen.queryByRole("button", { name: "Select works" })).toBeNull();
+});
+
+it("does not fire onSearchChange on mount", () => {
+  const onSearchChange = vi.fn();
+  render(<LibraryToolbar {...defaultProps} searchValue="existing" onSearchChange={onSearchChange} />);
+  // updateSearch resets page to 1, so firing here snapped any link to page 2+
+  // back to page 1 before the user saw it.
+  expect(onSearchChange).not.toHaveBeenCalled();
+});
+
+it("still fires onSearchChange when the search is cleared", async () => {
+  const onSearchChange = vi.fn();
+  render(<LibraryToolbar {...defaultProps} searchValue="existing" onSearchChange={onSearchChange} />);
+  const input = screen.getByPlaceholderText("Filter by title or author...");
+  fireEvent.change(input, { target: { value: "" } });
+  await waitFor(() => {
+    expect(onSearchChange).toHaveBeenCalledWith("");
+  });
 });

@@ -212,6 +212,7 @@ export const getMissingFilesServerFn = createServerFn({
 })
   .validator(missingFilesPaginationSchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
 
     const where = { availabilityStatus: "MISSING" as const };
@@ -246,22 +247,49 @@ export const getMissingFilesServerFn = createServerFn({
     return { items, total };
   });
 
+/**
+ * Exported so it can be exercised directly: the server-fn test double replaces
+ * `.validator()` with a no-op, so calling the server fn with a bad payload
+ * proves nothing about this schema.
+ */
+export const cleanupMissingFilesSchema = z.union([
+  z.strictObject({ all: z.literal(true) }),
+  z.strictObject({ fileAssetIds: z.array(z.string().min(1)).min(1) }),
+]);
+
 export const cleanupMissingFilesServerFn = createServerFn({
   method: "POST",
 })
-  .validator(z.object({ fileAssetIds: z.array(z.string().min(1)) }))
+  // Either clean everything, or clean an explicit list - never both. The UI's
+  // "Clean Up All N" button could only ever send the page it had loaded, at
+  // most 100, so above that it cleaned a fraction of what it named.
+  // strictObject, not object: z.object STRIPS unknown keys, so
+  // { all: true, fileAssetIds: [...] } parsed as { all: true } and cleaned the
+  // whole library while the UI named one file. Only strict rejects it.
+  .validator(cleanupMissingFilesSchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
     const { cascadeCleanupOrphans } = await import("@bookhouse/ingest");
 
+    if ("all" in data) {
+      const missing = await db.fileAsset.findMany({
+        where: { availabilityStatus: "MISSING" },
+        select: { id: true },
+      });
+      return cascadeCleanupOrphans(db, {
+        fileAssetIds: missing.map((f: { id: string }) => f.id),
+      });
+    }
+
+    const { fileAssetIds } = data;
     const missingCount = await db.fileAsset.count({
-      where: { id: { in: data.fileAssetIds }, availabilityStatus: "MISSING" },
+      where: { id: { in: fileAssetIds }, availabilityStatus: "MISSING" },
     });
 
-    if (missingCount !== data.fileAssetIds.length) {
+    if (missingCount !== fileAssetIds.length) {
       throw new Error("Not all specified files have MISSING status");
     }
 
-    return cascadeCleanupOrphans(db, { fileAssetIds: data.fileAssetIds });
+    return cascadeCleanupOrphans(db, { fileAssetIds });
   });

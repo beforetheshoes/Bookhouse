@@ -81,6 +81,18 @@ describe("_authenticated route", () => {
     expect(screen.getByTestId("outlet")).toBeTruthy();
   });
 
+  it("AuthenticatedLayout gives main mobile-first padding", async () => {
+    const { Route } = await import("./_authenticated");
+    const Layout = (Route.options.component as React.ComponentType);
+    const { container } = render(<Layout />);
+
+    const main = container.querySelector("main");
+    expect(main).toBeTruthy();
+    // p-6 on a 375px phone costs 48px of a 327px content budget.
+    expect(main?.className).toContain("p-4");
+    expect(main?.className).toContain("md:p-6");
+  });
+
   it("beforeLoad redirects when no user", async () => {
     const { getCurrentUserServerFn } = await import("~/lib/auth-client");
     (vi.mocked(getCurrentUserServerFn)).mockResolvedValue(null);

@@ -118,13 +118,13 @@ export function BulkEnrichDialog({
                 const configured = status?.configured ?? (source === "openlibrary");
                 const label = status?.label ?? source;
                 return (
-                  <label key={source} className="flex items-center gap-2 text-sm">
+                  <label key={source} className="flex min-h-9 items-center gap-2 text-sm lg:min-h-0">
                     <input
                       type="checkbox"
                       checked={selectedSources.has(source)}
                       onChange={() => { toggleSource(source); }}
                       disabled={!configured}
-                      className="rounded border-input"
+                      className="size-5 rounded border-input lg:size-4"
                       aria-label={label}
                     />
                     <span className={!configured ? "text-muted-foreground" : ""}>{label}</span>

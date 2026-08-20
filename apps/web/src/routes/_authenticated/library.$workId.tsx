@@ -61,10 +61,10 @@ function WorkDetailSkeleton() {
   return (
     <div data-testid="work-detail-skeleton" className="space-y-6">
       <Skeleton className="h-6 w-48" />
-      <div className="flex gap-8">
-        <Skeleton className="h-72 w-48" />
-        <div className="flex-1 space-y-4">
-          <Skeleton className="h-8 w-96" />
+      <div className="flex flex-col gap-6 md:flex-row md:gap-8">
+        <Skeleton className="h-60 w-40 md:h-72 md:w-48" />
+        <div className="min-w-0 flex-1 space-y-4">
+          <Skeleton className="h-8 w-full max-w-96" />
           <Skeleton className="h-4 w-64" />
           <Skeleton className="h-24 w-full" />
         </div>
@@ -263,18 +263,18 @@ function WorkDetailPage() {
     <div className="relative space-y-6">
       <CoverAmbience />
       <nav className="flex items-center gap-1 text-sm text-muted-foreground">
-        <Link to="/library" search={{ page: 1, pageSize: 50, sort: "title-asc" as const, view: "works" as const }} className="hover:text-foreground">
+        <Link to="/library" search={{ page: 1, pageSize: 50, sort: "title-asc" as const, view: "works" as const }} className="flex min-h-9 shrink-0 items-center hover:text-foreground lg:min-h-0">
           Library
         </Link>
         <ChevronRight className="size-4" />
-        <span className="text-foreground">{work.titleDisplay}</span>
+        <span className="min-w-0 [overflow-wrap:anywhere] text-foreground">{work.titleDisplay}</span>
       </nav>
 
-      <div className="flex gap-8">
-        <div className="relative flex-none" data-testid="cover-halo">
+      <div className="flex flex-col gap-6 md:flex-row md:gap-8">
+        <div className="relative flex-none self-center md:self-auto" data-testid="cover-halo">
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute -inset-5 blur-md"
+            className="pointer-events-none absolute -inset-3 blur-md md:-inset-5"
             style={{
               background:
                 "radial-gradient(ellipse, var(--bh-glow, transparent) 0%, transparent 70%)",
@@ -293,11 +293,11 @@ function WorkDetailPage() {
           </div>
         </div>
 
-        <div className="flex-1 space-y-4">
+        <div className="min-w-0 flex-1 space-y-4">
           <div>
-            <div className="flex items-start gap-3">
+            <div className="flex flex-wrap items-start gap-3">
               <h1
-                className="flex-1 font-display text-3xl font-medium tracking-tight"
+                className="w-full min-w-0 font-display text-2xl font-medium tracking-tight md:flex-1 md:text-3xl"
                 style={{ color: "var(--bh-text, inherit)" }}
               >
                 <EditableField
@@ -323,7 +323,7 @@ function WorkDetailPage() {
                 {formatFamilies.map((fmt) => (
                   <span
                     key={fmt}
-                    className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider"
+                    className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold uppercase tracking-wider md:text-[10px]"
                     style={{
                       background: "var(--bh-chip, var(--muted))",
                       color: "var(--bh-chip-text, var(--muted-foreground))",
@@ -366,9 +366,9 @@ function WorkDetailPage() {
           </div>
 
           {work.series && (
-            <div className="flex items-center gap-2">
-              <Link to="/series/$seriesId" params={{ seriesId: work.series.id }}>
-                <Badge variant="outline" className="cursor-pointer hover:bg-accent">
+            <div className="flex min-w-0 items-center gap-2">
+              <Link className="flex min-h-9 min-w-0 items-center lg:min-h-0" to="/series/$seriesId" params={{ seriesId: work.series.id }}>
+                <Badge variant="outline" className="cursor-pointer whitespace-normal [overflow-wrap:anywhere] hover:bg-accent">
                   {work.series.name}
                   {work.seriesPosition != null && ` #${String(work.seriesPosition)}`}
                 </Badge>

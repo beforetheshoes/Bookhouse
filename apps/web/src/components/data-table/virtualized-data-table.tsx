@@ -43,6 +43,8 @@ interface VirtualizedDataTableProps<TData, TValue> {
   sorting?: SortingState;
   onSortingChange?: OnChangeFn<SortingState>;
   manualSorting?: boolean;
+  /** Key selection by a stable id rather than row position. */
+  getRowId?: (row: TData) => string;
 }
 
 export function VirtualizedDataTable<TData, TValue>({
@@ -62,6 +64,7 @@ export function VirtualizedDataTable<TData, TValue>({
   sorting: externalSorting,
   onSortingChange: externalOnSortingChange,
   manualSorting = false,
+  getRowId,
 }: VirtualizedDataTableProps<TData, TValue>) {
   const [internalSorting, setInternalSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -85,6 +88,7 @@ export function VirtualizedDataTable<TData, TValue>({
     onSortingChange,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange,
+    ...(getRowId !== undefined ? { getRowId } : {}),
     getCoreRowModel: getCoreRowModel(),
     ...(!manualSorting ? { getSortedRowModel: getSortedRowModel() } : {}),
     getFilteredRowModel: getFilteredRowModel(),
@@ -117,10 +121,21 @@ export function VirtualizedDataTable<TData, TValue>({
       />
       <div
         ref={scrollRef}
-        className="rounded-md border overflow-auto"
+          className="rounded-md border overflow-auto"
         style={{ maxHeight: containerHeight }}
       >
-        <Table className="table-fixed">
+        <Table
+          className="table-fixed"
+          // This component owns the scroll container above, which already
+          // scrolls both axes. Leaving the default wrapper in place would
+          // make it the sticky scrollport and the header would scroll away.
+          containerClassName="overflow-visible"
+          // `table-fixed` at width:100% scales column widths down to fit
+          // rather than overflowing, so without this every cell collapses to
+          // an ellipsis once the columns stop fitting. getTotalSize() sums the
+          // *visible* leaf columns, so hiding columns shrinks it for free.
+          style={{ minWidth: table.getTotalSize() }}
+        >
           <TableHeader className="sticky top-0 z-10 bg-background">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>

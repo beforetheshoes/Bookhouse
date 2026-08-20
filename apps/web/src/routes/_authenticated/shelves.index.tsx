@@ -67,7 +67,7 @@ function ShelvesPage() {
         <Link
           to="/shelves/$shelfId"
           params={{ shelfId: row.original.id }}
-          className="font-medium hover:underline"
+          className="flex min-h-9 items-center font-medium hover:underline lg:min-h-0"
         >
           {row.original.name}
         </Link>

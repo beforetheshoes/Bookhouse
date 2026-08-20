@@ -320,6 +320,13 @@ describe("WorkDetailSkeleton", () => {
     const Skeleton = Route.options.pendingComponent as React.ComponentType;
     render(<Skeleton />);
     expect(screen.getByTestId("work-detail-skeleton")).toBeTruthy();
+    // A fixed w-96 skeleton is wider than a 360px viewport and forced the
+    // whole page to scroll sideways on every load.
+    const wide = screen
+      .getByTestId("work-detail-skeleton")
+      .querySelector(".max-w-96");
+    expect(wide).toBeTruthy();
+    expect(wide?.className).toContain("w-full");
   });
 });
 
@@ -2230,6 +2237,11 @@ describe("WorkDetailPage", () => {
       const Page = Route.options.component as React.ComponentType;
       render(<Page />);
       expect(screen.getByTestId("cover-halo")).toBeTruthy();
+      // The cover column and metadata must stack on a phone: 192px of cover
+      // plus a 32px gap leaves ~100px for the title and every edition card.
+      const row = screen.getByTestId("cover-halo").parentElement;
+      expect(row?.className).toContain("flex-col");
+      expect(row?.className).toContain("md:flex-row");
     });
 
     it("renders a format pill for each edition format family", async () => {

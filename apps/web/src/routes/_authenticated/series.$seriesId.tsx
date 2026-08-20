@@ -34,19 +34,19 @@ function SeriesDetailPage() {
   return (
     <div className="space-y-6">
       <nav className="flex items-center gap-1 text-sm text-muted-foreground">
-        <Link to="/series" className="hover:text-foreground">
+        <Link to="/series" className="flex min-h-9 min-w-9 items-center hover:text-foreground lg:min-h-0 lg:min-w-0">
           Series
         </Link>
         <ChevronRight className="size-4" />
-        <span className="text-foreground">{series.name}</span>
+        <span className="min-w-0 [overflow-wrap:anywhere] text-foreground">{series.name}</span>
       </nav>
 
-      <h1 className="text-2xl font-bold">{series.name}</h1>
+      <h1 className="min-w-0 [overflow-wrap:anywhere] text-2xl font-bold">{series.name}</h1>
 
       {series.works.length === 0 ? (
         <p className="text-muted-foreground">No works in this series</p>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           {series.works.map((work) => (
             <div key={work.id} className="space-y-1">
               {work.seriesPosition != null && (

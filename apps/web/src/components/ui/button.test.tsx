@@ -39,3 +39,24 @@ it("renders with different sizes via data-size attribute", () => {
   const btn = screen.getByRole("button");
   expect(btn.getAttribute("data-size")).toBe("lg");
 });
+
+// Touch targets: every size is mobile-first and taller on phones, with `md:`
+// restoring the exact desktop pixels the app was designed around.
+it.each([
+  ["default", "h-10", "lg:h-9"],
+  ["xs", "h-8", "lg:h-6"],
+  ["sm", "h-9", "lg:h-8"],
+  ["lg", "h-11", "lg:h-10"],
+  ["icon", "size-11", "lg:size-9"],
+  ["icon-xs", "size-8", "lg:size-6"],
+  ["icon-sm", "size-9", "lg:size-8"],
+  ["icon-lg", "size-11", "lg:size-10"],
+] as const)(
+  "size %s is %s on mobile and %s from md up",
+  (size, mobileClass, desktopClass) => {
+    render(<Button size={size}>Sized</Button>);
+    const btn = screen.getByRole("button");
+    expect(btn.className).toContain(mobileClass);
+    expect(btn.className).toContain(desktopClass);
+  }
+);

@@ -78,7 +78,7 @@ export function GlobalSearch() {
       </Button>
 
       <Dialog open={open} onOpenChange={() => { handleClose(); }}>
-        <DialogContent className="gap-0 p-0 sm:max-w-lg">
+        <DialogContent showCloseButton={false} className="gap-0 p-0 sm:max-w-lg">
           <DialogTitle className="sr-only">Search Library</DialogTitle>
           <div className="flex items-center border-b px-3">
             <Search className="size-4 shrink-0 text-muted-foreground" />
@@ -99,7 +99,7 @@ export function GlobalSearch() {
                     key={s}
                     type="button"
                     onClick={() => { setQuery(s); }}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent"
+                    className="flex w-full items-center gap-2 rounded min-h-9 px-2 py-2 lg:min-h-0 lg:py-1.5 text-sm hover:bg-accent"
                   >
                     <Search className="size-3 text-muted-foreground" />
                     {s}
@@ -125,7 +125,7 @@ export function GlobalSearch() {
                         params={{ workId: work.id }}
                         search={{ page: 1, pageSize: 50, sort: "title-asc" as const }}
                         onClick={() => { handleClose(); }}
-                        className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent"
+                        className="flex items-center gap-2 rounded min-h-9 px-2 py-2 lg:min-h-0 lg:py-1.5 text-sm hover:bg-accent"
                       >
                         {work.titleDisplay}
                         <Badge variant="secondary" className="ml-auto text-[10px]">Work</Badge>
@@ -142,7 +142,7 @@ export function GlobalSearch() {
                         to="/authors/$authorId"
                         params={{ authorId: author.id }}
                         onClick={() => { handleClose(); }}
-                        className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent"
+                        className="flex items-center gap-2 rounded min-h-9 px-2 py-2 lg:min-h-0 lg:py-1.5 text-sm hover:bg-accent"
                       >
                         {author.nameDisplay}
                         <Badge variant="secondary" className="ml-auto text-[10px]">Author</Badge>
@@ -159,7 +159,7 @@ export function GlobalSearch() {
                         to="/series/$seriesId"
                         params={{ seriesId: s.id }}
                         onClick={() => { handleClose(); }}
-                        className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent"
+                        className="flex items-center gap-2 rounded min-h-9 px-2 py-2 lg:min-h-0 lg:py-1.5 text-sm hover:bg-accent"
                       >
                         {s.name}
                         <Badge variant="secondary" className="ml-auto text-[10px]">Series</Badge>

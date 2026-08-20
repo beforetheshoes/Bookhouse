@@ -28,13 +28,13 @@ export function DataTableToolbar<TData>({
           placeholder={filterPlaceholder}
           value={filterValue}
           onChange={(event) => column?.setFilterValue(event.target.value)}
-          className="h-8 w-[150px] lg:w-[250px]"
+          className="h-9 w-full md:w-[150px] lg:h-8 lg:w-[250px]"
         />
         {isFiltered && (
           <Button
             variant="ghost"
             onClick={() => { table.resetColumnFilters(); }}
-            className="h-8 px-2 lg:px-3"
+            className="h-9 px-2 lg:h-8 lg:px-3"
           >
             Reset
             <X className="ml-2 h-4 w-4" />

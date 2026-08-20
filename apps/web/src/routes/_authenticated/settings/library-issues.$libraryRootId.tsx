@@ -74,7 +74,7 @@ function LibraryIssuesPage() {
       <div className="flex items-center gap-4">
         <Link
           to="/settings/libraries"
-          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          className="flex min-h-9 items-center gap-1 text-sm text-muted-foreground hover:text-foreground lg:min-h-0"
         >
           <ArrowLeft className="size-4" />
           Back to Libraries

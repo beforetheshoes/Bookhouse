@@ -130,4 +130,25 @@ describe("DataTablePagination", () => {
     await user.click(option);
     expect(setPageSize).toHaveBeenCalledWith(10);
   });
+
+  it("gives page navigation buttons and the size select mobile tap targets", () => {
+    const { table } = makeMockTable();
+    const { container } = render(<DataTablePagination table={asTable(table)} />);
+
+    const navBtn = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.querySelector(".sr-only")?.textContent === "Go to previous page"
+    );
+    expect(navBtn?.className).toContain("size-9");
+    expect(navBtn?.className).toContain("lg:size-8");
+
+    const trigger = container.querySelector('[data-slot="select-trigger"]');
+    // See library-pagination.test.tsx: the height lives in the variant's
+    // data-size selector, not in a class passed from here.
+    expect(trigger?.getAttribute("data-size")).toBe("default");
+    // The responsive height rides on the variant's data-size selector.
+    expect(trigger?.className).toContain("data-[size=default]:h-10");
+    expect(trigger?.className).toContain("lg:data-[size=default]:h-9");
+    // ...and the call site must not add a bare height that would lose to it.
+    expect(/(^|\s)h-\d/.test(trigger?.className ?? "")).toBe(false);
+  });
 });

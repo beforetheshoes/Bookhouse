@@ -25,20 +25,26 @@ export function getColumns(scanActive: boolean, editMode: boolean, router: { inv
   {
     id: "select",
     header: ({ table }) => (
-      <input
-        type="checkbox"
+      <label className="flex min-h-9 min-w-9 items-center justify-center lg:min-h-0 lg:min-w-0">
+        <input
+          type="checkbox"
+          className="size-5 lg:size-4"
         checked={table.getIsAllPageRowsSelected()}
-        onChange={(e) => { table.toggleAllPageRowsSelected(e.target.checked); }}
-        aria-label="Select all"
+          onChange={(e) => { table.toggleAllPageRowsSelected(e.target.checked); }}
+          aria-label="Select all"
       />
+      </label>
     ),
     cell: ({ row }) => (
-      <input
-        type="checkbox"
+      <label className="flex min-h-9 min-w-9 items-center justify-center lg:min-h-0 lg:min-w-0">
+        <input
+          type="checkbox"
+          className="size-5 lg:size-4"
         checked={row.getIsSelected()}
-        onChange={(e) => { row.toggleSelected(e.target.checked); }}
-        aria-label="Select row"
+          onChange={(e) => { row.toggleSelected(e.target.checked); }}
+          aria-label="Select row"
       />
+      </label>
     ),
     size: 40,
     enableSorting: false,
@@ -63,7 +69,7 @@ export function getColumns(scanActive: boolean, editMode: boolean, router: { inv
         );
       }
       return (
-        <Link to="/library/$workId" params={{ workId: row.original.id }} search={{ page: 1, pageSize: 50, sort: "title-asc" as const }} className="flex items-center gap-2">
+        <Link to="/library/$workId" params={{ workId: row.original.id }} search={{ page: 1, pageSize: 50, sort: "title-asc" as const }} className="flex min-h-9 items-center gap-2 lg:min-h-0">
           {row.original.titleDisplay}
           {row.original.enrichmentStatus === "STUB" && scanActive && (
             <Badge variant="outline" className="animate-pulse px-1.5 py-0 text-[10px]">

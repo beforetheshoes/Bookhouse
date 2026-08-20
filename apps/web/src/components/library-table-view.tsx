@@ -12,8 +12,9 @@ interface LibraryTableViewProps<T> {
   tablePrefs: { columnVisibility: Record<string, boolean>; textOverflow: "wrap" | "truncate" };
   onColumnToggle: (columnId: string) => void;
   onTextOverflowToggle: () => void;
-  rowSelection: RowSelectionState;
-  onRowSelectionChange: OnChangeFn<RowSelectionState>;
+  /** Omit both to render the table without a working selection column. */
+  rowSelection?: RowSelectionState;
+  onRowSelectionChange?: OnChangeFn<RowSelectionState>;
   sorting: SortingState;
   onSortingChange: (updater: Updater<SortingState>) => void;
   viewMode: "works" | "editions";
@@ -39,7 +40,7 @@ export function LibraryTableView<T>({
 }: LibraryTableViewProps<T>) {
   return (
     <>
-      <div className="flex items-center gap-2 justify-end">
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <div className="flex items-center rounded-md border mr-auto">
           <Button
             variant="ghost"
@@ -99,6 +100,7 @@ export function LibraryTableView<T>({
         showPagination={false}
         columnVisibility={tablePrefs.columnVisibility}
         textOverflow={tablePrefs.textOverflow}
+        getRowId={(row) => (row as { id: string }).id}
         rowSelection={rowSelection}
         onRowSelectionChange={onRowSelectionChange}
         sorting={sorting}

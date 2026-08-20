@@ -140,7 +140,15 @@ export async function processCoverForWork(
   });
 
   if (fileAsset === null) {
-    throw new Error(`File asset "${input.fileAssetId}" was not found`);
+    // The asset was deleted between this job being queued and running -
+    // deleting a work or a library root cascades to it. There is nothing to
+    // make a cover from and nobody waiting on one, so skip rather than fail
+    // the job.
+    deps.logger?.info(
+      { workId: input.workId, fileAssetId: input.fileAssetId },
+      "Skipping cover for deleted file asset",
+    );
+    return { source: "none", updated: false };
   }
 
   let imageBuffer: Buffer | null = null;

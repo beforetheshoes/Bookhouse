@@ -31,7 +31,7 @@ vi.mock("~/components/bulk-enrich-dialog", () => ({
 }));
 
 import { toast } from "sonner";
-import { bulkDeleteWorksServerFn, bulkDeleteEditionsByFormatForWorksServerFn, deleteAllEditionsByFormatServerFn } from "~/lib/server-fns/deletion";
+import { bulkDeleteWorksServerFn, bulkDeleteEditionsByFormatForWorksServerFn } from "~/lib/server-fns/deletion";
 import { bulkAddToShelfServerFn } from "~/lib/server-fns/shelves";
 import { mergeWorksServerFn } from "~/lib/server-fns/work-management";
 import { markWorksAsReadServerFn } from "~/lib/server-fns/reading-progress";
@@ -39,7 +39,6 @@ import { LibrarySelectionToolbar } from "./library-selection-toolbar";
 
 const bulkDeleteWorksServerFnMock = vi.mocked(bulkDeleteWorksServerFn);
 const bulkDeleteByFormatMock = vi.mocked(bulkDeleteEditionsByFormatForWorksServerFn);
-const deleteAllByFormatMock = vi.mocked(deleteAllEditionsByFormatServerFn);
 const bulkAddToShelfServerFnMock = vi.mocked(bulkAddToShelfServerFn);
 const mergeWorksServerFnMock = vi.mocked(mergeWorksServerFn);
 const mockToast = vi.mocked(toast);
@@ -209,36 +208,133 @@ describe("LibrarySelectionToolbar", () => {
     await waitFor(() => { expect(onDeleted).toHaveBeenCalled(); });
   });
 
-  it("uses deleteAllEditionsByFormatServerFn when selectedCount equals totalCount", async () => {
+  it("refuses to merge a selection that reaches beyond the current page", () => {
+    // selectedWorks is the selection intersected with the page, but the merge
+    // sends every selected id. With a cross-page select-all the dialog listed
+    // two works and destroyed four.
+    render(
+      <LibrarySelectionToolbar
+        {...defaultProps}
+        selectedCount={4}
+        selectedWorkIds={["w1", "w2", "w3", "w4"]}
+        selectedWorks={[
+          { id: "w1", title: "One", editionCount: 1 },
+          { id: "w2", title: "Two", editionCount: 1 },
+        ]}
+        totalCount={4}
+      />,
+    );
+    expect(screen.getByTestId("merge-works-btn").hasAttribute("disabled")).toBe(true);
+  });
+
+  it("refuses to merge more sources than the server accepts", () => {
+    const ids = Array.from({ length: 101 }, (_, i) => `w${String(i)}`);
+    render(
+      <LibrarySelectionToolbar
+        {...defaultProps}
+        selectedCount={101}
+        selectedWorkIds={ids}
+        selectedWorks={ids.map((id) => ({ id, title: id, editionCount: 1 }))}
+        totalCount={101}
+      />,
+    );
+    // The validator caps sourceWorkIds at 99, and merge cannot be batched -
+    // there is one surviving target. Unguarded, this dumped raw Zod JSON.
+    expect(screen.getByTestId("merge-works-btn").hasAttribute("disabled")).toBe(true);
+  });
+
+  it("allows merging two works that are both on the page", () => {
+    render(
+      <LibrarySelectionToolbar
+        {...defaultProps}
+        selectedCount={2}
+        selectedWorkIds={["w1", "w2"]}
+        selectedWorks={[
+          { id: "w1", title: "One", editionCount: 1 },
+          { id: "w2", title: "Two", editionCount: 1 },
+        ]}
+        totalCount={2}
+      />,
+    );
+    expect(screen.getByTestId("merge-works-btn").hasAttribute("disabled")).toBe(false);
+  });
+
+  it("batches a bulk delete so large selections are not rejected", async () => {
+    const manyIds = Array.from({ length: 250 }, (_, i) => `w${String(i)}`);
+    bulkDeleteWorksServerFnMock.mockResolvedValue({ deletedWorkIds: manyIds });
+    render(<LibrarySelectionToolbar {...defaultProps} selectedCount={250} selectedWorkIds={manyIds} totalCount={500} />);
+    fireEvent.click(screen.getByTestId("bulk-delete-works-btn"));
+    await waitFor(() => screen.getByTestId("confirm-bulk-delete-works-btn"));
+    fireEvent.click(screen.getByTestId("confirm-bulk-delete-works-btn"));
+
+    // bulkDeleteWorksServerFn caps workIds at 100, so deleting more than 100
+    // works was rejected outright - the selection simply could not be acted on.
+    await waitFor(() => {
+      expect(bulkDeleteWorksServerFnMock).toHaveBeenCalledTimes(3);
+    });
+    const sent = bulkDeleteWorksServerFnMock.mock.calls.flatMap((c) => (c[0] as { data: { workIds: string[] } }).data.workIds);
+    expect(sent).toEqual(manyIds);
+  });
+
+  it("batches a by-format delete so large selections are not rejected", async () => {
     const user = userEvent.setup();
-    deleteAllByFormatMock.mockResolvedValue({ deletedEditionIds: ["ed-1", "ed-2"], deletedWorkIds: [] });
-    const onDeleted = vi.fn();
-    render(<LibrarySelectionToolbar {...defaultProps} selectedCount={100} selectedWorkIds={Array.from({ length: 100 }, (_, i) => `w${String(i)}`)} totalCount={100} onDeleted={onDeleted} />);
+    const manyIds = Array.from({ length: 250 }, (_, i) => `w${String(i)}`);
+    bulkDeleteByFormatMock.mockResolvedValue({ deletedEditionIds: ["ed-1"], deletedWorkIds: [] });
+    render(<LibrarySelectionToolbar {...defaultProps} selectedCount={250} selectedWorkIds={manyIds} totalCount={500} />);
     await user.click(screen.getByTestId("bulk-delete-dropdown-trigger"));
     await waitFor(() => screen.getByText("Delete ebook editions only"));
     await user.click(screen.getByText("Delete ebook editions only"));
     await waitFor(() => screen.getByTestId("confirm-delete-by-format-btn"));
     fireEvent.click(screen.getByTestId("confirm-delete-by-format-btn"));
+
+    // The server fn validator caps workIds at 100, so an unbatched call would
+    // be rejected outright and the feature would simply not work above 100.
     await waitFor(() => {
-      expect(deleteAllByFormatMock).toHaveBeenCalledWith({ data: { format: "EBOOK" } });
-      expect(bulkDeleteByFormatMock).not.toHaveBeenCalled();
+      expect(bulkDeleteByFormatMock).toHaveBeenCalledTimes(3);
     });
-    await waitFor(() => { expect(onDeleted).toHaveBeenCalled(); });
+    const sent = bulkDeleteByFormatMock.mock.calls.flatMap((c) => (c[0] as { data: { workIds: string[] } }).data.workIds);
+    expect(sent).toEqual(manyIds);
+    bulkDeleteByFormatMock.mock.calls.forEach((c) => {
+      expect((c[0] as { data: { workIds: string[] } }).data.workIds.length).toBeLessThanOrEqual(100);
+    });
   });
 
-  it("uses deleteAllEditionsByFormatServerFn when selectedWorkIds exceeds 100", async () => {
+  it("scopes a by-format delete to the selection even for large selections", async () => {
     const user = userEvent.setup();
-    deleteAllByFormatMock.mockResolvedValue({ deletedEditionIds: ["ed-1"], deletedWorkIds: ["w0"] });
     const manyIds = Array.from({ length: 101 }, (_, i) => `w${String(i)}`);
+    bulkDeleteByFormatMock.mockResolvedValue({ deletedEditionIds: ["ed-1"], deletedWorkIds: [] });
     render(<LibrarySelectionToolbar {...defaultProps} selectedCount={101} selectedWorkIds={manyIds} totalCount={500} />);
     await user.click(screen.getByTestId("bulk-delete-dropdown-trigger"));
     await waitFor(() => screen.getByText("Delete ebook editions only"));
     await user.click(screen.getByText("Delete ebook editions only"));
     await waitFor(() => screen.getByTestId("confirm-delete-by-format-btn"));
     fireEvent.click(screen.getByTestId("confirm-delete-by-format-btn"));
+
+    // 101 of 500 selected once took a library-wide path and deleted every
+    // ebook in the library while the dialog named only the selection. It is
+    // now scoped - and batched, since the server caps workIds at 100.
     await waitFor(() => {
-      expect(deleteAllByFormatMock).toHaveBeenCalledWith({ data: { format: "EBOOK" } });
-      expect(bulkDeleteByFormatMock).not.toHaveBeenCalled();
+      expect(bulkDeleteByFormatMock).toHaveBeenCalledTimes(2);
+    });
+    const sent = bulkDeleteByFormatMock.mock.calls.flatMap((c) => (c[0] as { data: { workIds: string[] } }).data.workIds);
+    expect(sent).toEqual(manyIds);
+  });
+
+  it("scopes a by-format delete to the selection when it covers the current query", async () => {
+    const user = userEvent.setup();
+    const ids = Array.from({ length: 10 }, (_, i) => `w${String(i)}`);
+    bulkDeleteByFormatMock.mockResolvedValue({ deletedEditionIds: ["ed-1"], deletedWorkIds: [] });
+    // totalCount is the count for the CURRENT query, so "selected everything"
+    // under a facet is not "selected the whole library".
+    render(<LibrarySelectionToolbar {...defaultProps} selectedCount={10} selectedWorkIds={ids} totalCount={10} />);
+    await user.click(screen.getByTestId("bulk-delete-dropdown-trigger"));
+    await waitFor(() => screen.getByText("Delete ebook editions only"));
+    await user.click(screen.getByText("Delete ebook editions only"));
+    await waitFor(() => screen.getByTestId("confirm-delete-by-format-btn"));
+    fireEvent.click(screen.getByTestId("confirm-delete-by-format-btn"));
+
+    await waitFor(() => {
+      expect(bulkDeleteByFormatMock).toHaveBeenCalledWith({ data: { workIds: ids, format: "EBOOK" } });
     });
   });
 

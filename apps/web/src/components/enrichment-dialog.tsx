@@ -195,7 +195,7 @@ function FieldComparisonRow({
           {isEdited && <Badge variant="outline" className="text-[10px] px-1.5 py-0">Edited</Badge>}
           {matches && <span className="text-xs text-muted-foreground italic">Already matches</span>}
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground/60 mb-0.5">Current</div>
             <p className="text-sm text-muted-foreground break-words">{currentValue || "—"}</p>
@@ -229,7 +229,7 @@ function CoverFieldRow({
           <span className="text-sm font-medium">Cover Image</span>
           {currentCoverPath && <span className="text-xs text-muted-foreground italic">Has existing cover</span>}
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground/60 mb-0.5">Current</div>
             {currentCoverPath ? (
@@ -240,7 +240,7 @@ function CoverFieldRow({
               />
             ) : (
               <div className="w-16 aspect-[2/3] rounded bg-muted flex items-center justify-center">
-                <BookOpen className="size-5 text-muted-foreground" />
+                <BookOpen className="size-9 md:size-5 text-muted-foreground" />
               </div>
             )}
           </div>
@@ -435,7 +435,7 @@ export function EnrichmentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col">
+      <DialogContent className="sm:max-w-4xl max-h-[90dvh] flex flex-col">
         <DialogHeader>
           <DialogTitle>{dialogTitle}</DialogTitle>
           <DialogDescription>
@@ -476,7 +476,7 @@ export function EnrichmentDialog({
               {results.map((r) => {
                 const sel = getSelection(selections, r.provider);
                 return (
-                  <TabsContent key={r.provider} value={r.provider} className="overflow-y-auto max-h-[55vh] pr-1">
+                  <TabsContent key={r.provider} value={r.provider} className="flex-1 min-h-0 overflow-y-auto pr-1">
                     <div className="space-y-6 py-3">
                       <SourceHeader result={r} />
 

@@ -125,7 +125,7 @@ export function EditableTagField({
     return (
       <div
         className={cn(
-          "cursor-pointer rounded px-1 -mx-1 border border-transparent hover:border-border hover:bg-accent/50 transition-colors",
+          "flex min-h-9 cursor-pointer items-center [overflow-wrap:anywhere] rounded px-1 -mx-1 border border-transparent hover:border-border hover:bg-accent/50 transition-colors",
           !display && "text-muted-foreground italic",
           className,
         )}

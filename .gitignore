@@ -47,3 +47,9 @@ playwright-report/
 coverage-json/
 coverage-json2/
 apps/guide
+
+# Adversarial-review scratch specs and MCP browser artefacts. These are written
+# into the repo by tooling and have twice been swept into commits by `git add -A`.
+e2e/zzTMP*
+e2e/zz-*
+.playwright-mcp/

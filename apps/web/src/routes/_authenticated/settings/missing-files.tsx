@@ -44,6 +44,24 @@ export interface MissingFilesData {
   total: number;
 }
 
+/**
+ * A message safe to put in a toast.
+ *
+ * A rejected server-fn validator reaches the client as an Error whose
+ * `message` is the serialized Zod issue array, so passing it straight through
+ * rendered a JSON blob at the user. Anything that looks like that dump is
+ * replaced; a real server-side failure message still comes through unedited.
+ */
+function cleanupErrorMessage(error: Error | null): string {
+  const raw = error?.message ?? "";
+  // Both halves: a genuine server message that merely opens with a bracket
+  // ("[unavailable] ...") is not a validator dump and must reach the user.
+  if (raw.trimStart().startsWith("[") && raw.includes('"code"')) {
+    return "That cleanup request was not valid. Reload the page and try again.";
+  }
+  return raw === "" ? "Failed to clean up files" : raw;
+}
+
 export const Route = createFileRoute(
   "/_authenticated/settings/missing-files",
 )({
@@ -84,11 +102,11 @@ function MissingFilesPage() {
     }
   }
 
-  async function handleCleanup(fileAssetIds: string[]) {
+  async function handleCleanup(fileAssetIds: string[], all = false) {
     setCleaning(true);
     try {
       const result = await cleanupMissingFilesServerFn({
-        data: { fileAssetIds },
+        data: all ? { all: true } : { fileAssetIds },
       });
       const total = result.deletedEditionIds.length + result.deletedWorkIds.length + result.deletedEditionFileCount;
       toast.success(`Cleaned up ${String(total)} record${total === 1 ? "" : "s"}`);
@@ -97,9 +115,7 @@ function MissingFilesPage() {
       setCleanAllOpen(false);
       void router.invalidate();
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to clean up files",
-      );
+      toast.error(cleanupErrorMessage(error instanceof Error ? error : null));
     } finally {
       setCleaning(false);
     }
@@ -110,21 +126,26 @@ function MissingFilesPage() {
       <div className="flex items-center gap-4">
         <Link
           to="/settings/libraries"
-          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          className="flex min-h-9 items-center gap-1 text-sm text-muted-foreground hover:text-foreground lg:min-h-0"
         >
           <ArrowLeft className="size-4" />
           Back to Libraries
         </Link>
       </div>
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Missing Files</h1>
           <p className="text-sm text-muted-foreground">
             These files were not found during the last scan. Cleaning up removes their library entries. Files on disk are not affected.
           </p>
+          {missingFiles.total > missingFiles.items.length && (
+            <p className="text-sm text-muted-foreground" data-testid="missing-files-truncated">
+              Showing the first {String(missingFiles.items.length)} of {String(missingFiles.total)}. Clean Up All still covers every one.
+            </p>
+          )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {selected.size > 0 && (
             <Button
               variant="destructive"
@@ -154,12 +175,15 @@ function MissingFilesPage() {
           <TableHeader>
             <TableRow>
               <TableHead className="w-10">
+                <label className="flex min-h-9 min-w-9 items-center justify-center lg:min-h-0 lg:min-w-0">
                 <input
                   type="checkbox"
+                  className="size-5 lg:size-4"
                   checked={selected.size === missingFiles.items.length}
                   onChange={toggleSelectAll}
                   aria-label="Select all"
                 />
+                </label>
               </TableHead>
               <TableHead>File Path</TableHead>
               <TableHead>Work</TableHead>
@@ -173,17 +197,20 @@ function MissingFilesPage() {
               return (
                 <TableRow key={file.id}>
                   <TableCell>
-                    <input
-                      type="checkbox"
-                      checked={selected.has(file.id)}
-                      onChange={() => { toggleSelect(file.id); }}
-                      aria-label={`Select ${file.relativePath}`}
-                    />
+                    <label className="flex min-h-9 min-w-9 items-center justify-center lg:min-h-0 lg:min-w-0">
+                      <input
+                        type="checkbox"
+                        className="size-5 lg:size-4"
+                        checked={selected.has(file.id)}
+                        onChange={() => { toggleSelect(file.id); }}
+                        aria-label={`Select ${file.relativePath}`}
+                      />
+                    </label>
                   </TableCell>
                   <TableCell className="font-mono text-xs">{file.relativePath}</TableCell>
                   <TableCell>
                     {edition ? (
-                      <Link to="/library/$workId" params={{ workId: edition.work.id }} search={{ page: 1, pageSize: 50, sort: "title-asc" as const }} className="hover:underline">
+                      <Link to="/library/$workId" params={{ workId: edition.work.id }} search={{ page: 1, pageSize: 50, sort: "title-asc" as const }} className="flex min-h-9 items-center hover:underline lg:min-h-0">
                         {edition.work.titleDisplay}
                       </Link>
                     ) : "—"}
@@ -234,7 +261,8 @@ function MissingFilesPage() {
             <Button variant="outline" onClick={() => { setCleanAllOpen(false); }} disabled={cleaning}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={() => { void handleCleanup(missingFiles.items.map((f) => f.id)); }} disabled={cleaning}>
+            <Button variant="destructive" // The list is one page; "Clean Up All" must not silently mean "this page".
+              onClick={() => { void handleCleanup([], true); }} disabled={cleaning}>
               {cleaning ? <><Loader2 className="mr-1.5 size-3.5 animate-spin" />Cleaning...</> : "Clean Up All"}
             </Button>
           </DialogFooter>

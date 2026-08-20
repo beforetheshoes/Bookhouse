@@ -359,7 +359,11 @@ describe("processCoverForWork", () => {
     expect(deps.resizeCoverImage).not.toHaveBeenCalled();
   });
 
-  it("throws when file asset is not found", async () => {
+  it("skips when the file asset has been deleted", async () => {
+    // A cover job outlives its file asset routinely: deleting a work or its
+    // library root cascades to the asset while the job is still queued.
+    // Throwing failed the BullMQ job for an entity nobody is waiting on.
+    const workUpdate = vi.fn().mockResolvedValue({});
     const deps = createMockDeps({
       db: {
         fileAsset: {
@@ -367,14 +371,14 @@ describe("processCoverForWork", () => {
         },
         work: {
           findUnique: vi.fn().mockResolvedValue({ id: "w-1" }),
-          update: vi.fn().mockResolvedValue({}),
+          update: workUpdate,
         },
       },
     });
 
-    await expect(processCoverForWork(createInput(), deps)).rejects.toThrow(
-      'File asset "fa-1" was not found',
-    );
+    const result = await processCoverForWork(createInput(), deps);
+    expect(result).toEqual({ source: "none", updated: false });
+    expect(workUpdate).not.toHaveBeenCalled();
   });
 
   it("calls resizeCoverImage with only input, not extra deps", async () => {
@@ -427,15 +431,15 @@ describe("processCoverForWork", () => {
 });
 
 describe("processCoverForWorkDefault", () => {
-  it("throws when file asset is not found", async () => {
+  it("skips when the file asset has been deleted", async () => {
     const db = {
       fileAsset: { findUnique: vi.fn().mockResolvedValue(null) },
       work: { findUnique: vi.fn().mockResolvedValue({ id: "w-1" }), update: vi.fn().mockResolvedValue({}) },
     };
     const handler = processCoverForWorkDefault(db);
-    await expect(handler({ workId: "w-1", fileAssetId: "fa-missing", coverCacheDir: "/tmp" })).rejects.toThrow(
-      'File asset "fa-missing" was not found',
-    );
+    await expect(
+      handler({ workId: "w-1", fileAssetId: "fa-missing", coverCacheDir: "/tmp" }),
+    ).resolves.toEqual({ source: "none", updated: false });
     expect(db.fileAsset.findUnique).toHaveBeenCalledWith({ where: { id: "fa-missing" } });
   });
 

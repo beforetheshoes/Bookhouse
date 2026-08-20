@@ -19,6 +19,8 @@ interface LibraryPaginationProps {
   totalCount: number;
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
+  /** Hidden while the bulk bar owns the bottom of the screen. */
+  hidden?: boolean;
 }
 
 export function LibraryPagination({
@@ -27,24 +29,30 @@ export function LibraryPagination({
   totalCount,
   onPageChange,
   onPageSizeChange,
+  hidden,
 }: LibraryPaginationProps) {
+  if (hidden === true) return null;
+
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 px-2">
-      <div className="text-sm text-muted-foreground">
+    <div
+      data-testid="library-pagination"
+      className="sticky bottom-0 z-20 flex flex-wrap items-center justify-center gap-2 border-t bg-background px-2 py-1.5 sm:gap-4 md:static md:justify-between md:border-0 md:py-0"
+    >
+      <div className="hidden text-sm text-muted-foreground sm:block">
         {String(totalCount)} row(s) total
       </div>
-      <div className="flex flex-wrap items-center gap-4">
+      <div data-testid="library-pagination-nav" className="flex flex-wrap items-center gap-2 sm:gap-4">
         <div className="flex items-center gap-2">
-          <p className="text-sm font-medium whitespace-nowrap">Rows per page</p>
+          <p className="hidden text-sm font-medium whitespace-nowrap sm:block">Rows per page</p>
           <Select
             value={String(pageSize)}
             onValueChange={(value) => {
               onPageSizeChange(Number(value));
             }}
           >
-            <SelectTrigger className="h-8 w-[70px]">
+            <SelectTrigger className="w-[70px]">
               <SelectValue placeholder={String(pageSize)} />
             </SelectTrigger>
             <SelectContent side="top">
@@ -62,7 +70,7 @@ export function LibraryPagination({
         <div className="flex items-center gap-1">
           <Button
             variant="outline"
-            className="hidden h-8 w-8 p-0 lg:flex"
+            className="hidden p-0 lg:flex lg:size-8"
             onClick={() => { onPageChange(1); }}
             disabled={page <= 1}
             aria-label="Go to first page"
@@ -71,7 +79,7 @@ export function LibraryPagination({
           </Button>
           <Button
             variant="outline"
-            className="h-8 w-8 p-0"
+            className="size-9 p-0 lg:size-8"
             onClick={() => { onPageChange(page - 1); }}
             disabled={page <= 1}
             aria-label="Go to previous page"
@@ -80,7 +88,7 @@ export function LibraryPagination({
           </Button>
           <Button
             variant="outline"
-            className="h-8 w-8 p-0"
+            className="size-9 p-0 lg:size-8"
             onClick={() => { onPageChange(page + 1); }}
             disabled={page >= totalPages}
             aria-label="Go to next page"
@@ -89,7 +97,7 @@ export function LibraryPagination({
           </Button>
           <Button
             variant="outline"
-            className="hidden h-8 w-8 p-0 lg:flex"
+            className="hidden p-0 lg:flex lg:size-8"
             onClick={() => { onPageChange(totalPages); }}
             disabled={page >= totalPages}
             aria-label="Go to last page"

@@ -114,4 +114,34 @@ describe("LibraryPagination", () => {
     await user.click(screen.getByRole("option", { name: "20" }));
     expect(onPageSizeChange).toHaveBeenCalledWith(20);
   });
+
+  it("gives page navigation buttons a full mobile tap target", () => {
+    renderPagination({ page: 2 });
+    // 32x32 pagination arrows are the hardest control in the app to hit.
+    const prev = screen.getByLabelText("Go to previous page");
+    expect(prev.className).toContain("size-9");
+    expect(prev.className).toContain("lg:size-8");
+  });
+
+  it("leaves the rows-per-page select on the responsive default size", () => {
+    const { container } = renderPagination();
+    const trigger = container.querySelector('[data-slot="select-trigger"]');
+    // Height comes from the variant's data-size selector, which outranks any
+    // `md:h-*` utility passed here (attribute selectors are more specific), so
+    // the call site must NOT try to set a height. Real pixel heights are
+    // asserted in e2e/mobile.spec.ts against computed layout.
+    expect(trigger?.getAttribute("data-size")).toBe("default");
+    // The responsive height rides on the variant's data-size selector.
+    expect(trigger?.className).toContain("data-[size=default]:h-10");
+    expect(trigger?.className).toContain("lg:data-[size=default]:h-9");
+    // ...and the call site must not add a bare height that would lose to it.
+    expect(/(^|\s)h-\d/.test(trigger?.className ?? "")).toBe(false);
+  });
+
+  it("renders nothing while the bulk bar owns the bottom of the screen", () => {
+    const { container } = renderPagination({ hidden: true });
+    // The floating bulk bar is fixed over this corner and would swallow taps
+    // meant for the page controls.
+    expect(container.firstChild).toBeNull();
+  });
 });

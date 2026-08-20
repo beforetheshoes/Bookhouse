@@ -89,11 +89,11 @@ function AuthorDetailPage() {
   return (
     <div className="space-y-6">
       <nav className="flex items-center gap-1 text-sm text-muted-foreground">
-        <Link to="/authors" className="hover:text-foreground">
+        <Link to="/authors" className="flex min-h-9 min-w-9 items-center hover:text-foreground lg:min-h-0 lg:min-w-0">
           Authors
         </Link>
         <ChevronRight className="size-4" />
-        <span className="text-foreground">{author.nameDisplay}</span>
+        <span className="min-w-0 [overflow-wrap:anywhere] text-foreground">{author.nameDisplay}</span>
       </nav>
 
       <div className="flex items-center gap-4">
@@ -112,7 +112,7 @@ function AuthorDetailPage() {
             className="size-16"
             cacheVersion={photoVersion}
           />
-          <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+          <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-100 can-hover:opacity-0 transition-opacity group-hover:opacity-100">
             <Camera className="size-5 text-white" />
           </div>
         </div>
@@ -126,7 +126,7 @@ function AuthorDetailPage() {
           disabled={uploading}
         />
         <div>
-          <h1 className="text-2xl font-bold">{author.nameDisplay}</h1>
+          <h1 className="min-w-0 [overflow-wrap:anywhere] text-2xl font-bold">{author.nameDisplay}</h1>
           <div className="mt-0.5 text-xs text-muted-foreground">
             <span className="mr-1">Sort as:</span>
             <EditableField
@@ -142,7 +142,7 @@ function AuthorDetailPage() {
           </div>
           <button
             type="button"
-            className="mt-1 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            className="mt-1 flex min-h-9 items-center gap-1 py-2 text-xs text-muted-foreground hover:text-foreground lg:min-h-0 lg:py-0"
             onClick={() => { setShowUrlInput((v) => !v); }}
             data-testid="link-photo-button"
           >
@@ -171,7 +171,7 @@ function AuthorDetailPage() {
       {author.works.length === 0 ? (
         <p className="text-muted-foreground">No works by this author</p>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           {author.works.map((work) => (
             <WorkCard
               key={work.id}

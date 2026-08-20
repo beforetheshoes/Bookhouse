@@ -76,6 +76,7 @@ import {
   deleteAllEditionsByFormatServerFn,
   getMissingFilesServerFn,
   cleanupMissingFilesServerFn,
+  cleanupMissingFilesSchema,
 } from "./deletion";
 
 beforeEach(() => {
@@ -405,4 +406,56 @@ describe("cleanupMissingFilesServerFn", () => {
       cleanupMissingFilesServerFn({ data: { fileAssetIds: ["fa-1", "fa-2"] } }),
     ).rejects.toThrow("Not all specified files have MISSING status");
   });
+
+describe("cleanupMissingFilesServerFn all mode", () => {
+  it("cleans every missing file, not just the ids it was handed", async () => {
+    // The UI's "Clean Up All N" button could only send the current page - at
+    // most 100 - so above that it silently cleaned a fraction of what the
+    // dialog named.
+    fileAssetFindManyMock.mockResolvedValue([{ id: "fa-9" }, { id: "fa-10" }]);
+    await cleanupMissingFilesServerFn({ data: { all: true } });
+
+    expect(cascadeCleanupOrphansMock).toHaveBeenCalledWith(
+      expect.anything(),
+      { fileAssetIds: ["fa-9", "fa-10"] },
+    );
+  });
+});
+
+describe("cleanupMissingFilesServerFn union contract", () => {
+  it("rejects an id list whose files are not all MISSING", async () => {
+    fileAssetCountMock.mockResolvedValue(1);
+    await expect(
+      cleanupMissingFilesServerFn({ data: { fileAssetIds: ["fa-1", "fa-2"] } }),
+    ).rejects.toThrow("Not all specified files have MISSING status");
+  });
+});
+
+describe("cleanupMissingFilesServerFn rejects mixed modes", () => {
+  // The schema is asserted directly, not through the server fn: the
+  // createServerFn double above replaces `.validator()` with `() => b`, so a
+  // malformed payload passed to the server fn never reaches zod at all - both
+  // of these threw for unrelated reasons and passed against the old,
+  // non-strict schema too.
+  it("refuses all:true alongside an id list", () => {
+    // z.object would strip the ids and clean the whole library while the UI
+    // named one file; strictObject rejects the payload outright.
+    expect(
+      cleanupMissingFilesSchema.safeParse({ all: true, fileAssetIds: ["fa-1"] }).success,
+    ).toBe(false);
+  });
+
+  it("refuses an empty id list", () => {
+    expect(cleanupMissingFilesSchema.safeParse({ fileAssetIds: [] }).success).toBe(false);
+  });
+
+  it("accepts each arm on its own", () => {
+    expect(cleanupMissingFilesSchema.safeParse({ all: true }).success).toBe(true);
+    expect(
+      cleanupMissingFilesSchema.safeParse({ fileAssetIds: ["fa-1"] }).success,
+    ).toBe(true);
+    expect(cleanupMissingFilesSchema.safeParse({}).success).toBe(false);
+    expect(cleanupMissingFilesSchema.safeParse({ all: false }).success).toBe(false);
+  });
+});
 });

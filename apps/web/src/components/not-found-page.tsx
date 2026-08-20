@@ -4,7 +4,7 @@ import { Button } from "~/components/ui/button";
 
 export function NotFoundPage() {
   return (
-    <div className="flex flex-col items-center justify-center gap-4 p-12">
+    <div className="flex flex-col items-center justify-center gap-4 p-6 md:p-12">
       <FileQuestion className="size-12 text-muted-foreground" />
       <h1 className="text-2xl font-bold">Page not found</h1>
       <p className="text-muted-foreground">

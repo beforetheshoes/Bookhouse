@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import type { ColumnDef, RowSelectionState } from "@tanstack/react-table";
 import { ChevronRight, Plus, Trash2, X } from "lucide-react";
@@ -17,18 +17,20 @@ import { VirtualizedDataTable, DataTableColumnHeader } from "~/components/data-t
 import { LibraryGrid } from "~/components/library-grid";
 import { LibraryToolbar } from "~/components/library-toolbar";
 import { GridPageSkeleton } from "~/components/skeletons/grid-page-skeleton";
-import { useLibraryViewPreference } from "~/hooks/use-library-view-preference";
+import { useEffectiveLibraryView } from "~/hooks/use-library-view-preference";
 import { useGridTileSize } from "~/hooks/use-grid-tile-size";
 import {
   getShelfDetailServerFn,
   getAvailableEditionsServerFn,
   addEditionToShelfServerFn,
   removeEditionFromShelfServerFn,
+  removeWorkEditionsFromShelfServerFn,
   type ShelfDetail,
   type AvailableEdition,
 } from "~/lib/server-fns/shelves";
 import type { SortValue } from "~/components/library-toolbar";
 import type { ReadingFilter } from "~/lib/sort-filter-works";
+import { FloatingActionBar } from "~/components/floating-action-bar";
 
 export const Route = createFileRoute("/_authenticated/shelves/$shelfId")({
   loader: async ({ params }) => {
@@ -75,20 +77,28 @@ export function getTableColumns(): ColumnDef<ShelfEdition>[] {
       size: 40,
       maxSize: 40,
       header: ({ table }) => (
-        <input
-          type="checkbox"
-          checked={table.getIsAllPageRowsSelected()}
-          onChange={(e) => { table.toggleAllPageRowsSelected(e.target.checked); }}
-          aria-label="Select all"
-        />
+        // One label, and only here: the cell has no other label to nest in,
+        // unlike the add-editions dialog rows.
+        <label className="flex min-h-9 min-w-9 items-center justify-center lg:min-h-0 lg:min-w-0">
+          <input
+            type="checkbox"
+            className="size-5 lg:size-4"
+            checked={table.getIsAllPageRowsSelected()}
+            onChange={(e) => { table.toggleAllPageRowsSelected(e.target.checked); }}
+            aria-label="Select all"
+          />
+        </label>
       ),
       cell: ({ row }) => (
-        <input
-          type="checkbox"
-          checked={row.getIsSelected()}
-          onChange={(e) => { row.toggleSelected(e.target.checked); }}
-          aria-label="Select row"
-        />
+        <label className="flex min-h-9 min-w-9 items-center justify-center lg:min-h-0 lg:min-w-0">
+          <input
+            type="checkbox"
+            className="size-5 lg:size-4"
+            checked={row.getIsSelected()}
+            onChange={(e) => { row.toggleSelected(e.target.checked); }}
+            aria-label="Select row"
+          />
+        </label>
       ),
       enableSorting: false,
     },
@@ -98,7 +108,7 @@ export function getTableColumns(): ColumnDef<ShelfEdition>[] {
       accessorFn: (row) => row.work.titleDisplay,
       header: ({ column }) => <DataTableColumnHeader column={column} title="Title" />,
       cell: ({ row }) => (
-        <Link to="/library/$workId" params={{ workId: row.original.work.id }} className="font-medium hover:underline">
+        <Link to="/library/$workId" params={{ workId: row.original.work.id }} className="flex min-h-9 items-center font-medium hover:underline lg:min-h-0">
           {row.original.work.titleDisplay}
         </Link>
       ),
@@ -143,24 +153,73 @@ export function getTableColumns(): ColumnDef<ShelfEdition>[] {
 function ShelfDetailPage() {
   const { shelf } = Route.useLoaderData();
   const router = useRouter();
-  const [view, setView] = useLibraryViewPreference();
+  const [view, setView] = useEffectiveLibraryView();
   const [tileSize, setTileSize] = useGridTileSize();
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [sortValue, setSortValue] = useState<SortValue>("title-asc");
   const [readingFilter, setReadingFilter] = useState<ReadingFilter>("all");
   const [, setToolbarSearch] = useState("");
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [selectMode, setSelectMode] = useState(false);
+  // The grid shows works, the table shows editions, so their selections are
+  // not interchangeable and are kept apart.
+  const [gridSelection, setGridSelection] = useState<Record<string, boolean>>({});
   const [removing, setRemoving] = useState(false);
 
   const editions = shelf.items.map((item) => item.edition);
   const works = getWorksWithEditions(shelf.items);
-  const selectedCount = Object.keys(rowSelection).length;
 
+
+  // Keyed by edition id via getRowId, so a refreshed list cannot repoint it.
+  // Still filtered against the current list: a selected row can disappear.
   const selectedEditionIds = useMemo(() => {
-    return Object.keys(rowSelection)
-      .map((idx) => editions[Number(idx)]?.id)
-      .filter((id): id is string => id !== undefined);
+    const present = new Set(editions.map((e) => e.id));
+    return Object.keys(rowSelection).filter((id) => present.has(id));
   }, [rowSelection, editions]);
+
+  // Derived from the filtered ids, not the raw keys: a selected edition can
+  // leave the list, and a bar that counts what the mutation will not act on
+  // is lying.
+  const selectedCount = selectedEditionIds.length;
+
+  const gridSelectedWorkIds = useMemo(() => {
+    const present = new Set(works.map((w) => w.id));
+    return Object.keys(gridSelection).filter((id) => present.has(id));
+  }, [gridSelection, works]);
+
+  const handleToggleGridSelect = useCallback((workId: string) => {
+    setGridSelection((prev) => {
+      if (prev[workId] === true) {
+        return Object.fromEntries(Object.entries(prev).filter(([k]) => k !== workId));
+      }
+      return { ...prev, [workId]: true };
+    });
+  }, []);
+
+  const handleSelectModeChange = useCallback((on: boolean) => {
+    setSelectMode(on);
+    if (!on) setGridSelection({});
+  }, []);
+
+  const handleRemoveSelectedWorks = async () => {
+    setRemoving(true);
+    try {
+      for (const workId of gridSelectedWorkIds) {
+        await removeWorkEditionsFromShelfServerFn({ data: { shelfId: shelf.id, workId } });
+      }
+      const n = gridSelectedWorkIds.length;
+      toast.success(`Removed ${String(n)} work${n === 1 ? "" : "s"} from shelf`);
+      setGridSelection({});
+    } catch {
+      toast.error("Failed to remove editions");
+    } finally {
+      setRemoving(false);
+      // In the finally: a partial failure has already committed earlier
+      // removals, so the list must refresh either way or the bar keeps
+      // counting rows that no longer exist.
+      void router.invalidate();
+    }
+  };
 
   const handleRemoveSelected = async () => {
     setRemoving(true);
@@ -168,13 +227,14 @@ function ShelfDetailPage() {
       for (const editionId of selectedEditionIds) {
         await removeEditionFromShelfServerFn({ data: { shelfId: shelf.id, editionId } });
       }
-      toast.success(`Removed ${String(selectedEditionIds.length)} from shelf`);
+      const n = selectedEditionIds.length;
+      toast.success(`Removed ${String(n)} edition${n === 1 ? "" : "s"} from shelf`);
       setRowSelection({});
-      void router.invalidate();
     } catch {
       toast.error("Failed to remove editions");
     } finally {
       setRemoving(false);
+      void router.invalidate();
     }
   };
 
@@ -183,16 +243,16 @@ function ShelfDetailPage() {
   return (
     <div className="space-y-6">
       <nav className="flex items-center gap-1 text-sm text-muted-foreground">
-        <Link to="/shelves" className="hover:text-foreground">
+        <Link to="/shelves" className="flex min-h-9 shrink-0 items-center hover:text-foreground lg:min-h-0">
           Shelves
         </Link>
         <ChevronRight className="size-4" />
-        <span className="text-foreground">{shelf.name}</span>
+        <span className="min-w-0 [overflow-wrap:anywhere] text-foreground">{shelf.name}</span>
       </nav>
 
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold">{shelf.name}</h1>
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
+          <h1 className="min-w-0 text-2xl font-bold [overflow-wrap:anywhere]">{shelf.name}</h1>
           <Badge variant="secondary" data-testid="shelf-format-badge">
             {shelf.formatFilter === "ALL" ? "All Formats" : shelf.formatFilter === "EBOOK" ? "Ebooks" : "Audiobooks"}
           </Badge>
@@ -216,6 +276,8 @@ function ShelfDetailPage() {
         filterValue={readingFilter}
         onFilterChange={setReadingFilter}
         showSort={view !== "table"}
+        selectMode={selectMode}
+        onSelectModeChange={handleSelectModeChange}
         tileSize={tileSize}
         onTileSizeChange={setTileSize}
       />
@@ -223,34 +285,54 @@ function ShelfDetailPage() {
       {editions.length === 0 ? (
         <p className="text-muted-foreground">No editions on this shelf yet.</p>
       ) : view === "grid" ? (
-        <LibraryGrid works={works} tileSize={tileSize} />
-      ) : (
-        <VirtualizedDataTable
-          columns={tableColumns}
-          data={editions}
-          rowSelection={rowSelection}
-          onRowSelectionChange={setRowSelection}
+        <LibraryGrid
+          works={works}
+          tileSize={tileSize}
+          selectable={selectMode}
+          selectionActive={gridSelectedWorkIds.length > 0}
+          rowSelection={gridSelection}
+          onToggleSelect={handleToggleGridSelect}
         />
+      ) : (
+        // The selection bar is fixed to the bottom of the viewport, so without
+        // room to scroll past it the table's pagination sits underneath it and
+        // cannot be reached - and a fixed element does not scroll away. The
+        // grid gets the same clearance from LibraryGrid's selectionActive.
+        <div className={selectedCount > 0 ? "pb-48" : undefined}>
+          <VirtualizedDataTable
+            columns={tableColumns}
+            data={editions}
+            getRowId={(row) => (row as { id: string }).id}
+            rowSelection={rowSelection}
+            onRowSelectionChange={setRowSelection}
+          />
+        </div>
       )}
 
-      {selectedCount > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-lg border bg-background p-3 shadow-lg" data-testid="selection-bar">
-          <span className="text-sm font-medium">{selectedCount} edition{selectedCount === 1 ? "" : "s"} selected</span>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => { void handleRemoveSelected(); }}
-            disabled={removing}
-            data-testid="remove-selected-btn"
-          >
-            <Trash2 className="mr-1.5 size-3.5" />
-            {removing ? "Removing..." : "Remove from Shelf"}
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => { setRowSelection({}); }}>
-            <X className="mr-1.5 size-3.5" />
-            Clear
-          </Button>
-        </div>
+      {(view === "grid" ? gridSelectedWorkIds.length : selectedCount) > 0 && (
+        <FloatingActionBar data-testid="selection-bar">
+          <div className="flex w-full flex-wrap items-center justify-center gap-2 md:gap-3">
+            <span className="text-sm font-medium">
+              {view === "grid"
+                ? `${String(gridSelectedWorkIds.length)} work${gridSelectedWorkIds.length === 1 ? "" : "s"} selected`
+                : `${String(selectedCount)} edition${selectedCount === 1 ? "" : "s"} selected`}
+            </span>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => { void (view === "grid" ? handleRemoveSelectedWorks() : handleRemoveSelected()); }}
+              disabled={removing}
+              data-testid="remove-selected-btn"
+            >
+              <Trash2 className="mr-1.5 size-3.5" />
+              {removing ? "Removing..." : "Remove from Shelf"}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => { setRowSelection({}); setGridSelection({}); }}>
+              <X className="mr-1.5 size-3.5" />
+              Clear
+            </Button>
+          </div>
+        </FloatingActionBar>
       )}
 
       <AddEditionsDialog
@@ -343,7 +425,7 @@ function AddEditionsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+      <DialogContent className="sm:max-w-2xl max-h-[80dvh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Add Editions to Shelf</DialogTitle>
         </DialogHeader>
@@ -367,6 +449,7 @@ function AddEditionsDialog({
               <label className="flex items-center gap-2 rounded p-2 hover:bg-muted cursor-pointer">
                 <input
                   type="checkbox"
+                  className="size-5 shrink-0 lg:size-4"
                   checked={selected.size === filtered.length && filtered.length > 0}
                   onChange={handleSelectAll}
                   data-testid="select-all-editions"
@@ -382,6 +465,7 @@ function AddEditionsDialog({
                 >
                   <input
                     type="checkbox"
+                    className="size-5 shrink-0 lg:size-4"
                     checked={selected.has(edition.id)}
                     onChange={() => { handleToggle(edition.id); }}
                     data-testid={`edition-check-${edition.id}`}

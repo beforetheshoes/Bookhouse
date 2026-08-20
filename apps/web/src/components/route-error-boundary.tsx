@@ -13,7 +13,7 @@ export function RouteErrorBoundary({ error, reset }: ErrorComponentProps) {
       : "An unexpected error occurred. Please try again.";
 
   return (
-    <div className="flex items-center justify-center p-12">
+    <div className="flex items-center justify-center p-6 md:p-12">
       <Card className="max-w-md w-full">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">

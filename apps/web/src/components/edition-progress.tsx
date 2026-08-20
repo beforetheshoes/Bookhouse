@@ -110,19 +110,22 @@ export function EditionProgress({ progress, editions, onUpdate }: EditionProgres
                             disabled={saving}
                             onClick={() => { setEditingId(null); }}
                             data-testid={`progress-cancel-${edition.id}`}
+                            // A glyph this narrow leaves px-3 short of a square
+                            // target: 36 tall, 35 wide.
+                            className="min-w-9 lg:min-w-0"
                           >
                             ✕
                           </Button>
                         </div>
                       ) : (
                         <button
-                          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground group"
+                          className="group flex min-h-9 items-center gap-1 text-sm text-muted-foreground hover:text-foreground lg:min-h-0"
                           onClick={() => { setEditingId(edition.id); setEditValue(String(percent)); }}
                           data-testid={`progress-edit-${edition.id}`}
                           aria-label={`Edit progress for ${edition.formatFamily}`}
                         >
                           <span>{String(percent)}%</span>
-                          <Pencil className="size-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          <Pencil className="size-3 opacity-100 can-hover:opacity-0 group-hover:opacity-100 transition-opacity" />
                         </button>
                       )
                     ) : (

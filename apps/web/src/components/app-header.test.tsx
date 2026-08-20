@@ -63,3 +63,14 @@ it("ThemeToggle calls toggleTheme on click", () => {
   fireEvent.click(screen.getByRole("button", { name: "Switch to dark mode" }));
   expect(mockToggleTheme).toHaveBeenCalled();
 });
+
+it("uses a shorter header bar on phones", () => {
+  const { container } = render(
+    <SidebarProvider>
+      <AppHeader />
+    </SidebarProvider>
+  );
+  const header = container.querySelector("header");
+  expect(header?.className).toContain("h-14");
+  expect(header?.className).toContain("lg:h-16");
+});

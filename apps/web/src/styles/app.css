@@ -13,6 +13,10 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Width is the wrong gate for hover-reveal affordances: a touch tablet at
+   768-1023 has no hover, so a width-gated reveal is simply invisible there. */
+@custom-variant can-hover (@media (hover: hover) and (pointer: fine));
+
 @theme inline {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Fraunces", Georgia, serif;
@@ -138,5 +142,27 @@
   }
   [data-slot="sidebar-wrapper"] {
     transition: background 0.5s ease;
+  }
+}
+
+/* Respect the OS "reduce motion" setting. Nothing honoured it before, so
+   sheets, dialogs and the sidebar animated fully regardless. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Spinners and processing pulses convey state, not decoration. Freezing a
+     spinner after one rotation reads as a hung app, so keep them looping -
+     slowed down rather than stopped. */
+  .animate-spin,
+  .animate-pulse {
+    animation-duration: 1.5s !important;
+    animation-iteration-count: infinite !important;
   }
 }

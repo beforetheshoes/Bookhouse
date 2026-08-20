@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { useSSE } from "~/hooks/use-sse";
-import { useLibraryViewPreference } from "~/hooks/use-library-view-preference";
+import { useEffectiveLibraryView } from "~/hooks/use-library-view-preference";
 import { useLibraryTablePreferences } from "~/hooks/use-library-table-preferences";
 import { useGridTileSize } from "~/hooks/use-grid-tile-size";
 import { useLibraryFilters } from "~/hooks/use-library-filters";
-import type { RowSelectionState } from "@tanstack/react-table";
+import type { OnChangeFn, RowSelectionState } from "@tanstack/react-table";
 import { BookOpen, Loader2 } from "lucide-react";
 import { LibrarySelectionToolbar } from "~/components/library-selection-toolbar";
 import { GridPageSkeleton } from "~/components/skeletons/grid-page-skeleton";
@@ -17,6 +17,7 @@ import { EDITION_COLUMN_SORT_MAP, EDITION_SORT_TO_COLUMN } from "~/lib/library-e
 import { LibraryToolbar } from "~/components/library-toolbar";
 import { LibraryGrid } from "~/components/library-grid";
 import { LibraryFilters } from "~/components/library-filters";
+import { LibraryFiltersSheet } from "~/components/library-filters-sheet";
 import { LibraryPagination } from "~/components/library-pagination";
 import { librarySearchSchema } from "~/lib/library-search-schema";
 import type { ReadingFilter } from "~/lib/sort-filter-works";
@@ -32,9 +33,11 @@ export const Route = createFileRoute("/_authenticated/library/")({
     const isEditionsView = deps.view === "editions";
 
     const [libraryResult, editionsResult, activeJobCount, progressMap, shelves] = await Promise.all([
-      getFilteredLibraryWorksServerFn({
-        data: isEditionsView ? { ...deps, pageSize: 1 } : deps,
-      }),
+      // Always fetch the works page in full. The loader knows neither the
+      // viewport nor the stored display preference, so a pageSize:1 shortcut
+      // for the editions view silently produced a one-item library whenever
+      // the grid was what actually rendered.
+      getFilteredLibraryWorksServerFn({ data: deps }),
       isEditionsView
         ? getFilteredLibraryEditionsServerFn({ data: deps })
         : Promise.resolve(null),
@@ -53,7 +56,7 @@ function LibraryPage() {
   const { works, totalCount, facetCounts, totalFacetCounts } = libraryResult;
   const search = Route.useSearch();
   const navigate = useNavigate();
-  const [view, setView] = useLibraryViewPreference();
+  const [view, setView] = useEffectiveLibraryView();
   const [tileSize, setTileSize] = useGridTileSize();
   const [tablePrefs, setTablePrefs] = useLibraryTablePreferences();
   const [readingFilter, setReadingFilter] = useState<ReadingFilter>("all");
@@ -64,8 +67,15 @@ function LibraryPage() {
   const [allWorkIds, setAllWorkIds] = useState<string[] | null>(null);
   const [selectingAll, setSelectingAll] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
   const isScanning = activeJobCount > 0;
-  const isEditionsView = search.view === "editions";
+  // The editions view only exists inside the table, and `view` is forced to
+  // "grid" on phones. Deriving this from the *effective* view keeps the sort
+  // map, the pagination count and the rendered list from disagreeing when a
+  // phone opens a ?view=editions link — where the toggle that would normally
+  // reset it is hidden.
+  const isEditionsView = search.view === "editions" && view === "table";
+
   const workColumns = useMemo(() => getColumns(isScanning, editMode, router, progressMap), [isScanning, editMode, router, progressMap]);
   const editionColumns = useMemo(() => getEditionColumns(editMode, router), [editMode, router]);
   const newCount = totalCount - prevCount;
@@ -75,15 +85,21 @@ function LibraryPage() {
     [works, readingFilter, progressMap],
   );
 
+  // Keyed by work id, so a refreshed or reordered list cannot repoint it.
+  // Still filtered against the current list: a selected work can disappear.
   const pageSelectedWorkIds = useMemo(() => {
-    return Object.keys(rowSelection)
-      .map((idx) => filteredByReading[Number(idx)]?.id)
-      .filter((id): id is string => id !== undefined);
+    const present = new Set(filteredByReading.map((w) => w.id));
+    return Object.keys(rowSelection).filter((id) => present.has(id));
   }, [rowSelection, filteredByReading]);
 
   const selectedWorkIds = allWorkIds ?? pageSelectedWorkIds;
-  const selectedCount = allWorkIds ? allWorkIds.length : Object.keys(rowSelection).length;
-  const allPageRowsSelected = filteredByReading.length > 0 && Object.keys(rowSelection).length === filteredByReading.length;
+  // Both derived from the filtered ids, not the raw keys: a selected work can
+  // leave the list, and a bar that counts what the mutation will not act on is
+  // lying - and can raise the "select all N" banner spuriously.
+  const selectedCount = allWorkIds ? allWorkIds.length : pageSelectedWorkIds.length;
+  const allPageRowsSelected =
+    filteredByReading.length > 0 &&
+    pageSelectedWorkIds.length === filteredByReading.length;
 
   const selectedWorks = useMemo(() => {
     const idSet = new Set(selectedWorkIds);
@@ -118,10 +134,47 @@ function LibraryPage() {
       : {}),
   });
 
+  // The table passes its updater straight through, which used to leave a
+  // cross-page "select all N" standing: unchecking a row changed the visible
+  // ticks while the bulk action still ran against every id, deleting the work
+  // the user had just deselected.
+  const handleRowSelectionChange = useCallback<OnChangeFn<RowSelectionState>>(
+    (updater) => {
+      setAllWorkIds(null);
+      setRowSelection(updater);
+    },
+    [],
+  );
+
+  const handleToggleGridSelect = useCallback((workId: string) => {
+    setAllWorkIds(null);
+    setRowSelection((prev) => {
+      if (prev[workId] === true) {
+        return Object.fromEntries(
+          Object.entries(prev).filter(([rowKey]) => rowKey !== workId),
+        );
+      }
+      return { ...prev, [workId]: true };
+    });
+  }, []);
+
+  const handleSelectModeChange = useCallback((on: boolean) => {
+    setSelectMode(on);
+    if (!on) {
+      setRowSelection({});
+      setAllWorkIds(null);
+    }
+  }, []);
+
   const handleEditModeToggle = useCallback(() => { setEditMode(!editMode); }, [editMode]);
 
   const handleDisplayViewChange = useCallback((v: "grid" | "table") => {
     setView(v);
+    // The select toggle is hidden in table view, so leaving select mode on
+    // would strand the user in it when they come back to the grid.
+    if (v === "table") {
+      setSelectMode(false);
+    }
     if (v === "grid" && isEditionsView) {
       handleViewModeChange("works");
     }
@@ -169,7 +222,10 @@ function LibraryPage() {
     void router.invalidate();
   };
 
-  const effectiveTotalCount = isEditionsView && editionsResult ? editionsResult.totalCount : totalCount;
+  // On a phone `view` is forced to "grid", which makes the editions branch
+  // below unreachable — pagination must count works, not editions.
+  const effectiveTotalCount =
+    isEditionsView && editionsResult ? editionsResult.totalCount : totalCount;
 
   if (totalCount === 0 && !isEditionsView && !isScanning && !search.q && !search.format && !search.authorId && !search.seriesId && search.hasCover === undefined && search.enriched === undefined && search.hasDescription === undefined && search.inSeries === undefined) {
     return (
@@ -208,8 +264,11 @@ function LibraryPage() {
           </div>
         )}
       </div>
-      <div className="flex gap-6">
-        <aside className="w-56 shrink-0">
+      <div className="flex flex-col gap-4 lg:flex-row lg:gap-6">
+        <aside
+          data-testid="library-filters-rail"
+          className="hidden lg:block lg:w-56 lg:shrink-0"
+        >
           <LibraryFilters
             facetCounts={facetCounts}
             totalFacetCounts={totalFacetCounts}
@@ -218,6 +277,12 @@ function LibraryPage() {
           />
         </aside>
         <div className="flex-1 min-w-0 space-y-4">
+          <LibraryFiltersSheet
+            facetCounts={facetCounts}
+            totalFacetCounts={totalFacetCounts}
+            filters={currentFilters}
+            onFiltersChange={handleFiltersChange}
+          />
           <LibraryToolbar
             searchValue={search.q ?? ""}
             onSearchChange={handleSearchChange}
@@ -228,11 +293,22 @@ function LibraryPage() {
             filterValue={readingFilter}
             onFilterChange={setReadingFilter}
             showSort={view !== "table"}
+            selectMode={selectMode}
+            onSelectModeChange={handleSelectModeChange}
             tileSize={tileSize}
             onTileSizeChange={setTileSize}
           />
           {view === "grid" ? (
-            <LibraryGrid works={filteredByReading} progressMap={progressMap} scanActive={isScanning} tileSize={tileSize} />
+            <LibraryGrid
+              works={filteredByReading}
+              progressMap={progressMap}
+              scanActive={isScanning}
+              tileSize={tileSize}
+              selectable={selectMode}
+              selectionActive={selectedCount > 0}
+              rowSelection={rowSelection}
+              onToggleSelect={handleToggleGridSelect}
+            />
           ) : isEditionsView && editionsResult ? (
             <LibraryTableView
               works={editionsResult.editions}
@@ -242,8 +318,10 @@ function LibraryPage() {
               tablePrefs={tablePrefs}
               onColumnToggle={handleColumnToggle}
               onTextOverflowToggle={handleTextOverflowToggle}
-              rowSelection={{}}
-              onRowSelectionChange={setRowSelection}
+              // Editions view has no bulk actions: the toolbar acts on work
+              // ids, and these rows are editions. Passing a selection state
+              // here rendered a column of checkboxes that could never tick, so
+              // both props are omitted.
               sorting={tableSorting}
               onSortingChange={handleColumnSort}
               viewMode="editions"
@@ -260,7 +338,7 @@ function LibraryPage() {
               onColumnToggle={handleColumnToggle}
               onTextOverflowToggle={handleTextOverflowToggle}
               rowSelection={rowSelection}
-              onRowSelectionChange={setRowSelection}
+              onRowSelectionChange={handleRowSelectionChange}
               sorting={tableSorting}
               onSortingChange={handleColumnSort}
               viewMode="works"
@@ -269,6 +347,9 @@ function LibraryPage() {
             />
           )}
           <LibraryPagination
+            // The bulk bar is fixed over this corner while anything is
+            // selected, and would swallow taps meant for the page controls.
+            hidden={selectedCount > 0}
             page={search.page}
             pageSize={search.pageSize}
             totalCount={effectiveTotalCount}

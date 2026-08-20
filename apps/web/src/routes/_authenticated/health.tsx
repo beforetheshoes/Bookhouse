@@ -129,7 +129,7 @@ function EmptyWorksList({ works }: { works: EmptyWork[] }) {
       </Button>
       <ul className="space-y-1">
         {works.map((work) => (
-          <li key={work.id} className="text-sm text-muted-foreground">{work.titleDisplay}</li>
+          <li key={work.id} className="text-sm text-muted-foreground [overflow-wrap:anywhere]">{work.titleDisplay}</li>
         ))}
       </ul>
     </div>
@@ -204,12 +204,12 @@ function HealthPage() {
   const totalIssues = checks.reduce((sum, c) => sum + c.count, 0);
 
   return (
-    <div className="flex flex-1 flex-col gap-6 p-6">
+    <div className="flex flex-1 flex-col gap-6">
       <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-200">
         <strong>Experimental.</strong> This page is a work in progress — counts may be misleading and some checks are not yet actionable.
       </div>
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Library Health</h1>
           <p className="text-muted-foreground">
@@ -244,7 +244,7 @@ function HealthPage() {
               {check.count > 0 && check.href && (
                 <Link
                   to={check.href}
-                  className="mt-2 inline-block text-sm text-primary underline-offset-4 hover:underline"
+                  className="mt-2 inline-flex min-h-9 min-w-9 items-center text-sm text-primary underline-offset-4 hover:underline lg:min-h-0 lg:min-w-0"
                 >
                   Review
                 </Link>

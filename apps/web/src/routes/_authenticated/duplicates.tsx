@@ -151,7 +151,7 @@ function DuplicateCard({
         </Badge>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <SidePanel
             label={getItemLabel(dup, "left")}
             authors={getAuthors(dup, "left")}
@@ -175,7 +175,7 @@ function DuplicateCard({
             publishedAt={getPublishedAt(dup, "right")}
           />
         </div>
-        <div className="mt-4 flex gap-2">
+        <div className="mt-4 flex flex-wrap gap-2">
           {isPending && (
             <>
               <Button variant="outline" size="sm" onClick={() => { onIgnore(dup.id); }}>
@@ -233,8 +233,8 @@ function SidePanel({
         />
       )}
       <div className="min-w-0 flex-1">
-        <p className="font-medium">{label}</p>
-        {authors && <p className="text-sm text-muted-foreground">{authors}</p>}
+        <p className="font-medium break-words">{label}</p>
+        {authors && <p className="text-sm text-muted-foreground [overflow-wrap:anywhere]">{authors}</p>}
         {filePath && (
           <p className="break-all text-xs text-muted-foreground">{filePath}</p>
         )}

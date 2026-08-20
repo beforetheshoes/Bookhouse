@@ -582,3 +582,16 @@ describe("Sidebar", () => {
     Object.defineProperty(window, "innerWidth", { writable: true, configurable: true, value: originalWidth });
   });
 });
+
+it("SidebarTrigger is a 36px tap target on mobile and 28px from lg up", () => {
+  render(
+    <SidebarProvider>
+      <SidebarTrigger />
+    </SidebarProvider>
+  );
+  // This is the only way to reach navigation on a phone — 28px was the
+  // smallest tap target in the app.
+  const trigger = screen.getByRole("button", { name: "Toggle Sidebar" });
+  expect(trigger.className).toContain("size-9");
+  expect(trigger.className).toContain("lg:size-7");
+});

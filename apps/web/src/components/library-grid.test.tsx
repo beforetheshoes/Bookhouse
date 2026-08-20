@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getColumnCount as _getColumnCount } from "./library-grid";
+import { LibraryGrid, getColumnCount as _getColumnCount } from "./library-grid";
 
 let mockVirtualizerArgs: { count: number };
 
@@ -28,8 +28,19 @@ vi.mock("@tanstack/react-virtual", () => ({
 }));
 
 vi.mock("~/components/work-card", () => ({
-  WorkCard: ({ title, progressPercent, tileSize }: { title: string; progressPercent?: number; tileSize?: string }) => (
-    <div data-testid="work-card" data-progress={progressPercent != null ? String(progressPercent) : undefined} data-tile-size={tileSize ?? "small"}>{title}</div>
+  WorkCard: ({ title, progressPercent, tileSize, selectable, selected, onSelectChange }: { title: string; progressPercent?: number; tileSize?: string; selectable?: boolean; selected?: boolean; onSelectChange?: (v: boolean) => void }) => (
+    <div data-testid="work-card" data-progress={progressPercent != null ? String(progressPercent) : undefined} data-tile-size={tileSize ?? "small"}>
+      {title}
+      {selectable === true && (
+        <div
+          role="checkbox"
+          tabIndex={0}
+          aria-label={`Select ${title}`}
+          aria-checked={selected === true}
+          onClick={() => { onSelectChange?.(selected !== true); }}
+        />
+      )}
+    </div>
   ),
 }));
 
@@ -238,5 +249,71 @@ describe("LibraryGrid", () => {
     const works = [makeWork("Test")];
     render(<LibraryGrid works={works as never[]} />);
     expect(screen.getByText("Test")).toBeTruthy();
+  });
+});
+
+describe("getColumnCount on phone-width containers", () => {
+  it("drops small tiles to 2 columns below 400px", () => {
+    // 3 covers across a 360px phone is ~110px each — unreadable.
+    expect(_getColumnCount(360, "small")).toBe(2);
+  });
+
+  it("keeps small tiles at 3 columns between 400 and 480px", () => {
+    expect(_getColumnCount(440, "small")).toBe(3);
+  });
+
+  it("drops large tiles to a single column below 400px", () => {
+    expect(_getColumnCount(360, "large")).toBe(1);
+  });
+
+  it("keeps large tiles at 2 columns between 400 and 480px", () => {
+    expect(_getColumnCount(440, "large")).toBe(2);
+  });
+});
+
+describe("LibraryGrid selection", () => {
+  // Reuse the file's own factory rather than casting a literal.
+  const works = [makeWork("Alpha"), makeWork("Beta")];
+
+  it("renders no selection controls by default", () => {
+    render(<LibraryGrid works={works as never[]} />);
+    expect(screen.queryByRole("checkbox", { name: /^Select / })).toBeNull();
+  });
+
+  it("marks the rows named in rowSelection", () => {
+    render(<LibraryGrid works={works as never[]} selectable rowSelection={{ [works[1]?.id ?? ""]: true }} />);
+    expect(screen.getByRole("checkbox", { name: "Select Alpha" }).getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByRole("checkbox", { name: "Select Beta" }).getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("reports the work id that was toggled", () => {
+    const onToggleSelect = vi.fn();
+    render(<LibraryGrid works={works as never[]} selectable onToggleSelect={onToggleSelect} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Beta" }));
+    // Selection is keyed by work id so a refreshed or reordered list cannot
+    // repoint it at a different book.
+    expect(onToggleSelect).toHaveBeenCalledWith(works[1]?.id);
+  });
+
+  it("tolerates a missing toggle handler", () => {
+    render(<LibraryGrid works={works as never[]} selectable />);
+    expect(() => {
+      fireEvent.click(screen.getByRole("checkbox", { name: "Select Alpha" }));
+    }).not.toThrow();
+  });
+
+  it("reserves clearance only while the bulk bar is on screen", () => {
+    const works = [makeWork("Alpha")];
+    const { container: idle } = render(
+      <LibraryGrid works={works as never[]} selectable />,
+    );
+    // Entering select mode with nothing selected shows no bar, so growing the
+    // scroller by 192px would just be dead space.
+    expect(idle.firstElementChild?.className).not.toContain("pb-48");
+
+    const { container: active } = render(
+      <LibraryGrid works={works as never[]} selectable selectionActive />,
+    );
+    expect(active.firstElementChild?.className).toContain("pb-48");
   });
 });

@@ -240,14 +240,14 @@ function SettingsPage() {
       <h1 className="text-2xl font-bold">Settings</h1>
 
       <Tabs defaultValue={isOwner ? "library" : "devices"}>
-        <TabsList className="h-10">
-          {isOwner && <TabsTrigger value="library" className="px-4 py-1.5">Library</TabsTrigger>}
-          {isOwner && <TabsTrigger value="appearance" className="px-4 py-1.5">Appearance</TabsTrigger>}
-          {isOwner && <TabsTrigger value="jobs" className="px-4 py-1.5">Jobs</TabsTrigger>}
-          {isOwner && <TabsTrigger value="integrations" className="px-4 py-1.5">Integrations</TabsTrigger>}
-          {isOwner && <TabsTrigger value="backup" className="px-4 py-1.5">Backup</TabsTrigger>}
-          <TabsTrigger value="devices" className="px-4 py-1.5">Devices</TabsTrigger>
-          {isOwner && <TabsTrigger value="users" className="px-4 py-1.5">Users</TabsTrigger>}
+        <TabsList>
+          {isOwner && <TabsTrigger value="library" className="px-4">Library</TabsTrigger>}
+          {isOwner && <TabsTrigger value="appearance" className="px-4">Appearance</TabsTrigger>}
+          {isOwner && <TabsTrigger value="jobs" className="px-4">Jobs</TabsTrigger>}
+          {isOwner && <TabsTrigger value="integrations" className="px-4">Integrations</TabsTrigger>}
+          {isOwner && <TabsTrigger value="backup" className="px-4">Backup</TabsTrigger>}
+          <TabsTrigger value="devices" className="px-4">Devices</TabsTrigger>
+          {isOwner && <TabsTrigger value="users" className="px-4">Users</TabsTrigger>}
         </TabsList>
 
         {isOwner && (
@@ -520,7 +520,7 @@ function BrandPaletteCard() {
                 aria-checked={isActive}
                 aria-label={palette.name}
                 onClick={() => { setBrandPalette(key); }}
-                className={`flex items-center gap-3 rounded-md border p-3 text-left transition-colors ${isActive ? "border-primary bg-accent" : "border-border hover:bg-accent/50"}`}
+                className={`flex min-w-0 items-center gap-3 rounded-md border p-3 text-left transition-colors ${isActive ? "border-primary bg-accent" : "border-border hover:bg-accent/50"}`}
                 data-testid={`brand-palette-option-${key}`}
               >
                 <div className="flex size-10 items-center justify-center rounded-md bg-[#0f0d0a]">
@@ -568,7 +568,7 @@ function ColorCard() {
                 value={option.value}
                 checked={colorMode === option.value}
                 onChange={() => { setColorMode(option.value); }}
-                className="mt-1"
+                className="mt-1 size-5 lg:size-4"
               />
               <div>
                 <p className="text-sm font-medium">{option.label}</p>
@@ -587,7 +587,7 @@ function ColorCard() {
                 setHexInput(value);
                 setAccentColor(value);
               }}
-              className="size-8 cursor-pointer rounded-md border-0 p-0"
+              className="size-9 cursor-pointer rounded-md border-0 p-0 lg:size-8"
             />
             <Input
               type="text"
@@ -766,12 +766,12 @@ function JobsTab({
 
   return (
     <>
-      <div className="flex items-start justify-between">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <p className="text-sm text-muted-foreground">
           Monitor the status of library import and processing jobs.
         </p>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             {(Object.keys(SCAN_TYPE_LABELS) as ScanType[]).map((scanType) => (
               <div key={scanType} className="flex items-center gap-1">
                 <label className="text-sm text-muted-foreground whitespace-nowrap">{SCAN_TYPE_LABELS[scanType]}</label>
@@ -859,7 +859,7 @@ function MissingFileBehaviorCard({ initialBehavior }: { initialBehavior: Missing
               checked={behavior === "manual"}
               onChange={() => { void handleChange("manual"); }}
               disabled={saving}
-              className="mt-1"
+              className="mt-1 size-5 lg:size-4"
             />
             <div>
               <p className="text-sm font-medium">Manual review</p>
@@ -876,7 +876,7 @@ function MissingFileBehaviorCard({ initialBehavior }: { initialBehavior: Missing
               checked={behavior === "auto-cleanup"}
               onChange={() => { void handleChange("auto-cleanup"); }}
               disabled={saving}
-              className="mt-1"
+              className="mt-1 size-5 lg:size-4"
             />
             <div>
               <p className="text-sm font-medium">Auto-cleanup during scan</p>
@@ -957,19 +957,19 @@ function LibraryRootCard({ root }: { root: LibraryRootWithExtras }) {
     <>
       <Card>
         <CardHeader>
-          <div className="flex items-start justify-between">
-            <div className="space-y-1">
-              <CardTitle className="flex items-center gap-2">
-                {root.name}
+          <div className="flex flex-col items-start justify-between gap-3 sm:flex-row">
+            <div className="min-w-0 space-y-1">
+              <CardTitle className="flex min-w-0 flex-wrap items-center gap-2">
+                <span className="min-w-0 [overflow-wrap:anywhere]">{root.name}</span>
                 {!root.isEnabled && (
                   <Badge variant="secondary">Disabled</Badge>
                 )}
               </CardTitle>
-              <p className="text-sm text-muted-foreground font-mono">
+              <p className="text-sm text-muted-foreground font-mono break-all">
                 {root.path}
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
@@ -1030,7 +1030,7 @@ function LibraryRootCard({ root }: { root: LibraryRootWithExtras }) {
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="flex gap-4 text-sm">
+          <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
             <div className="flex items-center gap-1.5">
               <span className="text-muted-foreground">Kind:</span>
               <Badge variant="outline">{root.kind}</Badge>

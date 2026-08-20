@@ -1,5 +1,6 @@
 import { Button } from "~/components/ui/button";
 import { X } from "lucide-react";
+import { countActiveFilters } from "~/lib/library-filter-helpers";
 
 export interface FacetCounts {
   format: { formatFamily: string; _count: { _all: number } }[];
@@ -30,18 +31,6 @@ function formatCount(filtered: number, total: number): string {
   return filtered === total ? String(filtered) : `${String(filtered)} / ${String(total)}`;
 }
 
-function hasActiveFilters(filters: LibraryFilterValues): boolean {
-  return (
-    (filters.format !== undefined && filters.format.length > 0) ||
-    filters.hasCover !== undefined ||
-    filters.enriched !== undefined ||
-    filters.hasDescription !== undefined ||
-    filters.inSeries !== undefined ||
-    (filters.authorId !== undefined && filters.authorId.length > 0) ||
-    (filters.seriesId !== undefined && filters.seriesId.length > 0)
-  );
-}
-
 export function LibraryFilters({
   facetCounts,
   totalFacetCounts,
@@ -69,11 +58,11 @@ export function LibraryFilters({
     onFiltersChange({});
   }
 
-  const filtersActive = hasActiveFilters(filters);
+  const filtersActive = countActiveFilters(filters) > 0;
 
   return (
     <div className="space-y-4">
-      <div data-testid="clear-all-spacer" className="h-8">
+      <div data-testid="clear-all-spacer" className="h-9 lg:h-8">
         {filtersActive && (
           <Button variant="ghost" size="sm" onClick={clearAll} className="gap-1">
             <X className="size-3" />

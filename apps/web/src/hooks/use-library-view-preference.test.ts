@@ -3,7 +3,10 @@ import { renderHook, act } from "@testing-library/react";
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { useLibraryViewPreference } from "./use-library-view-preference";
+import {
+  useEffectiveLibraryView,
+  useLibraryViewPreference,
+} from "./use-library-view-preference";
 
 const STORAGE_KEY = "library-view";
 
@@ -92,5 +95,53 @@ describe("useLibraryViewPreference", () => {
     }
     const html = renderToString(createElement(TestComponent));
     expect(html).toContain("grid");
+  });
+});
+
+describe("useEffectiveLibraryView", () => {
+  beforeEach(() => {
+    vi.stubGlobal("localStorage", makeStorage());
+  });
+
+  function setViewportWidth(width: number) {
+    Object.defineProperty(window, "innerWidth", {
+      writable: true,
+      configurable: true,
+      value: width,
+    });
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      configurable: true,
+      value: vi.fn(() => ({
+        matches: width < 768,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    });
+  }
+
+  it("honours the stored preference on desktop widths", () => {
+    setViewportWidth(1280);
+    localStorage.setItem(STORAGE_KEY, "table");
+    const { result } = renderHook(() => useEffectiveLibraryView());
+    expect(result.current[0]).toBe("table");
+  });
+
+  it("forces grid on phones even when table is stored", () => {
+    // An 800px-wide table squeezed into 360px renders every cell as an
+    // ellipsis, so the table is a desktop-only affordance.
+    setViewportWidth(375);
+    localStorage.setItem(STORAGE_KEY, "table");
+    const { result } = renderHook(() => useEffectiveLibraryView());
+    expect(result.current[0]).toBe("grid");
+  });
+
+  it("still round-trips the stored preference from a phone", () => {
+    setViewportWidth(375);
+    const { result } = renderHook(() => useEffectiveLibraryView());
+    act(() => {
+      result.current[1]("table");
+    });
+    expect(localStorage.getItem(STORAGE_KEY)).toBe("table");
   });
 });

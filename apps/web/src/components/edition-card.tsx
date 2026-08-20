@@ -118,10 +118,10 @@ export function EditionCard({
     <div className="rounded-lg border border-border">
       {/* Card Header */}
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <h3 className="text-sm font-semibold">{edition.publisher ?? "Unknown Publisher"}</h3>
+        <h3 className="min-w-0 [overflow-wrap:anywhere] text-sm font-semibold">{edition.publisher ?? "Unknown Publisher"}</h3>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="size-8 p-0" aria-label="Edition actions">
+            <Button variant="ghost" size="sm" className="size-9 p-0 lg:size-8" aria-label="Edition actions">
               <EllipsisVertical className="size-4" />
             </Button>
           </DropdownMenuTrigger>
@@ -152,7 +152,7 @@ export function EditionCard({
 
       <div className="space-y-6 p-4">
         {/* Actions */}
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
           {isAudiobook && presentFiles.length > 0 && (
             <Button variant="outline" size="sm" asChild>
               <a href={`/api/editions/download-all/${edition.id}`} download aria-label="Download all audio files">
@@ -280,7 +280,7 @@ export function EditionCard({
             <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Authors</h4>
             <div className="text-sm space-y-0.5">
               {edition.contributors.filter((c) => c.role === "AUTHOR").map((c) => (
-                <div key={`${c.role}-${c.contributor.nameDisplay}`}>
+                <div key={`${c.role}-${c.contributor.nameDisplay}`} className="[overflow-wrap:anywhere]">
                   {c.contributor.nameDisplay}
                 </div>
               ))}
@@ -310,7 +310,7 @@ export function EditionCard({
             <div className="space-y-1 text-sm">
               {contentFiles.map((ef) => (
                 <div key={ef.id} className="flex items-center gap-2">
-                  <span className="font-mono text-xs">{ef.fileAsset.basename}</span>
+                  <span className="min-w-0 break-all font-mono text-xs">{ef.fileAsset.basename}</span>
                   <span className="text-muted-foreground">
                     {formatBytes(ef.fileAsset.sizeBytes)}
                   </span>
