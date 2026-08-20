@@ -228,3 +228,21 @@ it("hides the select toggle when no handler is supplied", () => {
   render(<LibraryToolbar {...defaultProps} view="grid" />);
   expect(screen.queryByRole("button", { name: "Select works" })).toBeNull();
 });
+
+it("does not fire onSearchChange on mount", () => {
+  const onSearchChange = vi.fn();
+  render(<LibraryToolbar {...defaultProps} searchValue="existing" onSearchChange={onSearchChange} />);
+  // updateSearch resets page to 1, so firing here snapped any link to page 2+
+  // back to page 1 before the user saw it.
+  expect(onSearchChange).not.toHaveBeenCalled();
+});
+
+it("still fires onSearchChange when the search is cleared", async () => {
+  const onSearchChange = vi.fn();
+  render(<LibraryToolbar {...defaultProps} searchValue="existing" onSearchChange={onSearchChange} />);
+  const input = screen.getByPlaceholderText("Filter by title or author...");
+  fireEvent.change(input, { target: { value: "" } });
+  await waitFor(() => {
+    expect(onSearchChange).toHaveBeenCalledWith("");
+  });
+});
