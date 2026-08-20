@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, type ReactNode } from "react";
 import { Grid2x2, Grid3x3, LayoutGrid, Table2, X, CheckSquare } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -32,6 +32,17 @@ interface LibraryToolbarProps {
   /** Grid select mode. Omit the handler to hide the toggle. */
   selectMode?: boolean;
   onSelectModeChange?: (on: boolean) => void;
+  /**
+   * Rendered first, inside the same row as the search box. The filters sheet
+   * trigger goes here on phones: as a sibling above the toolbar it cost a
+   * whole 52px band of its own.
+   */
+  leading?: ReactNode;
+  /**
+   * True when a filters sheet shows reading status and sort below `lg`, so
+   * this row can drop them. Shelf detail has no such sheet and keeps them.
+   */
+  filtersInSheet?: boolean;
 }
 
 const FILTER_OPTIONS: { value: ReadingFilter; label: string }[] = [
@@ -63,6 +74,8 @@ export function LibraryToolbar({
   onTileSizeChange,
   selectMode,
   onSelectModeChange,
+  leading,
+  filtersInSheet = false,
 }: LibraryToolbarProps) {
   const [localSearch, setLocalSearch] = useState(searchValue);
   const debouncedSearch = useDebounce(localSearch, 300);
@@ -83,51 +96,61 @@ export function LibraryToolbar({
   }, [searchValue]);
 
   return (
-    <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-      <div className="flex flex-1 flex-wrap items-center gap-2">
+    // One row below lg. Stacked, this cost three separate bands - the sheet
+    // trigger, the search box and the control cluster - and pushed the first
+    // cover to 42% of the viewport on a phone.
+    <div className="flex flex-wrap items-center gap-2 lg:justify-between">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        {leading}
         <Input
           placeholder="Filter by title or author..."
           value={localSearch}
           onChange={(e) => { setLocalSearch(e.target.value); }}
-          className="h-9 w-full md:w-[150px] lg:h-8 lg:w-[250px]"
+          className="h-9 min-w-0 flex-1 lg:h-8 lg:w-[250px] lg:flex-none"
         />
         {localSearch && (
           <Button
             variant="ghost"
             onClick={() => { setLocalSearch(""); }}
-            className="h-9 px-2 lg:h-8"
+            className="h-9 shrink-0 px-2 lg:h-8"
             aria-label="Clear search"
           >
             <X className="size-4" />
           </Button>
         )}
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <Select value={filterValue} onValueChange={(v) => { onFilterChange(v as ReadingFilter); }}>
-          <SelectTrigger size="sm">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {FILTER_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {showSort && (
-          <Select value={sortValue} onValueChange={(v) => { onSortChange(v as SortValue); }}>
+      <div className="flex shrink-0 items-center gap-2">
+        {/* Reading status and sort live in the filters sheet below lg - they
+            are filters, and two more selects here wrapped to a second row. */}
+        <div className={filtersInSheet ? "hidden lg:block" : undefined}>
+          <Select value={filterValue} onValueChange={(v) => { onFilterChange(v as ReadingFilter); }}>
             <SelectTrigger size="sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {SORT_OPTIONS.map((opt) => (
+              {FILTER_OPTIONS.map((opt) => (
                 <SelectItem key={opt.value} value={opt.value}>
                   {opt.label}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
+        </div>
+        {showSort && (
+          <div className={filtersInSheet ? "hidden lg:block" : undefined}>
+            <Select value={sortValue} onValueChange={(v) => { onSortChange(v as SortValue); }}>
+              <SelectTrigger size="sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SORT_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         )}
         <div className="hidden items-center rounded-md border md:flex">
           <Button

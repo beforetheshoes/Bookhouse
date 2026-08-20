@@ -140,6 +140,56 @@ test.describe("Mobile layout", () => {
     }
   });
 
+  test("chrome above the grid stays under a quarter of the phone viewport", async ({
+    page,
+  }) => {
+    // The stacked layout put the first cover at y=310 of a 740px viewport -
+    // 42% of the screen spent on a heading, a strapline, a filters button, a
+    // search box and a control row, before a single book. Nothing in the
+    // overflow or tap-target suites can see that: every one of those elements
+    // was correctly sized and inside the viewport.
+    for (let i = 0; i < 12; i++) await seedWork({ title: `Chrome Book ${String(i)}` });
+    await page.goto("/library");
+    await expect(page.getByText("Chrome Book 0").first()).toBeVisible();
+    await page.waitForTimeout(400);
+
+    const m = await page.evaluate(() => {
+      const vh = document.documentElement.clientHeight;
+      const card = document.querySelector<HTMLElement>("a[href^='/library/']");
+      return {
+        vh,
+        cardTop: card ? Math.round(card.getBoundingClientRect().top) : -1,
+        // The row has to still hold every control it claims to.
+        controls: {
+          filters: document.querySelectorAll('[data-slot="sheet-trigger"]').length,
+          search: document.querySelectorAll('input[placeholder^="Filter by title"]').length,
+          select: document.querySelectorAll('[aria-label="Select works"]').length,
+          tiles: document.querySelectorAll('[aria-label="Small tiles"]').length,
+        },
+      };
+    });
+
+    expect(m.cardTop, "no work card rendered").toBeGreaterThan(0);
+    expect(
+      m.cardTop,
+      `first cover starts at ${String(m.cardTop)}px of a ${String(m.vh)}px viewport`,
+    ).toBeLessThanOrEqual(Math.round(m.vh * 0.25));
+    // Guard against "saving" space by dropping controls instead of packing them.
+    expect(m.controls).toEqual({ filters: 1, search: 1, select: 1, tiles: 1 });
+  });
+
+  test("status and sort are reachable from the filters sheet on a phone", async ({
+    page,
+  }) => {
+    // They leave the toolbar row below lg, so the sheet is the only route.
+    await seedWork({ title: "Sheet Sort Book" });
+    await page.goto("/library");
+    await page.getByRole("button", { name: /Filters/ }).click();
+    await page.waitForTimeout(400);
+    await expect(page.getByRole("combobox", { name: "Reading status" })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Sort" })).toBeVisible();
+  });
+
   test("bulk actions are reachable on a phone", async ({ page }) => {
     for (let i = 0; i < 3; i++) await seedWork({ title: `Bulk Book ${String(i)}` });
 
@@ -273,10 +323,12 @@ test.describe("Mobile layout", () => {
     // repointed it at whatever now sat there - and a bulk delete would hit
     // that book instead. Keyed by work id, the selection must survive a
     // reorder still pointing at Stale Book 0.
-    await page.getByRole("combobox", { name: /Title A-Z/i }).or(
-      page.locator('[data-slot="select-trigger"]', { hasText: "Title A-Z" }),
-    ).first().click();
+    // Sort lives in the filters sheet on a phone - the toolbar row has no
+    // space for it, so this is the only way a phone user can reorder.
+    await page.getByRole("button", { name: /Filters/ }).click();
+    await page.getByRole("combobox", { name: "Sort" }).click();
     await page.getByRole("option").filter({ hasText: /Z-A/i }).first().click();
+    await page.keyboard.press("Escape");
     await page.waitForTimeout(1200);
 
     await expect(page.getByText("1 work selected")).toBeVisible();
@@ -317,6 +369,40 @@ test.describe("Mobile layout", () => {
       "Payload Book 2",
       "Payload Book 4",
     ]);
+  });
+
+  test("unticking one row of a select-all keeps the off-page books", async ({
+    page,
+  }) => {
+    // 12 works at 10 per page: "select all 12" spans two pages. Unticking one
+    // visible row used to discard both off-page ids as well, so the delete
+    // spared books the user never touched.
+    for (let i = 0; i < 12; i++) {
+      await seedWork({ title: `Offpage Book ${String(i).padStart(2, "0")}` });
+    }
+    await page.goto("/library?page=1&pageSize=10&sort=title-asc&view=works");
+    await expect(page.getByText("Offpage Book 00")).toBeVisible();
+
+    await page.getByRole("button", { name: "Select works" }).click();
+    for (let i = 0; i < 10; i++) {
+      await page.getByRole("checkbox", {
+        name: `Select Offpage Book ${String(i).padStart(2, "0")}`,
+      }).click();
+    }
+    await page.getByTestId("select-all-btn").click();
+    await expect(page.getByText("12 works selected")).toBeVisible();
+
+    await page.getByRole("checkbox", { name: "Select Offpage Book 03" }).click();
+    await expect(page.getByText("11 works selected")).toBeVisible();
+
+    await page.getByTestId("bulk-delete-works-btn").click();
+    await expect(page.getByText("Delete 11 Works")).toBeVisible();
+    await page.getByTestId("confirm-bulk-delete-works-btn").click();
+    await page.waitForTimeout(1500);
+
+    // Exactly the unticked book survives - not it plus the two pages the user
+    // could not see.
+    expect(await listWorkTitles()).toEqual(["Offpage Book 03"]);
   });
 
   test("shelf editions can be removed from a phone", async ({ page }) => {

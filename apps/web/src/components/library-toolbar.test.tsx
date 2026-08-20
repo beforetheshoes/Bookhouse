@@ -182,23 +182,33 @@ describe("LibraryToolbar", () => {
 
 });
 
-it("stacks and wraps its control groups on phones", () => {
-  const { container } = render(<LibraryToolbar {...defaultProps} />);
-  // ~520px of intrinsic width in a single non-wrapping row was unreachable
-  // on a 375px phone.
+it("renders the leading slot inside the control row", () => {
+  const { container } = render(
+    <LibraryToolbar {...defaultProps} leading={<button type="button">Filters</button>} />,
+  );
+  // The filters trigger shares the search row rather than sitting above it.
+  // Whether that actually saves vertical space is measured in the browser
+  // suite - happy-dom does no layout, so a class assertion here would pass
+  // against any arrangement at all.
   const row = container.firstElementChild;
-  expect(row?.className).toContain("flex-col");
-  expect(row?.className).toContain("md:flex-row");
-  Array.from(row?.children ?? []).forEach((group) => {
-    expect(group.className).toContain("flex-wrap");
-  });
+  const trigger = screen.getByRole("button", { name: "Filters" });
+  expect(row?.contains(trigger)).toBe(true);
 });
 
-it("lets the search input use the full width on phones", () => {
-  render(<LibraryToolbar {...defaultProps} />);
-  const input = screen.getByPlaceholderText("Filter by title or author...");
-  expect(input.className).toContain("w-full");
-  expect(input.className).toContain("md:w-[150px]");
+it("keeps status and sort in the row unless a sheet is showing them", () => {
+  const { rerender } = render(<LibraryToolbar {...defaultProps} />);
+  // Shelf detail has no filters sheet: hiding these below lg would strand
+  // them with no other way to reach reading status or sort.
+  const inRow = screen.getAllByRole("combobox");
+  expect(inRow.length).toBeGreaterThanOrEqual(2);
+  inRow.forEach((el) => {
+    expect(el.closest(".hidden")).toBeNull();
+  });
+
+  rerender(<LibraryToolbar {...defaultProps} filtersInSheet />);
+  screen.getAllByRole("combobox").forEach((el) => {
+    expect(el.closest("div")?.className).toContain("lg:block");
+  });
 });
 
 it("offers a select toggle in grid view", () => {

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import type * as DataTableModule from "~/components/data-table";
 import type * as TanstackRouter from "@tanstack/react-router";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 /** Cast route option function types that have no overlap with simple function types */
@@ -197,6 +197,10 @@ vi.mock("~/components/library-toolbar", () => ({
     capturedToolbarProps = props;
     return (
       <div data-testid="library-toolbar" data-view={props.view as string} data-filter={props.filterValue as string}>
+        {/* The filters sheet is passed in as `leading` and rendered inside
+            this row, so the mock has to render it or the page appears to have
+            no route into faceting. */}
+        {props.leading as React.ReactNode}
         <button
           type="button"
           aria-label="toolbar-select-mode"
@@ -246,6 +250,9 @@ vi.mock("~/components/data-table/data-table-column-picker", () => ({
 
 // Use real data-table so column cell renderers execute; wrap VirtualizedDataTable to capture columns prop
 const capturedColumnRefs: object[] = [];
+let capturedRowSelectionChange:
+  | ((u: Record<string, boolean> | ((p: Record<string, boolean>) => Record<string, boolean>)) => void)
+  | undefined;
 vi.mock("~/components/data-table", async () => {
   const actual = await vi.importActual<typeof DataTableModule>("~/components/data-table");
   const RealTable = actual.VirtualizedDataTable;
@@ -253,6 +260,7 @@ vi.mock("~/components/data-table", async () => {
     ...actual,
     VirtualizedDataTable: (props: React.ComponentProps<typeof RealTable>) => {
       capturedColumnRefs.push(props.columns);
+      capturedRowSelectionChange = props.onRowSelectionChange;
       return <RealTable {...props} />;
     },
   };
@@ -885,7 +893,27 @@ describe("LibraryPage", () => {
     expect(screen.getByText("1 work selected")).toBeTruthy();
   });
 
-  it("abandons a select-all when any row is unchecked", async () => {
+  it("accepts a plain object from the table, not only an updater", async () => {
+    // TanStack always hands over a function, but the OnChangeFn contract
+    // allows a bare value and the branch is live either way.
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Alpha"), makeWork("Beta")], totalCount: 2, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    if (!capturedRowSelectionChange) throw new Error("expected the table's handler");
+    act(() => { capturedRowSelectionChange?.({ "work-alpha": true }); });
+    await waitFor(() => { expect(screen.getByText("1 work selected")).toBeTruthy(); });
+  });
+
+  it("keeps the off-page selection when one row is unchecked", async () => {
     mockView = "table";
     mockLoaderData = {
       libraryResult: { works: [makeWork("Alpha"), makeWork("Beta")], totalCount: 5, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
@@ -894,7 +922,9 @@ describe("LibraryPage", () => {
       progressMap: {},
       shelves: [],
     };
-    getAllFilteredWorkIdsServerFnMock.mockResolvedValue(["w1", "w2", "w3", "w4", "w5"]);
+    getAllFilteredWorkIdsServerFnMock.mockResolvedValue([
+      "work-alpha", "work-beta", "w3", "w4", "w5",
+    ]);
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
     render(<LibraryPage />);
@@ -905,13 +935,69 @@ describe("LibraryPage", () => {
     fireEvent.click(screen.getByTestId("select-all-btn"));
     await waitFor(() => { expect(screen.getByText("5 works selected")).toBeTruthy(); });
 
-    // Unchecking a row must abandon the cross-page selection. Otherwise the
-    // bulk action still runs against all five and deletes the work the user
-    // just deselected.
+    // Unchecking one visible row used to throw away every off-page id too, so
+    // "all 5" collapsed to the 1 still ticked on this page. It must drop only
+    // the row the user actually unticked.
+    const rowCheckbox = screen.getAllByLabelText("Select row")[0];
+    if (!rowCheckbox) throw new Error("expected row checkbox");
+    fireEvent.click(rowCheckbox);
+    await waitFor(() => { expect(screen.getByText("4 works selected")).toBeTruthy(); });
+  });
+
+  it("re-ticking a row puts it back into the off-page selection", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Alpha"), makeWork("Beta")], totalCount: 5, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    getAllFilteredWorkIdsServerFnMock.mockResolvedValue([
+      "work-alpha", "work-beta", "w3", "w4", "w5",
+    ]);
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    const selectAllCheckbox = screen.getAllByLabelText("Select all")[0];
+    if (!selectAllCheckbox) throw new Error("expected select-all checkbox");
     fireEvent.click(selectAllCheckbox);
-    await waitFor(() => {
-      expect(screen.queryByText("5 works selected")).toBeNull();
-    });
+    fireEvent.click(screen.getByTestId("select-all-btn"));
+    await waitFor(() => { expect(screen.getByText("5 works selected")).toBeTruthy(); });
+
+    const rowCheckbox = screen.getAllByLabelText("Select row")[0];
+    if (!rowCheckbox) throw new Error("expected row checkbox");
+    fireEvent.click(rowCheckbox);
+    await waitFor(() => { expect(screen.getByText("4 works selected")).toBeTruthy(); });
+    fireEvent.click(rowCheckbox);
+    await waitFor(() => { expect(screen.getByText("5 works selected")).toBeTruthy(); });
+  });
+
+  it("drops a grid card from the off-page selection when it is untoggled", async () => {
+    mockView = "grid";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Alpha"), makeWork("Beta")], totalCount: 5, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    getAllFilteredWorkIdsServerFnMock.mockResolvedValue([
+      "work-alpha", "work-beta", "w3", "w4", "w5",
+    ]);
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    fireEvent.click(screen.getByLabelText("toolbar-select-mode"));
+    fireEvent.click(screen.getByLabelText("toggle-row-0"));
+    fireEvent.click(screen.getByLabelText("toggle-row-1"));
+    fireEvent.click(screen.getByTestId("select-all-btn"));
+    await waitFor(() => { expect(screen.getByText("5 works selected")).toBeTruthy(); });
+
+    fireEvent.click(screen.getByLabelText("toggle-row-0"));
+    await waitFor(() => { expect(screen.getByText("4 works selected")).toBeTruthy(); });
   });
 
   it("wraps the row checkbox in exactly one label", async () => {
