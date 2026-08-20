@@ -151,7 +151,7 @@ describe("MissingFilesPage", () => {
       // most 100, so above that it silently cleaned a fraction of what the
       // dialog named.
       expect(cleanupMissingFilesServerFnMock).toHaveBeenCalledWith({
-        data: { fileAssetIds: [], all: true },
+        data: { all: true },
       });
       expect(mockToast.success).toHaveBeenCalled();
     });
@@ -270,7 +270,7 @@ describe("MissingFilesPage", () => {
 
     await waitFor(() => {
       expect(cleanupMissingFilesServerFnMock).toHaveBeenCalledWith({
-        data: { fileAssetIds: ["fa-1"], all: false },
+        data: { fileAssetIds: ["fa-1"] },
       });
       expect(mockToast.success).toHaveBeenCalled();
     });
@@ -536,5 +536,28 @@ describe("MissingFilesPage", () => {
     // Click again to deselect
     fireEvent.click(selectAll);
     expect(screen.queryByText(/Clean Up Selected/)).toBeNull();
+  });
+
+  it("says so when the list is truncated", async () => {
+    mockLoaderData = {
+      missingFiles: {
+        items: [
+          {
+            id: "fa-1",
+            relativePath: "books/gone.epub",
+            mediaKind: "EPUB",
+            lastSeenAt: "2025-01-01T00:00:00.000Z",
+            editionFiles: [],
+          },
+        ],
+        total: 150,
+      },
+    };
+    const { Route } = await import("./missing-files");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    // The list is one page of at most 100 with no pager, so rows beyond it
+    // are invisible and unselectable while the dialog counts them.
+    expect(screen.getByTestId("missing-files-truncated").textContent).toContain("150");
   });
 });

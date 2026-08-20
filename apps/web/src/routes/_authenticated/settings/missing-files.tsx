@@ -88,7 +88,7 @@ function MissingFilesPage() {
     setCleaning(true);
     try {
       const result = await cleanupMissingFilesServerFn({
-        data: { fileAssetIds, all },
+        data: all ? { all: true } : { fileAssetIds },
       });
       const total = result.deletedEditionIds.length + result.deletedWorkIds.length + result.deletedEditionFileCount;
       toast.success(`Cleaned up ${String(total)} record${total === 1 ? "" : "s"}`);
@@ -123,6 +123,11 @@ function MissingFilesPage() {
           <p className="text-sm text-muted-foreground">
             These files were not found during the last scan. Cleaning up removes their library entries. Files on disk are not affected.
           </p>
+          {missingFiles.total > missingFiles.items.length && (
+            <p className="text-sm text-muted-foreground" data-testid="missing-files-truncated">
+              Showing the first {String(missingFiles.items.length)} of {String(missingFiles.total)}. Clean Up All still covers every one.
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           {selected.size > 0 && (

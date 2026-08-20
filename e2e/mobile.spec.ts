@@ -420,8 +420,12 @@ test.describe("Mobile layout", () => {
           document.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemcheckbox"]'),
         );
         return rows
-          .map((el) => ({ h: Math.round(el.getBoundingClientRect().height), label: (el.textContent ?? "").trim().slice(0, 30) }))
-          .filter((r) => r.h > 0 && r.h < 36);
+          .map((el) => ({
+            h: Math.round(el.getBoundingClientRect().height),
+            w: Math.round(el.getBoundingClientRect().width),
+            label: (el.textContent ?? "").trim().slice(0, 30),
+          }))
+          .filter((r) => r.h > 0 && (r.h < 36 || r.w < 36));
       });
       expect(menuRows, `${route} menu rows under 36px: ${JSON.stringify(menuRows)}`).toEqual([]);
       await page.keyboard.press("Escape");

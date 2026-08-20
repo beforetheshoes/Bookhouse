@@ -412,12 +412,21 @@ describe("cleanupMissingFilesServerFn all mode", () => {
     // most 100 - so above that it silently cleaned a fraction of what the
     // dialog named.
     fileAssetFindManyMock.mockResolvedValue([{ id: "fa-9" }, { id: "fa-10" }]);
-    await cleanupMissingFilesServerFn({ data: { fileAssetIds: [], all: true } });
+    await cleanupMissingFilesServerFn({ data: { all: true } });
 
     expect(cascadeCleanupOrphansMock).toHaveBeenCalledWith(
       expect.anything(),
       { fileAssetIds: ["fa-9", "fa-10"] },
     );
+  });
+});
+
+describe("cleanupMissingFilesServerFn union contract", () => {
+  it("rejects an id list whose files are not all MISSING", async () => {
+    fileAssetCountMock.mockResolvedValue(1);
+    await expect(
+      cleanupMissingFilesServerFn({ data: { fileAssetIds: ["fa-1", "fa-2"] } }),
+    ).rejects.toThrow("Not all specified files have MISSING status");
   });
 });
 });

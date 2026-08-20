@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Grid2x2, Grid3x3, LayoutGrid, Table2, X, CheckSquare } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -67,7 +67,14 @@ export function LibraryToolbar({
   const [localSearch, setLocalSearch] = useState(searchValue);
   const debouncedSearch = useDebounce(localSearch, 300);
 
+  const isFirstSearchSync = useRef(true);
   useEffect(() => {
+    // Skip the mount run: updateSearch resets page to 1, so firing here made
+    // any link, reload or back-navigation to page 2+ snap to page 1.
+    if (isFirstSearchSync.current) {
+      isFirstSearchSync.current = false;
+      return;
+    }
     onSearchChange(debouncedSearch);
   }, [debouncedSearch, onSearchChange]);
 

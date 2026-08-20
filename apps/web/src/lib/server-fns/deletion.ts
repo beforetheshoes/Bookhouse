@@ -212,6 +212,7 @@ export const getMissingFilesServerFn = createServerFn({
 })
   .validator(missingFilesPaginationSchema)
   .handler(async ({ data }) => {
+    await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
 
     const where = { availabilityStatus: "MISSING" as const };
@@ -249,19 +250,19 @@ export const getMissingFilesServerFn = createServerFn({
 export const cleanupMissingFilesServerFn = createServerFn({
   method: "POST",
 })
-  .validator(z.object({
-    fileAssetIds: z.array(z.string().min(1)),
-    /** Clean every missing file, not just the ids supplied. The UI's
-     *  "Clean Up All N" button could only ever send the page it had loaded
-     *  - at most 100 - so above that it cleaned a fraction of what it named. */
-    all: z.boolean().optional(),
-  }))
+  // Either clean everything, or clean an explicit list - never both. The UI's
+  // "Clean Up All N" button could only ever send the page it had loaded, at
+  // most 100, so above that it cleaned a fraction of what it named.
+  .validator(z.union([
+    z.object({ all: z.literal(true) }),
+    z.object({ fileAssetIds: z.array(z.string().min(1)) }),
+  ]))
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
     const { cascadeCleanupOrphans } = await import("@bookhouse/ingest");
 
-    if (data.all === true) {
+    if ("all" in data) {
       const missing = await db.fileAsset.findMany({
         where: { availabilityStatus: "MISSING" },
         select: { id: true },
@@ -271,13 +272,14 @@ export const cleanupMissingFilesServerFn = createServerFn({
       });
     }
 
+    const { fileAssetIds } = data;
     const missingCount = await db.fileAsset.count({
-      where: { id: { in: data.fileAssetIds }, availabilityStatus: "MISSING" },
+      where: { id: { in: fileAssetIds }, availabilityStatus: "MISSING" },
     });
 
-    if (missingCount !== data.fileAssetIds.length) {
+    if (missingCount !== fileAssetIds.length) {
       throw new Error("Not all specified files have MISSING status");
     }
 
-    return cascadeCleanupOrphans(db, { fileAssetIds: data.fileAssetIds });
+    return cascadeCleanupOrphans(db, { fileAssetIds });
   });

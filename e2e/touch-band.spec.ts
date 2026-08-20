@@ -30,7 +30,7 @@ test.describe("Touch band", () => {
         await page.waitForTimeout(700);
 
         const r = await page.evaluate(() => {
-          const small: { h: number; label: string }[] = [];
+          const small: { h: number; w: number; label: string }[] = [];
           let seen = 0;
           document
             .querySelectorAll<HTMLElement>(
@@ -44,9 +44,12 @@ test.describe("Touch band", () => {
               if (cs.visibility === "hidden" || cs.opacity === "0") return;
               if (el.closest("[aria-hidden='true']")) return;
               seen += 1;
-              if (b.height < 36) {
+              // Width too: the split delete trigger was 36 tall and 34 wide,
+              // and survived three fixes because only height was measured.
+              if (b.height < 36 || b.width < 36) {
                 small.push({
                   h: Math.round(b.height),
+                  w: Math.round(b.width),
                   label: (el.getAttribute("aria-label") ?? el.textContent ?? el.tagName).trim().slice(0, 30),
                 });
               }
