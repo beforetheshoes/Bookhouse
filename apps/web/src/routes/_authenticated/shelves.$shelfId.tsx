@@ -157,10 +157,11 @@ function ShelfDetailPage() {
   const works = getWorksWithEditions(shelf.items);
   const selectedCount = Object.keys(rowSelection).length;
 
+  // Keyed by edition id via getRowId, so a refreshed list cannot repoint it.
+  // Still filtered against the current list: a selected row can disappear.
   const selectedEditionIds = useMemo(() => {
-    return Object.keys(rowSelection)
-      .map((idx) => editions[Number(idx)]?.id)
-      .filter((id): id is string => id !== undefined);
+    const present = new Set(editions.map((e) => e.id));
+    return Object.keys(rowSelection).filter((id) => present.has(id));
   }, [rowSelection, editions]);
 
   const handleRemoveSelected = async () => {
@@ -229,6 +230,7 @@ function ShelfDetailPage() {
         <VirtualizedDataTable
           columns={tableColumns}
           data={editions}
+          getRowId={(row) => (row as { id: string }).id}
           rowSelection={rowSelection}
           onRowSelectionChange={setRowSelection}
         />

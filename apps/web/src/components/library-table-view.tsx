@@ -99,6 +99,7 @@ export function LibraryTableView<T>({
         showPagination={false}
         columnVisibility={tablePrefs.columnVisibility}
         textOverflow={tablePrefs.textOverflow}
+        getRowId={(row) => (row as { id: string }).id}
         rowSelection={rowSelection}
         onRowSelectionChange={onRowSelectionChange}
         sorting={sorting}

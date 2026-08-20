@@ -280,18 +280,18 @@ describe("LibraryGrid selection", () => {
   });
 
   it("marks the rows named in rowSelection", () => {
-    render(<LibraryGrid works={works as never[]} selectable rowSelection={{ 1: true }} />);
+    render(<LibraryGrid works={works as never[]} selectable rowSelection={{ [works[1]?.id ?? ""]: true }} />);
     expect(screen.getByRole("button", { name: "Select Alpha" }).getAttribute("aria-pressed")).toBe("false");
     expect(screen.getByRole("button", { name: "Select Beta" }).getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("reports the row index that was toggled", () => {
+  it("reports the work id that was toggled", () => {
     const onToggleSelect = vi.fn();
     render(<LibraryGrid works={works as never[]} selectable onToggleSelect={onToggleSelect} />);
     fireEvent.click(screen.getByRole("button", { name: "Select Beta" }));
-    // rowSelection is keyed by index into the same array the table uses, so the
-    // grid must report indexes, not ids.
-    expect(onToggleSelect).toHaveBeenCalledWith(1);
+    // Selection is keyed by work id so a refreshed or reordered list cannot
+    // repoint it at a different book.
+    expect(onToggleSelect).toHaveBeenCalledWith(works[1]?.id);
   });
 
   it("tolerates a missing toggle handler", () => {

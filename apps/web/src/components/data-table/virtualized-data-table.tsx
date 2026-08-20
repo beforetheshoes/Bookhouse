@@ -43,6 +43,8 @@ interface VirtualizedDataTableProps<TData, TValue> {
   sorting?: SortingState;
   onSortingChange?: OnChangeFn<SortingState>;
   manualSorting?: boolean;
+  /** Key selection by a stable id rather than row position. */
+  getRowId?: (row: TData) => string;
 }
 
 export function VirtualizedDataTable<TData, TValue>({
@@ -62,6 +64,7 @@ export function VirtualizedDataTable<TData, TValue>({
   sorting: externalSorting,
   onSortingChange: externalOnSortingChange,
   manualSorting = false,
+  getRowId,
 }: VirtualizedDataTableProps<TData, TValue>) {
   const [internalSorting, setInternalSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -85,6 +88,7 @@ export function VirtualizedDataTable<TData, TValue>({
     onSortingChange,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange,
+    ...(getRowId !== undefined ? { getRowId } : {}),
     getCoreRowModel: getCoreRowModel(),
     ...(!manualSorting ? { getSortedRowModel: getSortedRowModel() } : {}),
     getFilteredRowModel: getFilteredRowModel(),

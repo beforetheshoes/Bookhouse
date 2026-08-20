@@ -170,9 +170,7 @@ test.describe("Mobile layout", () => {
     ).toBeLessThanOrEqual(reachable.barTop + 1);
   });
 
-  test("a stale selection cannot outlive the list it indexes", async ({
-    page,
-  }) => {
+  test("a selection stays on the work it was made on", async ({ page }) => {
     for (let i = 0; i < 4; i++) await seedWork({ title: `Stale Book ${String(i)}` });
 
     await page.goto("/library");
@@ -181,16 +179,25 @@ test.describe("Mobile layout", () => {
     await page.getByRole("button", { name: "Select Stale Book 0" }).click();
     await expect(page.getByText("1 work selected")).toBeVisible();
 
-    // Selection is keyed by index into the filtered list. Changing the sort
-    // makes index 0 a different book, so a pending bulk delete would hit the
-    // wrong one unless the selection is dropped.
+    // Selection used to be keyed by row position, so reordering the list
+    // repointed it at whatever now sat there - and a bulk delete would hit
+    // that book instead. Keyed by work id, the selection must survive a
+    // reorder still pointing at Stale Book 0.
     await page.getByRole("combobox", { name: /Title A-Z/i }).or(
       page.locator('[data-slot="select-trigger"]', { hasText: "Title A-Z" }),
     ).first().click();
     await page.getByRole("option").filter({ hasText: /Z-A/i }).first().click();
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(1200);
 
-    await expect(page.getByText(/\d+ works? selected/)).toHaveCount(0);
+    await expect(page.getByText("1 work selected")).toBeVisible();
+    const stillRight = await page.evaluate(() => {
+      // The toolbar's own "Select works" toggle is aria-pressed too.
+      const pressed = document.querySelector(
+        '[aria-pressed="true"][aria-label^="Select "]:not([aria-label="Select works"])',
+      );
+      return pressed?.getAttribute("aria-label") ?? null;
+    });
+    expect(stillRight).toBe("Select Stale Book 0");
   });
 
   test("detail routes fit the viewport", async ({ page }) => {

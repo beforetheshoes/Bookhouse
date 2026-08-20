@@ -87,8 +87,11 @@ vi.mock("~/components/data-table", async () => {
   const actual = await vi.importActual<typeof DataTableModule>("~/components/data-table");
   return {
     ...actual,
-    VirtualizedDataTable: ({ data, onRowSelectionChange }: { data: { id: string }[]; onRowSelectionChange?: (sel: Record<string, boolean>) => void }) => {
+    VirtualizedDataTable: ({ data, onRowSelectionChange, getRowId }: { data: { id: string }[]; onRowSelectionChange?: (sel: Record<string, boolean>) => void; getRowId?: (row: { id: string }) => string }) => {
       capturedOnRowSelectionChange = onRowSelectionChange ?? null;
+      // Selection is keyed by edition id, so exercise the accessor the real
+      // table would call for every row.
+      data.forEach((row) => getRowId?.(row));
       return <div data-testid="data-table">{String(data.length)} rows</div>;
     },
   };
@@ -379,7 +382,7 @@ describe("ShelfDetailPage", () => {
     render(<Page />);
 
     expect(capturedOnRowSelectionChange).toBeTruthy();
-    act(() => { (capturedOnRowSelectionChange as (sel: Record<string, boolean>) => void)({ "0": true }); });
+    act(() => { (capturedOnRowSelectionChange as (sel: Record<string, boolean>) => void)({ "e1": true }); });
 
     expect(screen.getByTestId("selection-bar")).toBeTruthy();
     expect(screen.getByText("1 edition selected")).toBeTruthy();
@@ -401,7 +404,7 @@ describe("ShelfDetailPage", () => {
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
 
-    act(() => { (capturedOnRowSelectionChange as (sel: Record<string, boolean>) => void)({ "0": true, "1": true }); });
+    act(() => { (capturedOnRowSelectionChange as (sel: Record<string, boolean>) => void)({ "e1": true, "e2": true }); });
     expect(screen.getByText("2 editions selected")).toBeTruthy();
   });
 
@@ -415,7 +418,7 @@ describe("ShelfDetailPage", () => {
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
 
-    act(() => { (capturedOnRowSelectionChange as (sel: Record<string, boolean>) => void)({ "0": true }); });
+    act(() => { (capturedOnRowSelectionChange as (sel: Record<string, boolean>) => void)({ "e1": true }); });
     fireEvent.click(screen.getByTestId("remove-selected-btn"));
 
     await waitFor(() => {
@@ -435,7 +438,7 @@ describe("ShelfDetailPage", () => {
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
 
-    act(() => { (capturedOnRowSelectionChange as (sel: Record<string, boolean>) => void)({ "0": true }); });
+    act(() => { (capturedOnRowSelectionChange as (sel: Record<string, boolean>) => void)({ "e1": true }); });
     fireEvent.click(screen.getByTestId("remove-selected-btn"));
 
     await waitFor(() => {
@@ -452,14 +455,14 @@ describe("ShelfDetailPage", () => {
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
 
-    act(() => { (capturedOnRowSelectionChange as (sel: Record<string, boolean>) => void)({ "0": true }); });
+    act(() => { (capturedOnRowSelectionChange as (sel: Record<string, boolean>) => void)({ "e1": true }); });
     expect(screen.getByTestId("selection-bar")).toBeTruthy();
 
     fireEvent.click(screen.getByText("Clear"));
     expect(screen.queryByTestId("selection-bar")).toBeNull();
   });
 
-  it("filters out undefined edition ids from selection", async () => {
+  it("filters out selections whose row is no longer in the list", async () => {
     mockView = "table";
     mockLoaderData = {
       shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [{ id: "ci1", edition: mockEdition }] },
@@ -469,8 +472,8 @@ describe("ShelfDetailPage", () => {
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
 
-    // Select an out-of-range index along with a valid one
-    act(() => { (capturedOnRowSelectionChange as (sel: Record<string, boolean>) => void)({ "0": true, "99": true }); });
+    // A stale id - its row was removed while still selected.
+    act(() => { (capturedOnRowSelectionChange as (sel: Record<string, boolean>) => void)({ "e1": true, "gone-edition": true }); });
     fireEvent.click(screen.getByTestId("remove-selected-btn"));
 
     await waitFor(() => {

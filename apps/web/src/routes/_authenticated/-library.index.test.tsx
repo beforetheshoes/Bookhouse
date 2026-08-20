@@ -174,16 +174,19 @@ vi.mock("~/hooks/use-library-table-preferences", () => ({
 }));
 
 vi.mock("~/components/library-grid", () => ({
-  LibraryGrid: ({ works, progressMap, tileSize, selectable, rowSelection, onToggleSelect }: { works: object[]; progressMap?: Record<string, number>; tileSize?: string; selectable?: boolean; rowSelection?: Record<string, boolean>; onToggleSelect?: (i: number) => void }) => (
+  LibraryGrid: ({ works, progressMap, tileSize, selectable, rowSelection, onToggleSelect }: { works: { id: string }[]; progressMap?: Record<string, number>; tileSize?: string; selectable?: boolean; rowSelection?: Record<string, boolean>; onToggleSelect?: (id: string) => void }) => (
     <div
       data-testid="library-grid"
       data-progress-map={progressMap ? JSON.stringify(progressMap) : undefined}
       data-tile-size={tileSize ?? "small"}
       data-selectable={selectable === true ? "true" : "false"}
       data-selected-count={String(Object.keys(rowSelection ?? {}).length)}
+      data-selected-ids={Object.keys(rowSelection ?? {}).sort().join(",")}
     >
       Grid: {String(works.length)} works
-      <button type="button" aria-label="toggle-row-0" onClick={() => { onToggleSelect?.(0); }} />
+      {works.map((w, i) => (
+        <button key={w.id} type="button" aria-label={`toggle-row-${String(i)}`} onClick={() => { onToggleSelect?.(w.id); }} />
+      ))}
     </div>
   ),
 }));
@@ -819,11 +822,13 @@ describe("LibraryPage", () => {
     expect(screen.queryByTestId("bulk-add-to-shelf-btn")).toBeNull();
   });
 
-  it("drops the selection when the underlying list changes", async () => {
+  it("keeps a selection on the same work when the list is refreshed underneath it", async () => {
     mockView = "grid";
     mockSearch = { page: 1, pageSize: 50, sort: "title-asc" };
+    const alpha = makeWork("Alpha");
+    const beta = makeWork("Beta");
     mockLoaderData = {
-      libraryResult: { works: [makeWork("Alpha"), makeWork("Beta")], totalCount: 2, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      libraryResult: { works: [alpha, beta], totalCount: 2, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
       editionsResult: null,
       activeJobCount: 0,
       progressMap: {},
@@ -835,14 +840,17 @@ describe("LibraryPage", () => {
 
     fireEvent.click(screen.getByLabelText("toolbar-select-mode"));
     fireEvent.click(screen.getByLabelText("toggle-row-0"));
-    expect(screen.getByTestId("library-grid").getAttribute("data-selected-count")).toBe("1");
+    expect(screen.getByTestId("library-grid").getAttribute("data-selected-ids")).toBe(alpha.id);
 
-    // rowSelection is keyed by INDEX into the filtered list. If the list
-    // changes underneath it - a new sort, page, query or facet - index 0 is a
-    // different work, and a pending bulk delete would hit the wrong book.
-    mockSearch = { page: 2, pageSize: 50, sort: "title-asc" };
+    // An SSE scan calls router.invalidate(), which rewrites the list without
+    // touching search - so an index-keyed selection would silently repoint at
+    // whatever now sits at that position, and a bulk delete would hit it.
+    mockLoaderData = {
+      ...mockLoaderData,
+      libraryResult: { works: [beta, alpha], totalCount: 2, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+    };
     rerender(<LibraryPage />);
-    expect(screen.getByTestId("library-grid").getAttribute("data-selected-count")).toBe("0");
+    expect(screen.getByTestId("library-grid").getAttribute("data-selected-ids")).toBe(alpha.id);
   });
 
   it("offers the filters sheet as the mobile route into faceting", async () => {

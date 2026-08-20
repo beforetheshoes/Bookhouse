@@ -13,7 +13,7 @@ interface LibraryGridProps {
   selectable?: boolean;
   /** Keyed by index into `works`, matching the table's RowSelectionState. */
   rowSelection?: Record<string, boolean>;
-  onToggleSelect?: (index: number) => void;
+  onToggleSelect?: (id: string) => void;
 }
 
 function getAuthors(work: LibraryWork): string {
@@ -128,13 +128,13 @@ export function LibraryGrid({ works, progressMap, scanActive, tileSize = "small"
                   gridTemplateColumns: `repeat(${String(columnCount)}, 1fr)`,
                 }}
               >
-                {rowWorks.map((work, offset) => (
+                {rowWorks.map((work) => (
                   <WorkCard
                     key={work.id}
-                    id={work.id}
                     selectable={selectable}
-                    selected={rowSelection?.[String(startIdx + offset)] === true}
-                    onSelectChange={() => { onToggleSelect?.(startIdx + offset); }}
+                    selected={rowSelection?.[work.id] === true}
+                    onSelectChange={() => { onToggleSelect?.(work.id); }}
+                    id={work.id}
                     title={work.titleDisplay}
                     authors={getAuthors(work)}
                     enrichmentStatus={work.enrichmentStatus}
