@@ -853,6 +853,38 @@ describe("LibraryPage", () => {
     expect(screen.getByTestId("library-grid").getAttribute("data-selected-ids")).toBe(alpha.id);
   });
 
+  it("counts only selections that are still in the list", async () => {
+    mockView = "grid";
+    mockSearch = { page: 1, pageSize: 50, sort: "title-asc" };
+    const alpha = makeWork("Alpha");
+    const beta = makeWork("Beta");
+    mockLoaderData = {
+      libraryResult: { works: [alpha, beta], totalCount: 2, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    const { rerender } = render(<LibraryPage />);
+
+    fireEvent.click(screen.getByLabelText("toolbar-select-mode"));
+    fireEvent.click(screen.getByLabelText("toggle-row-0"));
+    fireEvent.click(screen.getByLabelText("toggle-row-1"));
+    expect(screen.getByText("2 works selected")).toBeTruthy();
+
+    // Beta leaves the list - a scan removed it, or a filter narrowed. The ids
+    // sent to the mutation are filtered against the current list, so the count
+    // must be too, or the bar claims more than it will act on.
+    mockLoaderData = {
+      ...mockLoaderData,
+      libraryResult: { works: [alpha], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+    };
+    rerender(<LibraryPage />);
+    expect(screen.getByText("1 work selected")).toBeTruthy();
+  });
+
   it("offers the filters sheet as the mobile route into faceting", async () => {
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },

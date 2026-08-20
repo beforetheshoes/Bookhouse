@@ -93,8 +93,13 @@ function LibraryPage() {
   }, [rowSelection, filteredByReading]);
 
   const selectedWorkIds = allWorkIds ?? pageSelectedWorkIds;
-  const selectedCount = allWorkIds ? allWorkIds.length : Object.keys(rowSelection).length;
-  const allPageRowsSelected = filteredByReading.length > 0 && Object.keys(rowSelection).length === filteredByReading.length;
+  // Both derived from the filtered ids, not the raw keys: a selected work can
+  // leave the list, and a bar that counts what the mutation will not act on is
+  // lying - and can raise the "select all N" banner spuriously.
+  const selectedCount = allWorkIds ? allWorkIds.length : pageSelectedWorkIds.length;
+  const allPageRowsSelected =
+    filteredByReading.length > 0 &&
+    pageSelectedWorkIds.length === filteredByReading.length;
 
   const selectedWorks = useMemo(() => {
     const idSet = new Set(selectedWorkIds);

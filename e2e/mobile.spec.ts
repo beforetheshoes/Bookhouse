@@ -170,6 +170,21 @@ test.describe("Mobile layout", () => {
       reachable.lastCardBottom,
       "the last card cannot be scrolled clear of the bulk bar",
     ).toBeLessThanOrEqual(reachable.barTop + 1);
+
+    // The bulk bar is fixed at z-50 over the sticky pagination at z-20, so the
+    // two cannot both own that corner. Hit-test rather than trust the classes.
+    const corner = await page.evaluate(() => {
+      const pager = document.querySelector('[data-testid="library-pagination"]');
+      if (!pager) return { pagerPresent: false, intercepted: false };
+      const arrow = pager.querySelector('[aria-label="Go to next page"]');
+      if (!arrow) return { pagerPresent: true, intercepted: false };
+      const b = arrow.getBoundingClientRect();
+      const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+      return { pagerPresent: true, intercepted: !arrow.contains(hit) && hit !== arrow };
+    });
+    // With a selection active the pagination is hidden outright, so there is
+    // nothing to intercept.
+    expect(corner.pagerPresent, "pagination still rendered under the bulk bar").toBe(false);
   });
 
   test("a selection stays on the work it was made on", async ({ page }) => {
