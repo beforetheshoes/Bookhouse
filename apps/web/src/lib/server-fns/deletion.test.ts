@@ -76,6 +76,7 @@ import {
   deleteAllEditionsByFormatServerFn,
   getMissingFilesServerFn,
   cleanupMissingFilesServerFn,
+  cleanupMissingFilesSchema,
 } from "./deletion";
 
 beforeEach(() => {
@@ -431,21 +432,30 @@ describe("cleanupMissingFilesServerFn union contract", () => {
 });
 
 describe("cleanupMissingFilesServerFn rejects mixed modes", () => {
-  it("refuses all:true alongside an id list", async () => {
+  // The schema is asserted directly, not through the server fn: the
+  // createServerFn double above replaces `.validator()` with `() => b`, so a
+  // malformed payload passed to the server fn never reaches zod at all - both
+  // of these threw for unrelated reasons and passed against the old,
+  // non-strict schema too.
+  it("refuses all:true alongside an id list", () => {
     // z.object would strip the ids and clean the whole library while the UI
     // named one file; strictObject rejects the payload outright.
-    await expect(
-      // Deliberately malformed: the type forbids it, the validator must too.
-      cleanupMissingFilesServerFn({
-        data: { all: true, fileAssetIds: ["fa-1"] },
-      }),
-    ).rejects.toThrow();
+    expect(
+      cleanupMissingFilesSchema.safeParse({ all: true, fileAssetIds: ["fa-1"] }).success,
+    ).toBe(false);
   });
 
-  it("refuses an empty id list", async () => {
-    await expect(
-      cleanupMissingFilesServerFn({ data: { fileAssetIds: [] } }),
-    ).rejects.toThrow();
+  it("refuses an empty id list", () => {
+    expect(cleanupMissingFilesSchema.safeParse({ fileAssetIds: [] }).success).toBe(false);
+  });
+
+  it("accepts each arm on its own", () => {
+    expect(cleanupMissingFilesSchema.safeParse({ all: true }).success).toBe(true);
+    expect(
+      cleanupMissingFilesSchema.safeParse({ fileAssetIds: ["fa-1"] }).success,
+    ).toBe(true);
+    expect(cleanupMissingFilesSchema.safeParse({}).success).toBe(false);
+    expect(cleanupMissingFilesSchema.safeParse({ all: false }).success).toBe(false);
   });
 });
 });

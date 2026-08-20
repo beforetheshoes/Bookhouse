@@ -247,6 +247,16 @@ export const getMissingFilesServerFn = createServerFn({
     return { items, total };
   });
 
+/**
+ * Exported so it can be exercised directly: the server-fn test double replaces
+ * `.validator()` with a no-op, so calling the server fn with a bad payload
+ * proves nothing about this schema.
+ */
+export const cleanupMissingFilesSchema = z.union([
+  z.strictObject({ all: z.literal(true) }),
+  z.strictObject({ fileAssetIds: z.array(z.string().min(1)).min(1) }),
+]);
+
 export const cleanupMissingFilesServerFn = createServerFn({
   method: "POST",
 })
@@ -256,10 +266,7 @@ export const cleanupMissingFilesServerFn = createServerFn({
   // strictObject, not object: z.object STRIPS unknown keys, so
   // { all: true, fileAssetIds: [...] } parsed as { all: true } and cleaned the
   // whole library while the UI named one file. Only strict rejects it.
-  .validator(z.union([
-    z.strictObject({ all: z.literal(true) }),
-    z.strictObject({ fileAssetIds: z.array(z.string().min(1)).min(1) }),
-  ]))
+  .validator(cleanupMissingFilesSchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");

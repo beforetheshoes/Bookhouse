@@ -203,6 +203,42 @@ describe("MissingFilesPage", () => {
     });
   });
 
+  it("does not put a raw validator dump in the toast", async () => {
+    // A rejected server-fn validator arrives as an Error whose message IS the
+    // serialized Zod issue array. Surfacing it unedited put a JSON blob on
+    // screen; the strictObject union on this server fn makes that reachable
+    // from any client/server version skew.
+    cleanupMissingFilesServerFnMock.mockRejectedValue(
+      new Error(
+        '[\n  {\n    "code": "unrecognized_keys",\n    "keys": [\n      "fileAssetIds"\n    ],\n' +
+        '    "path": [],\n    "message": "Unrecognized key(s) in object: \'fileAssetIds\'"\n  }\n]',
+      ),
+    );
+    mockLoaderData = {
+      missingFiles: {
+        items: [
+          { id: "fa-1", relativePath: "a.epub", mediaKind: "EPUB", lastSeenAt: null, editionFiles: [] },
+        ],
+        total: 1,
+      },
+    };
+    const { Route } = await import("./missing-files");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+
+    fireEvent.click(screen.getByText("Clean Up All"));
+    const cleanUpButtons = screen.getAllByText("Clean Up All");
+    fireEvent.click(cleanUpButtons[cleanUpButtons.length - 1] as HTMLElement);
+
+    await waitFor(() => {
+      expect(mockToast.error).toHaveBeenCalled();
+    });
+    const shown = mockToast.error.mock.calls[0]?.[0] as string;
+    expect(shown).not.toContain("unrecognized_keys");
+    expect(shown).not.toContain("[");
+    expect(shown.length).toBeLessThan(120);
+  });
+
   it("renders back link to libraries settings", async () => {
     const { Route } = await import("./missing-files");
     const Page = Route.options.component as React.ComponentType;

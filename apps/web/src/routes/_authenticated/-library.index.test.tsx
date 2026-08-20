@@ -914,7 +914,7 @@ describe("LibraryPage", () => {
     });
   });
 
-  it("toggles selection exactly once when the padded label is tapped", async () => {
+  it("wraps the row checkbox in exactly one label", async () => {
     mockView = "table";
     mockLoaderData = {
       libraryResult: { works: [makeWork("Alpha")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
@@ -925,19 +925,16 @@ describe("LibraryPage", () => {
     };
     const { Route } = await import("./library.index");
     const LibraryPage = Route.options.component as React.ComponentType;
-    const { container } = render(<LibraryPage />);
+    render(<LibraryPage />);
 
-    // The checkbox is wrapped in a padded label so it is a real tap target.
-    // A label forwards its click to the input, so a naive wrapper can toggle
-    // twice and land back on unselected.
-    const rowCheckbox = screen.getAllByLabelText("Select row")[0];
+    // One label, not two: a nested label is invalid HTML and gives the input
+    // an ambiguous accessible name. Whether tapping the label's *padding*
+    // toggles once is not expressible here - happy-dom implements neither
+    // label activation behaviour nor layout - so that lives in
+    // e2e/touch-band.spec.ts, where the click lands on measured coordinates.
+    const rowCheckbox = screen.getAllByLabelText("Select row")[0] as HTMLInputElement | undefined;
     if (!rowCheckbox) throw new Error("expected row checkbox");
-    const label = rowCheckbox.closest("label");
-    expect(label).not.toBeNull();
-
-    fireEvent.click(rowCheckbox);
-    expect(screen.getByText("1 work selected")).toBeTruthy();
-    void container;
+    expect(rowCheckbox.labels?.length).toBe(1);
   });
 
   it("offers the filters sheet as the mobile route into faceting", async () => {
