@@ -149,26 +149,25 @@ test.describe("Bulk action bar geometry", () => {
             });
           }
         });
-        // The docked sidebar's account menu sits at the bottom-left, under a
-        // full-bleed bar. While a selection was active it could not be opened.
-        const account = document.querySelector<HTMLElement>(
-          '[data-slot="sidebar-footer"] [data-slot="dropdown-menu-trigger"]',
+        // The whole docked rail, not one point in it. Sampling only the
+        // account trigger's centre (x is about 128) passed while the bar still
+        // overlapped the rail's right half by 64px.
+        const rail = document.querySelector<HTMLElement>(
+          '[data-slot="sidebar-container"]',
         );
-        let accountCovered: boolean | null = null;
-        if (account) {
-          const a = account.getBoundingClientRect();
-          const hit = document.elementFromPoint(
-            Math.round(a.left + a.width / 2),
-            Math.round(a.top + a.height / 2),
-          );
-          accountCovered = hit !== null && el.contains(hit);
+        let railRight: number | null = null;
+        if (rail !== null && getComputedStyle(rail).display !== "none") {
+          const r = rail.getBoundingClientRect();
+          // Offscreen when collapsed: only a rail actually on screen can be
+          // overlapped.
+          railRight = r.right > 0 ? Math.round(r.right) : 0;
         }
         return {
           vw,
           left: Math.round(rect.left),
           right: Math.round(rect.right),
           unreachable,
-          accountCovered,
+          railRight,
         };
       });
 
@@ -183,10 +182,11 @@ test.describe("Bulk action bar geometry", () => {
         g.unreachable,
         `bar buttons that cannot be clicked: ${JSON.stringify(g.unreachable)}`,
       ).toEqual([]);
+      expect(g.railRight, "docked sidebar rail not found").not.toBeNull();
       expect(
-        g.accountCovered,
-        "the bulk bar covers the sidebar account menu while a selection is active",
-      ).toBe(false);
+        g.left,
+        `bar starts at ${String(g.left)}px, over a sidebar rail ending at ${String(g.railRight)}px`,
+      ).toBeGreaterThanOrEqual(g.railRight as number);
     });
   }
 });
@@ -273,4 +273,117 @@ test.describe("Padded checkbox labels", () => {
       "clicking the row label did not leave the box checked",
     ).toBe(true);
   });
+});
+
+/**
+ * Shelf detail in the touch band.
+ *
+ * touch-band's control sweep visits /shelves, not a shelf's detail page, and
+ * mobile.spec.ts reaches detail only at 360 where the view is forced to grid -
+ * so the shelf table's own select column and pagination were unmeasured at
+ * every width where they exist.
+ */
+test.describe("Shelf detail in the touch band", () => {
+  test.afterEach(async () => {
+    await cleanTestData();
+  });
+
+  for (const width of [768, 1023]) {
+    test(`${String(width)}px: shelf table controls meet the tap floor`, async ({
+      page,
+    }) => {
+      const editionIds: string[] = [];
+      for (let i = 0; i < 3; i++) {
+        const w = await seedWork({ title: `Shelf Tap Book ${String(i)}` });
+        editionIds.push(...w.editions.map((e) => e.id));
+      }
+      await seedShelf({ name: "Shelf Tap Shelf", editionIds });
+      await page.setViewportSize({ width, height: 900 });
+      await page.addInitScript(() => {
+        localStorage.setItem("library-view", "table");
+      });
+      await page.goto("/shelves");
+      await page.getByText("Shelf Tap Shelf").first().click();
+      await page.waitForTimeout(800);
+
+      const r = await page.evaluate(() => {
+        const small: { h: number; w: number; label: string }[] = [];
+        let seen = 0;
+        document
+          .querySelectorAll<HTMLElement>(
+            'button, a[href], input[type="checkbox"], [role="tab"], [data-slot="select-trigger"]',
+          )
+          .forEach((el) => {
+            const target = el.closest("label") ?? el;
+            const b = target.getBoundingClientRect();
+            if (b.width === 0 || b.height === 0) return;
+            const cs = getComputedStyle(el);
+            if (cs.visibility === "hidden" || cs.opacity === "0") return;
+            if (el.closest("[aria-hidden='true']")) return;
+            seen += 1;
+            if (b.height < 36 || b.width < 36) {
+              small.push({
+                h: Math.round(b.height),
+                w: Math.round(b.width),
+                label: (el.getAttribute("aria-label") ?? el.textContent ?? el.tagName).trim().slice(0, 30),
+              });
+            }
+          });
+        return { small, seen, rows: document.querySelectorAll("tbody tr").length };
+      });
+
+      expect(r.rows, "shelf table rendered no rows").toBeGreaterThan(0);
+      expect(r.seen, "shelf detail rendered no controls").toBeGreaterThan(3);
+      expect(r.small, `shelf detail controls under 36px: ${JSON.stringify(r.small)}`).toEqual([]);
+    });
+
+    test(`${String(width)}px: shelf pagination stays reachable while selecting`, async ({
+      page,
+    }) => {
+      // More than one page: the table paginates at 20 rows.
+      const editionIds: string[] = [];
+      for (let i = 0; i < 25; i++) {
+        const w = await seedWork({ title: `Shelf Page Book ${String(i).padStart(2, "0")}` });
+        editionIds.push(...w.editions.map((e) => e.id));
+      }
+      await seedShelf({ name: "Shelf Page Shelf", editionIds });
+      await page.setViewportSize({ width, height: 740 });
+      await page.addInitScript(() => {
+        localStorage.setItem("library-view", "table");
+      });
+      await page.goto("/shelves");
+      await page.getByText("Shelf Page Shelf").first().click();
+      await page.waitForTimeout(800);
+
+      await page.getByLabel("Select all").first().click();
+      await expect(page.locator('[data-testid="selection-bar"]')).toBeVisible();
+
+      // Scroll as far as the page allows; a fixed bar cannot be scrolled away,
+      // so if the button is still under it here it is unreachable.
+      await page.evaluate(() => { window.scrollTo(0, document.body.scrollHeight); });
+      await page.waitForTimeout(300);
+
+      const covered = await page.evaluate(() => {
+        const bar = document.querySelector<HTMLElement>('[data-testid="selection-bar"]');
+        // DataTablePagination names its buttons with an sr-only span, not an
+        // aria-label - querying for the attribute finds nothing.
+        const next = Array.from(document.querySelectorAll<HTMLElement>("button")).find(
+          (b) => b.textContent?.trim() === "Go to next page",
+        ) ?? null;
+        if (!bar || !next) return null;
+        const b = next.getBoundingClientRect();
+        const hit = document.elementFromPoint(
+          Math.round(b.left + b.width / 2),
+          Math.round(b.top + b.height / 2),
+        );
+        return hit !== null && bar.contains(hit);
+      });
+
+      expect(covered, "next-page button not found").not.toBeNull();
+      expect(
+        covered,
+        "the selection bar covers the shelf table's next-page button",
+      ).toBe(false);
+    });
+  }
 });

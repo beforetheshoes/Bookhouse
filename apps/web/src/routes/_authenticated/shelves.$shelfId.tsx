@@ -77,22 +77,28 @@ export function getTableColumns(): ColumnDef<ShelfEdition>[] {
       size: 40,
       maxSize: 40,
       header: ({ table }) => (
+        // One label, and only here: the cell has no other label to nest in,
+        // unlike the add-editions dialog rows.
+        <label className="flex min-h-9 min-w-9 items-center justify-center lg:min-h-0 lg:min-w-0">
           <input
             type="checkbox"
             className="size-5 lg:size-4"
-          checked={table.getIsAllPageRowsSelected()}
+            checked={table.getIsAllPageRowsSelected()}
             onChange={(e) => { table.toggleAllPageRowsSelected(e.target.checked); }}
             aria-label="Select all"
           />
+        </label>
       ),
       cell: ({ row }) => (
+        <label className="flex min-h-9 min-w-9 items-center justify-center lg:min-h-0 lg:min-w-0">
           <input
             type="checkbox"
             className="size-5 lg:size-4"
-          checked={row.getIsSelected()}
+            checked={row.getIsSelected()}
             onChange={(e) => { row.toggleSelected(e.target.checked); }}
             aria-label="Select row"
           />
+        </label>
       ),
       enableSorting: false,
     },
@@ -288,13 +294,19 @@ function ShelfDetailPage() {
           onToggleSelect={handleToggleGridSelect}
         />
       ) : (
-        <VirtualizedDataTable
-          columns={tableColumns}
-          data={editions}
-          getRowId={(row) => (row as { id: string }).id}
-          rowSelection={rowSelection}
-          onRowSelectionChange={setRowSelection}
-        />
+        // The selection bar is fixed to the bottom of the viewport, so without
+        // room to scroll past it the table's pagination sits underneath it and
+        // cannot be reached - and a fixed element does not scroll away. The
+        // grid gets the same clearance from LibraryGrid's selectionActive.
+        <div className={selectedCount > 0 ? "pb-48" : undefined}>
+          <VirtualizedDataTable
+            columns={tableColumns}
+            data={editions}
+            getRowId={(row) => (row as { id: string }).id}
+            rowSelection={rowSelection}
+            onRowSelectionChange={setRowSelection}
+          />
+        </div>
       )}
 
       {(view === "grid" ? gridSelectedWorkIds.length : selectedCount) > 0 && (
