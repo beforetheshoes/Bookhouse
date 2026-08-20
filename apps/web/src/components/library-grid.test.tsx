@@ -32,10 +32,11 @@ vi.mock("~/components/work-card", () => ({
     <div data-testid="work-card" data-progress={progressPercent != null ? String(progressPercent) : undefined} data-tile-size={tileSize ?? "small"}>
       {title}
       {selectable === true && (
-        <button
-          type="button"
+        <div
+          role="checkbox"
+          tabIndex={0}
           aria-label={`Select ${title}`}
-          aria-pressed={selected === true}
+          aria-checked={selected === true}
           onClick={() => { onSelectChange?.(selected !== true); }}
         />
       )}
@@ -276,19 +277,19 @@ describe("LibraryGrid selection", () => {
 
   it("renders no selection controls by default", () => {
     render(<LibraryGrid works={works as never[]} />);
-    expect(screen.queryByRole("button", { name: /^Select / })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: /^Select / })).toBeNull();
   });
 
   it("marks the rows named in rowSelection", () => {
     render(<LibraryGrid works={works as never[]} selectable rowSelection={{ [works[1]?.id ?? ""]: true }} />);
-    expect(screen.getByRole("button", { name: "Select Alpha" }).getAttribute("aria-pressed")).toBe("false");
-    expect(screen.getByRole("button", { name: "Select Beta" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("checkbox", { name: "Select Alpha" }).getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByRole("checkbox", { name: "Select Beta" }).getAttribute("aria-checked")).toBe("true");
   });
 
   it("reports the work id that was toggled", () => {
     const onToggleSelect = vi.fn();
     render(<LibraryGrid works={works as never[]} selectable onToggleSelect={onToggleSelect} />);
-    fireEvent.click(screen.getByRole("button", { name: "Select Beta" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Beta" }));
     // Selection is keyed by work id so a refreshed or reordered list cannot
     // repoint it at a different book.
     expect(onToggleSelect).toHaveBeenCalledWith(works[1]?.id);
@@ -297,7 +298,22 @@ describe("LibraryGrid selection", () => {
   it("tolerates a missing toggle handler", () => {
     render(<LibraryGrid works={works as never[]} selectable />);
     expect(() => {
-      fireEvent.click(screen.getByRole("button", { name: "Select Alpha" }));
+      fireEvent.click(screen.getByRole("checkbox", { name: "Select Alpha" }));
     }).not.toThrow();
+  });
+
+  it("reserves clearance only while the bulk bar is on screen", () => {
+    const works = [makeWork("Alpha")];
+    const { container: idle } = render(
+      <LibraryGrid works={works as never[]} selectable />,
+    );
+    // Entering select mode with nothing selected shows no bar, so growing the
+    // scroller by 192px would just be dead space.
+    expect(idle.firstElementChild?.className).not.toContain("pb-48");
+
+    const { container: active } = render(
+      <LibraryGrid works={works as never[]} selectable selectionActive />,
+    );
+    expect(active.firstElementChild?.className).toContain("pb-48");
   });
 });

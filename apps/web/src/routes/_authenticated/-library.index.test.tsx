@@ -885,6 +885,35 @@ describe("LibraryPage", () => {
     expect(screen.getByText("1 work selected")).toBeTruthy();
   });
 
+  it("abandons a select-all when any row is unchecked", async () => {
+    mockView = "table";
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Alpha"), makeWork("Beta")], totalCount: 5, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    getAllFilteredWorkIdsServerFnMock.mockResolvedValue(["w1", "w2", "w3", "w4", "w5"]);
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    const selectAllCheckbox = screen.getAllByLabelText("Select all")[0];
+    if (!selectAllCheckbox) throw new Error("expected select-all checkbox");
+    fireEvent.click(selectAllCheckbox);
+    fireEvent.click(screen.getByTestId("select-all-btn"));
+    await waitFor(() => { expect(screen.getByText("5 works selected")).toBeTruthy(); });
+
+    // Unchecking a row must abandon the cross-page selection. Otherwise the
+    // bulk action still runs against all five and deletes the work the user
+    // just deselected.
+    fireEvent.click(selectAllCheckbox);
+    await waitFor(() => {
+      expect(screen.queryByText("5 works selected")).toBeNull();
+    });
+  });
+
   it("offers the filters sheet as the mobile route into faceting", async () => {
     mockLoaderData = {
       libraryResult: { works: [makeWork("Test")], totalCount: 1, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },

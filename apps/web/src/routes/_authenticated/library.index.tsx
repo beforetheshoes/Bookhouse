@@ -5,7 +5,7 @@ import { useEffectiveLibraryView } from "~/hooks/use-library-view-preference";
 import { useLibraryTablePreferences } from "~/hooks/use-library-table-preferences";
 import { useGridTileSize } from "~/hooks/use-grid-tile-size";
 import { useLibraryFilters } from "~/hooks/use-library-filters";
-import type { RowSelectionState } from "@tanstack/react-table";
+import type { OnChangeFn, RowSelectionState } from "@tanstack/react-table";
 import { BookOpen, Loader2 } from "lucide-react";
 import { LibrarySelectionToolbar } from "~/components/library-selection-toolbar";
 import { GridPageSkeleton } from "~/components/skeletons/grid-page-skeleton";
@@ -133,6 +133,18 @@ function LibraryPage() {
       ? { sortMap: EDITION_COLUMN_SORT_MAP, sortToColumn: EDITION_SORT_TO_COLUMN }
       : {}),
   });
+
+  // The table passes its updater straight through, which used to leave a
+  // cross-page "select all N" standing: unchecking a row changed the visible
+  // ticks while the bulk action still ran against every id, deleting the work
+  // the user had just deselected.
+  const handleRowSelectionChange = useCallback<OnChangeFn<RowSelectionState>>(
+    (updater) => {
+      setAllWorkIds(null);
+      setRowSelection(updater);
+    },
+    [],
+  );
 
   const handleToggleGridSelect = useCallback((workId: string) => {
     setAllWorkIds(null);
@@ -293,6 +305,7 @@ function LibraryPage() {
               scanActive={isScanning}
               tileSize={tileSize}
               selectable={selectMode}
+              selectionActive={selectedCount > 0}
               rowSelection={rowSelection}
               onToggleSelect={handleToggleGridSelect}
             />
@@ -306,7 +319,7 @@ function LibraryPage() {
               onColumnToggle={handleColumnToggle}
               onTextOverflowToggle={handleTextOverflowToggle}
               rowSelection={{}}
-              onRowSelectionChange={setRowSelection}
+              onRowSelectionChange={handleRowSelectionChange}
               sorting={tableSorting}
               onSortingChange={handleColumnSort}
               viewMode="editions"
@@ -323,7 +336,7 @@ function LibraryPage() {
               onColumnToggle={handleColumnToggle}
               onTextOverflowToggle={handleTextOverflowToggle}
               rowSelection={rowSelection}
-              onRowSelectionChange={setRowSelection}
+              onRowSelectionChange={handleRowSelectionChange}
               sorting={tableSorting}
               onSortingChange={handleColumnSort}
               viewMode="works"

@@ -19,8 +19,9 @@ describe("FloatingActionBar", () => {
 
     // `left-1/2 -translate-x-1/2` on a ~700px row overflows a 360px viewport
     // off BOTH edges, and a fixed element cannot be scrolled back into view.
+    // inset-x-2 already fixes the width to viewport - 1rem, so a max-w
+    // duplicating it was dead.
     expect(bar?.className).toContain("inset-x-2");
-    expect(bar?.className).toContain("max-w-[calc(100vw-1rem)]");
     expect(bar?.className).toContain("md:left-1/2");
     expect(bar?.className).toContain("md:-translate-x-1/2");
   });

@@ -31,7 +31,7 @@ vi.mock("~/components/bulk-enrich-dialog", () => ({
 }));
 
 import { toast } from "sonner";
-import { bulkDeleteWorksServerFn, bulkDeleteEditionsByFormatForWorksServerFn, deleteAllEditionsByFormatServerFn } from "~/lib/server-fns/deletion";
+import { bulkDeleteWorksServerFn, bulkDeleteEditionsByFormatForWorksServerFn } from "~/lib/server-fns/deletion";
 import { bulkAddToShelfServerFn } from "~/lib/server-fns/shelves";
 import { mergeWorksServerFn } from "~/lib/server-fns/work-management";
 import { markWorksAsReadServerFn } from "~/lib/server-fns/reading-progress";
@@ -39,7 +39,6 @@ import { LibrarySelectionToolbar } from "./library-selection-toolbar";
 
 const bulkDeleteWorksServerFnMock = vi.mocked(bulkDeleteWorksServerFn);
 const bulkDeleteByFormatMock = vi.mocked(bulkDeleteEditionsByFormatForWorksServerFn);
-const deleteAllByFormatMock = vi.mocked(deleteAllEditionsByFormatServerFn);
 const bulkAddToShelfServerFnMock = vi.mocked(bulkAddToShelfServerFn);
 const mergeWorksServerFnMock = vi.mocked(mergeWorksServerFn);
 const mockToast = vi.mocked(toast);
@@ -209,36 +208,39 @@ describe("LibrarySelectionToolbar", () => {
     await waitFor(() => { expect(onDeleted).toHaveBeenCalled(); });
   });
 
-  it("uses deleteAllEditionsByFormatServerFn when selectedCount equals totalCount", async () => {
+  it("scopes a by-format delete to the selection even for large selections", async () => {
     const user = userEvent.setup();
-    deleteAllByFormatMock.mockResolvedValue({ deletedEditionIds: ["ed-1", "ed-2"], deletedWorkIds: [] });
-    const onDeleted = vi.fn();
-    render(<LibrarySelectionToolbar {...defaultProps} selectedCount={100} selectedWorkIds={Array.from({ length: 100 }, (_, i) => `w${String(i)}`)} totalCount={100} onDeleted={onDeleted} />);
-    await user.click(screen.getByTestId("bulk-delete-dropdown-trigger"));
-    await waitFor(() => screen.getByText("Delete ebook editions only"));
-    await user.click(screen.getByText("Delete ebook editions only"));
-    await waitFor(() => screen.getByTestId("confirm-delete-by-format-btn"));
-    fireEvent.click(screen.getByTestId("confirm-delete-by-format-btn"));
-    await waitFor(() => {
-      expect(deleteAllByFormatMock).toHaveBeenCalledWith({ data: { format: "EBOOK" } });
-      expect(bulkDeleteByFormatMock).not.toHaveBeenCalled();
-    });
-    await waitFor(() => { expect(onDeleted).toHaveBeenCalled(); });
-  });
-
-  it("uses deleteAllEditionsByFormatServerFn when selectedWorkIds exceeds 100", async () => {
-    const user = userEvent.setup();
-    deleteAllByFormatMock.mockResolvedValue({ deletedEditionIds: ["ed-1"], deletedWorkIds: ["w0"] });
     const manyIds = Array.from({ length: 101 }, (_, i) => `w${String(i)}`);
+    bulkDeleteByFormatMock.mockResolvedValue({ deletedEditionIds: ["ed-1"], deletedWorkIds: [] });
     render(<LibrarySelectionToolbar {...defaultProps} selectedCount={101} selectedWorkIds={manyIds} totalCount={500} />);
     await user.click(screen.getByTestId("bulk-delete-dropdown-trigger"));
     await waitFor(() => screen.getByText("Delete ebook editions only"));
     await user.click(screen.getByText("Delete ebook editions only"));
     await waitFor(() => screen.getByTestId("confirm-delete-by-format-btn"));
     fireEvent.click(screen.getByTestId("confirm-delete-by-format-btn"));
+
+    // 101 of 500 selected once took a library-wide path and deleted every
+    // ebook in the library while the dialog named only the selection.
     await waitFor(() => {
-      expect(deleteAllByFormatMock).toHaveBeenCalledWith({ data: { format: "EBOOK" } });
-      expect(bulkDeleteByFormatMock).not.toHaveBeenCalled();
+      expect(bulkDeleteByFormatMock).toHaveBeenCalledWith({ data: { workIds: manyIds, format: "EBOOK" } });
+    });
+  });
+
+  it("scopes a by-format delete to the selection when it covers the current query", async () => {
+    const user = userEvent.setup();
+    const ids = Array.from({ length: 10 }, (_, i) => `w${String(i)}`);
+    bulkDeleteByFormatMock.mockResolvedValue({ deletedEditionIds: ["ed-1"], deletedWorkIds: [] });
+    // totalCount is the count for the CURRENT query, so "selected everything"
+    // under a facet is not "selected the whole library".
+    render(<LibrarySelectionToolbar {...defaultProps} selectedCount={10} selectedWorkIds={ids} totalCount={10} />);
+    await user.click(screen.getByTestId("bulk-delete-dropdown-trigger"));
+    await waitFor(() => screen.getByText("Delete ebook editions only"));
+    await user.click(screen.getByText("Delete ebook editions only"));
+    await waitFor(() => screen.getByTestId("confirm-delete-by-format-btn"));
+    fireEvent.click(screen.getByTestId("confirm-delete-by-format-btn"));
+
+    await waitFor(() => {
+      expect(bulkDeleteByFormatMock).toHaveBeenCalledWith({ data: { workIds: ids, format: "EBOOK" } });
     });
   });
 

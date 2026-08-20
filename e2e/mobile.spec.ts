@@ -182,9 +182,34 @@ test.describe("Mobile layout", () => {
       const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
       return { pagerPresent: true, intercepted: !arrow.contains(hit) && hit !== arrow };
     });
-    // With a selection active the pagination is hidden outright, so there is
-    // nothing to intercept.
+    // With a selection active the pagination is hidden outright.
     expect(corner.pagerPresent, "pagination still rendered under the bulk bar").toBe(false);
+
+    // ...and once the selection is cleared it comes back and is genuinely
+    // clickable. Without this second half the elementFromPoint check above is
+    // dead code - the early return means it never runs.
+    await page.getByRole("button", { name: "Clear" }).click();
+    await page.waitForTimeout(400);
+    const restored = await page.evaluate(() => {
+      const pager = document.querySelector('[data-testid="library-pagination"]');
+      if (!pager) return { pagerPresent: false, intercepted: true };
+      const arrow = pager.querySelector('[aria-label="Go to next page"]');
+      if (!arrow) return { pagerPresent: true, intercepted: true };
+      const b = arrow.getBoundingClientRect();
+      const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+      return {
+        pagerPresent: true,
+        // A disabled arrow has pointer-events:none, so the hit legitimately
+        // falls through to the pagination row itself. What matters is that
+        // nothing OUTSIDE the pagination is covering it.
+        intercepted: !pager.contains(hit),
+        hitTag: (hit as HTMLElement | null)?.tagName ?? null,
+        hitCls: ((hit as HTMLElement | null)?.className ?? "").toString().slice(0, 60),
+        arrowDisabled: (arrow as HTMLButtonElement).disabled,
+      };
+    });
+    expect(restored.pagerPresent, "pagination did not come back after Clear").toBe(true);
+    expect(restored.intercepted, "something still covers the next-page arrow").toBe(false);
   });
 
   test("a selection stays on the work it was made on", async ({ page }) => {

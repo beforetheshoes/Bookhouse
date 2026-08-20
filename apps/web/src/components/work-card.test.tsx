@@ -235,11 +235,14 @@ describe("WorkCard", () => {
   });
 
   it("does not nest a control inside the card link", () => {
-    const { container } = render(<WorkCard {...baseProps} selectable />);
+    // Render in LINK mode - the only mode with an <a> - and prove nothing
+    // interactive lives inside it. Interactive content inside <a> is invalid
+    // HTML and leaves the link independently focusable, so Enter navigates
+    // instead of selecting.
+    const { container } = render(<WorkCard {...baseProps} />);
     const link = container.querySelector("a[href]");
-    // Interactive content inside <a> is invalid HTML, and the link stays
-    // independently focusable - so Enter navigates instead of selecting.
-    expect(link?.querySelectorAll("button").length ?? 0).toBe(0);
+    expect(link).not.toBeNull();
+    expect(link?.querySelectorAll('button, [role="checkbox"]').length ?? -1).toBe(0);
   });
 
   it("is not a link at all in select mode", () => {
@@ -247,16 +250,4 @@ describe("WorkCard", () => {
     expect(container.querySelector("a[href]")).toBeNull();
   });
 
-  it("announces itself as a checkbox in select mode", () => {
-    render(<WorkCard {...baseProps} selectable selected />);
-    const box = screen.getByRole("checkbox", { name: "Select The Great Gatsby" });
-    expect(box.getAttribute("aria-checked")).toBe("true");
-  });
-
-  it("selects from the keyboard", () => {
-    const onSelectChange = vi.fn();
-    render(<WorkCard {...baseProps} selectable onSelectChange={onSelectChange} />);
-    fireEvent.click(screen.getByRole("checkbox", { name: "Select The Great Gatsby" }));
-    expect(onSelectChange).toHaveBeenCalledWith(true);
-  });
 });

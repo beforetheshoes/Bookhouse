@@ -19,7 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
-import { bulkDeleteWorksServerFn, bulkDeleteEditionsByFormatForWorksServerFn, deleteAllEditionsByFormatServerFn } from "~/lib/server-fns/deletion";
+import { bulkDeleteWorksServerFn, bulkDeleteEditionsByFormatForWorksServerFn } from "~/lib/server-fns/deletion";
 import { bulkAddToShelfServerFn } from "~/lib/server-fns/shelves";
 import { markWorksAsReadServerFn } from "~/lib/server-fns/reading-progress";
 import { mergeWorksServerFn } from "~/lib/server-fns/work-management";
@@ -94,9 +94,15 @@ export function LibrarySelectionToolbar({
   async function handleBulkDeleteByFormat(format: "EBOOK" | "AUDIOBOOK") {
     setDeletingByFormat(true);
     try {
-      const result = selectedWorkIds.length > 100 || selectedCount >= totalCount
-        ? await deleteAllEditionsByFormatServerFn({ data: { format } })
-        : await bulkDeleteEditionsByFormatForWorksServerFn({ data: { workIds: selectedWorkIds, format } });
+      // Always scoped to the selection. The old shortcut took a library-wide
+      // path when more than 100 works were selected, or when the selection
+      // covered totalCount - but totalCount is the count for the *current
+      // query*, so selecting everything under a search or facet deleted every
+      // edition of that format in the whole library while the dialog named
+      // only the selection.
+      const result = await bulkDeleteEditionsByFormatForWorksServerFn({
+        data: { workIds: selectedWorkIds, format },
+      });
       const label = format === "EBOOK" ? "ebook" : "audiobook";
       const editionCount = result.deletedEditionIds.length;
       const workCount = result.deletedWorkIds.length;
@@ -207,7 +213,7 @@ export function LibrarySelectionToolbar({
             Enrich Metadata
           </Button>
           {selectedCount >= 2 && (
-            <Button variant="outline" size="sm" onClick={() => { setMergeTargetId(defaultTargetId); setMergeOpen(true); }} data-testid="merge-works-btn">
+            <Button variant="outline" size="sm" disabled={selectedWorks.length < 2} onClick={() => { setMergeTargetId(defaultTargetId); setMergeOpen(true); }} data-testid="merge-works-btn">
               <GitMerge className="mr-1.5 size-3.5" />
               Merge
             </Button>
@@ -228,7 +234,7 @@ export function LibrarySelectionToolbar({
                 <Button
                   variant="destructive"
                   size="sm"
-                  className="rounded-l-none px-2.5 lg:px-1.5"
+                  className="rounded-l-none px-3 lg:px-1.5"
                   aria-label="More delete options"
                   data-testid="bulk-delete-dropdown-trigger"
                 >

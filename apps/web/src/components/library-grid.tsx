@@ -14,6 +14,8 @@ interface LibraryGridProps {
   /** Keyed by index into `works`, matching the table's RowSelectionState. */
   rowSelection?: Record<string, boolean>;
   onToggleSelect?: (id: string) => void;
+  /** True while the fixed bulk bar is on screen. */
+  selectionActive?: boolean;
 }
 
 function getAuthors(work: LibraryWork): string {
@@ -45,7 +47,7 @@ export function getColumnCount(width: number, tileSize: GridTileSize = "small"):
   return 6;
 }
 
-export function LibraryGrid({ works, progressMap, scanActive, tileSize = "small", selectable, rowSelection, onToggleSelect }: LibraryGridProps) {
+export function LibraryGrid({ works, progressMap, scanActive, tileSize = "small", selectable, rowSelection, onToggleSelect, selectionActive }: LibraryGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [columnCount, setColumnCount] = useState(5);
   const observerRef = useRef<ResizeObserver | null>(null);
@@ -102,7 +104,7 @@ export function LibraryGrid({ works, progressMap, scanActive, tileSize = "small"
       // In select mode the floating bulk bar is fixed over the bottom of the
       // screen, so without this the last cards cannot be scrolled clear of it
       // and are unselectable.
-      className={selectable === true ? "overflow-auto pr-2 pb-48" : "overflow-auto pr-2"}
+      className={selectionActive === true ? "overflow-auto pr-2 pb-48" : "overflow-auto pr-2"}
       style={{ maxHeight }}
     >
       {works.length === 0 ? (

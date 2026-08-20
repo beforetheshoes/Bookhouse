@@ -18,7 +18,7 @@ export function FloatingActionBar({
   return (
     <div
       className={cn(
-        "fixed inset-x-2 bottom-2 z-50 mx-auto flex max-w-[calc(100vw-1rem)] flex-col items-center gap-1.5 rounded-lg border bg-background p-3 shadow-lg",
+        "fixed inset-x-2 bottom-2 z-50 flex flex-col items-center gap-1.5 rounded-lg border bg-background p-3 shadow-lg",
         "md:inset-x-auto md:bottom-6 md:left-1/2 md:w-auto md:max-w-none md:-translate-x-1/2",
         className,
       )}

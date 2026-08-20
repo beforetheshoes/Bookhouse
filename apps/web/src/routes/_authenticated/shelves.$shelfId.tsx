@@ -155,7 +155,7 @@ function ShelfDetailPage() {
 
   const editions = shelf.items.map((item) => item.edition);
   const works = getWorksWithEditions(shelf.items);
-  const selectedCount = Object.keys(rowSelection).length;
+
 
   // Keyed by edition id via getRowId, so a refreshed list cannot repoint it.
   // Still filtered against the current list: a selected row can disappear.
@@ -163,6 +163,11 @@ function ShelfDetailPage() {
     const present = new Set(editions.map((e) => e.id));
     return Object.keys(rowSelection).filter((id) => present.has(id));
   }, [rowSelection, editions]);
+
+  // Derived from the filtered ids, not the raw keys: a selected edition can
+  // leave the list, and a bar that counts what the mutation will not act on
+  // is lying.
+  const selectedCount = selectedEditionIds.length;
 
   const handleRemoveSelected = async () => {
     setRemoving(true);
