@@ -129,7 +129,7 @@ function EmptyWorksList({ works }: { works: EmptyWork[] }) {
       </Button>
       <ul className="space-y-1">
         {works.map((work) => (
-          <li key={work.id} className="text-sm text-muted-foreground">{work.titleDisplay}</li>
+          <li key={work.id} className="text-sm text-muted-foreground [overflow-wrap:anywhere]">{work.titleDisplay}</li>
         ))}
       </ul>
     </div>

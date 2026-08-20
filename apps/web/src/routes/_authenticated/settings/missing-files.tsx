@@ -44,6 +44,22 @@ export interface MissingFilesData {
   total: number;
 }
 
+/**
+ * A message safe to put in a toast.
+ *
+ * A rejected server-fn validator reaches the client as an Error whose
+ * `message` is the serialized Zod issue array, so passing it straight through
+ * rendered a JSON blob at the user. Anything that looks like that dump is
+ * replaced; a real server-side failure message still comes through unedited.
+ */
+function cleanupErrorMessage(error: Error | null): string {
+  const raw = error?.message ?? "";
+  if (raw.trimStart().startsWith("[")) {
+    return "That cleanup request was not valid. Reload the page and try again.";
+  }
+  return raw === "" ? "Failed to clean up files" : raw;
+}
+
 export const Route = createFileRoute(
   "/_authenticated/settings/missing-files",
 )({
@@ -97,9 +113,7 @@ function MissingFilesPage() {
       setCleanAllOpen(false);
       void router.invalidate();
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to clean up files",
-      );
+      toast.error(cleanupErrorMessage(error instanceof Error ? error : null));
     } finally {
       setCleaning(false);
     }
@@ -159,7 +173,7 @@ function MissingFilesPage() {
           <TableHeader>
             <TableRow>
               <TableHead className="w-10">
-                <label className="flex min-h-9 items-center justify-center lg:min-h-0">
+                <label className="flex min-h-9 min-w-9 items-center justify-center lg:min-h-0 lg:min-w-0">
                 <input
                   type="checkbox"
                   className="size-5 lg:size-4"
@@ -181,7 +195,7 @@ function MissingFilesPage() {
               return (
                 <TableRow key={file.id}>
                   <TableCell>
-                    <label className="flex min-h-9 items-center justify-center lg:min-h-0">
+                    <label className="flex min-h-9 min-w-9 items-center justify-center lg:min-h-0 lg:min-w-0">
                       <input
                         type="checkbox"
                         className="size-5 lg:size-4"

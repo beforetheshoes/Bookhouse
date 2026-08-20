@@ -70,7 +70,7 @@ export function LibraryPagination({
         <div className="flex items-center gap-1">
           <Button
             variant="outline"
-            className="hidden size-9 p-0 lg:flex lg:size-8"
+            className="hidden p-0 lg:flex lg:size-8"
             onClick={() => { onPageChange(1); }}
             disabled={page <= 1}
             aria-label="Go to first page"
@@ -97,7 +97,7 @@ export function LibraryPagination({
           </Button>
           <Button
             variant="outline"
-            className="hidden size-9 p-0 lg:flex lg:size-8"
+            className="hidden p-0 lg:flex lg:size-8"
             onClick={() => { onPageChange(totalPages); }}
             disabled={page >= totalPages}
             aria-label="Go to last page"
