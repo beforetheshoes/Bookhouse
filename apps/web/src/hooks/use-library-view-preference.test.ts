@@ -127,13 +127,37 @@ describe("useEffectiveLibraryView", () => {
     expect(result.current[0]).toBe("table");
   });
 
-  it("forces grid on phones even when table is stored", () => {
+  it("serves the list on phones when table is stored", () => {
     // An 800px-wide table squeezed into 360px renders every cell as an
     // ellipsis, so the table is a desktop-only affordance.
     setViewportWidth(375);
     localStorage.setItem(STORAGE_KEY, "table");
     const { result } = renderHook(() => useEffectiveLibraryView());
+    expect(result.current[0]).toBe("list");
+  });
+
+  it("defaults phones to the list and desktops to the grid", () => {
+    setViewportWidth(375);
+    const phone = renderHook(() => useEffectiveLibraryView());
+    expect(phone.result.current[0]).toBe("list");
+
+    setViewportWidth(1280);
+    const desktop = renderHook(() => useEffectiveLibraryView());
+    expect(desktop.result.current[0]).toBe("grid");
+  });
+
+  it("honours grid on a phone when the reader picked it", () => {
+    setViewportWidth(375);
+    localStorage.setItem(STORAGE_KEY, "grid");
+    const { result } = renderHook(() => useEffectiveLibraryView());
     expect(result.current[0]).toBe("grid");
+  });
+
+  it("honours list on a desktop when the reader picked it", () => {
+    setViewportWidth(1280);
+    localStorage.setItem(STORAGE_KEY, "list");
+    const { result } = renderHook(() => useEffectiveLibraryView());
+    expect(result.current[0]).toBe("list");
   });
 
   it("still round-trips the stored preference from a phone", () => {
