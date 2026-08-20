@@ -69,7 +69,7 @@ test.describe("Mobile layout", () => {
     await expectNoHorizontalOverflow(page);
   });
 
-  test("serves the grid on phones even when table view is stored", async ({
+  test("serves the list on phones even when table view is stored", async ({
     page,
   }) => {
     await seedWork({ title: "The Great Gatsby" });
@@ -81,9 +81,25 @@ test.describe("Mobile layout", () => {
     await expect(page.getByText("The Great Gatsby")).toBeVisible();
 
     // An 800px-wide table squeezed into 360px renders every cell as an
-    // ellipsis, so phones get the grid regardless of the stored preference.
+    // ellipsis, so the table never reaches a phone. The list is the phone
+    // default; the grid is still one tap away.
     await expect(page.locator("table")).toHaveCount(0);
+    await expect(page.getByTestId("library-list")).toBeVisible();
     await expectNoHorizontalOverflow(page);
+  });
+
+  test("the grid is still reachable on a phone", async ({ page }) => {
+    await seedWork({ title: "The Great Gatsby" });
+    await page.goto("/library");
+    await expect(page.getByTestId("library-list")).toBeVisible();
+
+    await page.getByRole("button", { name: "Grid view" }).click();
+    await expect(page.getByTestId("library-list")).toHaveCount(0);
+    await expect(page.getByText("The Great Gatsby")).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+
+    await page.getByRole("button", { name: "List view" }).click();
+    await expect(page.getByTestId("library-list")).toBeVisible();
   });
 
   test("work detail stacks without horizontal overflow", async ({ page }) => {
@@ -140,7 +156,7 @@ test.describe("Mobile layout", () => {
     }
   });
 
-  test("chrome above the grid stays under a quarter of the phone viewport", async ({
+  test("chrome above the books stays under a fifth of the phone viewport", async ({
     page,
   }) => {
     // The stacked layout put the first cover at y=310 of a 740px viewport -
@@ -155,39 +171,55 @@ test.describe("Mobile layout", () => {
 
     const m = await page.evaluate(() => {
       const vh = document.documentElement.clientHeight;
-      const card = document.querySelector<HTMLElement>("a[href^='/library/']");
+      const row = document.querySelector<HTMLElement>("a[href^='/library/']");
       return {
         vh,
-        cardTop: card ? Math.round(card.getBoundingClientRect().top) : -1,
-        // The row has to still hold every control it claims to.
+        rowTop: row ? Math.round(row.getBoundingClientRect().top) : -1,
+        // The row has to still hold every control it claims to. The text
+        // filter is deliberately absent - it lives in the sheet now, which the
+        // test below opens to prove it is still reachable.
         controls: {
           filters: document.querySelectorAll('[data-slot="sheet-trigger"]').length,
-          search: document.querySelectorAll('input[placeholder^="Filter by title"]').length,
           select: document.querySelectorAll('[aria-label="Select works"]').length,
-          tiles: document.querySelectorAll('[aria-label="Small tiles"]').length,
+          list: document.querySelectorAll('[aria-label="List view"]').length,
+          grid: document.querySelectorAll('[aria-label="Grid view"]').length,
         },
+        // Visible ones: the input stays in the DOM and is hidden by CSS from
+        // lg down, and a box nobody can see is not a second search box.
+        inlineFilterBoxes: Array.from(
+          document.querySelectorAll<HTMLElement>('input[placeholder^="Filter by title"]'),
+        ).filter((el) => el.offsetParent !== null).length,
       };
     });
 
-    expect(m.cardTop, "no work card rendered").toBeGreaterThan(0);
+    expect(m.rowTop, "no work row rendered").toBeGreaterThan(0);
     expect(
-      m.cardTop,
-      `first cover starts at ${String(m.cardTop)}px of a ${String(m.vh)}px viewport`,
-    ).toBeLessThanOrEqual(Math.round(m.vh * 0.25));
+      m.rowTop,
+      `first book starts at ${String(m.rowTop)}px of a ${String(m.vh)}px viewport`,
+    ).toBeLessThanOrEqual(Math.round(m.vh * 0.2));
     // Guard against "saving" space by dropping controls instead of packing them.
-    expect(m.controls).toEqual({ filters: 1, search: 1, select: 1, tiles: 1 });
+    expect(m.controls).toEqual({ filters: 1, select: 1, list: 1, grid: 1 });
+    expect(m.inlineFilterBoxes, "the second search box is back").toBe(0);
   });
 
-  test("status and sort are reachable from the filters sheet on a phone", async ({
+  test("filter, status and sort are reachable from the sheet on a phone", async ({
     page,
   }) => {
-    // They leave the toolbar row below lg, so the sheet is the only route.
+    // All three leave the toolbar row below lg, so the sheet is the only
+    // route to them - and the filter has to actually filter from there.
     await seedWork({ title: "Sheet Sort Book" });
+    await seedWork({ title: "Unrelated Volume" });
     await page.goto("/library");
     await page.getByRole("button", { name: /Filters/ }).click();
     await page.waitForTimeout(400);
     await expect(page.getByRole("combobox", { name: "Reading status" })).toBeVisible();
     await expect(page.getByRole("combobox", { name: "Sort" })).toBeVisible();
+
+    await page.getByRole("textbox", { name: "Filter by title or author" }).fill("Sheet Sort");
+    await page.waitForTimeout(900);
+    await page.keyboard.press("Escape");
+    await expect(page.getByText("Sheet Sort Book")).toBeVisible();
+    await expect(page.getByText("Unrelated Volume")).toHaveCount(0);
   });
 
   test("bulk actions are reachable on a phone", async ({ page }) => {
@@ -196,9 +228,9 @@ test.describe("Mobile layout", () => {
     await page.goto("/library");
     await expect(page.getByText("Bulk Book 0")).toBeVisible();
 
-    // Phones are forced onto the grid, which had no selection affordance at
-    // all - so delete, merge, add-to-shelf, enrich and mark-as-read were
-    // unreachable below md.
+    // Phones had no selection affordance at all - so delete, merge,
+    // add-to-shelf, enrich and mark-as-read were unreachable below md. This
+    // runs against whichever view a phone lands on, which is now the list.
     await page.getByRole("button", { name: "Select works" }).click();
     await page.getByRole("checkbox", { name: "Select Bulk Book 0" }).click();
     await page.getByRole("checkbox", { name: "Select Bulk Book 1" }).click();
@@ -246,8 +278,13 @@ test.describe("Mobile layout", () => {
     // The bar is fixed over the bottom of the screen, so the grid must be able
     // to scroll its last cards clear of it - otherwise they cannot be selected.
     const reachable = await page.evaluate(() => {
-      const grid = document.querySelector('[class*="overflow-auto"][class*="pr-2"]') as HTMLElement;
-      grid.scrollTop = grid.scrollHeight;
+      // The grid scrolls inside its own scrollport; the list scrolls the page.
+      const grid = document.querySelector<HTMLElement>('[class*="overflow-auto"][class*="pr-2"]');
+      if (grid) {
+        grid.scrollTop = grid.scrollHeight;
+      } else {
+        window.scrollTo(0, document.body.scrollHeight);
+      }
       const bar = document.querySelector('[data-testid="bulk-add-to-shelf-btn"]')?.closest("div")?.parentElement;
       const barTop = bar?.getBoundingClientRect().top ?? window.innerHeight;
       // In select mode a card is a role=checkbox div, NOT a link - measuring
@@ -269,23 +306,33 @@ test.describe("Mobile layout", () => {
       "the last card cannot be scrolled clear of the bulk bar",
     ).toBeLessThanOrEqual(reachable.barTop + 1);
 
+  });
+
+  test("the bulk bar and the grid's pagination never fight for the corner", async ({
+    page,
+  }) => {
+    // Only the grid paginates on a phone - the list loads as you scroll - so
+    // this switches to it deliberately rather than relying on the default.
+    for (let i = 0; i < 3; i++) await seedWork({ title: `Corner Book ${String(i)}` });
+    await page.goto("/library");
+    await page.getByRole("button", { name: "Grid view" }).click();
+    await expect(page.getByText("Corner Book 0")).toBeVisible();
+
+    await page.getByRole("button", { name: "Select works" }).click();
+    await page.getByRole("checkbox", { name: "Select Corner Book 0" }).click();
+    await expect(page.getByText("1 work selected")).toBeVisible();
+
     // The bulk bar is fixed at z-50 over the sticky pagination at z-20, so the
     // two cannot both own that corner. Hit-test rather than trust the classes.
     const corner = await page.evaluate(() => {
       const pager = document.querySelector('[data-testid="library-pagination"]');
-      if (!pager) return { pagerPresent: false, intercepted: false };
-      const arrow = pager.querySelector('[aria-label="Go to next page"]');
-      if (!arrow) return { pagerPresent: true, intercepted: false };
-      const b = arrow.getBoundingClientRect();
-      const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
-      return { pagerPresent: true, intercepted: !arrow.contains(hit) && hit !== arrow };
+      return { pagerPresent: pager !== null };
     });
     // With a selection active the pagination is hidden outright.
     expect(corner.pagerPresent, "pagination still rendered under the bulk bar").toBe(false);
 
     // ...and once the selection is cleared it comes back and is genuinely
-    // clickable. Without this second half the elementFromPoint check above is
-    // dead code - the early return means it never runs.
+    // clickable. Without this second half the check above is dead code.
     await page.getByRole("button", { name: "Clear" }).click();
     await page.waitForTimeout(400);
     const restored = await page.evaluate(() => {
@@ -301,9 +348,6 @@ test.describe("Mobile layout", () => {
         // falls through to the pagination row itself. What matters is that
         // nothing OUTSIDE the pagination is covering it.
         intercepted: !pager.contains(hit),
-        hitTag: (hit as HTMLElement | null)?.tagName ?? null,
-        hitCls: ((hit as HTMLElement | null)?.className ?? "").toString().slice(0, 60),
-        arrowDisabled: (arrow as HTMLButtonElement).disabled,
       };
     });
     expect(restored.pagerPresent, "pagination did not come back after Clear").toBe(true);
@@ -381,6 +425,9 @@ test.describe("Mobile layout", () => {
       await seedWork({ title: `Offpage Book ${String(i).padStart(2, "0")}` });
     }
     await page.goto("/library?page=1&pageSize=10&sort=title-asc&view=works");
+    // Pages only exist in the grid: the list loads the next one as you scroll,
+    // so there is no "off page" there to lose.
+    await page.getByRole("button", { name: "Grid view" }).click();
     await expect(page.getByText("Offpage Book 00")).toBeVisible();
 
     await page.getByRole("button", { name: "Select works" }).click();
@@ -666,6 +713,8 @@ test.describe("Mobile layout", () => {
     // protect, so removing the floor would not have failed it.
     for (let i = 0; i < 24; i++) await seedWork({ title: `Landscape Grid ${String(i)}` });
     await page.setViewportSize({ width: 740, height: 360 });
+    // This is about the grid's own scroller, which a phone no longer lands on.
+    await page.addInitScript(() => { localStorage.setItem("library-view", "grid"); });
     await page.goto("/library");
     await page.waitForTimeout(1200);
 
@@ -694,6 +743,8 @@ test.describe("Mobile layout", () => {
     page,
   }) => {
     for (let i = 0; i < 12; i++) await seedWork({ title: `Fold Book ${String(i)}` });
+    // The grid's scroller and pagination, which a phone no longer lands on.
+    await page.addInitScript(() => { localStorage.setItem("library-view", "grid"); });
     await page.goto("/library");
     await page.waitForTimeout(1000);
 

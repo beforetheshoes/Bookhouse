@@ -2258,7 +2258,37 @@ export function createIngestServices(
     };
   }
 
+  /**
+   * Same race as the parse, cover and match jobs: the existence check below
+   * holds no lock, so deleting the asset (or its library root, which cascades)
+   * between that read and the write raised P2025 and failed the job.
+   */
   async function hashFileAsset(input: HashFileAssetInput): Promise<HashFileAssetResult> {
+    try {
+      return await hashPresentFileAsset(input);
+    } catch (error) {
+      const { code } = Object(error) as { code?: string };
+      if (code !== PRISMA_RECORD_NOT_FOUND) {
+        throw error;
+      }
+      const stillThere = await ingestDb.fileAsset.findUnique({
+        where: { id: input.fileAssetId },
+      });
+      if (stillThere !== null) {
+        throw error;
+      }
+      logger.info(
+        { fileAssetId: input.fileAssetId },
+        "Skipping hash for file asset deleted mid-hash",
+      );
+      return {
+        availabilityStatus: AvailabilityStatus.MISSING,
+        fileAssetId: input.fileAssetId,
+      };
+    }
+  }
+
+  async function hashPresentFileAsset(input: HashFileAssetInput): Promise<HashFileAssetResult> {
     const now = input.now ?? new Date();
     const fileAsset = await ingestDb.fileAsset.findUnique({
       where: { id: input.fileAssetId },

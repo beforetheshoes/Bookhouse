@@ -6509,6 +6509,82 @@ describe("ingest services", () => {
     ).rejects.toThrow("disk on fire");
   });
 
+  it("skips a hash whose file asset is deleted between the read and the write", async () => {
+    const state = createEmptyState("/tmp/root");
+    const asset = addFileAsset(state, { fullHash: null, partialHash: null });
+    const base = createTestDb(state);
+    let read = false;
+    const services = createIngestServices({
+      db: {
+        ...base,
+        fileAsset: {
+          ...base.fileAsset,
+          findUnique: async (args) => {
+            if (!read) {
+              read = true;
+              return await base.fileAsset.findUnique(args);
+            }
+            return null;
+          },
+          update: () => {
+            throw Object.assign(new Error("No record was found for an update."), {
+              code: "P2025",
+            });
+          },
+        },
+      },
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.hashFileAsset({ fileAssetId: asset.id });
+    expect(result.fileAssetId).toBe(asset.id);
+    expect(result.availabilityStatus).toBe(AvailabilityStatus.MISSING);
+  });
+
+  it("still fails a hash whose P2025 leaves the file asset in place", async () => {
+    const state = createEmptyState("/tmp/root");
+    const asset = addFileAsset(state, { fullHash: null, partialHash: null });
+    const base = createTestDb(state);
+    const services = createIngestServices({
+      db: {
+        ...base,
+        fileAsset: {
+          ...base.fileAsset,
+          update: () => {
+            throw Object.assign(new Error("No record was found for an update."), {
+              code: "P2025",
+            });
+          },
+        },
+      },
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    await expect(
+      services.hashFileAsset({ fileAssetId: asset.id }),
+    ).rejects.toThrow("No record was found for an update.");
+  });
+
+  it("propagates a hash failure that carries no Prisma error code", async () => {
+    const state = createEmptyState("/tmp/root");
+    const asset = addFileAsset(state, { fullHash: null, partialHash: null });
+    const base = createTestDb(state);
+    const services = createIngestServices({
+      db: {
+        ...base,
+        fileAsset: {
+          ...base.fileAsset,
+          update: () => { throw new Error("disk on fire"); },
+        },
+      },
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    await expect(
+      services.hashFileAsset({ fileAssetId: asset.id }),
+    ).rejects.toThrow("disk on fire");
+  });
+
   it("skips a parse whose file asset is deleted between the read and the write", async () => {
     // The existence check at the top of parseFileAssetMetadata holds no lock.
     // Deleting the work (or truncating between e2e specs) cascades to the

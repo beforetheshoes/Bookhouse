@@ -48,11 +48,23 @@ test.describe("Library root removal with orphan cleanup", () => {
 
     // Click trash and confirm
     await page.locator("svg.lucide-trash-2").click();
-    await expect(page.getByText("Remove Library Root")).toBeVisible();
-    await page.getByRole("button", { name: "Remove" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByText("Remove Library Root")).toBeVisible();
+    await dialog.getByRole("button", { name: "Remove", exact: true }).click();
 
-    // Wait for removal toast
-    await expect(page.getByText(/removed/i)).toBeVisible({ timeout: 15_000 });
+    // Wait for the removal toast, by its exact text and inside the toaster.
+    // `getByText(/removed/i)` matched a static paragraph on this very page -
+    // "Missing files and their library entries are automatically removed" - so
+    // it resolved instantly and this step waited for nothing at all. The
+    // deletion had not necessarily even started.
+    await expect(
+      page.locator("[data-sonner-toast]").getByText('"Removable Library" removed'),
+    ).toBeVisible({ timeout: 15_000 });
+
+    // The database is the fact; the page is a view of it.
+    expect(await db.libraryRoot.count()).toBe(0);
+    expect(await db.work.count({ where: { titleDisplay: "Orphan Book" } })).toBe(0);
+    expect(await db.fileAsset.count()).toBe(0);
 
     // Verify orphaned work is gone (orphan cleanup may run asynchronously)
     await page.goto("/library");
