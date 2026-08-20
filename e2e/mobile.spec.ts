@@ -1,5 +1,16 @@
 import { test, expect, type Page } from "@playwright/test";
-import { listWorkTitles, seedHostileWork, seedShelf, seedWork, cleanTestData } from "./helpers/seed";
+import {
+  cleanTestData,
+  listWorkTitles,
+  seedAuthor,
+  seedDuplicateCandidate,
+  seedHostileWork,
+  seedMatchSuggestion,
+  seedMissingFile,
+  seedSeriesWork,
+  seedShelf,
+  seedWork,
+} from "./helpers/seed";
 
 /**
  * Asserts the document does not scroll horizontally.
@@ -111,6 +122,15 @@ test.describe("Mobile layout", () => {
           name: "Currently Reading And Also Some Other Long Shelf Name",
           editionIds: w.editions.map((e) => e.id),
         });
+        // Without these four, /settings/missing-files, /authors, /duplicates
+        // and /match-suggestions rendered empty states here - an overflow
+        // check on a page with no rows cannot fail on its own content.
+        await seedAuthor({ editionIds: w.editions.map((e) => e.id) });
+        await seedMissingFile({
+          title: "A Missing File With A Long Underscore_Separated_Name_Nobody_Wraps",
+        });
+        await seedDuplicateCandidate();
+        await seedMatchSuggestion();
 
         await page.goto(path);
         await page.waitForLoadState("domcontentloaded");
@@ -342,23 +362,29 @@ test.describe("Mobile layout", () => {
     }
   });
 
-  const TAP_ROUTES = [
-  "/library",
-  "/settings",
-  "/shelves",
-  "/upload",
-  "/authors",
-  "/series",
-  "/settings/missing-files",
-  "/duplicates",
+  // Each route pairs with a string that only appears once its *data* rendered.
+  // Counting controls is not enough: /settings/missing-files, /authors and
+  // /series each rendered nothing but the app shell under the old fixture and
+  // still cleared the "more than 3 controls" floor, so their real rows - and
+  // a 36x20px checkbox and a 36x22px popover trigger among them - were never
+  // measured.
+  const TAP_ROUTES: { path: string; evidence: string }[] = [
+  { path: "/library", evidence: "Tap Target Book" },
+  { path: "/settings", evidence: "E2E Seed Library" },
+  { path: "/shelves", evidence: "Tap Target Shelf" },
+  { path: "/upload", evidence: "E2E Seed Library" },
+  { path: "/authors", evidence: "Ursula Wintergreen-Fitzherbert" },
+  { path: "/series", evidence: "Tap Target Chronicles" },
+  { path: "/settings/missing-files", evidence: "missing-file-book.epub" },
+  { path: "/duplicates", evidence: "Duplicate Candidate Left" },
   // /health is intentionally absent: it is a read-only dashboard with no
   // controls beyond the app shell, so a tap-target sweep there measures
   // nothing. Its layout is covered by the overflow suite.
-  "/match-suggestions",
-  "/settings/users",
+  { path: "/match-suggestions", evidence: "Match Suggestion Target" },
+  { path: "/settings/users", evidence: "e2e@bookhouse.test" },
 ];
 
-  for (const route of TAP_ROUTES) {
+  for (const { path: route, evidence } of TAP_ROUTES) {
   test(`interactive controls on ${route} meet a real tap-target floor`, async ({ page }) => {
     const tapWork = await seedWork({ title: "Tap Target Book" });
     // /shelves and /series render nothing without a shelf, so the name links
@@ -367,9 +393,21 @@ test.describe("Mobile layout", () => {
       name: "Tap Target Shelf",
       editionIds: tapWork.editions.map((e) => e.id),
     });
+    await seedAuthor({ editionIds: tapWork.editions.map((e) => e.id) });
+    await seedSeriesWork();
+    await seedMissingFile();
+    await seedDuplicateCandidate();
+    await seedMatchSuggestion();
     await page.goto(route);
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(800);
+
+    // Fail loudly if the fixture stops producing rows, rather than sweeping an
+    // empty state and reporting a pass.
+    await expect(
+      page.getByText(evidence, { exact: false }).first(),
+      `${route} rendered no seeded data ("${evidence}" absent)`,
+    ).toBeVisible();
 
 
     // Measured from computed layout, not class strings. Asserting on
@@ -531,18 +569,34 @@ test.describe("Mobile layout", () => {
   });
 
   test("landscape grid keeps a usable height", async ({ page }) => {
-    for (let i = 0; i < 6; i++) await seedWork({ title: `Landscape Grid ${String(i)}` });
+    // Enough rows that the scroller is taller than the floor. With six works
+    // it was content-sized at 241px and the assertion was `> 240` - a 1px
+    // margin that never reached the `max(20rem, ...)` floor it exists to
+    // protect, so removing the floor would not have failed it.
+    for (let i = 0; i < 24; i++) await seedWork({ title: `Landscape Grid ${String(i)}` });
     await page.setViewportSize({ width: 740, height: 360 });
     await page.goto("/library");
-    await page.waitForTimeout(900);
+    await page.waitForTimeout(1200);
 
-    const h = await page.evaluate(() => {
+    const r = await page.evaluate(() => {
       const el = document.querySelector('[class*="overflow-auto"][class*="pr-2"]');
-      return el ? Math.round(el.getBoundingClientRect().height) : -1;
+      if (!el) return null;
+      return {
+        h: Math.round(el.getBoundingClientRect().height),
+        scrollH: Math.round(el.scrollHeight),
+      };
     });
-    // The md: cap does not apply at 740px wide, so without a floor the
-    // viewport-derived height collapses to about one clipped row.
-    expect(h).toBeGreaterThan(240);
+    expect(r, "grid scroller not found").not.toBeNull();
+    const g = r as NonNullable<typeof r>;
+    // The content must exceed the floor, or the height below proves nothing.
+    expect(
+      g.scrollH,
+      `only ${String(g.scrollH)}px of content - not enough to reach the floor`,
+    ).toBeGreaterThan(320);
+    // 100dvh - top - 4rem is negative in a 360px-tall landscape viewport, so
+    // the 20rem floor is the only thing standing between this and a scroller
+    // about one clipped row tall.
+    expect(g.h, `scroller is ${String(g.h)}px tall`).toBeGreaterThanOrEqual(320);
   });
 
   test("grid scroller ends within the viewport, not below the fold", async ({
