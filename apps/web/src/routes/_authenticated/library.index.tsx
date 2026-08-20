@@ -250,8 +250,10 @@ function LibraryPage() {
     <div>
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Library</h1>
-          <p className="mb-6 mt-2 text-muted-foreground">
+          <h1 className="text-xl font-bold lg:text-2xl">Library</h1>
+          {/* The strapline is 56px of a phone viewport, including its margins,
+              and says nothing the heading does not. */}
+          <p className="hidden text-muted-foreground lg:mb-6 lg:mt-2 lg:block">
             Browse and manage your works.
           </p>
         </div>
@@ -276,14 +278,21 @@ function LibraryPage() {
             onFiltersChange={handleFiltersChange}
           />
         </aside>
-        <div className="flex-1 min-w-0 space-y-4">
-          <LibraryFiltersSheet
-            facetCounts={facetCounts}
-            totalFacetCounts={totalFacetCounts}
-            filters={currentFilters}
-            onFiltersChange={handleFiltersChange}
-          />
+        <div className="flex-1 min-w-0 space-y-3 lg:space-y-4">
           <LibraryToolbar
+            leading={
+              <LibraryFiltersSheet
+                facetCounts={facetCounts}
+                totalFacetCounts={totalFacetCounts}
+                filters={currentFilters}
+                onFiltersChange={handleFiltersChange}
+                filterValue={readingFilter}
+                onFilterChange={setReadingFilter}
+                sortValue={view !== "table" ? search.sort : undefined}
+                onSortChange={view !== "table" ? handleSortChange : undefined}
+              />
+            }
+            filtersInSheet
             searchValue={search.q ?? ""}
             onSearchChange={handleSearchChange}
             sortValue={search.sort}
