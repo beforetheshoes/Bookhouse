@@ -371,6 +371,40 @@ test.describe("Mobile layout", () => {
     ]);
   });
 
+  test("unticking one row of a select-all keeps the off-page books", async ({
+    page,
+  }) => {
+    // 12 works at 10 per page: "select all 12" spans two pages. Unticking one
+    // visible row used to discard both off-page ids as well, so the delete
+    // spared books the user never touched.
+    for (let i = 0; i < 12; i++) {
+      await seedWork({ title: `Offpage Book ${String(i).padStart(2, "0")}` });
+    }
+    await page.goto("/library?page=1&pageSize=10&sort=title-asc&view=works");
+    await expect(page.getByText("Offpage Book 00")).toBeVisible();
+
+    await page.getByRole("button", { name: "Select works" }).click();
+    for (let i = 0; i < 10; i++) {
+      await page.getByRole("checkbox", {
+        name: `Select Offpage Book ${String(i).padStart(2, "0")}`,
+      }).click();
+    }
+    await page.getByTestId("select-all-btn").click();
+    await expect(page.getByText("12 works selected")).toBeVisible();
+
+    await page.getByRole("checkbox", { name: "Select Offpage Book 03" }).click();
+    await expect(page.getByText("11 works selected")).toBeVisible();
+
+    await page.getByTestId("bulk-delete-works-btn").click();
+    await expect(page.getByText("Delete 11 Works")).toBeVisible();
+    await page.getByTestId("confirm-bulk-delete-works-btn").click();
+    await page.waitForTimeout(1500);
+
+    // Exactly the unticked book survives - not it plus the two pages the user
+    // could not see.
+    expect(await listWorkTitles()).toEqual(["Offpage Book 03"]);
+  });
+
   test("shelf editions can be removed from a phone", async ({ page }) => {
     const work = await seedWork({ title: "Shelf Removable Book" });
     const shelf = await seedShelf({

@@ -138,25 +138,47 @@ function LibraryPage() {
   // cross-page "select all N" standing: unchecking a row changed the visible
   // ticks while the bulk action still ran against every id, deleting the work
   // the user had just deselected.
+  /**
+   * Reconciles a standing cross-page selection with the ticks on this page.
+   *
+   * Discarding the whole set on any toggle was safe but destructive in its own
+   * way: unticking one book out of "all 25" left 19 selected, silently losing
+   * the five the user could not see. Every id on this page now follows its own
+   * tick, and everything off it is left alone.
+   */
+  const reconcileAllWorkIds = useCallback(
+    (next: RowSelectionState) => {
+      setAllWorkIds((prev) => {
+        if (prev === null) return null;
+        const onPage = new Set(filteredByReading.map((w) => w.id));
+        const chosen = new Set(prev.filter((id) => !onPage.has(id) || next[id] === true));
+        for (const work of filteredByReading) {
+          if (next[work.id] === true) chosen.add(work.id);
+        }
+        return [...chosen];
+      });
+    },
+    [filteredByReading],
+  );
+
   const handleRowSelectionChange = useCallback<OnChangeFn<RowSelectionState>>(
     (updater) => {
-      setAllWorkIds(null);
-      setRowSelection(updater);
+      const next = typeof updater === "function" ? updater(rowSelection) : updater;
+      setRowSelection(next);
+      reconcileAllWorkIds(next);
     },
-    [],
+    [rowSelection, reconcileAllWorkIds],
   );
 
   const handleToggleGridSelect = useCallback((workId: string) => {
-    setAllWorkIds(null);
-    setRowSelection((prev) => {
-      if (prev[workId] === true) {
-        return Object.fromEntries(
-          Object.entries(prev).filter(([rowKey]) => rowKey !== workId),
-        );
-      }
-      return { ...prev, [workId]: true };
-    });
-  }, []);
+    const next: RowSelectionState = rowSelection[workId] === true
+      ? Object.fromEntries(
+          Object.entries(rowSelection).filter(([rowKey]) => rowKey !== workId),
+        )
+      : { ...rowSelection, [workId]: true };
+    setRowSelection(next);
+    reconcileAllWorkIds(next);
+  }, [rowSelection, reconcileAllWorkIds]);
 
   const handleSelectModeChange = useCallback((on: boolean) => {
     setSelectMode(on);
