@@ -91,6 +91,22 @@ vi.mock("~/components/library-grid", () => ({
   },
 }));
 
+vi.mock("~/components/library-list", () => ({
+  LibraryList: (props: { works: { id: string }[]; selectable?: boolean; onToggleSelect?: (id: string) => void }) => (
+    <div data-testid="library-list" data-selectable={props.selectable === true ? "true" : "false"}>
+      List: {String(props.works.length)} works
+      {props.works.map((w) => (
+        <button
+          key={w.id}
+          type="button"
+          aria-label={`list-toggle-${w.id}`}
+          onClick={() => { props.onToggleSelect?.(w.id); }}
+        />
+      ))}
+    </div>
+  ),
+}));
+
 let capturedOnRowSelectionChange: ((sel: Record<string, boolean>) => void) | null = null;
 
 vi.mock("~/components/data-table", async () => {
@@ -192,6 +208,34 @@ describe("ShelfDetailPage", () => {
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
     expect(screen.getByText("Ebooks")).toBeTruthy();
+  });
+
+  it("renders LibraryList with works in list view", async () => {
+    // Phones default to the list, so a shelf must render one - before this it
+    // fell through to the table branch, which never reaches a phone.
+    mockView = "list";
+    mockLoaderData = {
+      shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [{ id: "ci1", edition: mockEdition }] },
+    };
+    const { Route } = await import("./shelves.$shelfId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    expect(screen.getByTestId("library-list")).toBeTruthy();
+    expect(screen.queryByTestId("library-grid")).toBeNull();
+  });
+
+  it("selects and removes from the list the same way as the grid", async () => {
+    mockView = "list";
+    mockLoaderData = {
+      shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [{ id: "ci1", edition: mockEdition }] },
+    };
+    const { Route } = await import("./shelves.$shelfId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+
+    act(() => { capturedToolbarProps.onSelectModeChange?.(true); });
+    fireEvent.click(screen.getByLabelText("list-toggle-w1"));
+    expect(screen.getByTestId("selection-bar")).toBeTruthy();
   });
 
   it("renders LibraryGrid with works in grid view", async () => {

@@ -23,6 +23,7 @@ import {
 } from "~/components/ui/select";
 import type { ReadingFilter } from "~/lib/sort-filter-works";
 import type { SortValue } from "~/components/library-toolbar";
+import { Input } from "~/components/ui/input";
 
 const STATUS_OPTIONS: { value: ReadingFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -50,6 +51,9 @@ interface LibraryFiltersSheetProps {
   /** Sort, same reason. Omit when the view sorts by its own column headers. */
   sortValue?: SortValue;
   onSortChange?: (value: SortValue) => void;
+  /** The title/author filter, which below lg has no room in the toolbar. */
+  searchValue?: string;
+  onSearchChange?: (value: string) => void;
 }
 
 /**
@@ -72,6 +76,8 @@ export function LibraryFiltersSheet({
   onFilterChange,
   sortValue,
   onSortChange,
+  searchValue,
+  onSearchChange,
 }: LibraryFiltersSheetProps) {
   const [open, setOpen] = useState(false);
   const activeCount = countActiveFilters(filters);
@@ -104,6 +110,17 @@ export function LibraryFiltersSheet({
           <SheetTitle>Filters</SheetTitle>
         </SheetHeader>
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-8">
+          {onSearchChange !== undefined && (
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Title or author</p>
+              <Input
+                aria-label="Filter by title or author"
+                placeholder="Filter by title or author..."
+                value={searchValue ?? ""}
+                onChange={(e) => { onSearchChange(e.target.value); }}
+              />
+            </div>
+          )}
           <div className="space-y-2">
             <p className="text-sm font-medium">Status</p>
             <Select

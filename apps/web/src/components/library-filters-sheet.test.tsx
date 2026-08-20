@@ -86,6 +86,35 @@ describe("LibraryFiltersSheet", () => {
     expect(screen.getByRole("combobox", { name: "Reading status" })).toBeTruthy();
   });
 
+  it("filters by title from inside the sheet", async () => {
+    // Below lg this is the only text filter: the toolbar row has no room for
+    // it, and the header's search is a navigator, not a filter.
+    const onSearchChange = vi.fn();
+    const user = userEvent.setup();
+    renderSheet({}, { searchValue: "", onSearchChange });
+
+    await user.click(screen.getByRole("button", { name: /Filters/ }));
+    await user.type(screen.getByRole("textbox", { name: "Filter by title or author" }), "d");
+    expect(onSearchChange).toHaveBeenCalledWith("d");
+  });
+
+  it("shows an empty box before anything has been typed", async () => {
+    const user = userEvent.setup();
+    renderSheet({}, { searchValue: undefined, onSearchChange: vi.fn() });
+
+    await user.click(screen.getByRole("button", { name: /Filters/ }));
+    const box = screen.getByRole("textbox", { name: "Filter by title or author" });
+    expect((box as HTMLInputElement).value).toBe("");
+  });
+
+  it("omits the text filter when no handler is supplied", async () => {
+    const user = userEvent.setup();
+    renderSheet({}, { searchValue: undefined, onSearchChange: undefined });
+
+    await user.click(screen.getByRole("button", { name: /Filters/ }));
+    expect(screen.queryByRole("textbox", { name: "Filter by title or author" })).toBeNull();
+  });
+
   it("reveals the filter panel when the trigger is pressed", async () => {
     const user = userEvent.setup();
     renderSheet();

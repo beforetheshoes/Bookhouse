@@ -15,6 +15,7 @@ import {
 } from "~/components/ui/dialog";
 import { VirtualizedDataTable, DataTableColumnHeader } from "~/components/data-table";
 import { LibraryGrid } from "~/components/library-grid";
+import { LibraryList } from "~/components/library-list";
 import { LibraryToolbar } from "~/components/library-toolbar";
 import { GridPageSkeleton } from "~/components/skeletons/grid-page-skeleton";
 import { useEffectiveLibraryView } from "~/hooks/use-library-view-preference";
@@ -284,6 +285,14 @@ function ShelfDetailPage() {
 
       {editions.length === 0 ? (
         <p className="text-muted-foreground">No editions on this shelf yet.</p>
+      ) : view === "list" ? (
+        <LibraryList
+          works={works}
+          selectable={selectMode}
+          selectionActive={gridSelectedWorkIds.length > 0}
+          rowSelection={gridSelection}
+          onToggleSelect={handleToggleGridSelect}
+        />
       ) : view === "grid" ? (
         <LibraryGrid
           works={works}
@@ -309,18 +318,18 @@ function ShelfDetailPage() {
         </div>
       )}
 
-      {(view === "grid" ? gridSelectedWorkIds.length : selectedCount) > 0 && (
+      {(view !== "table" ? gridSelectedWorkIds.length : selectedCount) > 0 && (
         <FloatingActionBar data-testid="selection-bar">
           <div className="flex w-full flex-wrap items-center justify-center gap-2 md:gap-3">
             <span className="text-sm font-medium">
-              {view === "grid"
+              {view !== "table"
                 ? `${String(gridSelectedWorkIds.length)} work${gridSelectedWorkIds.length === 1 ? "" : "s"} selected`
                 : `${String(selectedCount)} edition${selectedCount === 1 ? "" : "s"} selected`}
             </span>
             <Button
               variant="destructive"
               size="sm"
-              onClick={() => { void (view === "grid" ? handleRemoveSelectedWorks() : handleRemoveSelected()); }}
+              onClick={() => { void (view !== "table" ? handleRemoveSelectedWorks() : handleRemoveSelected()); }}
               disabled={removing}
               data-testid="remove-selected-btn"
             >

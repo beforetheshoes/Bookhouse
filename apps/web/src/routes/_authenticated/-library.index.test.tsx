@@ -154,7 +154,7 @@ vi.mock("~/lib/server-fns/reading-progress", () => ({
   getBulkReadingProgressServerFn: getBulkReadingProgressServerFnMock,
 }));
 
-let mockView = "grid" as "grid" | "table";
+let mockView = "grid" as "grid" | "table" | "list";
 const mockSetView = vi.fn();
 vi.mock("~/hooks/use-library-view-preference", () => ({
   useLibraryViewPreference: () => [mockView, mockSetView],
@@ -173,10 +173,24 @@ vi.mock("~/hooks/use-library-table-preferences", () => ({
   useLibraryTablePreferences: () => [mockTablePrefs, mockSetTablePrefs],
 }));
 
+vi.mock("~/components/library-list", () => ({
+  LibraryList: ({ works, hasMore, loadingMore, onLoadMore }: { works: { id: string }[]; hasMore?: boolean; loadingMore?: boolean; onLoadMore?: () => void }) => (
+    <div
+      data-testid="library-list"
+      data-count={String(works.length)}
+      data-has-more={hasMore === true ? "true" : "false"}
+      data-loading-more={loadingMore === true ? "true" : "false"}
+    >
+      <button type="button" aria-label="load-more" onClick={() => { onLoadMore?.(); }} />
+    </div>
+  ),
+}));
+
 vi.mock("~/components/library-grid", () => ({
   LibraryGrid: ({ works, progressMap, tileSize, selectable, rowSelection, onToggleSelect }: { works: { id: string }[]; progressMap?: Record<string, number>; tileSize?: string; selectable?: boolean; rowSelection?: Record<string, boolean>; onToggleSelect?: (id: string) => void }) => (
     <div
       data-testid="library-grid"
+      data-count={String(works.length)}
       data-progress-map={progressMap ? JSON.stringify(progressMap) : undefined}
       data-tile-size={tileSize ?? "small"}
       data-selectable={selectable === true ? "true" : "false"}
@@ -998,6 +1012,176 @@ describe("LibraryPage", () => {
 
     fireEvent.click(screen.getByLabelText("toggle-row-0"));
     await waitFor(() => { expect(screen.getByText("4 works selected")).toBeTruthy(); });
+  });
+
+  it("appends the next page when the list asks for one", async () => {
+    mockView = "list";
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Alpha")],
+        totalCount: 60,
+        facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
+      },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    getFilteredLibraryWorksServerFnMock.mockResolvedValue({
+      works: [makeWork("Bravo")],
+      totalCount: 60,
+      facetCounts: defaultFacetCounts,
+      totalFacetCounts: defaultFacetCounts,
+    });
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    const list = screen.getByTestId("library-list");
+    expect(list.getAttribute("data-count")).toBe("1");
+    // 60 works at 50 a page: page one leaves more to fetch.
+    expect(list.getAttribute("data-has-more")).toBe("true");
+
+    fireEvent.click(screen.getByLabelText("load-more"));
+    await waitFor(() => {
+      expect(screen.getByTestId("library-list").getAttribute("data-count")).toBe("2");
+    });
+    const call = getFilteredLibraryWorksServerFnMock.mock.calls.at(-1)?.[0] as
+      | { data?: { page?: number } }
+      | undefined;
+    expect(call?.data?.page).toBe(2);
+  });
+
+  it("throws away appended pages when the filters change", async () => {
+    mockView = "list";
+    mockSearch = { page: 1, pageSize: 50, sort: "title-asc" };
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Alpha")],
+        totalCount: 60,
+        facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
+      },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    getFilteredLibraryWorksServerFnMock.mockResolvedValue({
+      works: [makeWork("Bravo")],
+      totalCount: 60,
+      facetCounts: defaultFacetCounts,
+      totalFacetCounts: defaultFacetCounts,
+    });
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    const { rerender } = render(<LibraryPage />);
+
+    fireEvent.click(screen.getByLabelText("load-more"));
+    await waitFor(() => {
+      expect(screen.getByTestId("library-list").getAttribute("data-count")).toBe("2");
+    });
+
+    // A new query means the loader owns a different page one. Keeping the old
+    // page two appended would show works that no longer match.
+    mockSearch = { page: 1, pageSize: 50, sort: "title-asc", q: "dune" };
+    rerender(<LibraryPage />);
+    expect(screen.getByTestId("library-list").getAttribute("data-count")).toBe("1");
+  });
+
+  it("drops appended pages when leaving the list for a paged view", async () => {
+    mockView = "list";
+    mockSearch = { page: 1, pageSize: 50, sort: "title-asc" };
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Alpha")],
+        totalCount: 60,
+        facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
+      },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    getFilteredLibraryWorksServerFnMock.mockResolvedValue({
+      works: [makeWork("Bravo")],
+      totalCount: 60,
+      facetCounts: defaultFacetCounts,
+      totalFacetCounts: defaultFacetCounts,
+    });
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    const { rerender } = render(<LibraryPage />);
+
+    fireEvent.click(screen.getByLabelText("load-more"));
+    await waitFor(() => {
+      expect(screen.getByTestId("library-list").getAttribute("data-count")).toBe("2");
+    });
+
+    // The grid paginates and its select-all means "this page", so carrying the
+    // appended rows across would make both of those lie.
+    const onViewChange = capturedToolbarProps.onViewChange as (v: string) => void;
+    mockView = "grid";
+    act(() => { onViewChange("grid"); });
+    await waitFor(() => {
+      expect(screen.getByTestId("library-grid").getAttribute("data-count")).toBe("1");
+    });
+
+    // Going back to the list resets nothing - only leaving it does - so this
+    // needs its own render to show, the switch itself changing no state.
+    mockView = "list";
+    act(() => { onViewChange("list"); });
+    rerender(<LibraryPage />);
+    expect(screen.getByTestId("library-list").getAttribute("data-count")).toBe("1");
+  });
+
+  it("stops asking once every work is loaded", async () => {
+    mockView = "list";
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Alpha")],
+        totalCount: 1,
+        facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
+      },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    getFilteredLibraryWorksServerFnMock.mockClear();
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    expect(screen.getByTestId("library-list").getAttribute("data-has-more")).toBe("false");
+    fireEvent.click(screen.getByLabelText("load-more"));
+    expect(getFilteredLibraryWorksServerFnMock).not.toHaveBeenCalled();
+  });
+
+  it("hides the pagination controls in list view", async () => {
+    mockView = "list";
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Alpha")],
+        totalCount: 60,
+        facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
+      },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    // The list fetches the next page as you reach it; page buttons there would
+    // fight the scroll. The mock renders regardless of `hidden`, so this
+    // asserts the prop the real component acts on.
+    expect(capturedPaginationProps.hidden).toBe(true);
   });
 
   it("wraps the row checkbox in exactly one label", async () => {
