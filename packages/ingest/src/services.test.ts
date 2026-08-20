@@ -6427,6 +6427,96 @@ describe("ingest services", () => {
     });
   });
 
+  it("skips a parse whose file asset is deleted between the read and the write", async () => {
+    // The existence check at the top of parseFileAssetMetadata holds no lock.
+    // Deleting the work (or truncating between e2e specs) cascades to the
+    // FileAsset while the parse is mid-flight, and the write then raises P2025
+    // and failed the BullMQ job. A job for a deleted entity must skip.
+    const state = createEmptyState("/tmp/root");
+    const asset = addFileAsset(state, { metadata: null });
+    const base = createTestDb(state);
+    let read = false;
+    const db: IngestDb = {
+      ...base,
+      fileAsset: {
+        ...base.fileAsset,
+        findUnique: async (args) => {
+          // Present for the up-front check, gone by the time the write fails.
+          if (!read) {
+            read = true;
+            return await base.fileAsset.findUnique(args);
+          }
+          return null;
+        },
+        update: () => {
+          throw Object.assign(new Error("No record was found for an update."), {
+            code: "P2025",
+          });
+        },
+      },
+    };
+
+    const services = createIngestServices({
+      db,
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.parseFileAssetMetadata({ fileAssetId: asset.id });
+    expect(result).toEqual({
+      availabilityStatus: AvailabilityStatus.MISSING,
+      fileAssetId: asset.id,
+      skipped: true,
+    });
+  });
+
+  it("still fails a parse whose write raises P2025 with the asset still present", async () => {
+    // Otherwise the guard would swallow a genuine write failure and report the
+    // job as a successful skip.
+    const state = createEmptyState("/tmp/root");
+    const asset = addFileAsset(state, { metadata: null });
+    const base = createTestDb(state);
+    const db: IngestDb = {
+      ...base,
+      fileAsset: {
+        ...base.fileAsset,
+        update: () => {
+          throw Object.assign(new Error("No record was found for an update."), {
+            code: "P2025",
+          });
+        },
+      },
+    };
+
+    const services = createIngestServices({
+      db,
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    await expect(
+      services.parseFileAssetMetadata({ fileAssetId: asset.id }),
+    ).rejects.toThrow("No record was found for an update.");
+  });
+
+  it("propagates a parse failure that carries no Prisma error code", async () => {
+    const state = createEmptyState("/tmp/root");
+    const asset = addFileAsset(state, { metadata: null });
+    const base = createTestDb(state);
+    const services = createIngestServices({
+      db: {
+        ...base,
+        fileAsset: {
+          ...base.fileAsset,
+          update: () => { throw new Error("disk on fire"); },
+        },
+      },
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    await expect(
+      services.parseFileAssetMetadata({ fileAssetId: asset.id }),
+    ).rejects.toThrow("disk on fire");
+  });
+
   it("enqueues metadata parsing after hashing an OPF sidecar", async () => {
     const state = createEmptyState("/tmp/root");
     const existing: TestFileAsset = {
