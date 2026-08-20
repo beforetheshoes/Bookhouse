@@ -89,7 +89,7 @@ function AuthorDetailPage() {
   return (
     <div className="space-y-6">
       <nav className="flex items-center gap-1 text-sm text-muted-foreground">
-        <Link to="/authors" className="hover:text-foreground">
+        <Link to="/authors" className="flex min-h-9 min-w-9 items-center hover:text-foreground lg:min-h-0 lg:min-w-0">
           Authors
         </Link>
         <ChevronRight className="size-4" />

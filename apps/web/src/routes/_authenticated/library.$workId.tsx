@@ -367,7 +367,7 @@ function WorkDetailPage() {
 
           {work.series && (
             <div className="flex min-w-0 items-center gap-2">
-              <Link className="min-w-0" to="/series/$seriesId" params={{ seriesId: work.series.id }}>
+              <Link className="flex min-h-9 min-w-0 items-center lg:min-h-0" to="/series/$seriesId" params={{ seriesId: work.series.id }}>
                 <Badge variant="outline" className="cursor-pointer whitespace-normal [overflow-wrap:anywhere] hover:bg-accent">
                   {work.series.name}
                   {work.seriesPosition != null && ` #${String(work.seriesPosition)}`}

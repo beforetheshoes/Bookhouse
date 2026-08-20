@@ -244,7 +244,7 @@ function HealthPage() {
               {check.count > 0 && check.href && (
                 <Link
                   to={check.href}
-                  className="mt-2 inline-block text-sm text-primary underline-offset-4 hover:underline"
+                  className="mt-2 inline-flex min-h-9 min-w-9 items-center text-sm text-primary underline-offset-4 hover:underline lg:min-h-0 lg:min-w-0"
                 >
                   Review
                 </Link>

@@ -110,6 +110,9 @@ export function EditionProgress({ progress, editions, onUpdate }: EditionProgres
                             disabled={saving}
                             onClick={() => { setEditingId(null); }}
                             data-testid={`progress-cancel-${edition.id}`}
+                            // A glyph this narrow leaves px-3 short of a square
+                            // target: 36 tall, 35 wide.
+                            className="min-w-9 lg:min-w-0"
                           >
                             ✕
                           </Button>

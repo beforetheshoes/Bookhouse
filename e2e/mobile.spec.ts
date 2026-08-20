@@ -377,11 +377,16 @@ test.describe("Mobile layout", () => {
   { path: "/series", evidence: "Tap Target Chronicles" },
   { path: "/settings/missing-files", evidence: "missing-file-book.epub" },
   { path: "/duplicates", evidence: "Duplicate Candidate Left" },
-  // /health is intentionally absent: it is a read-only dashboard with no
-  // controls beyond the app shell, so a tap-target sweep there measures
-  // nothing. Its layout is covered by the overflow suite.
+  // /health was excluded on the grounds that it has no controls beyond the
+  // app shell. Measurement disagreed: its "Review" links are 20px tall at
+  // every width, and they only render once a check has a non-zero count.
+  { path: "/health", evidence: "Review" },
   { path: "/match-suggestions", evidence: "Match Suggestion Target" },
-  { path: "/settings/users", evidence: "e2e@bookhouse.test" },
+  // The user list cannot be seeded empty - cleanTestData preserves User to
+  // keep the session cookie valid - so the e2e user's own email renders on an
+  // otherwise blank database and proves nothing. A role badge is rendered per
+  // row from loader data, so it discriminates the table from an empty state.
+  { path: "/settings/users", evidence: "OWNER" },
 ];
 
   for (const { path: route, evidence } of TAP_ROUTES) {
