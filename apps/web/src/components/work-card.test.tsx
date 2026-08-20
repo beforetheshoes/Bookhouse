@@ -182,43 +182,81 @@ describe("WorkCard", () => {
 
   it("renders no selection control by default", () => {
     render(<WorkCard {...baseProps} />);
-    expect(screen.queryByRole("button", { name: /^Select / })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: /^Select / })).toBeNull();
   });
 
   it("renders a selection control in select mode", () => {
     render(<WorkCard {...baseProps} selectable />);
-    const toggle = screen.getByRole("button", { name: "Select The Great Gatsby" });
-    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    const toggle = screen.getByRole("checkbox", { name: "Select The Great Gatsby" });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
   });
 
   it("reflects the selected state", () => {
     render(<WorkCard {...baseProps} selectable selected />);
     expect(
-      screen.getByRole("button", { name: "Select The Great Gatsby" }).getAttribute("aria-pressed"),
+      screen.getByRole("checkbox", { name: "Select The Great Gatsby" }).getAttribute("aria-checked"),
     ).toBe("true");
   });
 
   it("toggles selection instead of navigating", () => {
     const onSelectChange = vi.fn();
-    render(<WorkCard {...baseProps} selectable onSelectChange={onSelectChange} />);
-    const event = new MouseEvent("click", { bubbles: true, cancelable: true });
-    screen.getByRole("button", { name: "Select The Great Gatsby" }).dispatchEvent(event);
+    const { container } = render(
+      <WorkCard {...baseProps} selectable onSelectChange={onSelectChange} />,
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select The Great Gatsby" }));
     expect(onSelectChange).toHaveBeenCalledWith(true);
-    // The card is a link; selecting must not follow it.
-    expect(event.defaultPrevented).toBe(true);
+    // In select mode the card is not a link at all, so there is nothing to
+    // navigate to.
+    expect(container.querySelector("a[href]")).toBeNull();
+  });
+
+  it("toggles from the keyboard with Space and Enter", () => {
+    const onSelectChange = vi.fn();
+    render(<WorkCard {...baseProps} selectable onSelectChange={onSelectChange} />);
+    const box = screen.getByRole("checkbox", { name: "Select The Great Gatsby" });
+    fireEvent.keyDown(box, { key: " " });
+    fireEvent.keyDown(box, { key: "Enter" });
+    fireEvent.keyDown(box, { key: "a" });
+    expect(onSelectChange).toHaveBeenCalledTimes(2);
   });
 
   it("reports deselection when already selected", () => {
     const onSelectChange = vi.fn();
     render(<WorkCard {...baseProps} selectable selected onSelectChange={onSelectChange} />);
-    fireEvent.click(screen.getByRole("button", { name: "Select The Great Gatsby" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select The Great Gatsby" }));
     expect(onSelectChange).toHaveBeenCalledWith(false);
   });
 
   it("tolerates a missing change handler", () => {
     render(<WorkCard {...baseProps} selectable />);
     expect(() => {
-      fireEvent.click(screen.getByRole("button", { name: "Select The Great Gatsby" }));
+      fireEvent.click(screen.getByRole("checkbox", { name: "Select The Great Gatsby" }));
     }).not.toThrow();
+  });
+
+  it("does not nest a control inside the card link", () => {
+    const { container } = render(<WorkCard {...baseProps} selectable />);
+    const link = container.querySelector("a[href]");
+    // Interactive content inside <a> is invalid HTML, and the link stays
+    // independently focusable - so Enter navigates instead of selecting.
+    expect(link?.querySelectorAll("button").length ?? 0).toBe(0);
+  });
+
+  it("is not a link at all in select mode", () => {
+    const { container } = render(<WorkCard {...baseProps} selectable />);
+    expect(container.querySelector("a[href]")).toBeNull();
+  });
+
+  it("announces itself as a checkbox in select mode", () => {
+    render(<WorkCard {...baseProps} selectable selected />);
+    const box = screen.getByRole("checkbox", { name: "Select The Great Gatsby" });
+    expect(box.getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("selects from the keyboard", () => {
+    const onSelectChange = vi.fn();
+    render(<WorkCard {...baseProps} selectable onSelectChange={onSelectChange} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select The Great Gatsby" }));
+    expect(onSelectChange).toHaveBeenCalledWith(true);
   });
 });

@@ -130,16 +130,18 @@ test.describe("Mobile layout", () => {
     // all - so delete, merge, add-to-shelf, enrich and mark-as-read were
     // unreachable below md.
     await page.getByRole("button", { name: "Select works" }).click();
-    await page.getByRole("button", { name: "Select Bulk Book 0" }).click();
-    await page.getByRole("button", { name: "Select Bulk Book 1" }).click();
+    await page.getByRole("checkbox", { name: "Select Bulk Book 0" }).click();
+    await page.getByRole("checkbox", { name: "Select Bulk Book 1" }).click();
 
     await expect(page.getByText("2 works selected")).toBeVisible();
     await expect(page.getByTestId("bulk-add-to-shelf-btn")).toBeVisible();
     await expect(page.getByTestId("bulk-mark-read-btn")).toBeVisible();
     await expect(page.getByTestId("bulk-delete-works-btn")).toBeVisible();
 
-    // Tapping a card in select mode must not navigate away.
-    expect(page.url()).toContain("/library");
+    // Tapping a card in select mode must not navigate away. The detail route
+    // is /library/<id>, which also contains "/library" - so compare the
+    // pathname, or this cannot fail.
+    expect(new URL(page.url()).pathname).toBe("/library");
     await expectNoHorizontalOverflow(page);
 
     // Every action in the bar has to be inside the viewport to be usable.
@@ -176,7 +178,7 @@ test.describe("Mobile layout", () => {
     await page.goto("/library");
     await expect(page.getByText("Stale Book 0")).toBeVisible();
     await page.getByRole("button", { name: "Select works" }).click();
-    await page.getByRole("button", { name: "Select Stale Book 0" }).click();
+    await page.getByRole("checkbox", { name: "Select Stale Book 0" }).click();
     await expect(page.getByText("1 work selected")).toBeVisible();
 
     // Selection used to be keyed by row position, so reordering the list
@@ -193,7 +195,7 @@ test.describe("Mobile layout", () => {
     const stillRight = await page.evaluate(() => {
       // The toolbar's own "Select works" toggle is aria-pressed too.
       const pressed = document.querySelector(
-        '[aria-pressed="true"][aria-label^="Select "]:not([aria-label="Select works"])',
+        '[aria-checked="true"][aria-label^="Select "]',
       );
       return pressed?.getAttribute("aria-label") ?? null;
     });

@@ -19,6 +19,8 @@ interface LibraryPaginationProps {
   totalCount: number;
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
+  /** Hidden while the bulk bar owns the bottom of the screen. */
+  hidden?: boolean;
 }
 
 export function LibraryPagination({
@@ -27,7 +29,10 @@ export function LibraryPagination({
   totalCount,
   onPageChange,
   onPageSizeChange,
+  hidden,
 }: LibraryPaginationProps) {
+  if (hidden === true) return null;
+
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
   return (

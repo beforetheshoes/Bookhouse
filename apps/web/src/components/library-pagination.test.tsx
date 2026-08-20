@@ -137,4 +137,11 @@ describe("LibraryPagination", () => {
     // ...and the call site must not add a bare height that would lose to it.
     expect(/(^|\s)h-\d/.test(trigger?.className ?? "")).toBe(false);
   });
+
+  it("renders nothing while the bulk bar owns the bottom of the screen", () => {
+    const { container } = renderPagination({ hidden: true });
+    // The floating bulk bar is fixed over this corner and would swallow taps
+    // meant for the page controls.
+    expect(container.firstChild).toBeNull();
+  });
 });

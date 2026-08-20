@@ -153,6 +153,11 @@ function LibraryPage() {
 
   const handleDisplayViewChange = useCallback((v: "grid" | "table") => {
     setView(v);
+    // The select toggle is hidden in table view, so leaving select mode on
+    // would strand the user in it when they come back to the grid.
+    if (v === "table") {
+      setSelectMode(false);
+    }
     if (v === "grid" && isEditionsView) {
       handleViewModeChange("works");
     }
@@ -322,6 +327,9 @@ function LibraryPage() {
             />
           )}
           <LibraryPagination
+            // The bulk bar is fixed over this corner while anything is
+            // selected, and would swallow taps meant for the page controls.
+            hidden={selectedCount > 0}
             page={search.page}
             pageSize={search.pageSize}
             totalCount={effectiveTotalCount}

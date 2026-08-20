@@ -28,29 +28,13 @@ export function WorkCard({ id, title, authors, enrichmentStatus, scanActive, for
   const coverSize = tileSize === "large" ? "medium" : "thumb";
   const isSmall = tileSize === "small";
 
-  return (
-    <Link to="/library/$workId" params={{ workId: id }} search={{ page: 1, pageSize: 50, sort: "title-asc" as const }} className="relative flex flex-col overflow-hidden rounded-lg border bg-card">
-      {selectable && (
-        // A full-card target rather than a small checkbox: on a phone the
-        // cover is the only comfortable thing to aim at. preventDefault stops
-        // the surrounding link from navigating.
-        <button
-          type="button"
-          aria-label={`Select ${title}`}
-          aria-pressed={selected === true}
-          onClick={(event) => {
-            event.preventDefault();
-            onSelectChange?.(selected !== true);
-          }}
-          className={`absolute inset-0 z-10 flex items-start justify-end p-2 transition-colors ${selected === true ? "bg-primary/20 ring-2 ring-primary ring-inset" : "bg-transparent"}`}
-        >
-          <span
-            className={`flex size-6 items-center justify-center rounded-md border-2 bg-background/90 ${selected === true ? "border-primary text-primary" : "border-muted-foreground/50"}`}
-          >
-            {selected === true && <Check className="size-4" />}
-          </span>
-        </button>
-      )}
+  const cardClass = "relative flex flex-col overflow-hidden rounded-lg border bg-card";
+
+  // Either a link or a checkbox, never a control nested inside a link: nesting
+  // is invalid HTML, leaves the link independently focusable (so Enter
+  // navigates instead of selecting), and doubles the tab stops per card.
+  const body = (
+    <>
       <div className="relative aspect-[2/3] shrink-0 overflow-hidden bg-muted">
         {showPlaceholder ? (
           <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
@@ -88,6 +72,43 @@ export function WorkCard({ id, title, authors, enrichmentStatus, scanActive, for
         </div>
       </div>
       <ProgressBar percent={progressPercent} size="md" />
+    </>
+  );
+
+  if (selectable === true) {
+    return (
+      <div
+        role="checkbox"
+        tabIndex={0}
+        aria-checked={selected === true}
+        aria-label={`Select ${title}`}
+        onClick={() => { onSelectChange?.(selected !== true); }}
+        onKeyDown={(event) => {
+          if (event.key === " " || event.key === "Enter") {
+            event.preventDefault();
+            onSelectChange?.(selected !== true);
+          }
+        }}
+        className={`${cardClass} cursor-pointer ${selected === true ? "ring-2 ring-primary ring-inset" : ""}`}
+      >
+        <span
+          className={`absolute top-2 right-2 z-10 flex size-6 items-center justify-center rounded-md border-2 bg-background/90 ${selected === true ? "border-primary text-primary" : "border-muted-foreground/50"}`}
+        >
+          {selected === true && <Check className="size-4" />}
+        </span>
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <Link
+      to="/library/$workId"
+      params={{ workId: id }}
+      search={{ page: 1, pageSize: 50, sort: "title-asc" as const }}
+      className={cardClass}
+    >
+      {body}
     </Link>
   );
 }

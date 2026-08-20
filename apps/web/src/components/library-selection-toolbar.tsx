@@ -228,7 +228,7 @@ export function LibrarySelectionToolbar({
                 <Button
                   variant="destructive"
                   size="sm"
-                  className="rounded-l-none px-1.5"
+                  className="rounded-l-none px-2.5 lg:px-1.5"
                   aria-label="More delete options"
                   data-testid="bulk-delete-dropdown-trigger"
                 >
