@@ -208,6 +208,46 @@ describe("LibrarySelectionToolbar", () => {
     await waitFor(() => { expect(onDeleted).toHaveBeenCalled(); });
   });
 
+  it("batches a bulk delete so large selections are not rejected", async () => {
+    const manyIds = Array.from({ length: 250 }, (_, i) => `w${String(i)}`);
+    bulkDeleteWorksServerFnMock.mockResolvedValue({ deletedWorkIds: manyIds });
+    render(<LibrarySelectionToolbar {...defaultProps} selectedCount={250} selectedWorkIds={manyIds} totalCount={500} />);
+    fireEvent.click(screen.getByTestId("bulk-delete-works-btn"));
+    await waitFor(() => screen.getByTestId("confirm-bulk-delete-works-btn"));
+    fireEvent.click(screen.getByTestId("confirm-bulk-delete-works-btn"));
+
+    // bulkDeleteWorksServerFn caps workIds at 100, so deleting more than 100
+    // works was rejected outright - the selection simply could not be acted on.
+    await waitFor(() => {
+      expect(bulkDeleteWorksServerFnMock).toHaveBeenCalledTimes(3);
+    });
+    const sent = bulkDeleteWorksServerFnMock.mock.calls.flatMap((c) => (c[0] as { data: { workIds: string[] } }).data.workIds);
+    expect(sent).toEqual(manyIds);
+  });
+
+  it("batches a by-format delete so large selections are not rejected", async () => {
+    const user = userEvent.setup();
+    const manyIds = Array.from({ length: 250 }, (_, i) => `w${String(i)}`);
+    bulkDeleteByFormatMock.mockResolvedValue({ deletedEditionIds: ["ed-1"], deletedWorkIds: [] });
+    render(<LibrarySelectionToolbar {...defaultProps} selectedCount={250} selectedWorkIds={manyIds} totalCount={500} />);
+    await user.click(screen.getByTestId("bulk-delete-dropdown-trigger"));
+    await waitFor(() => screen.getByText("Delete ebook editions only"));
+    await user.click(screen.getByText("Delete ebook editions only"));
+    await waitFor(() => screen.getByTestId("confirm-delete-by-format-btn"));
+    fireEvent.click(screen.getByTestId("confirm-delete-by-format-btn"));
+
+    // The server fn validator caps workIds at 100, so an unbatched call would
+    // be rejected outright and the feature would simply not work above 100.
+    await waitFor(() => {
+      expect(bulkDeleteByFormatMock).toHaveBeenCalledTimes(3);
+    });
+    const sent = bulkDeleteByFormatMock.mock.calls.flatMap((c) => (c[0] as { data: { workIds: string[] } }).data.workIds);
+    expect(sent).toEqual(manyIds);
+    bulkDeleteByFormatMock.mock.calls.forEach((c) => {
+      expect((c[0] as { data: { workIds: string[] } }).data.workIds.length).toBeLessThanOrEqual(100);
+    });
+  });
+
   it("scopes a by-format delete to the selection even for large selections", async () => {
     const user = userEvent.setup();
     const manyIds = Array.from({ length: 101 }, (_, i) => `w${String(i)}`);
@@ -220,10 +260,13 @@ describe("LibrarySelectionToolbar", () => {
     fireEvent.click(screen.getByTestId("confirm-delete-by-format-btn"));
 
     // 101 of 500 selected once took a library-wide path and deleted every
-    // ebook in the library while the dialog named only the selection.
+    // ebook in the library while the dialog named only the selection. It is
+    // now scoped - and batched, since the server caps workIds at 100.
     await waitFor(() => {
-      expect(bulkDeleteByFormatMock).toHaveBeenCalledWith({ data: { workIds: manyIds, format: "EBOOK" } });
+      expect(bulkDeleteByFormatMock).toHaveBeenCalledTimes(2);
     });
+    const sent = bulkDeleteByFormatMock.mock.calls.flatMap((c) => (c[0] as { data: { workIds: string[] } }).data.workIds);
+    expect(sent).toEqual(manyIds);
   });
 
   it("scopes a by-format delete to the selection when it covers the current query", async () => {

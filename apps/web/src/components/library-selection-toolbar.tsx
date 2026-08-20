@@ -43,6 +43,9 @@ interface LibrarySelectionToolbarProps {
   onClearSelection: () => void;
 }
 
+/** Matches the `.max(100)` on the server fn validator. */
+const BULK_WORK_ID_LIMIT = 100;
+
 export function LibrarySelectionToolbar({
   selectedCount,
   selectedWorkIds,
@@ -80,7 +83,13 @@ export function LibrarySelectionToolbar({
   async function handleBulkDelete() {
     setBulkDeleting(true);
     try {
-      await bulkDeleteWorksServerFn({ data: { workIds: selectedWorkIds } });
+      // Same 100-id cap as the by-format path, so a selection larger than
+      // that was rejected outright and could not be deleted at all.
+      for (let i = 0; i < selectedWorkIds.length; i += BULK_WORK_ID_LIMIT) {
+        await bulkDeleteWorksServerFn({
+          data: { workIds: selectedWorkIds.slice(i, i + BULK_WORK_ID_LIMIT) },
+        });
+      }
       toast.success(`${String(selectedWorkIds.length)} work${selectedWorkIds.length === 1 ? "" : "s"} deleted`);
       setBulkDeleteOpen(false);
       onDeleted();
@@ -100,9 +109,18 @@ export function LibrarySelectionToolbar({
       // query*, so selecting everything under a search or facet deleted every
       // edition of that format in the whole library while the dialog named
       // only the selection.
-      const result = await bulkDeleteEditionsByFormatForWorksServerFn({
-        data: { workIds: selectedWorkIds, format },
-      });
+      //
+      // The server fn caps workIds at 100, which is what that shortcut was
+      // working around, so send the selection in batches instead.
+      const result = { deletedEditionIds: [] as string[], deletedWorkIds: [] as string[] };
+      for (let i = 0; i < selectedWorkIds.length; i += BULK_WORK_ID_LIMIT) {
+        const batch = selectedWorkIds.slice(i, i + BULK_WORK_ID_LIMIT);
+        const batchResult = await bulkDeleteEditionsByFormatForWorksServerFn({
+          data: { workIds: batch, format },
+        });
+        result.deletedEditionIds.push(...batchResult.deletedEditionIds);
+        result.deletedWorkIds.push(...batchResult.deletedWorkIds);
+      }
       const label = format === "EBOOK" ? "ebook" : "audiobook";
       const editionCount = result.deletedEditionIds.length;
       const workCount = result.deletedWorkIds.length;
