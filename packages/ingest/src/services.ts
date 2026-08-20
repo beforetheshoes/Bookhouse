@@ -3653,7 +3653,38 @@ export function createIngestServices(
     };
   }
 
+  /**
+   * Same race as parseFileAssetMetadata: findOrCreateWork reads a Work and
+   * then updates it, and deleting a work (or its library root) between those
+   * two statements raised P2025 and failed the job. The file asset is re-read
+   * before the error is tolerated, so a P2025 with the asset still in place
+   * stays a real failure.
+   */
   async function matchFileAssetToEdition(
+    input: MatchFileAssetToEditionInput,
+  ): Promise<MatchFileAssetToEditionResult> {
+    try {
+      return await matchFileAssetToEditionGuarded(input);
+    } catch (error) {
+      const { code } = Object(error) as { code?: string };
+      if (code !== PRISMA_RECORD_NOT_FOUND) {
+        throw error;
+      }
+      const stillThere = await ingestDb.fileAsset.findUnique({
+        where: { id: input.fileAssetId },
+      });
+      if (stillThere !== null) {
+        throw error;
+      }
+      logger.info(
+        { fileAssetId: input.fileAssetId },
+        "Skipping match for file asset deleted mid-match",
+      );
+      return skippedResult(input.fileAssetId);
+    }
+  }
+
+  async function matchFileAssetToEditionGuarded(
     input: MatchFileAssetToEditionInput,
   ): Promise<MatchFileAssetToEditionResult> {
     const DUPLICATE_CONTENT_MEDIA_KINDS: ReadonlySet<string> = new Set<string>([
