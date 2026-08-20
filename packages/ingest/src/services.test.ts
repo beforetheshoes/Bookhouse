@@ -6497,6 +6497,38 @@ describe("ingest services", () => {
     ).rejects.toThrow("No record was found for an update.");
   });
 
+  it("propagates a non-P2025 failure even when the file asset is also gone", async () => {
+    // Without the code check, the "asset is gone" branch alone would report
+    // any failure at all as a successful skip.
+    const state = createEmptyState("/tmp/root");
+    const asset = addFileAsset(state, { metadata: null });
+    const base = createTestDb(state);
+    let read = false;
+    const services = createIngestServices({
+      db: {
+        ...base,
+        fileAsset: {
+          ...base.fileAsset,
+          findUnique: async (args) => {
+            if (!read) {
+              read = true;
+              return await base.fileAsset.findUnique(args);
+            }
+            return null;
+          },
+          update: () => {
+            throw Object.assign(new Error("deadlock detected"), { code: "P2034" });
+          },
+        },
+      },
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    await expect(
+      services.parseFileAssetMetadata({ fileAssetId: asset.id }),
+    ).rejects.toThrow("deadlock detected");
+  });
+
   it("propagates a parse failure that carries no Prisma error code", async () => {
     const state = createEmptyState("/tmp/root");
     const asset = addFileAsset(state, { metadata: null });

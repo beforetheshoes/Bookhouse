@@ -239,6 +239,31 @@ describe("MissingFilesPage", () => {
     expect(shown.length).toBeLessThan(120);
   });
 
+  it("passes through a real error that happens to start with a bracket", async () => {
+    cleanupMissingFilesServerFnMock.mockRejectedValue(
+      new Error("[unavailable] cleanup service is down"),
+    );
+    mockLoaderData = {
+      missingFiles: {
+        items: [
+          { id: "fa-1", relativePath: "a.epub", mediaKind: "EPUB", lastSeenAt: null, editionFiles: [] },
+        ],
+        total: 1,
+      },
+    };
+    const { Route } = await import("./missing-files");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+
+    fireEvent.click(screen.getByText("Clean Up All"));
+    const cleanUpButtons = screen.getAllByText("Clean Up All");
+    fireEvent.click(cleanUpButtons[cleanUpButtons.length - 1] as HTMLElement);
+
+    await waitFor(() => {
+      expect(mockToast.error).toHaveBeenCalledWith("[unavailable] cleanup service is down");
+    });
+  });
+
   it("renders back link to libraries settings", async () => {
     const { Route } = await import("./missing-files");
     const Page = Route.options.component as React.ComponentType;

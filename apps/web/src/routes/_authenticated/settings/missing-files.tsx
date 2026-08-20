@@ -54,7 +54,9 @@ export interface MissingFilesData {
  */
 function cleanupErrorMessage(error: Error | null): string {
   const raw = error?.message ?? "";
-  if (raw.trimStart().startsWith("[")) {
+  // Both halves: a genuine server message that merely opens with a bracket
+  // ("[unavailable] ...") is not a validator dump and must reach the user.
+  if (raw.trimStart().startsWith("[") && raw.includes('"code"')) {
     return "That cleanup request was not valid. Reload the page and try again.";
   }
   return raw === "" ? "Failed to clean up files" : raw;
