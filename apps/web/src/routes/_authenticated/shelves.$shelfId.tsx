@@ -77,26 +77,22 @@ export function getTableColumns(): ColumnDef<ShelfEdition>[] {
       size: 40,
       maxSize: 40,
       header: ({ table }) => (
-        <label className="flex min-h-9 min-w-9 items-center justify-center lg:min-h-0 lg:min-w-0">
           <input
             type="checkbox"
             className="size-5 lg:size-4"
           checked={table.getIsAllPageRowsSelected()}
             onChange={(e) => { table.toggleAllPageRowsSelected(e.target.checked); }}
             aria-label="Select all"
-        />
-        </label>
+          />
       ),
       cell: ({ row }) => (
-        <label className="flex min-h-9 min-w-9 items-center justify-center lg:min-h-0 lg:min-w-0">
           <input
             type="checkbox"
             className="size-5 lg:size-4"
           checked={row.getIsSelected()}
             onChange={(e) => { row.toggleSelected(e.target.checked); }}
             aria-label="Select row"
-        />
-        </label>
+          />
       ),
       enableSorting: false,
     },
@@ -303,7 +299,7 @@ function ShelfDetailPage() {
 
       {(view === "grid" ? gridSelectedWorkIds.length : selectedCount) > 0 && (
         <FloatingActionBar data-testid="selection-bar">
-          <div className="flex w-full flex-wrap items-center justify-center gap-2 md:w-auto md:flex-nowrap md:gap-3">
+          <div className="flex w-full flex-wrap items-center justify-center gap-2 md:gap-3">
             <span className="text-sm font-medium">
               {view === "grid"
                 ? `${String(gridSelectedWorkIds.length)} work${gridSelectedWorkIds.length === 1 ? "" : "s"} selected`
@@ -439,15 +435,13 @@ function AddEditionsDialog({
           {!loading && filtered.length > 0 && (
             <>
               <label className="flex items-center gap-2 rounded p-2 hover:bg-muted cursor-pointer">
-                <label className="flex min-h-9 min-w-9 items-center justify-center lg:min-h-0 lg:min-w-0">
-                  <input
-                    type="checkbox"
-                    className="size-5 lg:size-4"
+                <input
+                  type="checkbox"
+                  className="size-5 shrink-0 lg:size-4"
                   checked={selected.size === filtered.length && filtered.length > 0}
-                    onChange={handleSelectAll}
-                    data-testid="select-all-editions"
+                  onChange={handleSelectAll}
+                  data-testid="select-all-editions"
                 />
-                </label>
                 <span className="text-sm font-medium">Select all ({String(filtered.length)})</span>
               </label>
 
@@ -457,15 +451,13 @@ function AddEditionsDialog({
                   className="flex items-center gap-2 rounded p-2 hover:bg-muted cursor-pointer"
                   data-testid={`edition-row-${edition.id}`}
                 >
-                  <label className="flex min-h-9 min-w-9 items-center justify-center lg:min-h-0 lg:min-w-0">
-                    <input
-                      type="checkbox"
-                      className="size-5 lg:size-4"
+                  <input
+                    type="checkbox"
+                    className="size-5 shrink-0 lg:size-4"
                     checked={selected.has(edition.id)}
-                      onChange={() => { handleToggle(edition.id); }}
-                      data-testid={`edition-check-${edition.id}`}
+                    onChange={() => { handleToggle(edition.id); }}
+                    data-testid={`edition-check-${edition.id}`}
                   />
-                  </label>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{edition.work.titleDisplay}</p>
                     <p className="text-xs text-muted-foreground truncate">

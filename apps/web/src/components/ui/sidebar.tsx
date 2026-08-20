@@ -129,6 +129,10 @@ function SidebarProvider({
       <TooltipProvider delayDuration={0}>
         <div
           data-slot="sidebar-wrapper"
+          // Read by descendants that must not overlap the docked sidebar: a
+          // `fixed` overlay inside the inset has no way to know how much room
+          // the rail is taking, and `peer-*` does not reach into the inset.
+          data-sidebar-state={state}
           style={
             {
               "--sidebar-width": SIDEBAR_WIDTH,

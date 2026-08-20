@@ -202,7 +202,7 @@ export function LibrarySelectionToolbar({
 
   return (
     <>
-      <FloatingActionBar>
+      <FloatingActionBar data-testid="library-selection-toolbar">
         {allPageRowsSelected && selectedCount < totalCount && (
           <div className="text-xs text-muted-foreground" data-testid="select-all-banner">
             All {selectedCount} on this page selected.{" "}
@@ -221,7 +221,7 @@ export function LibrarySelectionToolbar({
             </button>
           </div>
         )}
-        <div className="flex w-full flex-wrap items-center justify-center gap-2 md:w-auto md:flex-nowrap md:gap-3">
+        <div className="flex w-full flex-wrap items-center justify-center gap-2 md:gap-3">
           <span className="text-sm font-medium">{selectedCount} work{selectedCount === 1 ? "" : "s"} selected</span>
           <Button variant="outline" size="sm" onClick={() => { setAddToShelfOpen(true); }} data-testid="bulk-add-to-shelf-btn">
             <FolderOpen className="mr-1.5 size-3.5" />

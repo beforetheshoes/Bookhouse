@@ -13,18 +13,18 @@ describe("FloatingActionBar", () => {
     expect(screen.getByRole("button", { name: "Delete" })).toBeTruthy();
   });
 
-  it("stays inside the viewport on phones and centres from md up", () => {
-    const { container } = render(<FloatingActionBar>bar</FloatingActionBar>);
-    const bar = container.firstElementChild;
-
-    // `left-1/2 -translate-x-1/2` on a ~700px row overflows a 360px viewport
-    // off BOTH edges, and a fixed element cannot be scrolled back into view.
-    // inset-x-2 already fixes the width to viewport - 1rem, so a max-w
-    // duplicating it was dead.
-    expect(bar?.className).toContain("inset-x-2");
-    expect(bar?.className).toContain("md:left-1/2");
-    expect(bar?.className).toContain("md:-translate-x-1/2");
+  it("keeps a caller's classes alongside its own", () => {
+    const { container } = render(
+      <FloatingActionBar className="border-destructive">bar</FloatingActionBar>,
+    );
+    expect(container.firstElementChild?.className).toContain("border-destructive");
   });
+
+  // Nothing here asserts on the responsive classes. happy-dom loads no
+  // stylesheet and performs no layout, so `toContain("md:left-1/2")` passed
+  // for as long as the bar was 884px wide and clipped off both edges between
+  // 768 and ~900px. That geometry is measured in a browser instead, at five
+  // widths, in e2e/touch-band.spec.ts.
 
   it("forwards extra props such as a test id", () => {
     render(<FloatingActionBar data-testid="selection-bar">bar</FloatingActionBar>);
