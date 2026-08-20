@@ -6427,6 +6427,88 @@ describe("ingest services", () => {
     });
   });
 
+  it("skips a match whose work is deleted between the read and the write", async () => {
+    // findOrCreateWork reads a Work and then updates it. Deleting the work -
+    // or its library root, which cascades - between those two statements
+    // raised P2025 and failed the job for an entity nobody is waiting on.
+    const state = createEmptyState("/tmp/root");
+    const asset = addFileAsset(state, { metadata: null });
+    const base = createTestDb(state);
+    let read = false;
+    const services = createIngestServices({
+      db: {
+        ...base,
+        fileAsset: {
+          ...base.fileAsset,
+          findUnique: async (args) => {
+            if (!read) {
+              read = true;
+              return await base.fileAsset.findUnique(args);
+            }
+            return null;
+          },
+        },
+        editionFile: {
+          ...base.editionFile,
+          findFirst: () => {
+            throw Object.assign(new Error("No record was found for an update."), {
+              code: "P2025",
+            });
+          },
+        },
+      },
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: asset.id });
+    expect(result.skipped).toBe(true);
+    expect(result.fileAssetId).toBe(asset.id);
+  });
+
+  it("still fails a match whose P2025 leaves the file asset in place", async () => {
+    const state = createEmptyState("/tmp/root");
+    const asset = addFileAsset(state, { metadata: null });
+    const base = createTestDb(state);
+    const services = createIngestServices({
+      db: {
+        ...base,
+        editionFile: {
+          ...base.editionFile,
+          findFirst: () => {
+            throw Object.assign(new Error("No record was found for an update."), {
+              code: "P2025",
+            });
+          },
+        },
+      },
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    await expect(
+      services.matchFileAssetToEdition({ fileAssetId: asset.id }),
+    ).rejects.toThrow("No record was found for an update.");
+  });
+
+  it("propagates a match failure that carries no Prisma error code", async () => {
+    const state = createEmptyState("/tmp/root");
+    const asset = addFileAsset(state, { metadata: null });
+    const base = createTestDb(state);
+    const services = createIngestServices({
+      db: {
+        ...base,
+        editionFile: {
+          ...base.editionFile,
+          findFirst: () => { throw new Error("disk on fire"); },
+        },
+      },
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    await expect(
+      services.matchFileAssetToEdition({ fileAssetId: asset.id }),
+    ).rejects.toThrow("disk on fire");
+  });
+
   it("skips a parse whose file asset is deleted between the read and the write", async () => {
     // The existence check at the top of parseFileAssetMetadata holds no lock.
     // Deleting the work (or truncating between e2e specs) cascades to the
