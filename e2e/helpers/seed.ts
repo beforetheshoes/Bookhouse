@@ -225,3 +225,9 @@ export async function seedHostileWork() {
   });
   return { work, series, root };
 }
+
+/** Titles of every work currently in the library, sorted. */
+export async function listWorkTitles(): Promise<string[]> {
+  const works = await db.work.findMany({ select: { titleDisplay: true } });
+  return works.map((w) => w.titleDisplay).sort();
+}

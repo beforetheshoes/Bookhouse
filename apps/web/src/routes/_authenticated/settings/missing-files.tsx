@@ -84,11 +84,11 @@ function MissingFilesPage() {
     }
   }
 
-  async function handleCleanup(fileAssetIds: string[]) {
+  async function handleCleanup(fileAssetIds: string[], all = false) {
     setCleaning(true);
     try {
       const result = await cleanupMissingFilesServerFn({
-        data: { fileAssetIds },
+        data: { fileAssetIds, all },
       });
       const total = result.deletedEditionIds.length + result.deletedWorkIds.length + result.deletedEditionFileCount;
       toast.success(`Cleaned up ${String(total)} record${total === 1 ? "" : "s"}`);
@@ -240,7 +240,8 @@ function MissingFilesPage() {
             <Button variant="outline" onClick={() => { setCleanAllOpen(false); }} disabled={cleaning}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={() => { void handleCleanup(missingFiles.items.map((f) => f.id)); }} disabled={cleaning}>
+            <Button variant="destructive" // The list is one page; "Clean Up All" must not silently mean "this page".
+              onClick={() => { void handleCleanup([], true); }} disabled={cleaning}>
               {cleaning ? <><Loader2 className="mr-1.5 size-3.5 animate-spin" />Cleaning...</> : "Clean Up All"}
             </Button>
           </DialogFooter>

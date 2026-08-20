@@ -147,8 +147,11 @@ describe("MissingFilesPage", () => {
     fireEvent.click(cleanUpButtons[cleanUpButtons.length - 1] as HTMLElement);
 
     await waitFor(() => {
+      // "Clean Up All N" must not mean "this page": the list is one page of at
+      // most 100, so above that it silently cleaned a fraction of what the
+      // dialog named.
       expect(cleanupMissingFilesServerFnMock).toHaveBeenCalledWith({
-        data: { fileAssetIds: ["fa-1"] },
+        data: { fileAssetIds: [], all: true },
       });
       expect(mockToast.success).toHaveBeenCalled();
     });
@@ -267,7 +270,7 @@ describe("MissingFilesPage", () => {
 
     await waitFor(() => {
       expect(cleanupMissingFilesServerFnMock).toHaveBeenCalledWith({
-        data: { fileAssetIds: ["fa-1"] },
+        data: { fileAssetIds: ["fa-1"], all: false },
       });
       expect(mockToast.success).toHaveBeenCalled();
     });

@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { seedHostileWork, seedShelf, seedWork, cleanTestData } from "./helpers/seed";
+import { listWorkTitles, seedHostileWork, seedShelf, seedWork, cleanTestData } from "./helpers/seed";
 
 /**
  * Asserts the document does not scroll horizontally.
@@ -258,6 +258,35 @@ test.describe("Mobile layout", () => {
       return pressed?.getAttribute("aria-label") ?? null;
     });
     expect(stillRight).toBe("Select Stale Book 0");
+  });
+
+  test("a bulk delete removes exactly the works that were selected", async ({
+    page,
+  }) => {
+    for (let i = 0; i < 5; i++) await seedWork({ title: `Payload Book ${String(i)}` });
+
+    await page.goto("/library");
+    await expect(page.getByText("Payload Book 0")).toBeVisible();
+    await page.getByRole("button", { name: "Select works" }).click();
+
+    // Non-adjacent, so an off-by-one or an index/id mixup shows up.
+    await page.getByRole("checkbox", { name: "Select Payload Book 0" }).click();
+    await page.getByRole("checkbox", { name: "Select Payload Book 3" }).click();
+    await expect(page.getByText("2 works selected")).toBeVisible();
+
+    // The dialog's count must equal what the mutation acts on. Every bug in
+    // this class - the library-wide by-format delete, the ignored uncheck
+    // after select-all, the cross-page merge - was a gap between the two.
+    await page.getByTestId("bulk-delete-works-btn").click();
+    await expect(page.getByText("Delete 2 Works")).toBeVisible();
+    await page.getByTestId("confirm-bulk-delete-works-btn").click();
+    await page.waitForTimeout(1500);
+
+    expect(await listWorkTitles()).toEqual([
+      "Payload Book 1",
+      "Payload Book 2",
+      "Payload Book 4",
+    ]);
   });
 
   test("detail routes fit the viewport", async ({ page }) => {

@@ -249,11 +249,27 @@ export const getMissingFilesServerFn = createServerFn({
 export const cleanupMissingFilesServerFn = createServerFn({
   method: "POST",
 })
-  .validator(z.object({ fileAssetIds: z.array(z.string().min(1)) }))
+  .validator(z.object({
+    fileAssetIds: z.array(z.string().min(1)),
+    /** Clean every missing file, not just the ids supplied. The UI's
+     *  "Clean Up All N" button could only ever send the page it had loaded
+     *  - at most 100 - so above that it cleaned a fraction of what it named. */
+    all: z.boolean().optional(),
+  }))
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
     const { cascadeCleanupOrphans } = await import("@bookhouse/ingest");
+
+    if (data.all === true) {
+      const missing = await db.fileAsset.findMany({
+        where: { availabilityStatus: "MISSING" },
+        select: { id: true },
+      });
+      return cascadeCleanupOrphans(db, {
+        fileAssetIds: missing.map((f: { id: string }) => f.id),
+      });
+    }
 
     const missingCount = await db.fileAsset.count({
       where: { id: { in: data.fileAssetIds }, availabilityStatus: "MISSING" },
