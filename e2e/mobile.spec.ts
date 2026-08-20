@@ -155,6 +155,24 @@ test.describe("Mobile layout", () => {
     });
     expect(offscreen, "bulk actions outside the viewport").toEqual([]);
 
+    // Every control in the bar must be a real target in BOTH dimensions. The
+    // split delete trigger was 36 tall and 34 wide, and survived three
+    // attempted fixes because the resting sweep only measured height - and it
+    // never sees this bar, which needs a selection to exist.
+    const smallInBar = await page.evaluate(() => {
+      const anchor = document.querySelector('[data-testid="bulk-add-to-shelf-btn"]');
+      const bar = anchor?.closest("div")?.parentElement;
+      if (!bar) return [{ label: "bar not found", w: 0, h: 0 }];
+      return Array.from(bar.querySelectorAll("button"))
+        .map((b) => ({
+          label: (b.getAttribute("aria-label") ?? b.textContent ?? "").trim().slice(0, 30),
+          w: Math.round(b.getBoundingClientRect().width),
+          h: Math.round(b.getBoundingClientRect().height),
+        }))
+        .filter((x) => x.w > 0 && (x.w < 36 || x.h < 36));
+    });
+    expect(smallInBar, `bulk bar controls under 36px: ${JSON.stringify(smallInBar)}`).toEqual([]);
+
     // The bar is fixed over the bottom of the screen, so the grid must be able
     // to scroll its last cards clear of it - otherwise they cannot be selected.
     const reachable = await page.evaluate(() => {
@@ -298,7 +316,7 @@ test.describe("Mobile layout", () => {
     // classNames cannot catch a utility that loses on CSS specificity or gets
     // stripped by tailwind-merge - both of which happened on this branch.
     const measure = () => page.evaluate(() => {
-      const bad: { label: string; h: number; cls: string }[] = [];
+      const bad: { label: string; h: number; w: number; cls: string }[] = [];
       let seen = 0;
       document
         .querySelectorAll<HTMLElement>(
@@ -319,10 +337,13 @@ test.describe("Mobile layout", () => {
           // the whole body, which would silently empty this sweep.
           if (el.closest("[aria-hidden='true']")) return;
           seen += 1;
-          if (r.height < 36) {
+          // Width matters too: an icon-only control can be 36px tall and 34px
+          // wide, which three separate "fixes" failed to catch.
+          if (r.height < 36 || r.width < 36) {
             bad.push({
               label: (el.getAttribute("aria-label") ?? el.textContent ?? el.tagName).trim().slice(0, 40),
               h: Math.round(r.height),
+              w: Math.round(r.width),
               cls: el.className.toString().slice(0, 80),
             });
           }

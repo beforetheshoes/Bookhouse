@@ -46,6 +46,10 @@ interface LibrarySelectionToolbarProps {
 /** Matches the `.max(100)` on the server fn validator. */
 const BULK_WORK_ID_LIMIT = 100;
 
+/** mergeWorksServerFn caps sourceWorkIds at 99, and a merge cannot be split
+ *  into batches - there is exactly one surviving target. */
+const MERGE_MAX_SELECTED = 100;
+
 export function LibrarySelectionToolbar({
   selectedCount,
   selectedWorkIds,
@@ -169,6 +173,15 @@ export function LibrarySelectionToolbar({
     }
   }
 
+  // The merge dialog lists only the works on the current page, but the merge
+  // sends every selected id - so a cross-page selection silently consumed
+  // works the user never saw. Refuse unless the selection is exactly what the
+  // dialog can show, and small enough for the server to accept.
+  const mergeBlocked =
+    selectedWorks.length < 2 ||
+    selectedWorkIds.length !== selectedWorks.length ||
+    selectedWorkIds.length > MERGE_MAX_SELECTED;
+
   async function handleMerge() {
     setMerging(true);
     try {
@@ -231,7 +244,7 @@ export function LibrarySelectionToolbar({
             Enrich Metadata
           </Button>
           {selectedCount >= 2 && (
-            <Button variant="outline" size="sm" disabled={selectedWorks.length < 2} onClick={() => { setMergeTargetId(defaultTargetId); setMergeOpen(true); }} data-testid="merge-works-btn">
+            <Button variant="outline" size="sm" disabled={mergeBlocked} onClick={() => { setMergeTargetId(defaultTargetId); setMergeOpen(true); }} data-testid="merge-works-btn">
               <GitMerge className="mr-1.5 size-3.5" />
               Merge
             </Button>
@@ -252,7 +265,7 @@ export function LibrarySelectionToolbar({
                 <Button
                   variant="destructive"
                   size="sm"
-                  className="rounded-l-none px-3 lg:px-1.5"
+                  className="rounded-l-none has-[>svg]:px-3 lg:has-[>svg]:px-1.5"
                   aria-label="More delete options"
                   data-testid="bulk-delete-dropdown-trigger"
                 >

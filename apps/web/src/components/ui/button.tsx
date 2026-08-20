@@ -20,7 +20,7 @@ const buttonVariants = cva(
           "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
         link: "text-primary underline-offset-4 hover:underline",
       },
-      // Mobile-first: every size is a larger tap target on phones, and `md:`
+      // Mobile-first: every size is a larger tap target on phones, and `lg:`
       // restores the exact desktop pixels the app was designed around.
       // Icon-only controls get the full ~44px because there is no text to aim
       // at; text buttons get 36px, which clears WCAG 2.2 AA 2.5.8 with the

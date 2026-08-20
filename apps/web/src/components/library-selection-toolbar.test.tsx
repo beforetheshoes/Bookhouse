@@ -208,6 +208,57 @@ describe("LibrarySelectionToolbar", () => {
     await waitFor(() => { expect(onDeleted).toHaveBeenCalled(); });
   });
 
+  it("refuses to merge a selection that reaches beyond the current page", () => {
+    // selectedWorks is the selection intersected with the page, but the merge
+    // sends every selected id. With a cross-page select-all the dialog listed
+    // two works and destroyed four.
+    render(
+      <LibrarySelectionToolbar
+        {...defaultProps}
+        selectedCount={4}
+        selectedWorkIds={["w1", "w2", "w3", "w4"]}
+        selectedWorks={[
+          { id: "w1", title: "One", editionCount: 1 },
+          { id: "w2", title: "Two", editionCount: 1 },
+        ]}
+        totalCount={4}
+      />,
+    );
+    expect(screen.getByTestId("merge-works-btn").hasAttribute("disabled")).toBe(true);
+  });
+
+  it("refuses to merge more sources than the server accepts", () => {
+    const ids = Array.from({ length: 101 }, (_, i) => `w${String(i)}`);
+    render(
+      <LibrarySelectionToolbar
+        {...defaultProps}
+        selectedCount={101}
+        selectedWorkIds={ids}
+        selectedWorks={ids.map((id) => ({ id, title: id, editionCount: 1 }))}
+        totalCount={101}
+      />,
+    );
+    // The validator caps sourceWorkIds at 99, and merge cannot be batched -
+    // there is one surviving target. Unguarded, this dumped raw Zod JSON.
+    expect(screen.getByTestId("merge-works-btn").hasAttribute("disabled")).toBe(true);
+  });
+
+  it("allows merging two works that are both on the page", () => {
+    render(
+      <LibrarySelectionToolbar
+        {...defaultProps}
+        selectedCount={2}
+        selectedWorkIds={["w1", "w2"]}
+        selectedWorks={[
+          { id: "w1", title: "One", editionCount: 1 },
+          { id: "w2", title: "Two", editionCount: 1 },
+        ]}
+        totalCount={2}
+      />,
+    );
+    expect(screen.getByTestId("merge-works-btn").hasAttribute("disabled")).toBe(false);
+  });
+
   it("batches a bulk delete so large selections are not rejected", async () => {
     const manyIds = Array.from({ length: 250 }, (_, i) => `w${String(i)}`);
     bulkDeleteWorksServerFnMock.mockResolvedValue({ deletedWorkIds: manyIds });

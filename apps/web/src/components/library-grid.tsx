@@ -11,7 +11,7 @@ interface LibraryGridProps {
   tileSize?: GridTileSize;
   /** Select mode: cards toggle selection instead of opening. */
   selectable?: boolean;
-  /** Keyed by index into `works`, matching the table's RowSelectionState. */
+  /** Keyed by work id, matching the table's getRowId-keyed RowSelectionState. */
   rowSelection?: Record<string, boolean>;
   onToggleSelect?: (id: string) => void;
   /** True while the fixed bulk bar is on screen. */

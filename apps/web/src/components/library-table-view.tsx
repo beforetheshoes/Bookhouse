@@ -12,8 +12,9 @@ interface LibraryTableViewProps<T> {
   tablePrefs: { columnVisibility: Record<string, boolean>; textOverflow: "wrap" | "truncate" };
   onColumnToggle: (columnId: string) => void;
   onTextOverflowToggle: () => void;
-  rowSelection: RowSelectionState;
-  onRowSelectionChange: OnChangeFn<RowSelectionState>;
+  /** Omit both to render the table without a working selection column. */
+  rowSelection?: RowSelectionState;
+  onRowSelectionChange?: OnChangeFn<RowSelectionState>;
   sorting: SortingState;
   onSortingChange: (updater: Updater<SortingState>) => void;
   viewMode: "works" | "editions";

@@ -318,8 +318,10 @@ function LibraryPage() {
               tablePrefs={tablePrefs}
               onColumnToggle={handleColumnToggle}
               onTextOverflowToggle={handleTextOverflowToggle}
-              rowSelection={{}}
-              onRowSelectionChange={handleRowSelectionChange}
+              // Editions view has no bulk actions: the toolbar acts on work
+              // ids, and these rows are editions. Passing a selection state
+              // here rendered a column of checkboxes that could never tick, so
+              // both props are omitted.
               sorting={tableSorting}
               onSortingChange={handleColumnSort}
               viewMode="editions"

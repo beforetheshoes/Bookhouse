@@ -58,7 +58,7 @@ export function LibraryFiltersSheet({
           )}
         </Button>
       </SheetTrigger>
-      <SheetContent side="left" className="w-[85vw]">
+      <SheetContent side="left" className="w-[85vw] sm:max-w-none md:max-w-sm">
         <SheetHeader>
           <SheetTitle>Filters</SheetTitle>
         </SheetHeader>
