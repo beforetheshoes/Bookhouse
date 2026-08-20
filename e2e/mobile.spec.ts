@@ -289,6 +289,27 @@ test.describe("Mobile layout", () => {
     ]);
   });
 
+  test("shelf editions can be removed from a phone", async ({ page }) => {
+    const work = await seedWork({ title: "Shelf Removable Book" });
+    const shelf = await seedShelf({
+      name: "Removable Shelf",
+      editionIds: work.editions.map((e) => e.id),
+    });
+
+    await page.goto(`/shelves/${shelf.id}`);
+    await expect(page.getByText("Shelf Removable Book")).toBeVisible();
+
+    // Phones are forced onto the grid here too, which had no selection
+    // affordance - so taking anything off a shelf was impossible below md.
+    await page.getByRole("button", { name: "Select works" }).click();
+    await page.getByRole("checkbox", { name: "Select Shelf Removable Book" }).click();
+    await expect(page.getByText("1 work selected")).toBeVisible();
+
+    await page.getByTestId("remove-selected-btn").click();
+    await expect(page.getByText("No editions on this shelf yet.")).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+  });
+
   test("detail routes fit the viewport", async ({ page }) => {
     // Author and series DETAIL pages carry the longest user strings and had no
     // coverage: the suite's "/authors/" and "/series/" entries were index

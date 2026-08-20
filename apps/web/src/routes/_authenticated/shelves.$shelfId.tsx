@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import type { ColumnDef, RowSelectionState } from "@tanstack/react-table";
 import { ChevronRight, Plus, Trash2, X } from "lucide-react";
@@ -24,6 +24,7 @@ import {
   getAvailableEditionsServerFn,
   addEditionToShelfServerFn,
   removeEditionFromShelfServerFn,
+  removeWorkEditionsFromShelfServerFn,
   type ShelfDetail,
   type AvailableEdition,
 } from "~/lib/server-fns/shelves";
@@ -151,6 +152,10 @@ function ShelfDetailPage() {
   const [readingFilter, setReadingFilter] = useState<ReadingFilter>("all");
   const [, setToolbarSearch] = useState("");
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [selectMode, setSelectMode] = useState(false);
+  // The grid shows works, the table shows editions, so their selections are
+  // not interchangeable and are kept apart.
+  const [gridSelection, setGridSelection] = useState<Record<string, boolean>>({});
   const [removing, setRemoving] = useState(false);
 
   const editions = shelf.items.map((item) => item.edition);
@@ -168,6 +173,41 @@ function ShelfDetailPage() {
   // leave the list, and a bar that counts what the mutation will not act on
   // is lying.
   const selectedCount = selectedEditionIds.length;
+
+  const gridSelectedWorkIds = useMemo(() => {
+    const present = new Set(works.map((w) => w.id));
+    return Object.keys(gridSelection).filter((id) => present.has(id));
+  }, [gridSelection, works]);
+
+  const handleToggleGridSelect = useCallback((workId: string) => {
+    setGridSelection((prev) => {
+      if (prev[workId] === true) {
+        return Object.fromEntries(Object.entries(prev).filter(([k]) => k !== workId));
+      }
+      return { ...prev, [workId]: true };
+    });
+  }, []);
+
+  const handleSelectModeChange = useCallback((on: boolean) => {
+    setSelectMode(on);
+    if (!on) setGridSelection({});
+  }, []);
+
+  const handleRemoveSelectedWorks = async () => {
+    setRemoving(true);
+    try {
+      for (const workId of gridSelectedWorkIds) {
+        await removeWorkEditionsFromShelfServerFn({ data: { shelfId: shelf.id, workId } });
+      }
+      toast.success(`Removed ${String(gridSelectedWorkIds.length)} from shelf`);
+      setGridSelection({});
+      void router.invalidate();
+    } catch {
+      toast.error("Failed to remove editions");
+    } finally {
+      setRemoving(false);
+    }
+  };
 
   const handleRemoveSelected = async () => {
     setRemoving(true);
@@ -223,6 +263,8 @@ function ShelfDetailPage() {
         filterValue={readingFilter}
         onFilterChange={setReadingFilter}
         showSort={view !== "table"}
+        selectMode={selectMode}
+        onSelectModeChange={handleSelectModeChange}
         tileSize={tileSize}
         onTileSizeChange={setTileSize}
       />
@@ -230,7 +272,14 @@ function ShelfDetailPage() {
       {editions.length === 0 ? (
         <p className="text-muted-foreground">No editions on this shelf yet.</p>
       ) : view === "grid" ? (
-        <LibraryGrid works={works} tileSize={tileSize} />
+        <LibraryGrid
+          works={works}
+          tileSize={tileSize}
+          selectable={selectMode}
+          selectionActive={gridSelectedWorkIds.length > 0}
+          rowSelection={gridSelection}
+          onToggleSelect={handleToggleGridSelect}
+        />
       ) : (
         <VirtualizedDataTable
           columns={tableColumns}
@@ -241,21 +290,25 @@ function ShelfDetailPage() {
         />
       )}
 
-      {selectedCount > 0 && (
+      {(view === "grid" ? gridSelectedWorkIds.length : selectedCount) > 0 && (
         <FloatingActionBar data-testid="selection-bar">
           <div className="flex w-full flex-wrap items-center justify-center gap-2 md:w-auto md:flex-nowrap md:gap-3">
-            <span className="text-sm font-medium">{selectedCount} edition{selectedCount === 1 ? "" : "s"} selected</span>
+            <span className="text-sm font-medium">
+              {view === "grid"
+                ? `${String(gridSelectedWorkIds.length)} work${gridSelectedWorkIds.length === 1 ? "" : "s"} selected`
+                : `${String(selectedCount)} edition${selectedCount === 1 ? "" : "s"} selected`}
+            </span>
             <Button
               variant="destructive"
               size="sm"
-              onClick={() => { void handleRemoveSelected(); }}
+              onClick={() => { void (view === "grid" ? handleRemoveSelectedWorks() : handleRemoveSelected()); }}
               disabled={removing}
               data-testid="remove-selected-btn"
             >
               <Trash2 className="mr-1.5 size-3.5" />
               {removing ? "Removing..." : "Remove from Shelf"}
             </Button>
-            <Button variant="outline" size="sm" onClick={() => { setRowSelection({}); }}>
+            <Button variant="outline" size="sm" onClick={() => { setRowSelection({}); setGridSelection({}); }}>
               <X className="mr-1.5 size-3.5" />
               Clear
             </Button>
