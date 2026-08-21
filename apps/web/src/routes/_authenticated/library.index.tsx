@@ -3,7 +3,7 @@ import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-r
 import { useSSE } from "~/hooks/use-sse";
 import { useEffectiveLibraryView, type LibraryView } from "~/hooks/use-library-view-preference";
 import { useLibraryTablePreferences } from "~/hooks/use-library-table-preferences";
-import { useGridTileSize } from "~/hooks/use-grid-tile-size";
+import { useEffectiveGridTileSize } from "~/hooks/use-grid-tile-size";
 import { useLibraryFilters } from "~/hooks/use-library-filters";
 import type { OnChangeFn, RowSelectionState } from "@tanstack/react-table";
 import { BookOpen, Loader2 } from "lucide-react";
@@ -17,12 +17,13 @@ import { EDITION_COLUMN_SORT_MAP, EDITION_SORT_TO_COLUMN } from "~/lib/library-e
 import { LibraryToolbar } from "~/components/library-toolbar";
 import { LibraryGrid } from "~/components/library-grid";
 import { LibraryList } from "~/components/library-list";
+import { AlphabetScrubber } from "~/components/alphabet-scrubber";
 import { LibraryFilters } from "~/components/library-filters";
 import { LibraryFiltersSheet } from "~/components/library-filters-sheet";
 import { LibraryPagination } from "~/components/library-pagination";
 import { librarySearchSchema } from "~/lib/library-search-schema";
 import type { ReadingFilter } from "~/lib/sort-filter-works";
-import { getFilteredLibraryWorksServerFn, getFilteredLibraryEditionsServerFn, getAllFilteredWorkIdsServerFn, type LibraryWork } from "~/lib/server-fns/library";
+import { getFilteredLibraryWorksServerFn, getFilteredLibraryEditionsServerFn, getAllFilteredWorkIdsServerFn, getWorkOffsetForLetterServerFn, type LibraryWork } from "~/lib/server-fns/library";
 import { getActiveJobCountServerFn } from "~/lib/server-fns/import-jobs";
 import { getBulkReadingProgressServerFn } from "~/lib/server-fns/reading-progress";
 import { getShelvesServerFn } from "~/lib/server-fns/shelves";
@@ -58,7 +59,7 @@ function LibraryPage() {
   const search = Route.useSearch();
   const navigate = useNavigate();
   const [view, setView] = useEffectiveLibraryView();
-  const [tileSize, setTileSize] = useGridTileSize();
+  const [tileSize, setTileSize] = useEffectiveGridTileSize();
   const [tablePrefs, setTablePrefs] = useLibraryTablePreferences();
   const [readingFilter, setReadingFilter] = useState<ReadingFilter>("all");
   const [prevCount, setPrevCount] = useState(totalCount);
@@ -87,6 +88,10 @@ function LibraryPage() {
   const [appendedWorks, setAppendedWorks] = useState<LibraryWork[]>([]);
   const [lastLoadedPage, setLastLoadedPage] = useState(search.page);
   const [loadingMore, setLoadingMore] = useState(false);
+  // Bumped by everything that throws the appended pages away. A request that
+  // was in flight across one of those checks this before appending, so a slow
+  // page two cannot land back in a view that has already moved on.
+  const appendGenerationRef = useRef(0);
 
   // loaderDeps is the whole search object, so this changes exactly when the
   // loader would hand over a different first page.
@@ -96,6 +101,7 @@ function LibraryPage() {
     // Runs once per change, during render, which is the sanctioned way to
     // reset state derived from props.
     lastPageKeyRef.current = loaderPageKey;
+    appendGenerationRef.current += 1;
     setAppendedWorks([]);
     setLastLoadedPage(search.page);
   }
@@ -117,8 +123,10 @@ function LibraryPage() {
     if (loadingMore || !hasMore) return;
     setLoadingMore(true);
     const nextPage = lastLoadedPage + 1;
+    const generation = appendGenerationRef.current;
     void getFilteredLibraryWorksServerFn({ data: { ...search, page: nextPage } })
       .then((result) => {
+        if (appendGenerationRef.current !== generation) return;
         setAppendedWorks((prev) => [...prev, ...result.works]);
         setLastLoadedPage(nextPage);
       })
@@ -173,6 +181,45 @@ function LibraryPage() {
       ? { sortMap: EDITION_COLUMN_SORT_MAP, sortToColumn: EDITION_SORT_TO_COLUMN }
       : {}),
   });
+
+  const [jumpingToLetter, setJumpingToLetter] = useState<string | null>(null);
+
+  /**
+   * Jumps the list to the first work under `letter`.
+   *
+   * The letter is almost never in the rows already loaded, so the offset comes
+   * from the server and becomes a page. Changing the page resets the appended
+   * rows on its own, and the list picks up scrolling from there.
+   */
+  const handleJumpToLetter = useCallback((letter: string) => {
+    setJumpingToLetter(letter);
+    void getWorkOffsetForLetterServerFn({
+      data: {
+        q: search.q,
+        format: search.format,
+        authorId: search.authorId,
+        seriesId: search.seriesId,
+        hasCover: search.hasCover,
+        enriched: search.enriched,
+        hasDescription: search.hasDescription,
+        inSeries: search.inSeries,
+        letter,
+        sort: search.sort === "title-desc" ? "title-desc" : "title-asc",
+      },
+    })
+      .then(({ offset, total }) => {
+        if (total === 0) return;
+        // Past the last work means the letter has nothing; sit on the last page.
+        const clamped = Math.min(offset, Math.max(total - 1, 0));
+        const targetPage = Math.floor(clamped / search.pageSize) + 1;
+        if (targetPage !== search.page) {
+          handlePageChange(targetPage);
+        }
+        window.scrollTo({ top: 0 });
+      })
+      .finally(() => { setJumpingToLetter(null); });
+  }, [search, handlePageChange]);
+
 
   // The table passes its updater straight through, which used to leave a
   // cross-page "select all N" standing: unchecking a row changed the visible
@@ -237,6 +284,7 @@ function LibraryPage() {
     // N" and their select-all means "this page" - so carrying extra rows over
     // would make both of those lie.
     if (v !== "list") {
+      appendGenerationRef.current += 1;
       setAppendedWorks([]);
       setLastLoadedPage(search.page);
     }
@@ -381,17 +429,25 @@ function LibraryPage() {
             onTileSizeChange={setTileSize}
           />
           {view === "list" ? (
-            <LibraryList
-              works={filteredByReading}
-              progressMap={progressMap}
-              selectable={selectMode}
-              selectionActive={selectedCount > 0}
-              rowSelection={rowSelection}
-              onToggleSelect={handleToggleGridSelect}
-              hasMore={hasMore}
-              loadingMore={loadingMore}
-              onLoadMore={handleLoadMore}
-            />
+            <div className="flex gap-1">
+              <div className="min-w-0 flex-1">
+                <LibraryList
+                  works={filteredByReading}
+                  progressMap={progressMap}
+                  selectable={selectMode}
+                  selectionActive={selectedCount > 0}
+                  rowSelection={rowSelection}
+                  onToggleSelect={handleToggleGridSelect}
+                  hasMore={hasMore}
+                  loadingMore={loadingMore}
+                  onLoadMore={handleLoadMore}
+                />
+              </div>
+              {/* Only a title sort has an alphabet to scrub. */}
+              {(search.sort === "title-asc" || search.sort === "title-desc") && (
+                <AlphabetScrubber onJump={handleJumpToLetter} pending={jumpingToLetter} />
+              )}
+            </div>
           ) : view === "grid" ? (
             <LibraryGrid
               works={filteredByReading}

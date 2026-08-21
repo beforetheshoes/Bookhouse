@@ -136,10 +136,12 @@ vi.mock("~/hooks/use-sse", () => ({
 }));
 
 const getFilteredLibraryWorksServerFnMock = vi.fn();
+const getWorkOffsetForLetterServerFnMock = vi.fn();
 const getFilteredLibraryEditionsServerFnMock = vi.fn();
 const getAllFilteredWorkIdsServerFnMock = vi.fn().mockResolvedValue([]);
 vi.mock("~/lib/server-fns/library", () => ({
   getFilteredLibraryWorksServerFn: getFilteredLibraryWorksServerFnMock,
+  getWorkOffsetForLetterServerFn: getWorkOffsetForLetterServerFnMock,
   getFilteredLibraryEditionsServerFn: getFilteredLibraryEditionsServerFnMock,
   getAllFilteredWorkIdsServerFn: getAllFilteredWorkIdsServerFnMock,
 }));
@@ -165,12 +167,22 @@ let mockTileSize = "small" as "small" | "large";
 const mockSetTileSize = vi.fn();
 vi.mock("~/hooks/use-grid-tile-size", () => ({
   useGridTileSize: () => [mockTileSize, mockSetTileSize],
+  useEffectiveGridTileSize: () => [mockTileSize, mockSetTileSize],
 }));
 
 let mockTablePrefs: { columnVisibility: Record<string, boolean>; textOverflow: "wrap" | "truncate" } = { columnVisibility: {}, textOverflow: "truncate" };
 const mockSetTablePrefs = vi.fn();
 vi.mock("~/hooks/use-library-table-preferences", () => ({
   useLibraryTablePreferences: () => [mockTablePrefs, mockSetTablePrefs],
+}));
+
+vi.mock("~/components/alphabet-scrubber", () => ({
+  SCRUBBER_LETTERS: ["#", "A", "M", "Z"],
+  AlphabetScrubber: ({ onJump, pending }: { onJump: (l: string) => void; pending?: string | null }) => (
+    <div data-testid="alphabet-scrubber" data-pending={pending ?? ""}>
+      <button type="button" aria-label="jump-M" onClick={() => { onJump("M"); }} />
+    </div>
+  ),
 }));
 
 vi.mock("~/components/library-list", () => ({
@@ -927,6 +939,148 @@ describe("LibraryPage", () => {
     await waitFor(() => { expect(screen.getByText("1 work selected")).toBeTruthy(); });
   });
 
+  it("jumps the list to the page the letter starts on", async () => {
+    mockView = "list";
+    mockSearch = { page: 1, pageSize: 50, sort: "title-asc" };
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Alpha")],
+        totalCount: 1450,
+        facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
+      },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    // 412 works sort before M, so M is on page 9 at 50 a page.
+    getWorkOffsetForLetterServerFnMock.mockResolvedValue({ offset: 412, total: 1450 });
+    mockNavigate.mockClear();
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    fireEvent.click(screen.getByLabelText("jump-M"));
+    await waitFor(() => { expect(mockNavigate).toHaveBeenCalled(); });
+    const call = getWorkOffsetForLetterServerFnMock.mock.calls[0]?.[0] as
+      | { data?: { letter?: string; sort?: string } }
+      | undefined;
+    expect(call?.data?.letter).toBe("M");
+    expect(call?.data?.sort).toBe("title-asc");
+  });
+
+  it("sits on the last page when the letter is past the end", async () => {
+    mockView = "list";
+    mockSearch = { page: 1, pageSize: 50, sort: "title-asc" };
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Alpha")],
+        totalCount: 10,
+        facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
+      },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    // Nothing starts with M: the offset lands past the last work.
+    getWorkOffsetForLetterServerFnMock.mockResolvedValue({ offset: 10, total: 10 });
+    mockNavigate.mockClear();
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    fireEvent.click(screen.getByLabelText("jump-M"));
+    // Page 1 already, and clamping keeps it there rather than paging past the end.
+    await waitFor(() => {
+      expect(getWorkOffsetForLetterServerFnMock).toHaveBeenCalled();
+    });
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when the count comes back empty", async () => {
+    // The filters can change between the page rendering and this answering.
+    mockView = "list";
+    mockSearch = { page: 1, pageSize: 50, sort: "title-asc" };
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Alpha")],
+        totalCount: 1,
+        facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
+      },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    getWorkOffsetForLetterServerFnMock.mockResolvedValue({ offset: 0, total: 0 });
+    mockNavigate.mockClear();
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    fireEvent.click(screen.getByLabelText("jump-M"));
+    await waitFor(() => {
+      expect(getWorkOffsetForLetterServerFnMock).toHaveBeenCalled();
+    });
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("hides the alphabet when the sort has no alphabet", async () => {
+    mockView = "list";
+    mockSearch = { page: 1, pageSize: 50, sort: "recent" };
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Alpha")],
+        totalCount: 1,
+        facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
+      },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    expect(screen.queryByTestId("alphabet-scrubber")).toBeNull();
+  });
+
+  it("passes the descending sort through to the jump", async () => {
+    mockView = "list";
+    mockSearch = { page: 1, pageSize: 50, sort: "title-desc" };
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Alpha")],
+        totalCount: 100,
+        facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
+      },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    getWorkOffsetForLetterServerFnMock.mockClear();
+    getWorkOffsetForLetterServerFnMock.mockResolvedValue({ offset: 60, total: 100 });
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    fireEvent.click(screen.getByLabelText("jump-M"));
+    await waitFor(() => {
+      expect(getWorkOffsetForLetterServerFnMock).toHaveBeenCalled();
+    });
+    const call = getWorkOffsetForLetterServerFnMock.mock.calls[0]?.[0] as
+      | { data?: { sort?: string } }
+      | undefined;
+    expect(call?.data?.sort).toBe("title-desc");
+  });
+
   it("keeps the off-page selection when one row is unchecked", async () => {
     mockView = "table";
     mockLoaderData = {
@@ -1135,6 +1289,58 @@ describe("LibraryPage", () => {
     act(() => { onViewChange("list"); });
     rerender(<LibraryPage />);
     expect(screen.getByTestId("library-list").getAttribute("data-count")).toBe("1");
+  });
+
+  it("drops a load-more that lands after the view already changed", async () => {
+    mockView = "list";
+    mockSearch = { page: 1, pageSize: 50, sort: "title-asc" };
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Alpha")],
+        totalCount: 60,
+        facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
+      },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    // The request is still in flight when the view changes, which is the
+    // ordinary case on a phone: the list fetches page two the moment it
+    // mounts, and the user taps "grid" a moment later. Resolving it into the
+    // grid put an extra page of tiles under a "Page 1 of N" that denied them,
+    // and the grid's select-all could then never see every row ticked.
+    let settle: (() => void) | undefined;
+    getFilteredLibraryWorksServerFnMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          settle = () => {
+            resolve({
+              works: [makeWork("Bravo")],
+              totalCount: 60,
+              facetCounts: defaultFacetCounts,
+              totalFacetCounts: defaultFacetCounts,
+            });
+          };
+        }),
+    );
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    fireEvent.click(screen.getByLabelText("load-more"));
+
+    const onViewChange = capturedToolbarProps.onViewChange as (v: string) => void;
+    mockView = "grid";
+    act(() => { onViewChange("grid"); });
+    expect(screen.getByTestId("library-grid").getAttribute("data-count")).toBe("1");
+
+    await act(async () => {
+      settle?.();
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("library-grid").getAttribute("data-count")).toBe("1");
   });
 
   it("stops asking once every work is loaded", async () => {

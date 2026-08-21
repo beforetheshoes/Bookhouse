@@ -143,6 +143,7 @@ vi.mock("~/hooks/use-library-view-preference", () => ({
 
 vi.mock("~/hooks/use-grid-tile-size", () => ({
   useGridTileSize: () => [mockTileSize, (v: string) => { mockTileSize = v; }],
+  useEffectiveGridTileSize: () => [mockTileSize, (v: string) => { mockTileSize = v; }],
 }));
 
 vi.mock("~/lib/sort-filter-works", () => ({}));

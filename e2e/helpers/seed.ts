@@ -359,3 +359,20 @@ export async function seedMatchSuggestion() {
   });
   return { target, suggested };
 }
+
+/**
+ * A work with `coverPath` set, so the UI renders an `<img>` rather than the
+ * placeholder icon.
+ *
+ * The file on disk need not exist: the cover route answers with a placeholder
+ * SVG when it is missing, which still proves the URL reached a handler. A
+ * malformed one (the wrong id, or a `.webp` suffix the route rejects) gets a
+ * 400 and decodes to nothing.
+ */
+export async function seedWorkWithCover(overrides: { title?: string } = {}) {
+  const work = await seedWork({ title: overrides.title ?? "Covered Book" });
+  return db.work.update({
+    where: { id: work.id },
+    data: { coverPath: work.id },
+  });
+}

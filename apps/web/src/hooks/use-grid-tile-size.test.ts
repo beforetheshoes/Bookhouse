@@ -3,7 +3,7 @@ import { renderHook, act } from "@testing-library/react";
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { useGridTileSize } from "./use-grid-tile-size";
+import { useEffectiveGridTileSize, useGridTileSize } from "./use-grid-tile-size";
 
 const STORAGE_KEY = "grid-tile-size";
 
@@ -92,5 +92,48 @@ describe("useGridTileSize", () => {
     }
     const html = renderToString(createElement(TestComponent));
     expect(html).toContain("small");
+  });
+});
+
+describe("useEffectiveGridTileSize", () => {
+  beforeEach(() => {
+    vi.stubGlobal("localStorage", makeStorage());
+  });
+
+  function setViewportWidth(width: number) {
+    Object.defineProperty(window, "innerWidth", {
+      writable: true, configurable: true, value: width,
+    });
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      configurable: true,
+      value: vi.fn(() => ({
+        matches: width < 768,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    });
+  }
+
+  it("honours the stored size on desktop widths", () => {
+    setViewportWidth(1280);
+    localStorage.setItem(STORAGE_KEY, "large");
+    const { result } = renderHook(() => useEffectiveGridTileSize());
+    expect(result.current[0]).toBe("large");
+  });
+
+  it("forces the compact grid on phones", () => {
+    // Large tiles are one column at 360px - a single cover per screen.
+    setViewportWidth(375);
+    localStorage.setItem(STORAGE_KEY, "large");
+    const { result } = renderHook(() => useEffectiveGridTileSize());
+    expect(result.current[0]).toBe("small");
+  });
+
+  it("still writes a preference set from a phone through to storage", () => {
+    setViewportWidth(375);
+    const { result } = renderHook(() => useEffectiveGridTileSize());
+    act(() => { result.current[1]("large"); });
+    expect(localStorage.getItem(STORAGE_KEY)).toBe("large");
   });
 });

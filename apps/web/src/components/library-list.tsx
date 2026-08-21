@@ -80,8 +80,11 @@ function RowBody({
           </div>
         ) : (
           <img
-            src={`/api/covers/${coverPath}/thumb.webp`}
-            alt=""
+            // The route is keyed by work id, not by coverPath - coverPath is
+            // only the "has one" flag. /api/covers/<coverPath>/thumb.webp
+            // 404'd for every row.
+            src={`/api/covers/${work.id}/thumb`}
+            alt={work.titleDisplay}
             loading="lazy"
             className="size-full object-cover"
             onError={() => { setImgFailed(true); }}

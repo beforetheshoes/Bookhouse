@@ -19,7 +19,7 @@ import { LibraryList } from "~/components/library-list";
 import { LibraryToolbar } from "~/components/library-toolbar";
 import { GridPageSkeleton } from "~/components/skeletons/grid-page-skeleton";
 import { useEffectiveLibraryView } from "~/hooks/use-library-view-preference";
-import { useGridTileSize } from "~/hooks/use-grid-tile-size";
+import { useEffectiveGridTileSize } from "~/hooks/use-grid-tile-size";
 import {
   getShelfDetailServerFn,
   getAvailableEditionsServerFn,
@@ -155,7 +155,7 @@ function ShelfDetailPage() {
   const { shelf } = Route.useLoaderData();
   const router = useRouter();
   const [view, setView] = useEffectiveLibraryView();
-  const [tileSize, setTileSize] = useGridTileSize();
+  const [tileSize, setTileSize] = useEffectiveGridTileSize();
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [sortValue, setSortValue] = useState<SortValue>("title-asc");
   const [readingFilter, setReadingFilter] = useState<ReadingFilter>("all");

@@ -1,4 +1,5 @@
 import { useState, useCallback, useSyncExternalStore } from "react";
+import { useIsMobile } from "~/hooks/use-mobile";
 
 export type GridTileSize = "small" | "large";
 
@@ -26,4 +27,19 @@ export function useGridTileSize(): [GridTileSize, (v: GridTileSize) => void] {
   }, []);
 
   return [tileSize, setTileSize];
+}
+
+/**
+ * The tile size the grid should actually render.
+ *
+ * Large tiles are one column at 360px - a single cover per screen. A phone
+ * gets the compact grid whatever is stored, and the toolbar hides the toggle
+ * to match, so the controls no longer shift sideways when the view changes.
+ *
+ * `setTileSize` still writes through, so a desktop preference survives.
+ */
+export function useEffectiveGridTileSize(): [GridTileSize, (v: GridTileSize) => void] {
+  const [tileSize, setTileSize] = useGridTileSize();
+  const isMobile = useIsMobile();
+  return [isMobile ? "small" : tileSize, setTileSize];
 }
