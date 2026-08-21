@@ -38,6 +38,7 @@ import {
   type ParsedAudioId3TagsRaw,
 } from "./audiobook";
 import { parseEpubMetadata, type ParsedEpubMetadataRaw } from "./epub";
+import { PRISMA_RECORD_NOT_FOUND, skipIfFileAssetVanished } from "./vanished-file-asset";
 import { parseOpfSidecar, type ParsedOpfMetadataRaw } from "./opf";
 import { hashFileContents } from "./hashing";
 import {
@@ -1167,7 +1168,6 @@ async function walkRegularFiles(
 
 /** Prisma codes a scan raises once its library root has gone out from under it. */
 const PRISMA_FOREIGN_KEY_VIOLATION = "P2003";
-const PRISMA_RECORD_NOT_FOUND = "P2025";
 
 /**
  * A scan holds no lock on its library root, so the root can be deleted between
@@ -2264,28 +2264,17 @@ export function createIngestServices(
    * between that read and the write raised P2025 and failed the job.
    */
   async function hashFileAsset(input: HashFileAssetInput): Promise<HashFileAssetResult> {
-    try {
-      return await hashPresentFileAsset(input);
-    } catch (error) {
-      const { code } = Object(error) as { code?: string };
-      if (code !== PRISMA_RECORD_NOT_FOUND) {
-        throw error;
-      }
-      const stillThere = await ingestDb.fileAsset.findUnique({
-        where: { id: input.fileAssetId },
-      });
-      if (stillThere !== null) {
-        throw error;
-      }
-      logger.info(
-        { fileAssetId: input.fileAssetId },
-        "Skipping hash for file asset deleted mid-hash",
-      );
-      return {
+    return skipIfFileAssetVanished({
+      db: ingestDb,
+      logger,
+      fileAssetId: input.fileAssetId,
+      label: "hash",
+      run: () => hashPresentFileAsset(input),
+      onVanished: () => ({
         availabilityStatus: AvailabilityStatus.MISSING,
         fileAssetId: input.fileAssetId,
-      };
-    }
+      }),
+    });
   }
 
   async function hashPresentFileAsset(input: HashFileAssetInput): Promise<HashFileAssetResult> {
@@ -2442,32 +2431,18 @@ export function createIngestServices(
   async function parseFileAssetMetadata(
     input: ParseFileAssetMetadataInput,
   ): Promise<ParseFileAssetMetadataResult> {
-    try {
-      return await parseMetadataForPresentAsset(input);
-    } catch (error) {
-      // Object() rather than a typeof/null/in chain: a catch parameter can be
-      // any value, and this reads .code off all of them without branching on
-      // shapes no test can produce without throwing a non-Error.
-      const { code } = Object(error) as { code?: string };
-      if (code !== PRISMA_RECORD_NOT_FOUND) {
-        throw error;
-      }
-      const stillThere = await ingestDb.fileAsset.findUnique({
-        where: { id: input.fileAssetId },
-      });
-      if (stillThere !== null) {
-        throw error;
-      }
-      logger.info(
-        { fileAssetId: input.fileAssetId },
-        "Skipping parse for file asset deleted mid-parse",
-      );
-      return {
+    return skipIfFileAssetVanished({
+      db: ingestDb,
+      logger,
+      fileAssetId: input.fileAssetId,
+      label: "parse",
+      run: () => parseMetadataForPresentAsset(input),
+      onVanished: () => ({
         availabilityStatus: AvailabilityStatus.MISSING,
         fileAssetId: input.fileAssetId,
         skipped: true,
-      };
-    }
+      }),
+    });
   }
 
   async function parseMetadataForPresentAsset(
@@ -3693,25 +3668,14 @@ export function createIngestServices(
   async function matchFileAssetToEdition(
     input: MatchFileAssetToEditionInput,
   ): Promise<MatchFileAssetToEditionResult> {
-    try {
-      return await matchFileAssetToEditionGuarded(input);
-    } catch (error) {
-      const { code } = Object(error) as { code?: string };
-      if (code !== PRISMA_RECORD_NOT_FOUND) {
-        throw error;
-      }
-      const stillThere = await ingestDb.fileAsset.findUnique({
-        where: { id: input.fileAssetId },
-      });
-      if (stillThere !== null) {
-        throw error;
-      }
-      logger.info(
-        { fileAssetId: input.fileAssetId },
-        "Skipping match for file asset deleted mid-match",
-      );
-      return skippedResult(input.fileAssetId);
-    }
+    return skipIfFileAssetVanished({
+      db: ingestDb,
+      logger,
+      fileAssetId: input.fileAssetId,
+      label: "match",
+      run: () => matchFileAssetToEditionGuarded(input),
+      onVanished: () => skippedResult(input.fileAssetId),
+    });
   }
 
   async function matchFileAssetToEditionGuarded(

@@ -359,6 +359,65 @@ describe("processCoverForWork", () => {
     expect(deps.resizeCoverImage).not.toHaveBeenCalled();
   });
 
+  it("skips when the work is deleted while the image is being processed", async () => {
+    // Decoding and resizing is slow. Deleting the work in that window made the
+    // update at the end raise P2025 and failed the job, even though the
+    // up-front check had passed.
+    let read = false;
+    const deps = createMockDeps({
+      extractEpubCover: vi.fn().mockResolvedValue({ buffer: Buffer.from("img") }),
+      db: {
+        fileAsset: {
+          findUnique: vi.fn().mockImplementation(() => {
+            if (!read) {
+              read = true;
+              return Promise.resolve({
+                id: "fa-1",
+                absolutePath: "/books/author/title/book.epub",
+                mediaKind: MediaKind.EPUB,
+              });
+            }
+            return Promise.resolve(null);
+          }),
+        },
+        work: {
+          findUnique: vi.fn().mockResolvedValue({ id: "w-1" }),
+          update: vi.fn().mockRejectedValue(
+            Object.assign(new Error("No record was found for an update."), { code: "P2025" }),
+          ),
+        },
+      },
+    });
+
+    const result = await processCoverForWork(createInput(), deps);
+    expect(result).toEqual({ source: "none", updated: false });
+  });
+
+  it("still fails when a P2025 leaves the file asset in place", async () => {
+    const deps = createMockDeps({
+      extractEpubCover: vi.fn().mockResolvedValue({ buffer: Buffer.from("img") }),
+      db: {
+        fileAsset: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: "fa-1",
+            absolutePath: "/books/author/title/book.epub",
+            mediaKind: MediaKind.EPUB,
+          }),
+        },
+        work: {
+          findUnique: vi.fn().mockResolvedValue({ id: "w-1" }),
+          update: vi.fn().mockRejectedValue(
+            Object.assign(new Error("No record was found for an update."), { code: "P2025" }),
+          ),
+        },
+      },
+    });
+
+    await expect(processCoverForWork(createInput(), deps)).rejects.toThrow(
+      "No record was found for an update.",
+    );
+  });
+
   it("skips when the file asset has been deleted", async () => {
     // A cover job outlives its file asset routinely: deleting a work or its
     // library root cascades to the asset while the job is still queued.
