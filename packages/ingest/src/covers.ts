@@ -4,6 +4,7 @@ import type { Dirent } from "node:fs";
 import sharp from "sharp";
 import { MediaKind } from "@bookhouse/domain";
 import { createLogger } from "@bookhouse/shared";
+import { skipIfFileAssetVanished } from "./vanished-file-asset";
 import { classifyMediaKind } from "./classification";
 import { extractEpubCover, type EpubCoverResult } from "./epub";
 import { extractDominantColors } from "./cover-colors";
@@ -131,7 +132,27 @@ export async function resizeAndSaveCover(
   await resizeCoverImage({ imageBuffer, outputDir }, { mkdir, sharp: sharp as ResizeCoverDeps["sharp"], writeFile });
 }
 
+/**
+ * The up-front check below catches an asset already gone when the job starts.
+ * The guard here catches it going during the job - decoding and resizing an
+ * image is slow, and the `work.update` at the end raised P2025 when the work
+ * had been deleted meanwhile.
+ */
 export async function processCoverForWork(
+  input: ProcessCoverInput,
+  deps: CoverDependencies,
+): Promise<ProcessCoverResult> {
+  return skipIfFileAssetVanished({
+    db: deps.db,
+    logger: deps.logger,
+    fileAssetId: input.fileAssetId,
+    label: "cover",
+    run: () => processCoverForPresentAsset(input, deps),
+    onVanished: () => ({ source: "none", updated: false }),
+  });
+}
+
+async function processCoverForPresentAsset(
   input: ProcessCoverInput,
   deps: CoverDependencies,
 ): Promise<ProcessCoverResult> {

@@ -211,6 +211,20 @@ it("keeps status and sort in the row unless a sheet is showing them", () => {
   });
 });
 
+it("offers a list view toggle", () => {
+  const onViewChange = vi.fn();
+  render(<LibraryToolbar {...defaultProps} view="grid" onViewChange={onViewChange} />);
+  const listToggle = screen.getByLabelText("List view");
+  expect(listToggle.getAttribute("data-active")).toBe("false");
+  fireEvent.click(listToggle);
+  expect(onViewChange).toHaveBeenCalledWith("list");
+});
+
+it("marks the list toggle active in list view", () => {
+  render(<LibraryToolbar {...defaultProps} view="list" />);
+  expect(screen.getByLabelText("List view").getAttribute("data-active")).toBe("true");
+});
+
 it("offers a select toggle in grid view", () => {
   const onSelectModeChange = vi.fn();
   render(

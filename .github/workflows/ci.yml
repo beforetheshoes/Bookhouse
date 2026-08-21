@@ -1,8 +1,11 @@
 name: CI
 
 on:
+  # Every pull request, whatever it targets. Filtering to `main` meant a
+  # stacked PR - one based on another PR's branch rather than on main - ran no
+  # checks at all, and reported none, which reads as "nothing to see" rather
+  # than "never tested".
   pull_request:
-    branches: [main]
 
 concurrency:
   group: ci-${{ github.ref }}

@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, type ReactNode } from "react";
-import { Grid2x2, Grid3x3, LayoutGrid, Table2, X, CheckSquare } from "lucide-react";
+import { Grid2x2, Grid3x3, LayoutGrid, Rows3, Table2, X, CheckSquare } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { useDebounce } from "~/hooks/use-debounce";
@@ -102,22 +102,27 @@ export function LibraryToolbar({
     <div className="flex flex-wrap items-center gap-2 lg:justify-between">
       <div className="flex min-w-0 flex-1 items-center gap-2">
         {leading}
-        <Input
-          placeholder="Filter by title or author..."
-          value={localSearch}
-          onChange={(e) => { setLocalSearch(e.target.value); }}
-          className="h-9 min-w-0 flex-1 lg:h-8 lg:w-[250px] lg:flex-none"
-        />
-        {localSearch && (
-          <Button
-            variant="ghost"
-            onClick={() => { setLocalSearch(""); }}
-            className="h-9 shrink-0 px-2 lg:h-8"
-            aria-label="Clear search"
-          >
-            <X className="size-4" />
-          </Button>
-        )}
+        {/* The header already carries a search control on every route. A
+            second text box under it is the filter, which belongs with the
+            facets it combines with - so below lg it lives in the sheet. */}
+        <div className={filtersInSheet ? "hidden min-w-0 flex-1 lg:flex lg:items-center lg:gap-2" : "flex min-w-0 flex-1 items-center gap-2"}>
+          <Input
+            placeholder="Filter by title or author..."
+            value={localSearch}
+            onChange={(e) => { setLocalSearch(e.target.value); }}
+            className="h-9 min-w-0 flex-1 lg:h-8 lg:w-[250px] lg:flex-none"
+          />
+          {localSearch && (
+            <Button
+              variant="ghost"
+              onClick={() => { setLocalSearch(""); }}
+              className="h-9 shrink-0 px-2 lg:h-8"
+              aria-label="Clear search"
+            >
+              <X className="size-4" />
+            </Button>
+          )}
+        </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {/* Reading status and sort live in the filters sheet below lg - they
@@ -152,29 +157,42 @@ export function LibraryToolbar({
             </Select>
           </div>
         )}
-        <div className="hidden items-center rounded-md border md:flex">
+        <div className="flex items-center rounded-md border">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => { onViewChange("list"); }}
+            aria-label="List view"
+            data-active={view === "list"}
+            className="rounded-r-none data-[active=true]:bg-muted"
+          >
+            <Rows3 className="size-4" />
+          </Button>
           <Button
             variant="ghost"
             size="sm"
             onClick={() => { onViewChange("grid"); }}
             aria-label="Grid view"
             data-active={view === "grid"}
-            className="rounded-r-none data-[active=true]:bg-muted"
+            className="rounded-none data-[active=true]:bg-muted"
           >
             <LayoutGrid className="size-4" />
           </Button>
+          {/* The table is 800px of fixed columns; it never renders on a phone. */}
           <Button
             variant="ghost"
             size="sm"
             onClick={() => { onViewChange("table"); }}
             aria-label="Table view"
             data-active={view === "table"}
-            className="rounded-l-none data-[active=true]:bg-muted"
+            className="hidden rounded-l-none data-[active=true]:bg-muted md:inline-flex"
           >
             <Table2 className="size-4" />
           </Button>
         </div>
-        {view === "grid" && onSelectModeChange && (
+        {/* The list selects the same way the grid does; only the table has its
+            own row checkboxes. */}
+        {view !== "table" && onSelectModeChange && (
           <Button
             variant="ghost"
             size="sm"
