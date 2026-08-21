@@ -10,6 +10,7 @@ import {
   seedSeriesWork,
   seedShelf,
   seedWork,
+  seedWorkWithCover,
 } from "./helpers/seed";
 
 /**
@@ -220,6 +221,91 @@ test.describe("Mobile layout", () => {
     await page.keyboard.press("Escape");
     await expect(page.getByText("Sheet Sort Book")).toBeVisible();
     await expect(page.getByText("Unrelated Volume")).toHaveCount(0);
+  });
+
+  test("list rows show a real cover, not a broken image", async ({ page }) => {
+    // The first version pointed at /api/covers/<coverPath>/thumb.webp, which
+    // 404s: the route is keyed by work id and takes no extension. A src that
+    // renders nothing looks identical to a book with no cover, so this asks
+    // the browser whether the bytes arrived.
+    const work = await seedWorkWithCover({ title: "Covered Book" });
+    await page.goto("/library");
+    await expect(page.getByText("Covered Book")).toBeVisible();
+
+    const img = page.locator(`img[src*="/api/covers/${work.id}/"]`).first();
+    await expect(img).toBeVisible();
+    // Rows are lazy-loaded, so poll rather than reading once: a 400 never
+    // decodes and naturalWidth stays 0 however long we wait.
+    await expect
+      .poll(
+        () => img.evaluate((el) => (el as HTMLImageElement).naturalWidth),
+        { message: "cover never decoded - the URL did not reach the handler", timeout: 10_000 },
+      )
+      .toBeGreaterThan(0);
+    expect(await img.getAttribute("src")).toBe(`/api/covers/${work.id}/thumb`);
+  });
+
+  test("the alphabet rail jumps the list to that letter", async ({ page }) => {
+    // Exactly 50 works before the Zs, at 50 a page: Z starts at offset 50,
+    // which is the first row of page two. Anything less and Z is still on page
+    // one, and the test would pass without the jump doing anything.
+    for (let i = 0; i < 50; i++) {
+      await seedWork({ title: `AA Book ${String(i).padStart(2, "0")}` });
+    }
+    for (let i = 0; i < 20; i++) {
+      await seedWork({ title: `ZZ Book ${String(i).padStart(2, "0")}` });
+    }
+    await page.goto("/library?page=1&pageSize=50&sort=title-asc&view=works");
+    await expect(page.getByText("AA Book 00")).toBeVisible();
+    await expect(page.getByText("ZZ Book 00")).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Z", exact: true }).click();
+    await expect(page.getByText("ZZ Book 00")).toBeVisible({ timeout: 10_000 });
+    expect(new URL(page.url()).searchParams.get("page")).toBe("2");
+  });
+
+  test("the alphabet rail is a drag surface, not 27 unhittable buttons", async ({
+    page,
+  }) => {
+    // The generic tap-target sweep skips the rail, so this is the only thing
+    // holding it to a size. A 20px-wide rail is a miss on a real thumb.
+    await seedWork({ title: "Rail Size Book" });
+    await page.goto("/library?page=1&pageSize=50&sort=title-asc&view=works");
+    await expect(page.getByText("Rail Size Book")).toBeVisible();
+
+    const geometry = await page.evaluate(() => {
+      const rail = document.querySelector<HTMLElement>(
+        '[data-testid="alphabet-scrubber"]',
+      );
+      if (!rail) return null;
+      const railRect = rail.getBoundingClientRect();
+      const letters = Array.from(rail.querySelectorAll<HTMLElement>("button")).map(
+        (b) => b.getBoundingClientRect(),
+      );
+      const covered = letters.reduce((sum, r) => sum + r.height, 0);
+      return {
+        railWidth: Math.round(railRect.width),
+        railHeight: Math.round(railRect.height),
+        letterCount: letters.length,
+        narrowest: Math.round(Math.min(...letters.map((r) => r.width))),
+        covered: Math.round(covered),
+        viewportHeight: window.innerHeight,
+      };
+    });
+
+    expect(geometry, "the rail did not render").not.toBeNull();
+    const g = geometry as NonNullable<typeof geometry>;
+    expect(g.letterCount, "every letter has to be on the rail").toBe(27);
+    // Width is the dimension a drag actually needs: the finger travels down
+    // the rail, so height per letter is necessarily small, but a thumb has to
+    // land on the rail in the first place.
+    expect(g.railWidth, "rail too narrow to hit").toBeGreaterThanOrEqual(36);
+    expect(g.narrowest, "a letter is narrower than the rail").toBeGreaterThanOrEqual(36);
+    // A drag has to hit a letter wherever it lands: gaps between them are
+    // dead pixels that send nothing.
+    expect(g.covered, "gaps between the letters").toBeGreaterThanOrEqual(g.railHeight - 8);
+    // And the rail has to be long enough to aim along.
+    expect(g.railHeight, "rail too short to scrub").toBeGreaterThan(g.viewportHeight * 0.5);
   });
 
   test("bulk actions are reachable on a phone", async ({ page }) => {
@@ -572,6 +658,11 @@ test.describe("Mobile layout", () => {
           // filter on pointer-events: an open Radix menu sets it to none on
           // the whole body, which would silently empty this sweep.
           if (el.closest("[aria-hidden='true']")) return;
+          // The A-Z rail is one drag control, not 27 buttons: 27 letters at
+          // 36px would need 972px of height, which no phone has. It is held
+          // to its own floor by the "alphabet rail" test below - do not drop
+          // this exclusion without keeping that one.
+          if (el.closest("[data-testid='alphabet-scrubber']")) return;
           seen += 1;
           // Width matters too: an icon-only control can be 36px tall and 34px
           // wide, which three separate "fixes" failed to catch.

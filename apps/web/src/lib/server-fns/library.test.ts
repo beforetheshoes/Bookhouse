@@ -32,6 +32,7 @@ import {
   getFilteredLibraryWorksServerFn,
   getAllFilteredWorkIdsServerFn,
   getFilteredLibraryEditionsServerFn,
+  getWorkOffsetForLetterServerFn,
 } from "./library";
 
 describe("getLibraryWorksServerFn", () => {
@@ -1411,5 +1412,62 @@ describe("getFilteredLibraryEditionsServerFn", () => {
         ]) as object[],
       }),
     );
+  });
+});
+
+/** What the letter-bound count is called with: the base filter, then the bound. */
+interface WhereWithLetterBound {
+  where: { AND: [object, { sortTitle: { lt?: string; gte?: string } }] };
+}
+
+describe("getWorkOffsetForLetterServerFn", () => {
+  beforeEach(() => {
+    countMock.mockReset();
+  });
+
+  /** The two counts are, in order: rows before the letter, then the total. */
+  function counts(before: number, total: number) {
+    countMock.mockResolvedValueOnce(before).mockResolvedValueOnce(total);
+  }
+
+  const base = { letter: "M", sort: "title-asc" as const };
+
+  it("counts the works that sort before the letter", async () => {
+    counts(412, 1450);
+    const result = await getWorkOffsetForLetterServerFn({ data: base });
+    expect(result).toEqual({ offset: 412, total: 1450 });
+
+    const where = countMock.mock.calls[0]?.[0] as WhereWithLetterBound;
+    expect(where.where.AND[1]).toEqual({ sortTitle: { lt: "m" } });
+  });
+
+  it("takes everything before A for the # bucket", async () => {
+    counts(0, 20);
+    await getWorkOffsetForLetterServerFn({ data: { ...base, letter: "#" } });
+    const where = countMock.mock.calls[0]?.[0] as WhereWithLetterBound;
+    // Ascending, the ones NOT in the bucket are everything from "a" up.
+    expect(where.where.AND[1]).toEqual({ sortTitle: { gte: "a" } });
+  });
+
+  it("counts from the other end when the sort is descending", async () => {
+    counts(300, 1450);
+    await getWorkOffsetForLetterServerFn({ data: { ...base, sort: "title-desc" } });
+    const where = countMock.mock.calls[0]?.[0] as WhereWithLetterBound;
+    // Descending, M comes after everything from N up.
+    expect(where.where.AND[1]).toEqual({ sortTitle: { gte: "n" } });
+  });
+
+  it("puts the # bucket last when the sort is descending", async () => {
+    counts(1430, 1450);
+    await getWorkOffsetForLetterServerFn({ data: { letter: "#", sort: "title-desc" } });
+    const where = countMock.mock.calls[0]?.[0] as WhereWithLetterBound;
+    expect(where.where.AND[1]).toEqual({ sortTitle: { lt: "a" } });
+  });
+
+  it("lowercases the letter, because sortTitle is stored lowercased", async () => {
+    counts(1, 2);
+    await getWorkOffsetForLetterServerFn({ data: { ...base, letter: "z" } });
+    const where = countMock.mock.calls[0]?.[0] as WhereWithLetterBound;
+    expect(where.where.AND[1]).toEqual({ sortTitle: { lt: "z" } });
   });
 });

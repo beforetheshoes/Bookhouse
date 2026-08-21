@@ -616,6 +616,49 @@ export type LibraryEdition = Awaited<
 
 const idsOnlyFilterSchema = filterSchema.omit({ page: true, pageSize: true, sort: true });
 
+const letterJumpSchema = idsOnlyFilterSchema.extend({
+  /** A single A-Z letter, or "#" for everything that sorts before "a". */
+  letter: z.string().min(1).max(1),
+  sort: z.enum(["title-asc", "title-desc"]),
+});
+
+/**
+ * How many works sort before the first one starting with `letter`.
+ *
+ * The list has no pagination, so jumping to "M" means knowing where M starts
+ * in the whole filtered set - not in the page that happens to be loaded. The
+ * caller turns this offset into a page and lets the loader fetch it.
+ *
+ * Counting is the cheap half of the question: the index of the first match is
+ * exactly the number of rows that sort before it.
+ */
+export const getWorkOffsetForLetterServerFn = createServerFn({
+  method: "GET",
+})
+  .validator(letterJumpSchema)
+  .handler(async ({ data }) => {
+    const { db } = await import("@bookhouse/db");
+
+    const parsed = letterJumpSchema.parse(data);
+    const base = buildWhere({ ...parsed, page: 1, pageSize: 1, sort: parsed.sort });
+    const letter = parsed.letter.toLowerCase();
+    const ascending = parsed.sort === "title-asc";
+
+    // "#" is everything that sorts before "a" - digits, punctuation, and the
+    // titles with no sortTitle at all.
+    const beforeFirstMatch = letter === "#"
+      ? ascending
+        ? { sortTitle: { gte: "a" } }
+        : { sortTitle: { lt: "a" } }
+      : ascending
+        ? { sortTitle: { lt: letter } }
+        : { sortTitle: { gte: String.fromCharCode(letter.charCodeAt(0) + 1) } };
+
+    const offset = await db.work.count({ where: { AND: [base, beforeFirstMatch] } });
+    const total = await db.work.count({ where: base });
+    return { offset, total };
+  });
+
 export const getAllFilteredWorkIdsServerFn = createServerFn({
   method: "GET",
 })

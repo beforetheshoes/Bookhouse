@@ -125,7 +125,8 @@ describe("LibraryList", () => {
     );
     const img = container.querySelector("img");
     expect(img).not.toBeNull();
-    expect(img?.getAttribute("src")).toContain("/api/covers/abc/thumb.webp");
+    // Keyed by work id, matching the grid and /api/covers/:workId/:size.
+    expect(img?.getAttribute("src")).toBe("/api/covers/covered/thumb");
     if (img) fireEvent.error(img);
     expect(container.querySelector("img")).toBeNull();
   });

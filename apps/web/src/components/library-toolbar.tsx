@@ -205,8 +205,11 @@ export function LibraryToolbar({
             <CheckSquare className="size-4" />
           </Button>
         )}
+        {/* Tile size is a desktop affordance. On a phone the grid is always
+            two compact columns, and showing the pair here made the controls
+            jump sideways whenever the view changed. */}
         {view === "grid" && tileSize && onTileSizeChange && (
-          <div className="flex items-center rounded-md border">
+          <div className="hidden items-center rounded-md border lg:flex">
             <Button
               variant="ghost"
               size="sm"
