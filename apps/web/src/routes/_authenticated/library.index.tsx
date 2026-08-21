@@ -88,6 +88,12 @@ function LibraryPage() {
   const [appendedWorks, setAppendedWorks] = useState<LibraryWork[]>([]);
   const [lastLoadedPage, setLastLoadedPage] = useState(search.page);
   const [loadingMore, setLoadingMore] = useState(false);
+  // And the pages before it, for a list opened partway down by the A-Z rail.
+  // Without these, a jump to page nine was every book the reader could reach:
+  // scrolling up ran out at the top of that page.
+  const [prependedWorks, setPrependedWorks] = useState<LibraryWork[]>([]);
+  const [firstLoadedPage, setFirstLoadedPage] = useState(search.page);
+  const [loadingPrevious, setLoadingPrevious] = useState(false);
   // Bumped by everything that throws the appended pages away. A request that
   // was in flight across one of those checks this before appending, so a slow
   // page two cannot land back in a view that has already moved on.
@@ -104,11 +110,16 @@ function LibraryPage() {
     appendGenerationRef.current += 1;
     setAppendedWorks([]);
     setLastLoadedPage(search.page);
+    setPrependedWorks([]);
+    setFirstLoadedPage(search.page);
   }
 
   const allLoadedWorks = useMemo(
-    () => (appendedWorks.length > 0 ? [...works, ...appendedWorks] : works),
-    [works, appendedWorks],
+    () =>
+      prependedWorks.length > 0 || appendedWorks.length > 0
+        ? [...prependedWorks, ...works, ...appendedWorks]
+        : works,
+    [works, appendedWorks, prependedWorks],
   );
 
   const filteredByReading = useMemo(
@@ -132,6 +143,22 @@ function LibraryPage() {
       })
       .finally(() => { setLoadingMore(false); });
   }, [loadingMore, hasMore, lastLoadedPage, search]);
+
+  const hasPrevious = firstLoadedPage > 1;
+
+  const handleLoadPrevious = useCallback(() => {
+    if (loadingPrevious || !hasPrevious) return;
+    setLoadingPrevious(true);
+    const previousPage = firstLoadedPage - 1;
+    const generation = appendGenerationRef.current;
+    void getFilteredLibraryWorksServerFn({ data: { ...search, page: previousPage } })
+      .then((result) => {
+        if (appendGenerationRef.current !== generation) return;
+        setPrependedWorks((prev) => [...result.works, ...prev]);
+        setFirstLoadedPage(previousPage);
+      })
+      .finally(() => { setLoadingPrevious(false); });
+  }, [loadingPrevious, hasPrevious, firstLoadedPage, search]);
 
   // Keyed by work id, so a refreshed or reordered list cannot repoint it.
   // Still filtered against the current list: a selected work can disappear.
@@ -183,6 +210,10 @@ function LibraryPage() {
   });
 
   const [jumpingToLetter, setJumpingToLetter] = useState<string | null>(null);
+  // Where the rail asked to land, held until the page carrying it is the one
+  // on screen. The list scrolls to that row and says so, which clears this.
+  const [pendingJump, setPendingJump] = useState<{ page: number; index: number } | null>(null);
+  const jumpTokenRef = useRef(0);
 
   /**
    * Jumps the list to the first work under `letter`.
@@ -193,6 +224,11 @@ function LibraryPage() {
    */
   const handleJumpToLetter = useCallback((letter: string) => {
     setJumpingToLetter(letter);
+    // Dragging the rail asks once per letter crossed, so the answers race. The
+    // letter the finger stopped on is the one that counts, not the slowest
+    // query.
+    jumpTokenRef.current += 1;
+    const token = jumpTokenRef.current;
     void getWorkOffsetForLetterServerFn({
       data: {
         q: search.q,
@@ -208,18 +244,39 @@ function LibraryPage() {
       },
     })
       .then(({ offset, total }) => {
+        if (jumpTokenRef.current !== token) return;
         if (total === 0) return;
         // Past the last work means the letter has nothing; sit on the last page.
         const clamped = Math.min(offset, Math.max(total - 1, 0));
         const targetPage = Math.floor(clamped / search.pageSize) + 1;
+        // The row within that page. Scrolling to the top of the page instead
+        // leaves the reader up to a page short of the letter they asked for.
+        setPendingJump({ page: targetPage, index: clamped - (targetPage - 1) * search.pageSize });
         if (targetPage !== search.page) {
           handlePageChange(targetPage);
+          return;
         }
-        window.scrollTo({ top: 0 });
+        // Same page: no loader hand-over to reset the window, so do it here.
+        // The row index is counted from the start of the page, and pages
+        // loaded around it would put it somewhere else.
+        appendGenerationRef.current += 1;
+        setAppendedWorks([]);
+        setPrependedWorks([]);
+        setFirstLoadedPage(targetPage);
+        setLastLoadedPage(targetPage);
       })
-      .finally(() => { setJumpingToLetter(null); });
+      .finally(() => {
+        if (jumpTokenRef.current === token) setJumpingToLetter(null);
+      });
   }, [search, handlePageChange]);
 
+
+  // Only once the page carrying it is the one rendered: until then the rows
+  // on screen are a different page, and that index points at the wrong book.
+  const jumpIndex = pendingJump !== null && pendingJump.page === search.page
+    ? pendingJump.index
+    : null;
+  const handleJumpApplied = useCallback(() => { setPendingJump(null); }, []);
 
   // The table passes its updater straight through, which used to leave a
   // cross-page "select all N" standing: unchecking a row changed the visible
@@ -441,6 +498,14 @@ function LibraryPage() {
                   hasMore={hasMore}
                   loadingMore={loadingMore}
                   onLoadMore={handleLoadMore}
+                  // Held off while a jump is pending: prepending rows would
+                  // move the row it is aiming at out from under it.
+                  hasPrevious={pendingJump === null && hasPrevious}
+                  loadingPrevious={loadingPrevious}
+                  onLoadPrevious={handleLoadPrevious}
+                  prependedCount={prependedWorks.length}
+                  scrollToIndex={jumpIndex}
+                  onScrolledToIndex={handleJumpApplied}
                 />
               </div>
               {/* Only a title sort has an alphabet to scrub. */}

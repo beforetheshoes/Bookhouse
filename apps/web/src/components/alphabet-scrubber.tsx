@@ -23,6 +23,10 @@ interface AlphabetScrubberProps {
 export function AlphabetScrubber({ onJump, pending }: AlphabetScrubberProps) {
   const lastSentRef = useRef<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  // Set when a press landed on a letter, so that letter's own click does not
+  // send a second, different one. A keyboard activation has no press before
+  // it and still goes through.
+  const pressSentRef = useRef(false);
 
   // The rail comes from the event rather than a ref: the handlers only ever
   // fire on the rail itself, so there is no "no rail" case to guard.
@@ -55,6 +59,18 @@ export function AlphabetScrubber({ onJump, pending }: AlphabetScrubberProps) {
         e.currentTarget.setPointerCapture(e.pointerId);
         setDragging(true);
         lastSentRef.current = null;
+        // A press that landed on a letter is that letter - no arithmetic. The
+        // rail is 8px taller than the letters it holds, so the ratio can round
+        // to a neighbour, and a tap that answers with the letter before the one
+        // under the finger is indistinguishable from a broken jump.
+        const pressed = (e.target as HTMLElement).closest("button");
+        const letter = pressed?.dataset.letter;
+        pressSentRef.current = letter !== undefined;
+        if (letter !== undefined) {
+          lastSentRef.current = letter;
+          onJump(letter);
+          return;
+        }
         sendFor(e.currentTarget, e.clientY);
       }}
       onPointerMove={(e) => { if (dragging) sendFor(e.currentTarget, e.clientY); }}
@@ -67,7 +83,14 @@ export function AlphabetScrubber({ onJump, pending }: AlphabetScrubberProps) {
           type="button"
           // The rail owns the pointer; these exist for tapping and for anyone
           // arrowing through with a keyboard or a screen reader.
-          onClick={() => { onJump(letter); }}
+          onClick={() => {
+            if (pressSentRef.current) {
+              pressSentRef.current = false;
+              return;
+            }
+            onJump(letter);
+          }}
+          data-letter={letter}
           data-active={pending === letter}
           className="flex h-[3.4vh] min-h-[14px] w-full items-center justify-center rounded text-[10px] leading-none font-medium text-muted-foreground data-[active=true]:bg-primary data-[active=true]:text-primary-foreground"
         >

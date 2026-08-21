@@ -181,19 +181,27 @@ vi.mock("~/components/alphabet-scrubber", () => ({
   AlphabetScrubber: ({ onJump, pending }: { onJump: (l: string) => void; pending?: string | null }) => (
     <div data-testid="alphabet-scrubber" data-pending={pending ?? ""}>
       <button type="button" aria-label="jump-M" onClick={() => { onJump("M"); }} />
+      <button type="button" aria-label="jump-Z" onClick={() => { onJump("Z"); }} />
     </div>
   ),
 }));
 
 vi.mock("~/components/library-list", () => ({
-  LibraryList: ({ works, hasMore, loadingMore, onLoadMore }: { works: { id: string }[]; hasMore?: boolean; loadingMore?: boolean; onLoadMore?: () => void }) => (
+  LibraryList: ({ works, hasMore, loadingMore, onLoadMore, hasPrevious, loadingPrevious, onLoadPrevious, prependedCount, scrollToIndex, onScrolledToIndex }: { works: { id: string; titleDisplay?: string }[]; hasMore?: boolean; loadingMore?: boolean; onLoadMore?: () => void; hasPrevious?: boolean; loadingPrevious?: boolean; onLoadPrevious?: () => void; prependedCount?: number; scrollToIndex?: number | null; onScrolledToIndex?: () => void }) => (
     <div
       data-testid="library-list"
       data-count={String(works.length)}
       data-has-more={hasMore === true ? "true" : "false"}
       data-loading-more={loadingMore === true ? "true" : "false"}
+      data-has-previous={hasPrevious === true ? "true" : "false"}
+      data-loading-previous={loadingPrevious === true ? "true" : "false"}
+      data-prepended-count={String(prependedCount ?? 0)}
+      data-scroll-to-index={scrollToIndex === null || scrollToIndex === undefined ? "" : String(scrollToIndex)}
+      data-first-title={works[0]?.titleDisplay ?? ""}
     >
       <button type="button" aria-label="load-more" onClick={() => { onLoadMore?.(); }} />
+      <button type="button" aria-label="load-previous" onClick={() => { onLoadPrevious?.(); }} />
+      <button type="button" aria-label="scrolled" onClick={() => { onScrolledToIndex?.(); }} />
     </div>
   ),
 }));
@@ -968,6 +976,207 @@ describe("LibraryPage", () => {
       | undefined;
     expect(call?.data?.letter).toBe("M");
     expect(call?.data?.sort).toBe("title-asc");
+  });
+
+  it("lands on the letter's own row, not the top of the page it is on", async () => {
+    mockView = "list";
+    mockSearch = { page: 1, pageSize: 50, sort: "title-asc" };
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Alpha")],
+        totalCount: 1450,
+        facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
+      },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    // 412 works sort before M, so M is row 12 of page 9 at 50 a page. Scrolling
+    // to the top of page 9 instead drops the reader 12 rows early - which reads
+    // as "the letter before the one I asked for".
+    getWorkOffsetForLetterServerFnMock.mockResolvedValue({ offset: 412, total: 1450 });
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    const { rerender } = render(<LibraryPage />);
+
+    fireEvent.click(screen.getByLabelText("jump-M"));
+    await waitFor(() => { expect(mockNavigate).toHaveBeenCalled(); });
+
+    // The router has taken the page change; the loader hands over page 9.
+    mockSearch = { page: 9, pageSize: 50, sort: "title-asc" };
+    rerender(<LibraryPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId("library-list").getAttribute("data-scroll-to-index")).toBe("12");
+    });
+
+    // Applied once: the list says it scrolled, and the request is dropped so a
+    // later render cannot yank the reader back.
+    fireEvent.click(screen.getByLabelText("scrolled"));
+    expect(screen.getByTestId("library-list").getAttribute("data-scroll-to-index")).toBe("");
+  });
+
+  it("loads the page before when the reader scrolls back up past the jump", async () => {
+    mockView = "list";
+    mockSearch = { page: 9, pageSize: 50, sort: "title-asc" };
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Mike")],
+        totalCount: 1450,
+        facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
+      },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    getFilteredLibraryWorksServerFnMock.mockClear();
+    getFilteredLibraryWorksServerFnMock.mockResolvedValue({
+      works: [makeWork("Lima")],
+      totalCount: 1450,
+      facetCounts: defaultFacetCounts,
+      totalFacetCounts: defaultFacetCounts,
+    });
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    // Landing on page 9 used to be the whole library the reader could ever
+    // see: everything before it was unreachable, however far they scrolled up.
+    expect(screen.getByTestId("library-list").getAttribute("data-has-previous")).toBe("true");
+    fireEvent.click(screen.getByLabelText("load-previous"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("library-list").getAttribute("data-count")).toBe("2");
+    });
+    const list = screen.getByTestId("library-list");
+    // Prepended, not appended: page 8 sorts before page 9.
+    expect(list.getAttribute("data-first-title")).toBe("Lima");
+    expect(list.getAttribute("data-prepended-count")).toBe("1");
+    const asked = getFilteredLibraryWorksServerFnMock.mock.calls[0]?.[0] as
+      | { data?: { page?: number } }
+      | undefined;
+    expect(asked?.data?.page).toBe(8);
+  });
+
+  it("drops a previous-page load that lands after the view already changed", async () => {
+    mockView = "list";
+    mockSearch = { page: 9, pageSize: 50, sort: "title-asc" };
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Mike")],
+        totalCount: 1450,
+        facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
+      },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    // Same hazard as the downward load: the grid paginates, so a page landing
+    // in it after the switch puts rows under a "Page 9 of N" that denies them.
+    let settle: (() => void) | undefined;
+    getFilteredLibraryWorksServerFnMock.mockReset();
+    getFilteredLibraryWorksServerFnMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          settle = () => {
+            resolve({
+              works: [makeWork("Lima")],
+              totalCount: 1450,
+              facetCounts: defaultFacetCounts,
+              totalFacetCounts: defaultFacetCounts,
+            });
+          };
+        }),
+    );
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    fireEvent.click(screen.getByLabelText("load-previous"));
+
+    const onViewChange = capturedToolbarProps.onViewChange as (v: string) => void;
+    mockView = "grid";
+    act(() => { onViewChange("grid"); });
+
+    await act(async () => {
+      settle?.();
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("library-grid").getAttribute("data-count")).toBe("1");
+  });
+
+  it("stops asking upward at page one", async () => {
+    mockView = "list";
+    mockSearch = { page: 1, pageSize: 50, sort: "title-asc" };
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Alpha")],
+        totalCount: 1450,
+        facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
+      },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    getFilteredLibraryWorksServerFnMock.mockClear();
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    expect(screen.getByTestId("library-list").getAttribute("data-has-previous")).toBe("false");
+    fireEvent.click(screen.getByLabelText("load-previous"));
+    expect(getFilteredLibraryWorksServerFnMock).not.toHaveBeenCalled();
+  });
+
+  it("ignores a jump answer overtaken by a later one", async () => {
+    mockView = "list";
+    mockSearch = { page: 1, pageSize: 50, sort: "title-asc" };
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Alpha")],
+        totalCount: 1450,
+        facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
+      },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    // Dragging the rail asks per letter, so answers come back out of order.
+    // The one the finger stopped on has to win, not whichever server call was
+    // slowest.
+    let settleM: (() => void) | undefined;
+    getWorkOffsetForLetterServerFnMock.mockReset();
+    getWorkOffsetForLetterServerFnMock.mockImplementationOnce(
+      () => new Promise((resolve) => { settleM = () => { resolve({ offset: 412, total: 1450 }); }; }),
+    );
+    getWorkOffsetForLetterServerFnMock.mockResolvedValueOnce({ offset: 1400, total: 1450 });
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    const { rerender } = render(<LibraryPage />);
+
+    fireEvent.click(screen.getByLabelText("jump-M"));
+    fireEvent.click(screen.getByLabelText("jump-Z"));
+    await waitFor(() => { expect(mockNavigate).toHaveBeenCalled(); });
+    await act(async () => {
+      settleM?.();
+      await Promise.resolve();
+    });
+
+    // Z is row 0 of page 29; M's late answer would have said row 12 of page 9.
+    mockSearch = { page: 29, pageSize: 50, sort: "title-asc" };
+    rerender(<LibraryPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId("library-list").getAttribute("data-scroll-to-index")).toBe("0");
+    });
   });
 
   it("sits on the last page when the letter is past the end", async () => {
