@@ -264,6 +264,88 @@ test.describe("Mobile layout", () => {
     expect(new URL(page.url()).searchParams.get("page")).toBe("2");
   });
 
+  test("# on the rail goes to the numbers, not the end of the alphabet", async ({
+    page,
+  }) => {
+    // "#" counted the works from "a" up and treated that as the rows ahead of
+    // the bucket - nearly the whole library - so it landed on the last page
+    // and showed W-Z.
+    await seedWork({ title: "1984 Numbers First" });
+    for (let i = 0; i < 12; i++) {
+      await seedWork({ title: `Middle Book ${String(i).padStart(2, "0")}` });
+    }
+    await seedWork({ title: "Zebra Last Book" });
+    // Page two of 14 at ten a page: the numbers are behind us.
+    await page.goto("/library?page=2&pageSize=10&sort=title-asc&view=works");
+    await expect(page.getByText("Zebra Last Book")).toBeVisible();
+
+    await page.getByRole("button", { name: "#", exact: true }).click();
+    await expect(page.getByText("1984 Numbers First")).toBeVisible({ timeout: 10_000 });
+    expect(new URL(page.url()).searchParams.get("page")).toBe("1");
+  });
+
+  test("a letter lands on that letter's first book, not the top of its page", async ({
+    page,
+  }) => {
+    // 15 A's then 15 M's at 20 a page: M starts at row 15 of page one, so a
+    // jump that scrolls to the top of the page leaves 15 A's on screen and the
+    // reader looking at the wrong letter entirely.
+    for (let i = 0; i < 15; i++) {
+      await seedWork({ title: `Anchor Book ${String(i).padStart(2, "0")}` });
+    }
+    for (let i = 0; i < 15; i++) {
+      await seedWork({ title: `Mango Book ${String(i).padStart(2, "0")}` });
+    }
+    await page.goto("/library?page=1&pageSize=20&sort=title-asc&view=works");
+    await expect(page.getByText("Anchor Book 00")).toBeVisible();
+
+    await page.getByRole("button", { name: "M", exact: true }).click();
+
+    // The first M has to be on screen, and the A's scrolled off the top.
+    const firstM = page.getByText("Mango Book 00");
+    await expect(firstM).toBeVisible({ timeout: 10_000 });
+    const positions = await page.evaluate(() => {
+      const find = (text: string) =>
+        Array.from(document.querySelectorAll<HTMLElement>("[data-slot='item-title']"))
+          .find((el) => (el.textContent ?? "").trim() === text)
+          ?.getBoundingClientRect().top ?? null;
+      return { firstM: find("Mango Book 00"), viewport: window.innerHeight };
+    });
+    expect(positions.firstM, "the first M never rendered").not.toBeNull();
+    // Near the top of the viewport - not a page of A's below it.
+    expect(positions.firstM as number).toBeLessThan(positions.viewport * 0.5);
+  });
+
+  test("the list keeps scrolling both ways after a jump", async ({ page }) => {
+    // 15 A's then 15 M's at ten a page puts M on page two. Everything before
+    // it used to be unreachable: the list only ever appended, so scrolling up
+    // ran out at the top of the page the jump landed on.
+    for (let i = 0; i < 15; i++) {
+      await seedWork({ title: `Around Book ${String(i).padStart(2, "0")}` });
+    }
+    for (let i = 0; i < 15; i++) {
+      await seedWork({ title: `Muster Book ${String(i).padStart(2, "0")}` });
+    }
+    await page.goto("/library?page=1&pageSize=10&sort=title-asc&view=works");
+    await expect(page.getByText("Around Book 00")).toBeVisible();
+
+    await page.getByRole("button", { name: "M", exact: true }).click();
+    await expect(page.getByText("Muster Book 00")).toBeVisible({ timeout: 10_000 });
+    // Page two holds Around 10-14 and Muster 00-04. Page one - Around 00-09 -
+    // is what the jump left behind, and what scrolling up has to reach.
+    await expect(page.getByText("Around Book 00")).toHaveCount(0);
+
+    for (let i = 0; i < 15; i++) {
+      await page.mouse.wheel(0, -1200);
+      await page.waitForTimeout(200);
+      if (await page.getByText("Around Book 00").count()) break;
+    }
+    await expect(
+      page.getByText("Around Book 00"),
+      "scrolling up never reached the works before the jump",
+    ).toBeVisible({ timeout: 10_000 });
+  });
+
   test("the alphabet rail is a drag surface, not 27 unhittable buttons", async ({
     page,
   }) => {

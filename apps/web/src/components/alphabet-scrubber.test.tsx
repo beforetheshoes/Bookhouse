@@ -27,6 +27,27 @@ describe("AlphabetScrubber", () => {
     expect(onJump).toHaveBeenCalledWith("M");
   });
 
+  it("sends the letter that was pressed, and sends it once", () => {
+    // The press used to be read off the rail's geometry even when it landed
+    // squarely on a letter, and the button's own click then sent a second,
+    // different letter - so a tap raced two answers and could settle on the
+    // one before it.
+    const onJump = vi.fn();
+    render(<AlphabetScrubber onJump={onJump} />);
+    const rail = screen.getByTestId("alphabet-scrubber");
+    rail.setPointerCapture = vi.fn();
+    giveRailHeight(rail, 0, 270);
+
+    const m = screen.getByRole("button", { name: "M" });
+    // clientY 105 is "K" by the rail's arithmetic; the finger is on M.
+    fireEvent.pointerDown(m, { clientY: 105, pointerId: 1 });
+    fireEvent.pointerUp(rail, { pointerId: 1 });
+    fireEvent.click(m);
+
+    expect(onJump).toHaveBeenCalledTimes(1);
+    expect(onJump).toHaveBeenCalledWith("M");
+  });
+
   it("jumps to the letter under the finger while dragging", () => {
     const onJump = vi.fn();
     render(<AlphabetScrubber onJump={onJump} />);

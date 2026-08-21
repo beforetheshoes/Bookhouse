@@ -44,6 +44,40 @@ export async function cleanDatabase() {
  */
 export async function cleanTestData() {
   assertTestDatabase();
+  // TRUNCATE takes an exclusive lock on every table at once, and the worker is
+  // running: a job holding a row lock and reaching for another table deadlocks
+  // against it, and Postgres kills whichever side it likes. That is transient
+  // and the retry clears it - unlike a real failure, which loses every attempt.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await truncateTestTables();
+      return;
+    } catch (error) {
+      if (attempt >= 4 || !isTransientLockError(error as RawQueryError)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+    }
+  }
+}
+
+/**
+ * Prisma reports a failed raw query as P2010 and puts the Postgres code in
+ * `meta` - so checking `error.code` for "40P01" never matches, and the
+ * deadlock this is here to absorb went straight through.
+ */
+interface RawQueryError {
+  code?: string;
+  message?: string;
+  meta?: { code?: string; message?: string };
+}
+
+function isTransientLockError(error: RawQueryError): boolean {
+  const code = error.meta?.code ?? error.code;
+  if (code === "40P01" || code === "55P03") return true;
+  const text = `${error.meta?.message ?? ""} ${error.message ?? ""}`;
+  return /deadlock detected|lock timeout|could not obtain lock/i.test(text);
+}
+
+async function truncateTestTables() {
   await db.$executeRawUnsafe(`
     TRUNCATE TABLE "ImportJob",
                    "DuplicateCandidate",

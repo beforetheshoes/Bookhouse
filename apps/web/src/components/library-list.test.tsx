@@ -6,6 +6,9 @@ import { LibraryList, type LibraryListWork } from "./library-list";
 let virtualCount = 0;
 /** Makes the virtualiser hand back one index past the end of the array. */
 let overrunVirtualItems = false;
+/** The first index the window shows, for the "scrolled away from the top" cases. */
+let virtualStartIndex = 0;
+const scrollToIndexMock = vi.fn();
 
 vi.mock("@tanstack/react-virtual", () => ({
   useWindowVirtualizer: (opts: {
@@ -15,15 +18,18 @@ vi.mock("@tanstack/react-virtual", () => ({
   }) => {
     virtualCount = opts.count;
     opts.estimateSize();
+    // One object for the life of the test, the way the real hook keeps one
+    // instance: an effect that depends on it must not re-run every render.
     return {
       getVirtualItems: () =>
         Array.from({ length: overrunVirtualItems ? opts.count + 1 : Math.min(opts.count, 10) }, (_, i) => ({
-          index: i,
-          start: opts.scrollMargin + i * 88,
-          end: opts.scrollMargin + (i + 1) * 88,
+          index: virtualStartIndex + i,
+          start: opts.scrollMargin + (virtualStartIndex + i) * 88,
+          end: opts.scrollMargin + (virtualStartIndex + i + 1) * 88,
         })),
       getTotalSize: () => opts.count * 88,
       measureElement: vi.fn(),
+      scrollToIndex: scrollToIndexMock,
     };
   },
 }));
@@ -79,10 +85,18 @@ const makeWork = (title: string, authors: string[] = ["Author A"], overrides: Wo
 
 const works = (...w: LibraryListWork[]) => w;
 
+/** happy-dom does not scroll, so move the position and announce it. */
+function scrollWindowTo(y: number) {
+  Object.defineProperty(window, "scrollY", { value: y, configurable: true, writable: true });
+  fireEvent.scroll(window);
+}
+
 describe("LibraryList", () => {
   beforeEach(() => {
     virtualCount = 0;
     overrunVirtualItems = false;
+    virtualStartIndex = 0;
+    scrollToIndexMock.mockClear();
   });
 
   it("renders a row per work with title, author and format", () => {
@@ -231,6 +245,99 @@ describe("LibraryList", () => {
     overrunVirtualItems = true;
     render(<LibraryList works={works(makeWork("Alpha"))} />);
     expect(screen.getAllByText("Alpha").length).toBe(1);
+  });
+
+  it("scrolls to the row a jump asks for and reports that it did", () => {
+    const onScrolledToIndex = vi.fn();
+    const many = Array.from({ length: 50 }, (_, i) => makeWork(`Work ${String(i)}`));
+    render(
+      <LibraryList
+        works={works(...many)}
+        scrollToIndex={12}
+        onScrolledToIndex={onScrolledToIndex}
+      />,
+    );
+    expect(scrollToIndexMock).toHaveBeenCalledWith(12, { align: "start" });
+    expect(onScrolledToIndex).toHaveBeenCalledTimes(1);
+  });
+
+  it("scrolls nowhere when no jump is pending", () => {
+    const { rerender } = render(<LibraryList works={works(makeWork("Alpha"))} />);
+    rerender(<LibraryList works={works(makeWork("Alpha"))} scrollToIndex={null} />);
+    expect(scrollToIndexMock).not.toHaveBeenCalled();
+  });
+
+  it("asks for the page before once the reader scrolls back up", async () => {
+    const onLoadPrevious = vi.fn();
+    const many = Array.from({ length: 40 }, (_, i) => makeWork(`Work ${String(i)}`));
+    render(<LibraryList works={works(...many)} hasPrevious onLoadPrevious={onLoadPrevious} />);
+
+    // Down first: that is not an ask, and must not arm anything.
+    scrollWindowTo(600);
+    expect(onLoadPrevious).not.toHaveBeenCalled();
+
+    scrollWindowTo(200);
+    await waitFor(() => { expect(onLoadPrevious).toHaveBeenCalled(); });
+  });
+
+  it("does not ask upward before the reader has scrolled back", () => {
+    // A list that has just jumped sits still with nobody asking. Prepending
+    // there moves the row the jump aimed at, and the reader lands at the top
+    // of the page instead of on their letter.
+    const onLoadPrevious = vi.fn();
+    const many = Array.from({ length: 40 }, (_, i) => makeWork(`Work ${String(i)}`));
+    render(<LibraryList works={works(...many)} hasPrevious onLoadPrevious={onLoadPrevious} />);
+    expect(onLoadPrevious).not.toHaveBeenCalled();
+  });
+
+  it("stops listening for scrolls once the list unmounts", () => {
+    const onLoadPrevious = vi.fn();
+    const { unmount } = render(
+      <LibraryList works={works(makeWork("Alpha"))} hasPrevious onLoadPrevious={onLoadPrevious} />,
+    );
+    unmount();
+    scrollWindowTo(0);
+    expect(onLoadPrevious).not.toHaveBeenCalled();
+  });
+
+  it("does not ask upward while one is loading, without a handler, at the top, or with nothing loaded", () => {
+    const onLoadPrevious = vi.fn();
+    scrollWindowTo(600);
+    const { rerender } = render(
+      <LibraryList works={works(makeWork("Alpha"))} hasPrevious loadingPrevious onLoadPrevious={onLoadPrevious} />,
+    );
+    // Armed first, so each case below is refused on its own merits rather than
+    // on "the reader has not scrolled up yet".
+    scrollWindowTo(100);
+    rerender(<LibraryList works={works(makeWork("Alpha"))} hasPrevious />);
+    rerender(<LibraryList works={works(makeWork("Alpha"))} hasPrevious={false} onLoadPrevious={onLoadPrevious} />);
+    rerender(<LibraryList works={works()} hasPrevious onLoadPrevious={onLoadPrevious} />);
+    expect(onLoadPrevious).not.toHaveBeenCalled();
+  });
+
+  it("holds off upward while the reader is still well below the first loaded row", () => {
+    virtualStartIndex = 20;
+    const onLoadPrevious = vi.fn();
+    const many = Array.from({ length: 40 }, (_, i) => makeWork(`Work ${String(i)}`));
+    render(<LibraryList works={works(...many)} hasPrevious onLoadPrevious={onLoadPrevious} />);
+    scrollWindowTo(600);
+    scrollWindowTo(400);
+    expect(onLoadPrevious).not.toHaveBeenCalled();
+  });
+
+  it("keeps the reader on the same book when a page is prepended", () => {
+    virtualStartIndex = 20;
+    const many = Array.from({ length: 60 }, (_, i) => makeWork(`Work ${String(i)}`));
+    const { rerender } = render(
+      <LibraryList works={works(...many)} hasPrevious prependedCount={0} />,
+    );
+    scrollToIndexMock.mockClear();
+    // 50 rows arrive above the reader. Without re-anchoring, the book they
+    // were looking at is now 50 rows further down the list than the scroll
+    // position they are still at.
+    const withPrepend = Array.from({ length: 110 }, (_, i) => makeWork(`Grown ${String(i)}`));
+    rerender(<LibraryList works={works(...withPrepend)} hasPrevious prependedCount={50} />);
+    expect(scrollToIndexMock).toHaveBeenCalledWith(70, { align: "start" });
   });
 
   it("stops measuring once the list unmounts", () => {
