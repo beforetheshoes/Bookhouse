@@ -645,16 +645,19 @@ export const getWorkOffsetForLetterServerFn = createServerFn({
     const ascending = parsed.sort === "title-asc";
 
     // "#" is everything that sorts before "a" - digits, punctuation, and the
-    // titles with no sortTitle at all.
+    // titles with no sortTitle at all. Ascending, that bucket is the top of
+    // the list, so nothing is ahead of it: null rather than a bound.
     const beforeFirstMatch = letter === "#"
       ? ascending
-        ? { sortTitle: { gte: "a" } }
-        : { sortTitle: { lt: "a" } }
+        ? null
+        : { sortTitle: { gte: "a" } }
       : ascending
         ? { sortTitle: { lt: letter } }
         : { sortTitle: { gte: String.fromCharCode(letter.charCodeAt(0) + 1) } };
 
-    const offset = await db.work.count({ where: { AND: [base, beforeFirstMatch] } });
+    const offset = beforeFirstMatch === null
+      ? 0
+      : await db.work.count({ where: { AND: [base, beforeFirstMatch] } });
     const total = await db.work.count({ where: base });
     return { offset, total };
   });
