@@ -14,8 +14,8 @@
     "@bookhouse/db": "workspace:*",
     "@bookhouse/domain": "workspace:*",
     "@bookhouse/shared": "workspace:*",
-    "fast-xml-parser": "^5.10.1",
-    "music-metadata": "^11.14.0",
+    "fast-xml-parser": "^5.11.0",
+    "music-metadata": "^11.15.0",
     "sharp": "^0.35.0",
     "yauzl-promise": "^4.0.0"
   },
