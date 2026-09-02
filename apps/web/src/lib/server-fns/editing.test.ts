@@ -78,6 +78,7 @@ import {
   updateEditionNarratorsServerFn,
   updateContributorServerFn,
   getContributorNamesServerFn,
+  updateEditionSchema,
 } from "./editing";
 
 beforeEach(() => {
@@ -396,7 +397,8 @@ describe("updateWorkAuthorsServerFn", () => {
     editionFindManyMock.mockResolvedValue([{ id: "e1" }, { id: "e2" }]);
     canonicalizeContributorNameMock.mockReturnValue("patrick rothfuss");
     contributorUpsertMock.mockResolvedValue({ id: "c1" });
-    transactionMock.mockImplementation(async (fn: () => Promise<object>) => fn());
+    transactionMock.mockImplementation(async (fn: (tx: object) => Promise<object>) =>
+      fn({ editionContributor: { deleteMany: editionContributorDeleteManyMock, createMany: editionContributorCreateManyMock } }));
     editionContributorDeleteManyMock.mockResolvedValue({ count: 2 });
     editionContributorCreateManyMock.mockResolvedValue({ count: 2 });
     workUpdateMock.mockResolvedValue({ id: "w1" });
@@ -444,7 +446,8 @@ describe("updateWorkAuthorsServerFn", () => {
     canonicalizeContributorNameMock.mockReturnValue("new author");
     generateNameSortMock.mockReturnValue("author, new");
     contributorUpsertMock.mockResolvedValue({ id: "c-new" });
-    transactionMock.mockImplementation(async (fn: () => Promise<object>) => fn());
+    transactionMock.mockImplementation(async (fn: (tx: object) => Promise<object>) =>
+      fn({ editionContributor: { deleteMany: editionContributorDeleteManyMock, createMany: editionContributorCreateManyMock } }));
     editionContributorDeleteManyMock.mockResolvedValue({ count: 0 });
     editionContributorCreateManyMock.mockResolvedValue({ count: 1 });
     workUpdateMock.mockResolvedValue({ id: "w1" });
@@ -476,7 +479,8 @@ describe("updateWorkAuthorsServerFn", () => {
     editionFindManyMock.mockResolvedValue([{ id: "e1" }]);
     canonicalizeContributorNameMock.mockReturnValue("author");
     contributorUpsertMock.mockResolvedValue({ id: "c1" });
-    transactionMock.mockImplementation(async (fn: () => Promise<object>) => fn());
+    transactionMock.mockImplementation(async (fn: (tx: object) => Promise<object>) =>
+      fn({ editionContributor: { deleteMany: editionContributorDeleteManyMock, createMany: editionContributorCreateManyMock } }));
     editionContributorDeleteManyMock.mockResolvedValue({ count: 0 });
     editionContributorCreateManyMock.mockResolvedValue({ count: 1 });
     workUpdateMock.mockResolvedValue({ id: "w1" });
@@ -499,7 +503,8 @@ describe("updateWorkAuthorsServerFn", () => {
     editionFindManyMock.mockResolvedValue([{ id: "e1" }]);
     canonicalizeContributorNameMock.mockReturnValue(undefined);
     contributorUpsertMock.mockResolvedValue({ id: "c-new" });
-    transactionMock.mockImplementation(async (fn: () => Promise<object>) => fn());
+    transactionMock.mockImplementation(async (fn: (tx: object) => Promise<object>) =>
+      fn({ editionContributor: { deleteMany: editionContributorDeleteManyMock, createMany: editionContributorCreateManyMock } }));
     editionContributorDeleteManyMock.mockResolvedValue({ count: 0 });
     editionContributorCreateManyMock.mockResolvedValue({ count: 1 });
     workUpdateMock.mockResolvedValue({ id: "w1" });
@@ -658,3 +663,26 @@ describe("getContributorNamesServerFn", () => {
   });
 });
 
+describe("updateEditionSchema", () => {
+  it("accepts whole-number strings and valid dates", () => {
+    const parsed = updateEditionSchema.safeParse({
+      editionId: "e1",
+      fields: { pageCount: " 320 ", duration: "3600", publishedAt: "2007-03-27", isbn13: null },
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("rejects garbage numbers and dates with a message the form can show", () => {
+    const pages = updateEditionSchema.safeParse({ editionId: "e1", fields: { pageCount: "12a" } });
+    expect(pages.success).toBe(false);
+    expect(pages.error?.issues[0]?.message).toBe("Pages must be a whole number");
+
+    const duration = updateEditionSchema.safeParse({ editionId: "e1", fields: { duration: "-5" } });
+    expect(duration.success).toBe(false);
+    expect(duration.error?.issues[0]?.message).toBe("Duration must be a whole number");
+
+    const date = updateEditionSchema.safeParse({ editionId: "e1", fields: { publishedAt: "not a date" } });
+    expect(date.success).toBe(false);
+    expect(date.error?.issues[0]?.message).toBe("Published date must be a valid date");
+  });
+});

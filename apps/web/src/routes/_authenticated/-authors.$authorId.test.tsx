@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import type * as TanstackRouter from "@tanstack/react-router";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 let mockLoaderData: {
@@ -75,7 +75,14 @@ vi.mock("~/lib/server-fns/editing", () => ({
 }));
 
 vi.mock("~/lib/mutation", () => ({
-  runMutation: async (fn: () => Promise<object>) => fn(),
+  // Same contract as the real helper: resolve with the result, or null on failure.
+  runMutation: async (fn: () => Promise<object>) => {
+    try {
+      return await fn();
+    } catch {
+      return null;
+    }
+  },
 }));
 
 const makeWork = (title: string, formats: string[] = ["EBOOK"]) => ({
@@ -386,5 +393,29 @@ describe("AuthorDetailPage", () => {
     const Skeleton = Route.options.pendingComponent as React.ComponentType;
     render(<Skeleton />);
     expect(screen.getByText("Loading grid...")).toBeTruthy();
+  });
+
+  it("loader raises a not-found for an author that no longer exists", async () => {
+    getAuthorDetailServerFnMock.mockResolvedValueOnce(null);
+    const { Route } = await import("./authors.$authorId");
+    await expect(
+      (Route.options.loader as (args: { params: { authorId: string } }) => Promise<object>)({ params: { authorId: "gone" } }),
+    ).rejects.toMatchObject({ isNotFound: true });
+  });
+
+  it("keeps the typed URL when linking a photo fails", async () => {
+    fetchAuthorPhotoFromUrlServerFnMock.mockRejectedValueOnce(new Error("Image too small"));
+    const { Route } = await import("./authors.$authorId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    fireEvent.click(screen.getByTestId("link-photo-button"));
+    const input = screen.getByTestId("photo-url-input");
+    fireEvent.change(input, { target: { value: "https://example.com/p.jpg" } });
+    fireEvent.click(within(screen.getByTestId("url-input-row")).getByRole("button"));
+    await waitFor(() => { expect(fetchAuthorPhotoFromUrlServerFnMock).toHaveBeenCalled(); });
+    // The row stays open with the URL intact so it can be corrected.
+    await waitFor(() => {
+      expect(screen.getByTestId("photo-url-input").getAttribute("value")).toBe("https://example.com/p.jpg");
+    });
   });
 });

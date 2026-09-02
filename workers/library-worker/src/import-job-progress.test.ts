@@ -1,39 +1,39 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const updateMock = vi.fn();
+const updateManyMock = vi.fn();
 const findUniqueMock = vi.fn();
 
 vi.mock("@bookhouse/db", () => ({
   db: {
     importJob: {
-      update: updateMock,
+      updateMany: updateManyMock,
       findUnique: findUniqueMock,
     },
   },
 }));
 
 beforeEach(() => {
-  updateMock.mockReset();
-  updateMock.mockResolvedValue({});
+  updateManyMock.mockReset();
+  updateManyMock.mockResolvedValue({ count: 1 });
   findUniqueMock.mockReset();
 });
 
 describe("recordBatchJobProgress", () => {
-  it("increments processedFiles and sets RUNNING on success", async () => {
+  it("increments processedFiles on a live batch and sets startedAt only when unset", async () => {
     findUniqueMock.mockResolvedValue({ totalFiles: 10, processedFiles: 1 });
     const { recordBatchJobProgress } = await import("./import-job-progress");
 
     await recordBatchJobProgress("ij-1", false);
 
-    expect(updateMock).toHaveBeenCalledTimes(1);
-    expect(updateMock).toHaveBeenCalledWith({
-      where: { id: "ij-1" },
-      data: {
-        status: "RUNNING",
-        startedAt: expect.any(Date) as Date,
-        processedFiles: { increment: 1 },
-      },
+    expect(updateManyMock).toHaveBeenNthCalledWith(1, {
+      where: { id: "ij-1", status: { in: ["QUEUED", "RUNNING"] } },
+      data: { status: "RUNNING", processedFiles: { increment: 1 } },
     });
+    expect(updateManyMock).toHaveBeenNthCalledWith(2, {
+      where: { id: "ij-1", startedAt: null },
+      data: { startedAt: expect.any(Date) as Date },
+    });
+    expect(updateManyMock).toHaveBeenCalledTimes(2);
   });
 
   it("increments errorCount alongside processedFiles when isError is true", async () => {
@@ -42,14 +42,9 @@ describe("recordBatchJobProgress", () => {
 
     await recordBatchJobProgress("ij-2", true);
 
-    expect(updateMock).toHaveBeenCalledWith({
-      where: { id: "ij-2" },
-      data: {
-        status: "RUNNING",
-        startedAt: expect.any(Date) as Date,
-        processedFiles: { increment: 1 },
-        errorCount: { increment: 1 },
-      },
+    expect(updateManyMock).toHaveBeenNthCalledWith(1, {
+      where: { id: "ij-2", status: { in: ["QUEUED", "RUNNING"] } },
+      data: { status: "RUNNING", processedFiles: { increment: 1 }, errorCount: { increment: 1 } },
     });
   });
 
@@ -59,9 +54,9 @@ describe("recordBatchJobProgress", () => {
 
     await recordBatchJobProgress("ij-3", false);
 
-    expect(updateMock).toHaveBeenCalledTimes(2);
-    expect(updateMock).toHaveBeenLastCalledWith({
-      where: { id: "ij-3" },
+    expect(updateManyMock).toHaveBeenCalledTimes(3);
+    expect(updateManyMock).toHaveBeenLastCalledWith({
+      where: { id: "ij-3", status: "RUNNING" },
       data: { status: "SUCCEEDED", finishedAt: expect.any(Date) as Date },
     });
   });
@@ -72,15 +67,25 @@ describe("recordBatchJobProgress", () => {
 
     await recordBatchJobProgress("ij-4", false);
 
-    expect(updateMock).toHaveBeenCalledTimes(1);
+    expect(updateManyMock).toHaveBeenCalledTimes(2);
   });
 
-  it("does not mark SUCCEEDED when ImportJob is missing", async () => {
+  it("does not mark SUCCEEDED when the ImportJob row vanished after the increment", async () => {
     findUniqueMock.mockResolvedValue(null);
     const { recordBatchJobProgress } = await import("./import-job-progress");
 
     await recordBatchJobProgress("ij-5", false);
 
-    expect(updateMock).toHaveBeenCalledTimes(1);
+    expect(updateManyMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("leaves a stopped, failed, finished or deleted batch untouched", async () => {
+    updateManyMock.mockResolvedValueOnce({ count: 0 });
+    const { recordBatchJobProgress } = await import("./import-job-progress");
+
+    await recordBatchJobProgress("ij-stopped", true);
+
+    expect(updateManyMock).toHaveBeenCalledTimes(1);
+    expect(findUniqueMock).not.toHaveBeenCalled();
   });
 });

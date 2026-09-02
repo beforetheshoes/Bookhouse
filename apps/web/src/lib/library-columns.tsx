@@ -69,7 +69,7 @@ export function getColumns(scanActive: boolean, editMode: boolean, router: { inv
         );
       }
       return (
-        <Link to="/library/$workId" params={{ workId: row.original.id }} search={{ page: 1, pageSize: 50, sort: "title-asc" as const }} className="flex min-h-9 items-center gap-2 lg:min-h-0">
+        <Link to="/library/$workId" params={{ workId: row.original.id }} className="flex min-h-9 items-center gap-2 lg:min-h-0">
           {row.original.titleDisplay}
           {row.original.enrichmentStatus === "STUB" && scanActive && (
             <Badge variant="outline" className="animate-pulse px-1.5 py-0 text-[10px]">

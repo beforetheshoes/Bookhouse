@@ -15,7 +15,7 @@ vi.mock("@tanstack/react-router", () => ({
   },
 }));
 
-const { searchMock } = vi.hoisted(() => ({ searchMock: vi.fn() }));
+const { searchMock, addSearchMock } = vi.hoisted(() => ({ searchMock: vi.fn(), addSearchMock: vi.fn() }));
 vi.mock("~/lib/server-fns/search", () => ({
   searchLibraryServerFn: searchMock,
 }));
@@ -23,7 +23,7 @@ vi.mock("~/lib/server-fns/search", () => ({
 vi.mock("~/hooks/use-recent-searches", () => ({
   useRecentSearches: () => ({
     searches: ["old query"],
-    addSearch: vi.fn(),
+    addSearch: addSearchMock,
     clearSearches: vi.fn(),
   }),
 }));
@@ -34,6 +34,7 @@ describe("GlobalSearch", () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     searchMock.mockReset();
+    addSearchMock.mockReset();
   });
 
   afterEach(() => {
@@ -222,6 +223,92 @@ describe("GlobalSearch", () => {
 
     // Dialog should be closed
     expect(screen.queryByPlaceholderText("Search works, authors, series...")).toBeNull();
+  });
+
+  it("ignores a slow answer for an earlier query that lands after a later one", async () => {
+    // The mock's payload shape is looser than the real SearchResult, as elsewhere in this file.
+    let resolveFirst: (value: never) => void = () => undefined;
+    searchMock
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve; }))
+      .mockResolvedValueOnce({
+        works: [{ id: "w2", titleDisplay: "Harry Potter", coverPath: null, editions: [], series: null }],
+        authors: [],
+        series: [],
+      });
+
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<GlobalSearch />);
+    await user.click(screen.getByLabelText("Search library"));
+    const input = screen.getByPlaceholderText("Search works, authors, series...");
+    await user.type(input, "h");
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+      await Promise.resolve();
+    });
+    await user.type(input, "arry");
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+      await Promise.resolve();
+    });
+    expect(screen.getByText("Harry Potter")).toBeTruthy();
+
+    // The stale "h" answer arrives last and must not replace the results.
+    await act(async () => {
+      resolveFirst({
+        works: [{ id: "w1", titleDisplay: "Hamlet", coverPath: null, editions: [], series: null }],
+        authors: [],
+        series: [],
+      } as never);
+      await Promise.resolve();
+    });
+    expect(screen.queryByText("Hamlet")).toBeNull();
+    expect(screen.getByText("Harry Potter")).toBeTruthy();
+    // Recents are recorded when a result is opened, not per debounced prefix.
+    expect(addSearchMock).not.toHaveBeenCalled();
+  });
+
+  it("remembers the query only when a result is opened", async () => {
+    searchMock.mockResolvedValue({
+      works: [{ id: "w1", titleDisplay: "Test Book", coverPath: null, editions: [], series: null }],
+      authors: [],
+      series: [],
+    });
+
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<GlobalSearch />);
+    await user.click(screen.getByLabelText("Search library"));
+    await user.type(screen.getByPlaceholderText("Search works, authors, series..."), " test ");
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+      await Promise.resolve();
+    });
+    expect(addSearchMock).not.toHaveBeenCalled();
+
+    await user.click(screen.getByText("Test Book"));
+    expect(addSearchMock).toHaveBeenCalledWith("test");
+  });
+
+  it("does not record a blank query when a result is opened after the input was cleared", async () => {
+    searchMock.mockResolvedValue({
+      works: [{ id: "w1", titleDisplay: "Test Book", coverPath: null, editions: [], series: null }],
+      authors: [],
+      series: [],
+    });
+
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<GlobalSearch />);
+    await user.click(screen.getByLabelText("Search library"));
+    const input = screen.getByPlaceholderText("Search works, authors, series...");
+    await user.type(input, "test");
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+      await Promise.resolve();
+    });
+    // Cleared, but the debounce has not yet swept the results away.
+    await user.clear(input);
+    await user.click(screen.getByText("Test Book"));
+
+    expect(addSearchMock).not.toHaveBeenCalled();
   });
 
   it("closes dialog when clicking a work result", async () => {

@@ -24,6 +24,7 @@ vi.mock("@tanstack/react-start", () => ({
 const collectionFindManyMock = vi.fn();
 const collectionFindUniqueMock = vi.fn();
 const collectionFindFirstOrThrowMock = vi.fn();
+const collectionFindFirstMock = vi.fn();
 const collectionCreateMock = vi.fn();
 const collectionUpdateMock = vi.fn();
 const collectionDeleteMock = vi.fn();
@@ -33,12 +34,15 @@ const collectionItemCreateManyMock = vi.fn();
 const collectionItemDeleteMock = vi.fn();
 const collectionItemDeleteManyMock = vi.fn();
 const editionFindManyMock = vi.fn();
+const editionFindFirstOrThrowMock = vi.fn();
+const collectionItemUpsertMock = vi.fn();
 
 vi.mock("@bookhouse/db", () => ({
   db: {
     collection: {
       findMany: collectionFindManyMock,
       findUnique: collectionFindUniqueMock,
+      findFirst: collectionFindFirstMock,
       findFirstOrThrow: collectionFindFirstOrThrowMock,
       create: collectionCreateMock,
       update: collectionUpdateMock,
@@ -48,11 +52,13 @@ vi.mock("@bookhouse/db", () => ({
       findMany: collectionItemFindManyMock,
       create: collectionItemCreateMock,
       createMany: collectionItemCreateManyMock,
+      upsert: collectionItemUpsertMock,
       delete: collectionItemDeleteMock,
       deleteMany: collectionItemDeleteManyMock,
     },
     edition: {
       findMany: editionFindManyMock,
+      findFirstOrThrow: editionFindFirstOrThrowMock,
     },
   },
 }));
@@ -100,9 +106,9 @@ describe("shelves server functions", () => {
         formatFilter: "ALL",
         items: [{ edition: { id: "e1", work: { id: "w1", titleDisplay: "Book" } } }],
       };
-      collectionFindFirstOrThrowMock.mockResolvedValue(detail);
+      collectionFindFirstMock.mockResolvedValue(detail);
       const result = await getShelfDetailServerFn({ data: { shelfId: "s1" } } as never);
-      expect(collectionFindFirstOrThrowMock).toHaveBeenCalledWith(
+      expect(collectionFindFirstMock).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: "s1", ownerUserId: "user-1" },
         }),
@@ -280,19 +286,49 @@ describe("shelves server functions", () => {
   });
 
   describe("addEditionToShelfServerFn", () => {
-    it("creates a collection item with editionId", async () => {
-      collectionFindUniqueMock.mockResolvedValue({ ownerUserId: "user-1" });
+    it("upserts the membership after checking the edition against the shelf's format filter", async () => {
+      collectionFindFirstOrThrowMock.mockResolvedValue({ formatFilter: "EBOOK" });
+      editionFindFirstOrThrowMock.mockResolvedValue({ id: "e1" });
       const item = { id: "ci1", collectionId: "s1", editionId: "e1" };
-      collectionItemCreateMock.mockResolvedValue(item);
+      collectionItemUpsertMock.mockResolvedValue(item);
 
       const result = await addEditionToShelfServerFn({
         data: { shelfId: "s1", editionId: "e1" },
       } as never);
 
-      expect(collectionItemCreateMock).toHaveBeenCalledWith({
-        data: { collectionId: "s1", editionId: "e1" },
+      expect(collectionFindFirstOrThrowMock).toHaveBeenCalledWith({
+        where: { id: "s1", ownerUserId: "user-1" },
+        select: { formatFilter: true },
+      });
+      expect(editionFindFirstOrThrowMock).toHaveBeenCalledWith({
+        where: { id: "e1", formatFamily: "EBOOK" },
+        select: { id: true },
+      });
+      expect(collectionItemUpsertMock).toHaveBeenCalledWith({
+        where: { collectionId_editionId: { collectionId: "s1", editionId: "e1" } },
+        create: { collectionId: "s1", editionId: "e1" },
+        update: {},
       });
       expect(result).toBe(item);
+    });
+
+    it("does not constrain the format on an ALL shelf", async () => {
+      collectionFindFirstOrThrowMock.mockResolvedValue({ formatFilter: "ALL" });
+      editionFindFirstOrThrowMock.mockResolvedValue({ id: "e1" });
+      collectionItemUpsertMock.mockResolvedValue({});
+
+      await addEditionToShelfServerFn({ data: { shelfId: "s1", editionId: "e1" } } as never);
+
+      expect(editionFindFirstOrThrowMock).toHaveBeenCalledWith({ where: { id: "e1" }, select: { id: true } });
+    });
+
+    it("rejects an edition the shelf's format filter excludes", async () => {
+      collectionFindFirstOrThrowMock.mockResolvedValue({ formatFilter: "AUDIOBOOK" });
+      editionFindFirstOrThrowMock.mockRejectedValue(new Error("No Edition found"));
+
+      await expect(addEditionToShelfServerFn({ data: { shelfId: "s1", editionId: "e1" } } as never))
+        .rejects.toThrow("No Edition found");
+      expect(collectionItemUpsertMock).not.toHaveBeenCalled();
     });
   });
 
@@ -320,6 +356,7 @@ describe("shelves server functions", () => {
           { collectionId: "s1", editionId: "e1" },
           { collectionId: "s1", editionId: "e2" },
         ],
+        skipDuplicates: true,
       });
       expect(result).toEqual({ added: 2 });
     });
@@ -341,18 +378,23 @@ describe("shelves server functions", () => {
       expect(result).toEqual({ added: 1 });
     });
 
-    it("skips existing editions", async () => {
+    it("reports only the rows the database actually inserted", async () => {
       collectionFindFirstOrThrowMock.mockResolvedValue({ formatFilter: "ALL" });
       editionFindManyMock.mockResolvedValue([{ id: "e1" }, { id: "e2" }]);
-      collectionItemFindManyMock.mockResolvedValue([{ editionId: "e1" }]);
+      // e1 was already on the shelf: skipDuplicates drops it inside the insert.
       collectionItemCreateManyMock.mockResolvedValue({ count: 1 });
 
       const result = await addEditionsForWorkToShelfServerFn({
         data: { shelfId: "s1", workId: "w1" },
       } as never);
 
+      expect(collectionItemFindManyMock).not.toHaveBeenCalled();
       expect(collectionItemCreateManyMock).toHaveBeenCalledWith({
-        data: [{ collectionId: "s1", editionId: "e2" }],
+        data: [
+          { collectionId: "s1", editionId: "e1" },
+          { collectionId: "s1", editionId: "e2" },
+        ],
+        skipDuplicates: true,
       });
       expect(result).toEqual({ added: 1 });
     });
@@ -372,13 +414,12 @@ describe("shelves server functions", () => {
     it("returns zero when all editions already exist on shelf", async () => {
       collectionFindFirstOrThrowMock.mockResolvedValue({ formatFilter: "ALL" });
       editionFindManyMock.mockResolvedValue([{ id: "e1" }]);
-      collectionItemFindManyMock.mockResolvedValue([{ editionId: "e1" }]);
+      collectionItemCreateManyMock.mockResolvedValue({ count: 0 });
 
       const result = await addEditionsForWorkToShelfServerFn({
         data: { shelfId: "s1", workId: "w1" },
       } as never);
 
-      expect(collectionItemCreateManyMock).not.toHaveBeenCalled();
       expect(result).toEqual({ added: 0 });
     });
   });
@@ -403,21 +444,24 @@ describe("shelves server functions", () => {
         select: { id: true },
       });
       expect(collectionItemCreateManyMock).toHaveBeenCalledWith({
-        data: [{ collectionId: "s1", editionId: "e2" }],
+        data: [
+          { collectionId: "s1", editionId: "e1" },
+          { collectionId: "s1", editionId: "e2" },
+        ],
+        skipDuplicates: true,
       });
       expect(result).toEqual({ added: 1 });
     });
 
-    it("skips createMany when all editions already exist", async () => {
+    it("returns zero when every edition was already on the shelf", async () => {
       collectionFindFirstOrThrowMock.mockResolvedValue({ formatFilter: "ALL" });
       editionFindManyMock.mockResolvedValue([{ id: "e1" }]);
-      collectionItemFindManyMock.mockResolvedValue([{ editionId: "e1" }]);
+      collectionItemCreateManyMock.mockResolvedValue({ count: 0 });
 
       const result = await bulkAddToShelfServerFn({
         data: { shelfId: "s1", workIds: ["w1"] },
       } as never);
 
-      expect(collectionItemCreateManyMock).not.toHaveBeenCalled();
       expect(result).toEqual({ added: 0 });
     });
 

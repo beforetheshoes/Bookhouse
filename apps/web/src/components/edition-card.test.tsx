@@ -133,7 +133,7 @@ describe("EditionCard", () => {
     );
 
     expect(screen.getByText("wind.epub")).toBeTruthy();
-    expect(screen.getByText("PRESENT")).toBeTruthy();
+    expect(screen.getByText("Available")).toBeTruthy();
   });
 
   it("renders Amazon ebook variant files", () => {
@@ -336,8 +336,8 @@ describe("EditionCard", () => {
     );
 
     // The publishedAt date gets rendered via toLocaleDateString()
-    const expectedDate = new Date("2007-04-01").toLocaleDateString();
-    expect(screen.getByText(expectedDate)).toBeTruthy();
+    // ISO, not a locale string: dd/mm and mm/dd are indistinguishable when saved back.
+    expect(screen.getByText("2007-04-01")).toBeTruthy();
   });
 
   it("renders placeholder for null publishedAt", () => {
@@ -507,7 +507,7 @@ describe("EditionCard", () => {
       />,
     );
 
-    const dateText = new Date("2007-04-01").toLocaleDateString();
+    const dateText = "2007-04-01";
     const field = screen.getByText(dateText);
     fireEvent.click(field);
 
@@ -948,7 +948,7 @@ describe("EditionCard", () => {
       />,
     );
 
-    expect(screen.getByText("MISSING")).toBeTruthy();
+    expect(screen.getByText("Missing")).toBeTruthy();
   });
 
   describe("Send to Kindle", () => {
@@ -1542,12 +1542,12 @@ describe("EditionCard", () => {
       expect(parseDuration("7200")).toBe(7200);
     });
 
-    it("returns 0 for empty string", () => {
-      expect(parseDuration("")).toBe(0);
+    it("returns null for empty string", () => {
+      expect(parseDuration("")).toBeNull();
     });
 
-    it("returns 0 for non-numeric string", () => {
-      expect(parseDuration("abc")).toBe(0);
+    it("returns null for non-numeric string", () => {
+      expect(parseDuration("abc")).toBeNull();
     });
   });
 
@@ -1750,6 +1750,38 @@ describe("EditionCard", () => {
       await user.click(screen.getByRole("button", { name: /edition actions/i }));
       await user.click(screen.getByText("Split Edition"));
       expect(onSplit).toHaveBeenCalled();
+    });
+  });
+
+  describe("duration editing", () => {
+    const audioEdition = { ...baseEdition, formatFamily: "AUDIOBOOK" as const, duration: 79200 } as EditionType;
+    const renderAudio = () => render(
+      <EditionCard edition={audioEdition} onEditionFieldSaved={vi.fn()} onDeleteEdition={vi.fn()} onEnrichEdition={vi.fn()} smtpConfigured={false} kindleConfigured={false} />,
+    );
+
+    it("refuses text that is not a duration instead of saving 0", async () => {
+      renderAudio();
+      fireEvent.click(screen.getByText("22h"));
+      const input = screen.getByDisplayValue("22h");
+      fireEvent.change(input, { target: { value: "about a day" } });
+      fireEvent.blur(input);
+      const { toast } = await import("sonner");
+      await waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith("Enter a duration like 10h 32m, or a number of seconds");
+      });
+      expect(updateEditionServerFnMock).not.toHaveBeenCalled();
+    });
+
+    it("clears the duration when the field is emptied", async () => {
+      updateEditionServerFnMock.mockResolvedValue({ success: true });
+      renderAudio();
+      fireEvent.click(screen.getByText("22h"));
+      const input = screen.getByDisplayValue("22h");
+      fireEvent.change(input, { target: { value: "" } });
+      fireEvent.blur(input);
+      await waitFor(() => {
+        expect(updateEditionServerFnMock).toHaveBeenCalledWith({ data: { editionId: "e1", fields: { duration: null } } });
+      });
     });
   });
 });

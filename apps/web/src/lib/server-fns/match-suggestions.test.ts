@@ -40,6 +40,11 @@ vi.mock("@bookhouse/db", () => ({
   },
 }));
 
+const mergeWorksByIdMock = vi.fn();
+vi.mock("@bookhouse/ingest", () => ({
+  mergeWorksById: mergeWorksByIdMock,
+}));
+
 const enqueueLibraryJobMock = vi.fn();
 const LIBRARY_JOB_NAMES = { MATCH_SUGGESTIONS: "match-suggestions" };
 vi.mock("@bookhouse/shared", () => ({
@@ -136,104 +141,37 @@ describe("getMatchSuggestionsServerFn", () => {
 describe("acceptMatchSuggestionServerFn", () => {
   beforeEach(() => {
     matchSuggestionFindUniqueOrThrowMock.mockReset();
-    workFindUniqueOrThrowMock.mockReset();
-    workUpdateMock.mockReset();
-    workDeleteMock.mockReset();
-    editionUpdateManyMock.mockReset();
-  });
-
-  it("moves editions from suggested work to target work and deletes suggested work", async () => {
+    mergeWorksByIdMock.mockReset();
+    mergeWorksByIdMock.mockResolvedValue(undefined);
     matchSuggestionFindUniqueOrThrowMock.mockResolvedValue({
       targetWorkId: "work-target",
       suggestedWorkId: "work-suggested",
     });
-    workFindUniqueOrThrowMock
-      .mockResolvedValueOnce({ id: "work-target", description: "desc", coverPath: "/cover", seriesId: null, seriesPosition: null, sortTitle: "title" })
-      .mockResolvedValueOnce({ id: "work-suggested", description: null, coverPath: null, seriesId: null, seriesPosition: null, sortTitle: null });
-    editionUpdateManyMock.mockResolvedValue({ count: 1 });
-    workDeleteMock.mockResolvedValue({});
+  });
 
+  it("merges the suggested work into the target when the target survives", async () => {
     const result = await acceptMatchSuggestionServerFn({ data: { id: "ms-1", survivingWorkId: "work-target" } });
 
     expect(matchSuggestionFindUniqueOrThrowMock).toHaveBeenCalledWith({
       where: { id: "ms-1" },
       select: { targetWorkId: true, suggestedWorkId: true },
     });
-    expect(editionUpdateManyMock).toHaveBeenCalledWith({
-      where: { workId: "work-suggested" },
-      data: { workId: "work-target" },
-    });
-    expect(workDeleteMock).toHaveBeenCalledWith({
-      where: { id: "work-suggested" },
-    });
+    expect(mergeWorksByIdMock).toHaveBeenCalledWith("work-target", "work-suggested");
     expect(result).toEqual({ success: true });
   });
 
   it("user can choose the suggested work as the surviving work", async () => {
-    matchSuggestionFindUniqueOrThrowMock.mockResolvedValue({
-      targetWorkId: "work-target",
-      suggestedWorkId: "work-suggested",
-    });
-    workFindUniqueOrThrowMock
-      .mockResolvedValueOnce({ id: "work-suggested", description: "enriched desc", coverPath: "/cover", seriesId: null, seriesPosition: null, sortTitle: "title" })
-      .mockResolvedValueOnce({ id: "work-target", description: null, coverPath: null, seriesId: null, seriesPosition: null, sortTitle: null });
-    editionUpdateManyMock.mockResolvedValue({ count: 1 });
-    workDeleteMock.mockResolvedValue({});
-
     const result = await acceptMatchSuggestionServerFn({ data: { id: "ms-1", survivingWorkId: "work-suggested" } });
 
-    // Editions move FROM target (losing) TO suggested (surviving)
-    expect(editionUpdateManyMock).toHaveBeenCalledWith({
-      where: { workId: "work-target" },
-      data: { workId: "work-suggested" },
-    });
-    // Target work is deleted
-    expect(workDeleteMock).toHaveBeenCalledWith({
-      where: { id: "work-target" },
-    });
+    expect(mergeWorksByIdMock).toHaveBeenCalledWith("work-suggested", "work-target");
     expect(result).toEqual({ success: true });
   });
 
-  it("reconciles metadata by filling nulls on surviving work from losing work", async () => {
-    matchSuggestionFindUniqueOrThrowMock.mockResolvedValue({
-      targetWorkId: "work-target",
-      suggestedWorkId: "work-suggested",
-    });
-    workFindUniqueOrThrowMock
-      .mockResolvedValueOnce({ id: "work-target", description: null, coverPath: null, seriesId: null, seriesPosition: null, sortTitle: null })
-      .mockResolvedValueOnce({ id: "work-suggested", description: "suggested desc", coverPath: "/suggested-cover", seriesId: "series-1", seriesPosition: 2, sortTitle: "suggested sort" });
-    workUpdateMock.mockResolvedValue({});
-    editionUpdateManyMock.mockResolvedValue({ count: 1 });
-    workDeleteMock.mockResolvedValue({});
-
-    await acceptMatchSuggestionServerFn({ data: { id: "ms-1", survivingWorkId: "work-target" } });
-
-    expect(workUpdateMock).toHaveBeenCalledWith({
-      where: { id: "work-target" },
-      data: {
-        description: "suggested desc",
-        coverPath: "/suggested-cover",
-        seriesId: "series-1",
-        seriesPosition: 2,
-        sortTitle: "suggested sort",
-      },
-    });
-  });
-
-  it("does not call work.update when no fields need reconciliation", async () => {
-    matchSuggestionFindUniqueOrThrowMock.mockResolvedValue({
-      targetWorkId: "work-target",
-      suggestedWorkId: "work-suggested",
-    });
-    workFindUniqueOrThrowMock
-      .mockResolvedValueOnce({ id: "work-target", description: "desc", coverPath: "/cover", seriesId: "s1", seriesPosition: 1, sortTitle: "title" })
-      .mockResolvedValueOnce({ id: "work-suggested", description: "other", coverPath: "/other", seriesId: "s2", seriesPosition: 2, sortTitle: "other" });
-    editionUpdateManyMock.mockResolvedValue({ count: 1 });
-    workDeleteMock.mockResolvedValue({});
-
-    await acceptMatchSuggestionServerFn({ data: { id: "ms-1", survivingWorkId: "work-target" } });
-
-    expect(workUpdateMock).not.toHaveBeenCalled();
+  it("rejects a surviving work that is not part of the suggestion", async () => {
+    await expect(
+      acceptMatchSuggestionServerFn({ data: { id: "ms-1", survivingWorkId: "work-other" } }),
+    ).rejects.toThrow("Surviving work must be one of the suggestion's works");
+    expect(mergeWorksByIdMock).not.toHaveBeenCalled();
   });
 });
 

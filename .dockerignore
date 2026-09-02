@@ -1,0 +1,19 @@
+# Keep secrets, host-built dependencies and local artefacts out of the build
+# context: `COPY . .` otherwise baked .env into a layer and overwrote the
+# Linux node_modules with macOS binaries on a local build.
+.env
+.env.*
+!.env.example
+node_modules
+**/node_modules
+.git
+.github
+coverage
+test-results
+playwright-report
+**/.output
+**/dist
+workers/covers
+apps/guide
+.claude
+*.log

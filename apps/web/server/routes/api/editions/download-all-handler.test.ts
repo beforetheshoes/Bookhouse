@@ -208,6 +208,54 @@ describe("download-all handler", () => {
     expect(mockArchive.finalize).toHaveBeenCalled();
   });
 
+  it("returns the response stream without waiting for finalize to settle", async () => {
+    const mockArchive = createMockArchive();
+    // finalize only settles once the consumer drains the zip, which cannot
+    // start until the handler has returned.
+    mockArchive.finalize.mockImplementation(() => new Promise<void>(() => undefined));
+    const deps = createMockDeps({
+      createArchive: vi.fn().mockReturnValue(mockArchive),
+      sendStream: vi.fn().mockReturnValue("web-stream"),
+    });
+    const handler = createDownloadAllHandler(deps);
+
+    await expect(handler(createMockEvent("ed1") as never)).resolves.toBe("web-stream");
+  });
+
+  it("wraps a non-Error finalize rejection before destroying the archive", async () => {
+    const mockArchive = createMockArchive();
+    // A non-Error rejection reason, which archiver can surface from the zip module.
+    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- the wrapping of a non-Error reason is what is under test
+    mockArchive.finalize.mockImplementation(() => Promise.reject("zip failed"));
+    const destroySpy = vi.spyOn(mockArchive, "destroy");
+    const deps = createMockDeps({
+      createArchive: vi.fn().mockReturnValue(mockArchive),
+    });
+
+    const surfaced = new Promise<Error>((resolve) => mockArchive.once("error", resolve));
+    await createDownloadAllHandler(deps)(createMockEvent("ed1") as never);
+
+    expect((await surfaced).message).toBe("zip failed");
+    expect(destroySpy).toHaveBeenCalledWith(expect.objectContaining({ message: "zip failed" }));
+  });
+
+  it("destroys the archive when finalize rejects", async () => {
+    const mockArchive = createMockArchive();
+    const failure = new Error("zip failed");
+    mockArchive.finalize.mockImplementation(() => Promise.reject(failure));
+    const destroySpy = vi.spyOn(mockArchive, "destroy");
+    const deps = createMockDeps({
+      createArchive: vi.fn().mockReturnValue(mockArchive),
+    });
+    const handler = createDownloadAllHandler(deps);
+
+    const surfaced = new Promise<Error>((resolve) => mockArchive.once("error", resolve));
+    await handler(createMockEvent("ed1") as never);
+
+    expect(await surfaced).toBe(failure);
+    expect(destroySpy).toHaveBeenCalledWith(failure);
+  });
+
   it("sets Content-Type to application/zip", async () => {
     const deps = createMockDeps();
     const handler = createDownloadAllHandler(deps);

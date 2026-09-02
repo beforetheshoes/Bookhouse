@@ -69,7 +69,7 @@ it("calling an event handler calls router.invalidate()", () => {
   expect(invalidateMock).toHaveBeenCalledTimes(1);
 });
 
-it("throttles rapid invalidations to at most once per 2 seconds", () => {
+it("throttles rapid invalidations to at most once per 5 seconds", () => {
   vi.useFakeTimers();
   renderHook(() => { useSSE({ enabled: true }); });
 
@@ -84,7 +84,7 @@ it("throttles rapid invalidations to at most once per 2 seconds", () => {
   expect(invalidateMock).toHaveBeenCalledTimes(1);
 
   // After the throttle window, a trailing call fires
-  vi.advanceTimersByTime(2000);
+  vi.advanceTimersByTime(5000);
   expect(invalidateMock).toHaveBeenCalledTimes(2);
 
   vi.useRealTimers();
@@ -98,7 +98,7 @@ it("does not fire trailing call if no events arrived during throttle window", ()
   expect(invalidateMock).toHaveBeenCalledTimes(1);
 
   // No more events — advancing past throttle window should not trigger another call
-  vi.advanceTimersByTime(2000);
+  vi.advanceTimersByTime(5000);
   expect(invalidateMock).toHaveBeenCalledTimes(1);
 
   vi.useRealTimers();
@@ -130,7 +130,7 @@ it("cancels pending throttled call on unmount", () => {
   unmount();
 
   // Advancing past throttle window should NOT trigger the pending call
-  vi.advanceTimersByTime(2000);
+  vi.advanceTimersByTime(5000);
   expect(invalidateMock).toHaveBeenCalledTimes(1);
 
   vi.useRealTimers();

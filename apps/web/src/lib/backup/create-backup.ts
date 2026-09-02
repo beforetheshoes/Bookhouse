@@ -84,18 +84,35 @@ export async function createBackup(
   pack.entry({ name: "manifest.json" }, JSON.stringify(manifest));
   pack.entry({ name: "database.sql", size: dumpBuffer.length }, dumpBuffer);
 
-  const addCovers = async () => {
-    for (const file of coverFiles) {
-      const data = await deps.readFile(file.absolutePath);
-      pack.entry({ name: file.archivePath, size: data.length }, data);
-    }
-    pack.finalize();
-  };
-
-  void addCovers();
-
   const gzip = createGzip();
   const stream = pack.pipe(gzip) as Readable;
+
+  // tar-stream mirrors a destination's error back onto the pack, which
+  // nobody holds; without a listener that mirror is an uncaught exception.
+  // Route it to the stream the caller reads.
+  pack.on("error", (error: Error) => { stream.destroy(error); });
+
+  // A cover that vanished between the directory walk and the read (or an
+  // unreadable one) must fail the download, not leave the archive open
+  // forever with an unhandled rejection. The error goes to the stream the
+  // caller holds: pipe() does not forward a source's error to its target.
+  const addCovers = async () => {
+    try {
+      for (const file of coverFiles) {
+        const data = await deps.readFile(file.absolutePath);
+        pack.entry({ name: file.archivePath, size: data.length }, data);
+      }
+      pack.finalize();
+    } catch (error) {
+      stream.destroy(error instanceof Error ? error : new Error(String(error)));
+    }
+  };
+
+  // Deferred so the caller has attached its listeners before the first
+  // cover read can fail: a read that rejects immediately would otherwise
+  // destroy the stream with an error nobody is listening for yet, which
+  // Node treats as an uncaught exception.
+  setImmediate(() => { void addCovers(); });
 
   return { stream, manifest };
 }

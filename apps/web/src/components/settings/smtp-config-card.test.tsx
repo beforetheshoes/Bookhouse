@@ -202,6 +202,16 @@ describe("SmtpConfigCard", () => {
       expect(screen.getByText("STARTTLS")).toBeTruthy();
     });
 
+    it("lets the user back out of editing without retyping the password", async () => {
+      const user = userEvent.setup();
+      render(<SmtpConfigCard configured={true} />);
+      await waitFor(() => { expect(screen.getByText("Edit")).toBeTruthy(); });
+      await user.click(screen.getByText("Edit"));
+      expect(screen.getByText(/enter it again to save changes/)).toBeTruthy();
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(screen.getByText("Edit")).toBeTruthy();
+    });
+
     it("shows edit form when Edit is clicked", async () => {
       const user = userEvent.setup();
       render(<SmtpConfigCard configured={true} />);
@@ -517,4 +527,5 @@ describe("SmtpConfigCard", () => {
       });
     });
   });
+
 });

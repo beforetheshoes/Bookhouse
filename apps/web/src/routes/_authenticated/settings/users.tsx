@@ -1,4 +1,5 @@
 import { useState, type SyntheticEvent } from "react";
+import { ConfirmDialog } from "~/components/confirm-dialog";
 import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { Trash2 } from "lucide-react";
@@ -72,22 +73,30 @@ export function UsersPage() {
     }
   }
 
-  async function handleRemoveAllowed(id: string) {
+  const [removeUserTarget, setRemoveUserTarget] = useState<{ id: string; label: string } | null>(null);
+  const [removeAllowedTarget, setRemoveAllowedTarget] = useState<{ id: string; email: string } | null>(null);
+
+  async function handleRemoveAllowed(id: string): Promise<boolean> {
     try {
       await removeAllowedEmailServerFn({ data: { id } });
+      toast.success("Email removed from the allow list");
       await router.invalidate();
+      return true;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to remove");
+      return false;
     }
   }
 
-  async function handleRemoveUser(userId: string) {
+  async function handleRemoveUser(userId: string): Promise<boolean> {
     try {
       await removeUserServerFn({ data: { userId } });
       toast.success("User removed");
       await router.invalidate();
+      return true;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to remove user");
+      return false;
     }
   }
 
@@ -129,7 +138,7 @@ export function UsersPage() {
                       variant="ghost"
                       size="sm"
                       onClick={() => {
-                        void handleRemoveUser(u.id);
+                        setRemoveUserTarget({ id: u.id, label: u.email ?? u.name ?? u.id });
                       }}
                       aria-label={`Remove ${u.email ?? u.id}`}
                     >
@@ -183,9 +192,7 @@ export function UsersPage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => {
-                      void handleRemoveAllowed(entry.id);
-                    }}
+                    onClick={() => { setRemoveAllowedTarget({ id: entry.id, email: entry.email }); }}
                     aria-label={`Remove ${entry.email}`}
                   >
                     <Trash2 className="h-4 w-4" />
@@ -196,6 +203,29 @@ export function UsersPage() {
           </TableBody>
         </Table>
       </section>
+
+      {removeUserTarget !== null && (
+      <ConfirmDialog
+          open
+          onOpenChange={() => { setRemoveUserTarget(null); }}
+          title="Remove this user?"
+          description={`${removeUserTarget.label} will lose access, and their shelves, reading progress and linked devices will be deleted. This cannot be undone.`}
+          confirmLabel="Remove user"
+          destructive
+          onConfirm={() => handleRemoveUser(removeUserTarget.id)}
+        />
+      )}
+      {removeAllowedTarget !== null && (
+      <ConfirmDialog
+          open
+          onOpenChange={() => { setRemoveAllowedTarget(null); }}
+          title="Remove from the allow list?"
+          description={`${removeAllowedTarget.email} will no longer be able to sign in for the first time. Existing accounts are not affected.`}
+          confirmLabel="Remove"
+          destructive
+          onConfirm={() => handleRemoveAllowed(removeAllowedTarget.id)}
+        />
+      )}
     </div>
   );
 }

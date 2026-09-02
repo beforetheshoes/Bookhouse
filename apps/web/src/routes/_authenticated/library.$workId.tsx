@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouter, notFound } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { BookCheck, BookOpen, ChevronRight, Headphones, Loader2, Sparkles, Trash2 } from "lucide-react";
 import { WorkCover } from "~/components/work-cover";
@@ -51,6 +51,8 @@ export const Route = createFileRoute("/_authenticated/library/$workId")({
       getKindleStatusServerFn(),
       getShelvesForWorkServerFn({ data: { workId: params.workId } }),
     ]);
+    // eslint-disable-next-line @typescript-eslint/only-throw-error -- TanStack's notFound() is router control flow, not an Error
+    if (!work) throw notFound();
     return { work, progress, trackingMode, contributorNames, smtpConfigured: smtpStatus.configured, kindleConfigured: kindleStatus.configured, shelves };
   },
   pendingComponent: WorkDetailSkeleton,
@@ -314,7 +316,7 @@ function WorkDetailPage() {
                 <Sparkles className="size-4" />
                 Enrich Work
               </Button>
-              <Button data-testid="delete-work-btn" variant="outline" size="sm" onClick={() => { setDeleteWorkOpen(true); }}>
+              <Button data-testid="delete-work-btn" variant="outline" size="sm" onClick={() => { setDeleteWorkOpen(true); }} aria-label="Delete work">
                 <Trash2 className="size-4" />
               </Button>
             </div>
@@ -526,7 +528,7 @@ function WorkDetailPage() {
         </Tabs>
       )}
 
-      <Dialog open={deleteWorkOpen} onOpenChange={setDeleteWorkOpen}>
+      <Dialog open={deleteWorkOpen} onOpenChange={(open) => { if (!deletingWork) setDeleteWorkOpen(open); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Work</DialogTitle>

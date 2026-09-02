@@ -2,6 +2,9 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+const { mockToastError } = vi.hoisted(() => ({ mockToastError: vi.fn() }));
+vi.mock("sonner", () => ({ toast: { error: mockToastError } }));
+
 vi.mock("~/components/progress-bar", () => ({
   ProgressBar: ({ percent }: { percent: number }) => (
     <div data-testid="progress-bar" data-percent={percent} />
@@ -170,5 +173,38 @@ describe("EditionProgress", () => {
     expect(screen.getByText(/via\s+koreader/i)).toBeTruthy();
     expect(screen.getByText("42%")).toBeTruthy();
     expect(screen.getByText("65%")).toBeTruthy();
+  });
+
+  it("says why an out-of-range or non-numeric value is refused", () => {
+    render(<EditionProgress progress={progress} editions={editions} onUpdate={mockOnUpdate} />);
+    fireEvent.click(screen.getByTestId("progress-edit-e1"));
+    const input = screen.getByTestId("progress-input-e1");
+    fireEvent.change(input, { target: { value: "150" } });
+    fireEvent.click(screen.getByTestId("progress-save-e1"));
+    expect(screen.getByText("Enter a whole number from 0 to 100")).toBeTruthy();
+    expect(mockOnUpdate).not.toHaveBeenCalled();
+    // Typing again clears the message.
+    fireEvent.change(input, { target: { value: "15" } });
+    expect(screen.queryByText("Enter a whole number from 0 to 100")).toBeNull();
+  });
+
+  it("toasts when saving fails instead of silently keeping the old value", async () => {
+    mockOnUpdate.mockRejectedValueOnce(new Error("offline"));
+    render(<EditionProgress progress={progress} editions={editions} onUpdate={mockOnUpdate} />);
+    fireEvent.click(screen.getByTestId("progress-edit-e1"));
+    fireEvent.change(screen.getByTestId("progress-input-e1"), { target: { value: "40" } });
+    fireEvent.click(screen.getByTestId("progress-save-e1"));
+    await waitFor(() => {
+      expect(mockToastError).toHaveBeenCalledWith("Couldn't save progress", { description: "offline" });
+    });
+  });
+
+  it("toasts without a description when the failure is not an Error", async () => {
+    mockOnUpdate.mockRejectedValueOnce("nope");
+    render(<EditionProgress progress={progress} editions={editions} onUpdate={mockOnUpdate} />);
+    fireEvent.click(screen.getByTestId("progress-edit-e1"));
+    fireEvent.change(screen.getByTestId("progress-input-e1"), { target: { value: "40" } });
+    fireEvent.click(screen.getByTestId("progress-save-e1"));
+    await waitFor(() => { expect(mockToastError).toHaveBeenCalledWith("Couldn't save progress", undefined); });
   });
 });

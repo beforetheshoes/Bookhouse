@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+const dnsLookupMock = vi.fn().mockResolvedValue([{ address: "93.184.216.34" }]);
+vi.mock("node:dns/promises", () => ({ lookup: dnsLookupMock }));
+
 vi.mock("./_guards", () => ({
   ownerOnly: vi.fn().mockResolvedValue({ id: "owner-1", roles: ["OWNER"] }),
   authenticatedOnly: vi
@@ -22,15 +25,14 @@ vi.mock("@tanstack/react-start", () => ({
 }));
 
 const contributorFindManyMock = vi.fn();
-const contributorFindUniqueOrThrowMock = vi.fn();
+const contributorFindUniqueMock = vi.fn().mockResolvedValue({ id: "c1" });
 const workFindManyMock = vi.fn();
 const importJobCreateMock = vi.fn().mockResolvedValue({ id: "ij-1" });
 vi.mock("@bookhouse/db", () => ({
   db: {
     contributor: {
       findMany: contributorFindManyMock,
-      findUnique: vi.fn().mockResolvedValue({ id: "c1" }),
-      findUniqueOrThrow: contributorFindUniqueOrThrowMock,
+      findUnique: contributorFindUniqueMock,
       update: vi.fn().mockResolvedValue({}),
     },
     work: {
@@ -51,9 +53,11 @@ vi.mock("@bookhouse/shared", () => ({
 }));
 
 const applyAuthorPhotoFromUrlMock = vi.fn().mockResolvedValue({ success: true });
+const fetchRemoteImageMock = vi.fn().mockResolvedValue({ buffer: Buffer.from([0xff]), contentType: "image/jpeg" });
 const resizeAndSaveCoverMock = vi.fn();
 vi.mock("@bookhouse/ingest", () => ({
   applyAuthorPhotoFromUrl: applyAuthorPhotoFromUrlMock,
+  fetchRemoteImage: fetchRemoteImageMock,
   resizeAndSaveCover: resizeAndSaveCoverMock,
 }));
 
@@ -110,12 +114,13 @@ describe("getAuthorsListServerFn", () => {
 
 describe("getAuthorDetailServerFn", () => {
   beforeEach(() => {
-    contributorFindUniqueOrThrowMock.mockReset();
+    contributorFindUniqueMock.mockReset();
+  contributorFindUniqueMock.mockResolvedValue({ id: "c1" });
     workFindManyMock.mockReset();
   });
 
   it("fetches contributor then works and returns combined result", async () => {
-    contributorFindUniqueOrThrowMock.mockResolvedValue({
+    contributorFindUniqueMock.mockResolvedValue({
       id: "c1",
       nameDisplay: "Author One",
       nameCanonical: "author one",
@@ -137,7 +142,7 @@ describe("getAuthorDetailServerFn", () => {
       data: { authorId: "c1" },
     });
 
-    expect(contributorFindUniqueOrThrowMock).toHaveBeenCalledWith({
+    expect(contributorFindUniqueMock).toHaveBeenCalledWith({
       where: { id: "c1" },
       select: {
         id: true,
@@ -172,16 +177,16 @@ describe("getAuthorDetailServerFn", () => {
     });
   });
 
-  it("propagates error when author not found", async () => {
-    contributorFindUniqueOrThrowMock.mockRejectedValue(new Error("Not found"));
+  it("returns null when the author is not found, so the route can show a 404", async () => {
+    contributorFindUniqueMock.mockResolvedValue(null);
 
     await expect(
       getAuthorDetailServerFn({ data: { authorId: "nonexistent" } }),
-    ).rejects.toThrow("Not found");
+    ).resolves.toBeNull();
   });
 
   it("returns empty works array when author has no editions", async () => {
-    contributorFindUniqueOrThrowMock.mockResolvedValue({
+    contributorFindUniqueMock.mockResolvedValue({
       id: "c1",
       nameDisplay: "Lonely Author",
       nameCanonical: "lonely author",
@@ -205,7 +210,7 @@ describe("getAuthorDetailServerFn", () => {
         },
       },
     });
-    expect(result.works).toEqual([]);
+    expect(result?.works).toEqual([]);
   });
 });
 
@@ -304,15 +309,17 @@ describe("fetchAuthorPhotoFromUrlServerFn", () => {
     type InnerDbDeps = { findContributor: (id: string) => Promise<object | null>; updateContributor: (id: string, data: object) => Promise<void> };
     const [[, innerDeps, innerDbDeps]] = applyAuthorPhotoFromUrlMock.mock.calls as [[object, InnerDeps, InnerDbDeps]];
 
-    // Exercise fetchUrl
-    const savedFetch = globalThis.fetch;
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      arrayBuffer: () => Promise.resolve(new Uint8Array([0xff]).buffer),
-      headers: { get: () => "image/jpeg" },
-    }) as typeof fetch;
+    // Exercise fetchUrl: goes through the SSRF-safe fetcher with a real DNS lookup dep
     const fetchResult = await innerDeps.fetchUrl("https://example.com/img.jpg");
     expect(fetchResult.contentType).toBe("image/jpeg");
-    globalThis.fetch = savedFetch;
+    expect(fetchRemoteImageMock).toHaveBeenCalledWith(
+      "https://example.com/img.jpg",
+      expect.objectContaining({ fetch: expect.any(Function) as typeof fetch, lookup: expect.any(Function) as () => void }),
+    );
+    // The lookup dep resolves every address for the host (needed to reject dual-homed private hosts).
+    const [, fetchDeps] = fetchRemoteImageMock.mock.calls[0] as [string, { lookup: (h: string) => Promise<{ address: string }[]> }];
+    await expect(fetchDeps.lookup("example.com")).resolves.toEqual([{ address: "93.184.216.34" }]);
+    expect(dnsLookupMock).toHaveBeenCalledWith("example.com", { all: true });
 
     // Exercise resizeAndSave
     await innerDeps.resizeAndSave(Buffer.from([1]), "/tmp");

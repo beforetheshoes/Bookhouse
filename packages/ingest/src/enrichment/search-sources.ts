@@ -42,8 +42,8 @@ export interface SourceResult {
 }
 
 export type SearchSourcesResult =
-  | { status: "success"; results: SourceResult[] }
-  | { status: "no-results" }
+  | { status: "success"; results: SourceResult[]; failedProviders: string[] }
+  | { status: "no-results"; failedProviders: string[] }
   | { status: "rate-limited"; retryAfterMs: number | undefined };
 
 function normalizeAudible(product: AudibleProduct): SourceResult {
@@ -80,6 +80,8 @@ export interface SearchSourcesDeps {
   searchAudible: (title: string, author: string | undefined) => Promise<AudibleProduct[] | null>;
   lookupAudibleByAsin?: (asin: string) => Promise<AudibleProduct | null>;
   checkRateLimit: () => RateLimitResult;
+  /** Receives provider failures; without it a revoked key looks like "no results". */
+  onProviderError?: (provider: string, error: Error) => void;
 }
 
 export interface SearchSourcesOptions {
@@ -197,6 +199,23 @@ export async function searchAllSources(
 
   const results: SourceResult[] = [];
 
+  // A rejected provider is reported, not silently dropped: a revoked
+  // Hardcover key or a Google Books quota error must not read as "no results".
+  const failedProviders: string[] = [];
+  const settled: Array<[string, PromiseSettledResult<object | null>]> = [
+    ["openlibrary", olResult],
+    ["googlebooks", gbResult],
+    ["hardcover", hcResult],
+    ["audible", audibleResult],
+  ];
+  for (const [provider, outcome] of settled) {
+    if (outcome.status === "rejected") {
+      failedProviders.push(provider);
+      const reason: Error = outcome.reason instanceof Error ? outcome.reason : new Error(String(outcome.reason));
+      deps.onProviderError?.(provider, reason);
+    }
+  }
+
   // Open Library: take first result, fetch work + edition details
   if (olResult.status === "fulfilled" && olResult.value && olResult.value.length > 0) {
     const bestMatch = olResult.value[0] as OLSearchResult;
@@ -233,6 +252,6 @@ export async function searchAllSources(
     results.push(normalizeAudible(audibleResult.value[0] as AudibleProduct));
   }
 
-  if (results.length === 0) return { status: "no-results" };
-  return { status: "success", results };
+  if (results.length === 0) return { status: "no-results", failedProviders };
+  return { status: "success", results, failedProviders };
 }

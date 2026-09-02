@@ -63,6 +63,7 @@ function makeDeps(overrides: Partial<BulkEnrichDeps> = {}): BulkEnrichDeps {
     }),
     searchAllSources: vi.fn().mockResolvedValue({
       status: "success",
+      failedProviders: [],
       results: [makeSourceResult("openlibrary")],
     } satisfies SearchSourcesResult),
     applyEnrichmentFields: vi.fn().mockResolvedValue({ success: true, appliedFields: ["description"] }),
@@ -812,6 +813,7 @@ describe("processBulkEnrichWork", () => {
     const searchMock = vi.fn().mockResolvedValue({
       status: "success",
       results: [makeSourceResult("audible")],
+      failedProviders: [],
     } satisfies SearchSourcesResult);
 
     deps = makeDeps({
@@ -850,6 +852,7 @@ describe("processBulkEnrichWork", () => {
     const searchMock = vi.fn().mockResolvedValue({
       status: "success",
       results: [makeSourceResult("openlibrary")],
+      failedProviders: [],
     } satisfies SearchSourcesResult);
 
     deps = makeDeps({ searchAllSources: searchMock });

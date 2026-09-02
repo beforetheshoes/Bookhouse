@@ -18,7 +18,7 @@ function renderPagination(props: Partial<Parameters<typeof LibraryPagination>[0]
 describe("LibraryPagination", () => {
   it("renders total count", () => {
     renderPagination({ totalCount: 120 });
-    expect(screen.getByText("120 row(s) total")).toBeTruthy();
+    expect(screen.getByText("120 items")).toBeTruthy();
   });
 
   it("renders page info text", () => {
@@ -96,7 +96,7 @@ describe("LibraryPagination", () => {
   it("shows Page 1 of 1 when totalCount is 0", () => {
     renderPagination({ totalCount: 0 });
     expect(screen.getByText("Page 1 of 1")).toBeTruthy();
-    expect(screen.getByText("0 row(s) total")).toBeTruthy();
+    expect(screen.getByText("0 items")).toBeTruthy();
   });
 
   it("shows Page 1 of 1 when totalCount fits one page", () => {
@@ -143,5 +143,10 @@ describe("LibraryPagination", () => {
     // The floating bulk bar is fixed over this corner and would swallow taps
     // meant for the page controls.
     expect(container.firstChild).toBeNull();
+  });
+
+  it("uses the singular for one item", () => {
+    renderPagination({ totalCount: 1 });
+    expect(screen.getByText("1 item")).toBeTruthy();
   });
 });

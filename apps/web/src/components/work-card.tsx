@@ -105,7 +105,6 @@ export function WorkCard({ id, title, authors, enrichmentStatus, scanActive, for
     <Link
       to="/library/$workId"
       params={{ workId: id }}
-      search={{ page: 1, pageSize: 50, sort: "title-asc" as const }}
       className={cardClass}
     >
       {body}

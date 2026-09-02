@@ -113,19 +113,26 @@ export function KindleConfigCard({ configured }: { configured: boolean }) {
             <p className="text-xs text-muted-foreground">
               Add your sender email address to your Kindle&apos;s Approved Personal Document E-mail List in your Amazon account settings.
             </p>
-            <Button
-              onClick={() => { void handleSave(); }}
-              disabled={saving || !email.trim()}
-            >
-              {saving ? (
-                <>
-                  <Loader2 className="size-4 animate-spin mr-1" />
-                  Saving...
-                </>
-              ) : (
-                "Save"
+            <div className="flex flex-wrap gap-2">
+              {storedEmail && (
+                <Button variant="outline" onClick={() => { setEditing(false); }} disabled={saving}>
+                  Cancel
+                </Button>
               )}
-            </Button>
+              <Button
+                onClick={() => { void handleSave(); }}
+                disabled={saving || !email.trim()}
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin mr-1" />
+                    Saving...
+                  </>
+                ) : (
+                  "Save"
+                )}
+              </Button>
+            </div>
           </div>
         )}
 

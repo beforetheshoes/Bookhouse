@@ -105,7 +105,9 @@ function LibraryIssuesPage() {
             </Button>
           )}
           <span className="text-sm text-muted-foreground">
-            {String(issues.total)} total issues
+            {issues.items.length > 0 && issues.total > issues.items.length
+              ? `Showing the first ${String(issues.items.length)} of ${String(issues.total)} issues`
+              : `${String(issues.total)} ${issues.total === 1 ? "issue" : "issues"}`}
           </span>
         </div>
       </div>

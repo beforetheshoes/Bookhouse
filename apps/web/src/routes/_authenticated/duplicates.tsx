@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { DUPLICATE_REASON_LABELS, REVIEW_STATUS_LABELS, labelFor } from "~/lib/labels";
+import { ConfirmDialog } from "~/components/confirm-dialog";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -128,11 +130,14 @@ function DuplicateCard({
   onIgnore,
   onConfirm,
   onMerge,
+  busy,
 }: {
   dup: DuplicateRow;
   onIgnore: (id: string) => void;
   onConfirm: (id: string) => void;
-  onMerge: (id: string, survivingEditionId: string) => void;
+  onMerge: (id: string, survivingEditionId: string, survivorLabel: string) => void;
+  /** True while a mutation for this card is in flight; a double tap fired twice. */
+  busy: boolean;
 }) {
   const isPending = dup.status === "PENDING";
   const canMerge = (isPending || dup.status === "CONFIRMED") && dup.leftEditionId && dup.rightEditionId;
@@ -141,18 +146,19 @@ function DuplicateCard({
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <div className="flex items-center gap-2">
-          <Badge variant="secondary">{dup.reason}</Badge>
+          <Badge variant="secondary">{labelFor(DUPLICATE_REASON_LABELS, dup.reason)}</Badge>
           <span className="text-sm text-muted-foreground">
             {formatConfidence(dup.confidence)}
           </span>
         </div>
         <Badge variant={statusVariant[dup.status] ?? "outline"}>
-          {dup.status}
+          {labelFor(REVIEW_STATUS_LABELS, dup.status)}
         </Badge>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <SidePanel
+            side="A"
             label={getItemLabel(dup, "left")}
             authors={getAuthors(dup, "left")}
             filePath={getFilePath(dup, "left")}
@@ -164,6 +170,7 @@ function DuplicateCard({
             publishedAt={getPublishedAt(dup, "left")}
           />
           <SidePanel
+            side="B"
             label={getItemLabel(dup, "right")}
             authors={getAuthors(dup, "right")}
             filePath={getFilePath(dup, "right")}
@@ -178,21 +185,22 @@ function DuplicateCard({
         <div className="mt-4 flex flex-wrap gap-2">
           {isPending && (
             <>
-              <Button variant="outline" size="sm" onClick={() => { onIgnore(dup.id); }}>
+              <Button variant="outline" size="sm" disabled={busy} onClick={() => { onIgnore(dup.id); }}>
                 Ignore
               </Button>
-              <Button variant="outline" size="sm" onClick={() => { onConfirm(dup.id); }}>
+              <Button variant="outline" size="sm" disabled={busy} onClick={() => { onConfirm(dup.id); }}>
                 Confirm
               </Button>
             </>
           )}
           {canMerge && (
             <>
-              <Button size="sm" onClick={() => { onMerge(dup.id, dup.leftEditionId as string); }}>
-                Keep Left
+              {/* "A" / "B" match the panel labels; on a phone the panels stack, so left/right meant nothing. */}
+              <Button size="sm" disabled={busy} onClick={() => { onMerge(dup.id, dup.leftEditionId as string, getItemLabel(dup, "left")); }}>
+                Keep A
               </Button>
-              <Button size="sm" onClick={() => { onMerge(dup.id, dup.rightEditionId as string); }}>
-                Keep Right
+              <Button size="sm" disabled={busy} onClick={() => { onMerge(dup.id, dup.rightEditionId as string, getItemLabel(dup, "right")); }}>
+                Keep B
               </Button>
             </>
           )}
@@ -203,6 +211,7 @@ function DuplicateCard({
 }
 
 function SidePanel({
+  side,
   label,
   authors,
   filePath,
@@ -213,6 +222,8 @@ function SidePanel({
   publisher,
   publishedAt,
 }: {
+  /** Matches the "Keep A" / "Keep B" buttons; the panels stack on a phone, so left/right would not. */
+  side: "A" | "B";
   label: string;
   authors: string;
   filePath: string | null;
@@ -233,7 +244,10 @@ function SidePanel({
         />
       )}
       <div className="min-w-0 flex-1">
-        <p className="font-medium break-words">{label}</p>
+        <p className="font-medium break-words">
+          <Badge variant="outline" className="mr-2 align-middle">{side}</Badge>
+          {label}
+        </p>
         {authors && <p className="text-sm text-muted-foreground [overflow-wrap:anywhere]">{authors}</p>}
         {filePath && (
           <p className="break-all text-xs text-muted-foreground">{filePath}</p>
@@ -281,11 +295,16 @@ function DuplicatesPage() {
     void router.invalidate();
   }
 
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [mergeTarget, setMergeTarget] = useState<{ id: string; survivingEditionId: string; survivorLabel: string } | null>(null);
+
   async function handleMerge(id: string, survivingEditionId: string) {
+    setBusyId(id);
     await runMutation(
       () => mergeDuplicateServerFn({ data: { id, survivingEditionId } }),
       { success: "Editions merged" },
     );
+    setBusyId(null);
     void router.invalidate();
   }
 
@@ -322,12 +341,25 @@ function DuplicatesPage() {
                 dup={dup}
                 onIgnore={(id) => { void handleIgnore(id); }}
                 onConfirm={(id) => { void handleConfirm(id); }}
-                onMerge={(id, survivingEditionId) => { void handleMerge(id, survivingEditionId); }}
+                onMerge={(id, survivingEditionId, survivorLabel) => { setMergeTarget({ id, survivingEditionId, survivorLabel }); }}
+                busy={busyId === dup.id}
               />
             ))}
           </div>
         )}
       </div>
+
+      {mergeTarget !== null && (
+      <ConfirmDialog
+          open
+          onOpenChange={() => { setMergeTarget(null); }}
+          title={`Keep "${mergeTarget.survivorLabel}"?`}
+          description="The other edition's files, reading progress and contributors move onto the one you keep, and that other edition is deleted. This cannot be undone."
+          confirmLabel="Merge editions"
+          destructive
+          onConfirm={() => handleMerge(mergeTarget.id, mergeTarget.survivingEditionId)}
+        />
+      )}
     </div>
   );
 }

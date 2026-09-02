@@ -1,5 +1,6 @@
 import type { H3Event } from "h3";
 import { httpError } from "../../../utils/http-error";
+import { attachmentDisposition } from "../../../utils/content-disposition";
 
 export interface FileDownloadHandlerDeps {
   db: {
@@ -44,7 +45,7 @@ export function createFileDownloadHandler(deps: FileDownloadHandlerDeps) {
     }
 
     deps.setResponseHeader(event, "Content-Type", record.fileAsset.mimeType ?? "application/octet-stream");
-    deps.setResponseHeader(event, "Content-Disposition", `attachment; filename="${record.fileAsset.basename}"`);
+    deps.setResponseHeader(event, "Content-Disposition", attachmentDisposition(record.fileAsset.basename));
     deps.setResponseHeader(event, "Cache-Control", "private, no-cache");
 
     return deps.sendStream(event, deps.createReadStream(record.fileAsset.absolutePath));

@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { MATCH_TYPE_LABELS, REVIEW_STATUS_LABELS, labelFor } from "~/lib/labels";
+import { ConfirmDialog } from "~/components/confirm-dialog";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import { LayoutGrid, Loader2, Table2 } from "lucide-react";
@@ -121,7 +123,7 @@ function getWorkFormatFamilies(work: WorkSide): string[] {
 type ViewMode = "card" | "table";
 
 function createColumns(
-  onAccept: (id: string, survivingWorkId: string) => void,
+  onAccept: (id: string, survivingWorkId: string, survivorLabel: string) => void,
   onDecline: (id: string) => void,
 ): ColumnDef<MatchSuggestionRow>[] {
   return [
@@ -166,7 +168,7 @@ function createColumns(
         <DataTableColumnHeader column={column} title="Match" />
       ),
       cell: ({ row }) => (
-        <Badge variant="secondary">{row.original.matchType}</Badge>
+        <Badge variant="secondary">{labelFor(MATCH_TYPE_LABELS, row.original.matchType)}</Badge>
       ),
       size: 140,
     },
@@ -191,7 +193,7 @@ function createColumns(
       ),
       cell: ({ row }) => (
         <Badge variant={statusVariant[row.original.reviewStatus] ?? "outline"}>
-          {row.original.reviewStatus}
+          {labelFor(REVIEW_STATUS_LABELS, row.original.reviewStatus)}
         </Badge>
       ),
       size: 100,
@@ -203,10 +205,10 @@ function createColumns(
         if (row.original.reviewStatus !== "PENDING") return null;
         return (
           <div className="flex gap-1">
-            <Button size="sm" onClick={() => { onAccept(row.original.id, row.original.targetWorkId); }}>
+            <Button size="sm" onClick={() => { onAccept(row.original.id, row.original.targetWorkId, row.original.targetWork.titleDisplay); }}>
               Keep A
             </Button>
-            <Button size="sm" onClick={() => { onAccept(row.original.id, row.original.suggestedWorkId); }}>
+            <Button size="sm" onClick={() => { onAccept(row.original.id, row.original.suggestedWorkId, row.original.suggestedWork.titleDisplay); }}>
               Keep B
             </Button>
             <Button variant="outline" size="sm" onClick={() => { onDecline(row.original.id); }}>
@@ -260,10 +262,12 @@ function MatchSuggestionCard({
   link,
   onAccept,
   onDecline,
+  busy,
 }: {
   link: MatchSuggestionRow;
-  onAccept: (id: string, survivingWorkId: string) => void;
+  onAccept: (id: string, survivingWorkId: string, survivorLabel: string) => void;
   onDecline: (id: string) => void;
+  busy: boolean;
 }) {
   const isPending = link.reviewStatus === "PENDING";
 
@@ -271,13 +275,13 @@ function MatchSuggestionCard({
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <div className="flex items-center gap-2">
-          <Badge variant="secondary">{link.matchType}</Badge>
+          <Badge variant="secondary">{labelFor(MATCH_TYPE_LABELS, link.matchType)}</Badge>
           <span className="text-sm text-muted-foreground">
             {formatConfidence(link.confidence)}
           </span>
         </div>
         <Badge variant={statusVariant[link.reviewStatus] ?? "outline"}>
-          {link.reviewStatus}
+          {labelFor(REVIEW_STATUS_LABELS, link.reviewStatus)}
         </Badge>
       </CardHeader>
       <CardContent>
@@ -287,13 +291,14 @@ function MatchSuggestionCard({
         </div>
         {isPending && (
           <div className="mt-4 flex gap-2">
-            <Button size="sm" onClick={() => { onAccept(link.id, link.targetWorkId); }}>
-              Keep Left
+            {/* Named for the panels above: on a phone they stack, so left/right meant nothing. */}
+            <Button size="sm" disabled={busy} onClick={() => { onAccept(link.id, link.targetWorkId, link.targetWork.titleDisplay); }}>
+              Keep A
             </Button>
-            <Button size="sm" onClick={() => { onAccept(link.id, link.suggestedWorkId); }}>
-              Keep Right
+            <Button size="sm" disabled={busy} onClick={() => { onAccept(link.id, link.suggestedWorkId, link.suggestedWork.titleDisplay); }}>
+              Keep B
             </Button>
-            <Button variant="outline" size="sm" onClick={() => { onDecline(link.id); }}>
+            <Button variant="outline" size="sm" disabled={busy} onClick={() => { onDecline(link.id); }}>
               Decline
             </Button>
           </div>
@@ -371,10 +376,15 @@ function MatchSuggestionsPage() {
     }, 60000);
   }
 
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [acceptTarget, setAcceptTarget] = useState<{ id: string; survivingWorkId: string; survivorLabel: string } | null>(null);
+
   async function handleAccept(id: string, survivingWorkId: string) {
+    setBusyId(id);
     await runMutation(() => acceptMatchSuggestionServerFn({ data: { id, survivingWorkId } }), {
       success: "Works merged",
     });
+    setBusyId(null);
     void router.invalidate();
   }
 
@@ -471,15 +481,16 @@ function MatchSuggestionsPage() {
               <MatchSuggestionCard
                 key={link.id}
                 link={link}
-                onAccept={(id, survivingWorkId) => { void handleAccept(id, survivingWorkId); }}
+                onAccept={(id, survivingWorkId, survivorLabel) => { setAcceptTarget({ id, survivingWorkId, survivorLabel }); }}
                 onDecline={(id) => { void handleDecline(id); }}
+                busy={busyId === link.id}
               />
             ))}
           </div>
         ) : (
           <VirtualizedDataTable
             columns={createColumns(
-              (id, survivingWorkId) => { void handleAccept(id, survivingWorkId); },
+              (id, survivingWorkId, survivorLabel) => { setAcceptTarget({ id, survivingWorkId, survivorLabel }); },
               (id) => { void handleDecline(id); },
             )}
             data={filtered}
@@ -487,6 +498,18 @@ function MatchSuggestionsPage() {
           />
         )}
       </div>
+
+      {acceptTarget !== null && (
+      <ConfirmDialog
+          open
+          onOpenChange={() => { setAcceptTarget(null); }}
+          title={`Keep "${acceptTarget.survivorLabel}"?`}
+          description="The other work's editions, tags and links move onto the one you keep, and that other work is deleted. This cannot be undone."
+          confirmLabel="Merge works"
+          destructive
+          onConfirm={() => handleAccept(acceptTarget.id, acceptTarget.survivingWorkId)}
+        />
+      )}
     </div>
   );
 }

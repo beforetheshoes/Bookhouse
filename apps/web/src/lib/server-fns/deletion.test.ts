@@ -459,3 +459,13 @@ describe("cleanupMissingFilesServerFn rejects mixed modes", () => {
   });
 });
 });
+
+describe("orphan cleanup failures", () => {
+  it("still completes the delete when orphan cleanup fails", async () => {
+    editionFileFindManyMock.mockResolvedValue([{ fileAssetId: "fa-1" }]);
+    workDeleteMock.mockResolvedValue({ id: "w-1" });
+    cleanupOrphanedFileAssetsMock.mockRejectedValueOnce(new Error("disk gone"));
+
+    await expect(deleteWorkServerFn({ data: { workId: "w-1" } })).resolves.toEqual({ deletedWorkId: "w-1" });
+  });
+});

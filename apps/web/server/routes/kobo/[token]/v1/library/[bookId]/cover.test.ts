@@ -27,84 +27,58 @@ function makeDeps(overrides: Partial<CoverHandlerDeps> = {}): CoverHandlerDeps {
     auth: {
       findDeviceByToken: vi.fn().mockResolvedValue(mockDevice),
     },
-    findCoverPath: vi.fn().mockResolvedValue("/covers/test.jpg"),
+    coverCacheDir: "/data/covers",
+    findCoverRef: vi.fn().mockResolvedValue("ref-1"),
     existsSync: vi.fn().mockReturnValue(true),
-    createReadStream: vi.fn().mockReturnValue("stream"),
+    readFile: vi.fn().mockResolvedValue(Buffer.from("webp")),
+    convertToJpeg: vi.fn().mockResolvedValue(Buffer.from("jpeg-bytes")),
     setResponseHeader: vi.fn(),
-    sendStream: vi.fn().mockReturnValue("streamed"),
     ...overrides,
   };
 }
 
+async function expectStatus(promise: Promise<Buffer>, statusCode: number): Promise<void> {
+  await expect(promise).rejects.toMatchObject({ statusCode });
+}
+
 describe("createCoverHandler", () => {
-  it("streams cover image with correct headers", async () => {
+  it("transcodes the cached WebP to JPEG and sets the response headers", async () => {
     const deps = makeDeps();
     const handler = createCoverHandler(deps);
     const event = makeEvent();
     const result = await handler(event);
 
-    expect(result).toBe("streamed");
-    expect(deps.setResponseHeader).toHaveBeenCalledWith(
-      event,
-      "Content-Type",
-      "image/jpeg",
-    );
-    expect(deps.setResponseHeader).toHaveBeenCalledWith(
-      event,
-      "Cache-Control",
-      "public, max-age=86400",
-    );
+    expect(result).toEqual(Buffer.from("jpeg-bytes"));
+    expect(deps.findCoverRef).toHaveBeenCalledWith("ed-1");
+    expect(deps.readFile).toHaveBeenCalledWith("/data/covers/ref-1/medium.webp");
+    expect(deps.convertToJpeg).toHaveBeenCalledWith(Buffer.from("webp"));
+    expect(deps.setResponseHeader).toHaveBeenCalledWith(event, "Content-Type", "image/jpeg");
+    expect(deps.setResponseHeader).toHaveBeenCalledWith(event, "Content-Length", "10");
+    expect(deps.setResponseHeader).toHaveBeenCalledWith(event, "Cache-Control", "public, max-age=86400");
   });
 
   it("throws 400 for invalid bookId", async () => {
     const deps = makeDeps();
-    const handler = createCoverHandler(deps);
-
-    try {
-      await handler(makeEvent("../bad"));
-      expect.fail("Should have thrown");
-    } catch (e) {
-      const err = e as Error & { statusCode: number };
-      expect(err.statusCode).toBe(400);
-    }
+    await expectStatus(createCoverHandler(deps)(makeEvent("../bad")), 400);
+    expect(deps.findCoverRef).not.toHaveBeenCalled();
   });
 
-  it("throws 404 when cover path is null", async () => {
-    const deps = makeDeps({
-      findCoverPath: vi.fn().mockResolvedValue(null),
-    });
-    const handler = createCoverHandler(deps);
-
-    try {
-      await handler(makeEvent());
-      expect.fail("Should have thrown");
-    } catch (e) {
-      const err = e as Error & { statusCode: number };
-      expect(err.statusCode).toBe(404);
-    }
+  it("throws 404 when the edition has no cover", async () => {
+    const deps = makeDeps({ findCoverRef: vi.fn().mockResolvedValue(null) });
+    await expectStatus(createCoverHandler(deps)(makeEvent()), 404);
+    expect(deps.existsSync).not.toHaveBeenCalled();
   });
 
   it("throws 404 when cover file does not exist on disk", async () => {
-    const deps = makeDeps({
-      existsSync: vi.fn().mockReturnValue(false),
-    });
-    const handler = createCoverHandler(deps);
-
-    try {
-      await handler(makeEvent());
-      expect.fail("Should have thrown");
-    } catch (e) {
-      const err = e as Error & { statusCode: number };
-      expect(err.statusCode).toBe(404);
-    }
+    const deps = makeDeps({ existsSync: vi.fn().mockReturnValue(false) });
+    await expectStatus(createCoverHandler(deps)(makeEvent()), 404);
+    expect(deps.readFile).not.toHaveBeenCalled();
   });
 
   it("throws when auth fails", async () => {
     const deps = makeDeps({
       auth: { findDeviceByToken: vi.fn().mockResolvedValue(null) },
     });
-    const handler = createCoverHandler(deps);
-
-    await expect(handler(makeEvent())).rejects.toThrow();
+    await expectStatus(createCoverHandler(deps)(makeEvent()), 401);
   });
 });

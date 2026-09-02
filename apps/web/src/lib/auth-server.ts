@@ -138,11 +138,22 @@ function normalizeReturnTo(input: string | null | undefined): string {
     return "/";
   }
 
-  if (!input.startsWith("/")) {
+  // Only same-origin paths may be used as a post-login destination. A bare
+  // `startsWith("/")` check let protocol-relative (`//evil.example`) and
+  // backslash (`/\evil.example`) forms through, which the URL parser resolves
+  // to another host — an open redirect at the end of a real login.
+  const appOrigin = new URL(loadAuthConfig().appUrl).origin;
+  let resolved: URL;
+  try {
+    resolved = new URL(input, `${appOrigin}/`);
+  } catch {
+    return "/";
+  }
+  if (!input.startsWith("/") || /^\/[/\\]/.test(input) || resolved.origin !== appOrigin) {
     return "/";
   }
 
-  return input;
+  return `${resolved.pathname}${resolved.search}${resolved.hash}`;
 }
 
 export async function handleLoginRequest(): Promise<Response> {

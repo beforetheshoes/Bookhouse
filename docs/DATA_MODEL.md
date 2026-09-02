@@ -47,9 +47,13 @@ subtree beneath it. The important roots:
   loses its last `EditionFile` becomes file-less (see "orphans" below).
 - **Delete a `Work`** → its `Edition`s → each Edition's `EditionFile`s,
   `EditionContributor`s, `CollectionItem`s, `ReadingProgress`, `KoboSyncedBook`s,
-  plus the Work's `MatchSuggestion`s and `WorkTag`s.
+  `ExternalLink`s, plus the Work's `MatchSuggestion`s, `WorkTag`s,
+  `ExternalLink`s and `WorkProgressPreference`s. Merging two works
+  (`IngestDb.completeWorkMerge`, used by both Merge Works and accepted match
+  suggestions) therefore carries tags, links and preferences across before the
+  losing work is deleted, and does so in one transaction.
 - **Delete an `Edition`** → its `EditionFile`s, `EditionContributor`s,
-  `CollectionItem`s, `ReadingProgress`, `KoboSyncedBook`s.
+  `CollectionItem`s, `ReadingProgress`, `KoboSyncedBook`s, `ExternalLink`s.
 - **Delete a `FileAsset`** → its `EditionFile`s. (This is the move-detection
   cleanup path: the moved-from FileAsset is deleted once its links transfer.)
 
@@ -134,7 +138,17 @@ skipped, never thrown.** Two complementary mechanisms:
    pre-check can't fully close (Kobo `markSynced`, KOReader `upsertProgress`).
 
 The same applies to background workers: a BullMQ job for a deleted entity must
-skip silently and succeed, never throw (see `feedback_stale_jobs`).
+skip silently and succeed, never throw. The library worker checks the
+`LibraryRoot` still exists before a scan or upload ingest, and every
+FileAsset-level handler re-reads its asset (`skipIfFileAssetVanished`).
+
+## KOReader document ids
+
+`FileAsset.koreaderHash` is KOReader's `util.partialMD5`: an MD5 over 1 KiB
+samples at byte 0 and then `1024 << (2 * i)` for i = 0..10, stopping at the end
+of the file (`hashKoreaderDocument` in `packages/ingest/src/hashing.ts`). It is
+**not** an MD5 of the whole file. Migration `20260901120000` cleared the
+old whole-file values; the KOReader resolver recomputes missing hashes lazily.
 
 ## Scan & move-detection invariants
 

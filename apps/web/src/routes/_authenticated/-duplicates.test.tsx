@@ -195,7 +195,7 @@ describe("DuplicatesPage", () => {
     const { Route } = await import("./duplicates");
     const DuplicatesPage = (Route.options.component as React.ComponentType);
     render(<DuplicatesPage />);
-    expect(screen.getByText("SAME_HASH")).toBeTruthy();
+    expect(screen.getByText("Identical file")).toBeTruthy();
   });
 
   it("renders empty state when no duplicates", async () => {
@@ -255,8 +255,9 @@ describe("DuplicatesPage", () => {
     const { Route } = await import("./duplicates");
     const DuplicatesPage = (Route.options.component as React.ComponentType);
     render(<DuplicatesPage />);
-    const mergeLeftBtn = screen.getByRole("button", { name: /Keep Left/i });
+    const mergeLeftBtn = screen.getByRole("button", { name: /Keep A/i });
     fireEvent.click(mergeLeftBtn);
+    fireEvent.click(await screen.findByTestId("confirm-dialog-confirm"));
     await waitFor(() => {
       expect(mergeDuplicateServerFnMock).toHaveBeenCalledWith({
         data: { id: "dup-1", survivingEditionId: "ed-1" },
@@ -280,8 +281,9 @@ describe("DuplicatesPage", () => {
     const { Route } = await import("./duplicates");
     const DuplicatesPage = (Route.options.component as React.ComponentType);
     render(<DuplicatesPage />);
-    const mergeRightBtn = screen.getByRole("button", { name: /Keep Right/i });
+    const mergeRightBtn = screen.getByRole("button", { name: /Keep B/i });
     fireEvent.click(mergeRightBtn);
+    fireEvent.click(await screen.findByTestId("confirm-dialog-confirm"));
     await waitFor(() => {
       expect(mergeDuplicateServerFnMock).toHaveBeenCalledWith({
         data: { id: "dup-1", survivingEditionId: "ed-2" },
@@ -302,8 +304,8 @@ describe("DuplicatesPage", () => {
     const { Route } = await import("./duplicates");
     const DuplicatesPage = (Route.options.component as React.ComponentType);
     render(<DuplicatesPage />);
-    expect(screen.queryByRole("button", { name: /Keep Left/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: /Keep Right/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Keep A/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Keep B/i })).toBeNull();
   });
 
   it("does not render ignore/confirm buttons for non-PENDING status", async () => {

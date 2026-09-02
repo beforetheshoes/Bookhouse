@@ -63,6 +63,7 @@ export function EditableTagField({
     const finalTags = input.trim() ? [...tags, input.trim()] : tags;
 
     if (required && finalTags.length === 0) {
+      toast.error("At least one entry is required");
       setTags(values);
       setInput("");
       setEditing(false);

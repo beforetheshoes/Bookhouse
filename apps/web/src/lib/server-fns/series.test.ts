@@ -15,12 +15,12 @@ vi.mock("@tanstack/react-start", () => ({
 }));
 
 const findManyMock = vi.fn();
-const findUniqueOrThrowMock = vi.fn();
+const findUniqueMock = vi.fn();
 vi.mock("@bookhouse/db", () => ({
   db: {
     series: {
       findMany: findManyMock,
-      findUniqueOrThrow: findUniqueOrThrowMock,
+      findUnique: findUniqueMock,
     },
   },
 }));
@@ -76,18 +76,18 @@ describe("getSeriesListServerFn", () => {
 
 describe("getSeriesDetailServerFn", () => {
   beforeEach(() => {
-    findUniqueOrThrowMock.mockReset();
+    findUniqueMock.mockReset();
   });
 
-  it("calls db.series.findUniqueOrThrow with correct args", async () => {
+  it("calls db.series.findUnique with correct args", async () => {
     const fakeSeries = { id: "s1", name: "Discworld", works: [] };
-    findUniqueOrThrowMock.mockResolvedValue(fakeSeries);
+    findUniqueMock.mockResolvedValue(fakeSeries);
 
     const result = await getSeriesDetailServerFn({
       data: { seriesId: "s1" },
     });
 
-    expect(findUniqueOrThrowMock).toHaveBeenCalledWith({
+    expect(findUniqueMock).toHaveBeenCalledWith({
       where: { id: "s1" },
       include: {
         works: {
@@ -106,11 +106,11 @@ describe("getSeriesDetailServerFn", () => {
     expect(result).toBe(fakeSeries);
   });
 
-  it("propagates error when series is not found", async () => {
-    findUniqueOrThrowMock.mockRejectedValue(new Error("Not found"));
+  it("returns null when the series is not found, so the route can show a 404", async () => {
+    findUniqueMock.mockResolvedValue(null);
 
     await expect(
       getSeriesDetailServerFn({ data: { seriesId: "nonexistent" } }),
-    ).rejects.toThrow("Not found");
+    ).resolves.toBeNull();
   });
 });

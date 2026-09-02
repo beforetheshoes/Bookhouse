@@ -28,8 +28,7 @@ const editionFindUniqueMock = vi.fn();
 const editionFindManyMock = vi.fn();
 const externalLinkUpsertMock = vi.fn();
 const externalLinkFindManyMock = vi.fn();
-const tagFindFirstMock = vi.fn();
-const tagCreateMock = vi.fn();
+const tagUpsertMock = vi.fn();
 const workTagUpsertMock = vi.fn();
 const contributorFindFirstMock = vi.fn();
 const contributorCreateMock = vi.fn();
@@ -55,8 +54,7 @@ vi.mock("@bookhouse/db", () => ({
       findMany: externalLinkFindManyMock,
     },
     tag: {
-      findFirst: tagFindFirstMock,
-      create: tagCreateMock,
+      upsert: tagUpsertMock,
     },
     workTag: {
       upsert: workTagUpsertMock,
@@ -83,6 +81,7 @@ vi.mock("@bookhouse/ingest", () => {
   }
   return {
     searchAllSources: searchAllSourcesMock,
+    generateNameSort: (name: string) => name,
     searchOpenLibrary: vi.fn(),
     getOpenLibraryWork: vi.fn(),
     getOpenLibraryEdition: vi.fn(),
@@ -92,6 +91,7 @@ vi.mock("@bookhouse/ingest", () => {
     lookupAudibleByAsin: vi.fn(),
     RateLimiter: MockRateLimiter,
     applyCoverFromUrl: applyCoverFromUrlMock,
+    fetchRemoteImage: vi.fn(),
     resizeCoverImage: vi.fn(),
     extractDominantColors: vi.fn(),
     canonicalizeContributorName: (name: string): string | null => name === "UNKNOWN" ? null : name.toLowerCase(),
@@ -109,6 +109,7 @@ import {
   applyCoverFromUrlServerFn,
   searchEnrichmentServerFn,
   buildSearchDeps,
+  applyEnrichmentSchema,
 } from "./enrichment";
 
 beforeEach(() => {
@@ -225,6 +226,10 @@ describe("searchEnrichmentServerFn", () => {
 
     expect(result.status).toBe("success");
     expect(searchAllSourcesMock).toHaveBeenCalled();
+    // Provider failures are logged rather than silently read as "no results".
+    const [, , searchDeps] = searchAllSourcesMock.mock.calls[0] as [string, string | undefined, { onProviderError?: (provider: string, error: Error) => void }];
+    expect(searchDeps.onProviderError).toBeTypeOf("function");
+    expect(() => { searchDeps.onProviderError?.("hardcover", new Error("quota")); }).not.toThrow();
   });
 
   it("returns not-found when work does not exist", async () => {
@@ -579,9 +584,8 @@ describe("applyEnrichmentServerFn", () => {
 
   it("applies subjects as tags via tag upsert", async () => {
     workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: [] });
-    tagFindFirstMock.mockResolvedValueOnce({ id: "tag-1", name: "Science Fiction" });
-    tagFindFirstMock.mockResolvedValueOnce(null);
-    tagCreateMock.mockResolvedValueOnce({ id: "tag-2", name: "Epic" });
+    tagUpsertMock.mockResolvedValueOnce({ id: "tag-1", name: "Science Fiction" });
+    tagUpsertMock.mockResolvedValueOnce({ id: "tag-2", name: "Epic" });
     workTagUpsertMock.mockResolvedValue({});
     externalLinkUpsertMock.mockResolvedValue({});
 
@@ -593,15 +597,19 @@ describe("applyEnrichmentServerFn", () => {
       },
     });
 
-    expect(tagFindFirstMock).toHaveBeenCalledTimes(2);
-    expect(tagCreateMock).toHaveBeenCalledTimes(1);
+    expect(tagUpsertMock).toHaveBeenCalledTimes(2);
+    expect(tagUpsertMock).toHaveBeenCalledWith({
+      where: { nameCanonical: "epic" },
+      create: { name: "Epic", nameCanonical: "epic" },
+      update: {},
+    });
     expect(workTagUpsertMock).toHaveBeenCalledTimes(2);
     expect(result).toEqual({ success: true });
   });
 
   it("skips empty strings in subjects array", async () => {
     workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: [] });
-    tagFindFirstMock.mockResolvedValueOnce({ id: "tag-1", name: "Fantasy" });
+    tagUpsertMock.mockResolvedValueOnce({ id: "tag-1", name: "Fantasy" });
     workTagUpsertMock.mockResolvedValue({});
     externalLinkUpsertMock.mockResolvedValue({});
 
@@ -614,7 +622,7 @@ describe("applyEnrichmentServerFn", () => {
     });
 
     // Only "Fantasy" should be processed; "" and "  " are trimmed and skipped
-    expect(tagFindFirstMock).toHaveBeenCalledTimes(1);
+    expect(tagUpsertMock).toHaveBeenCalledTimes(1);
     expect(workTagUpsertMock).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ success: true });
   });
@@ -671,7 +679,7 @@ describe("applyEnrichmentServerFn", () => {
     // canonicalizeContributorName("UNKNOWN") returns null, so fallback to "unknown"
     expect(contributorUpsertMock).toHaveBeenCalledWith({
       where: { nameCanonical: "unknown" },
-      create: { nameDisplay: "UNKNOWN", nameCanonical: "unknown" },
+      create: { nameDisplay: "UNKNOWN", nameCanonical: "unknown", nameSort: "UNKNOWN" },
       update: {},
     });
   });
@@ -929,7 +937,7 @@ describe("applyEnrichmentServerFn", () => {
 
   it("applying same subjects twice uses workTag upsert to avoid duplicates", async () => {
     workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: [] });
-    tagFindFirstMock.mockResolvedValue({ id: "tag-1", name: "Fantasy" });
+    tagUpsertMock.mockResolvedValue({ id: "tag-1", name: "Fantasy" });
     workTagUpsertMock.mockResolvedValue({});
     externalLinkUpsertMock.mockResolvedValue({});
 
@@ -958,8 +966,45 @@ describe("applyEnrichmentServerFn", () => {
       expect(arg.where.workId_tagId.workId).toBe("w1");
       expect(arg.where.workId_tagId.tagId).toBe("tag-1");
     }
-    // tag.create should not have been called — existing tag found both times
-    expect(tagCreateMock).not.toHaveBeenCalled();
+    // The tag itself is upserted on its unique canonical name each time.
+    expect(tagUpsertMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not overwrite fields the user edited under their column names", async () => {
+    workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: ["titleDisplay", "tags"] });
+    editionFindUniqueMock.mockResolvedValue({ id: "e1", editedFields: ["publishedAt"] });
+    externalLinkUpsertMock.mockResolvedValue({});
+
+    const result = await applyEnrichmentServerFn({
+      data: {
+        workId: "w1",
+        editionId: "e1",
+        workFields: { title: "Provider Title", subjects: ["Fantasy"] },
+        editionFields: { publishedDate: "2001-01-01" },
+        source: { provider: "openlibrary", externalId: "OL123W" },
+      },
+    });
+
+    expect(workUpdateMock).not.toHaveBeenCalled();
+    expect(tagUpsertMock).not.toHaveBeenCalled();
+    expect(editionUpdateMock).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: true, skippedAll: true });
+  });
+
+  it("only accepts the enrichment vocabulary as work and edition fields", () => {
+    const source = { provider: "openlibrary", externalId: "OL123W" };
+    expect(applyEnrichmentSchema.safeParse({
+      workId: "w1",
+      editionId: "e1",
+      workFields: { title: "T", description: null, subjects: ["a"], authors: ["b"], coverUrl: "https://x/y.jpg" },
+      editionFields: { publisher: "P", publishedDate: "2001-01-01", pageCount: 12, isbn13: "9780000000000", isbn10: "0000000000", asin: "B000", language: "en", duration: 3600, narrators: ["n"] },
+      source,
+    }).success).toBe(true);
+    // Arbitrary Work / Edition columns are not writable from the browser.
+    expect(applyEnrichmentSchema.safeParse({ workId: "w1", workFields: { enrichmentStatus: "STUB" }, source }).success).toBe(false);
+    expect(applyEnrichmentSchema.safeParse({ workId: "w1", workFields: { editedFields: [] }, source }).success).toBe(false);
+    expect(applyEnrichmentSchema.safeParse({ workId: "w1", editionId: "e1", editionFields: { workId: "other" }, source }).success).toBe(false);
+    expect(applyEnrichmentSchema.safeParse({ workId: "w1", editionId: "e1", editionFields: { pageCount: "12" }, source }).success).toBe(false);
   });
 });
 

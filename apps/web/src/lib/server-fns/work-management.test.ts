@@ -35,8 +35,8 @@ const workCreateMock = vi.fn();
 const editionFileFindManyMock = vi.fn();
 const editionFileUpdateManyMock = vi.fn();
 
-vi.mock("@bookhouse/db", () => ({
-  db: {
+vi.mock("@bookhouse/db", () => {
+  const db = {
     edition: {
       findUnique: editionFindUniqueMock,
       create: editionCreateMock,
@@ -50,8 +50,10 @@ vi.mock("@bookhouse/db", () => ({
       findMany: editionFileFindManyMock,
       updateMany: editionFileUpdateManyMock,
     },
-  },
-}));
+    $transaction: (fn: (tx: object) => Promise<object>) => fn(db),
+  };
+  return { db };
+});
 
 import { mergeWorksServerFn, splitEditionToWorkServerFn, splitEditionFilesServerFn } from "./work-management";
 

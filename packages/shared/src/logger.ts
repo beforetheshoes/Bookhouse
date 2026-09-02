@@ -42,8 +42,11 @@ export function createLogger(name: string) {
   if (stream === undefined) {
     return pino({ name, level });
   }
+  // Each stream needs the level too: multistream defaults every stream to
+  // "info", so LOG_LEVEL=debug was silently ignored whenever LOG_DIR was set.
+  const streamLevel = level as pino.Level;
   return pino(
     { name, level },
-    pino.multistream([{ stream: process.stdout }, { stream }]),
+    pino.multistream([{ stream: process.stdout, level: streamLevel }, { stream, level: streamLevel }]),
   );
 }

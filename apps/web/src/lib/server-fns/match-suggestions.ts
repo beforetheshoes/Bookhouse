@@ -1,6 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import type { Prisma } from "@bookhouse/db";
 
 export const getMatchSuggestionsServerFn = createServerFn({
   method: "GET",
@@ -68,56 +67,29 @@ export const acceptMatchSuggestionServerFn = createServerFn({
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
 
+    const { mergeWorksById } = await import("@bookhouse/ingest");
+
     const link = await db.matchSuggestion.findUniqueOrThrow({
       where: { id: data.id },
       select: { targetWorkId: true, suggestedWorkId: true },
     });
 
-    // User chooses which Work to keep — the other Work's editions get merged in
+    // User chooses which Work to keep — the other Work's editions get merged in.
+    // A surviving id outside the pair would otherwise re-parent the target's
+    // editions onto an arbitrary work and delete the target.
     const survivingWorkId = data.survivingWorkId;
+    if (survivingWorkId !== link.targetWorkId && survivingWorkId !== link.suggestedWorkId) {
+      throw new Error("Surviving work must be one of the suggestion's works");
+    }
     const losingWorkId = survivingWorkId === link.targetWorkId
       ? link.suggestedWorkId
       : link.targetWorkId;
 
-    const [survivingWork, losingWork] = await Promise.all([
-      db.work.findUniqueOrThrow({ where: { id: survivingWorkId } }),
-      db.work.findUniqueOrThrow({ where: { id: losingWorkId } }),
-    ]);
-
-    // Reconcile metadata: fill nulls on surviving work from losing work
-    const reconcileFields = [
-      "description",
-      "coverPath",
-      "seriesId",
-      "seriesPosition",
-      "sortTitle",
-    ] as const;
-
-    const updates: Prisma.WorkUpdateInput = {};
-    for (const field of reconcileFields) {
-      if (
-        survivingWork[field as keyof typeof survivingWork] == null &&
-        losingWork[field as keyof typeof losingWork] != null
-      ) {
-        (updates as Record<string, string | number | null | undefined>)[field] = losingWork[field as keyof typeof losingWork] as string | number | null;
-      }
-    }
-
-    if (Object.keys(updates).length > 0) {
-      await db.work.update({
-        where: { id: survivingWorkId },
-        data: updates,
-      });
-    }
-
-    // Move editions from losing work to surviving work
-    await db.edition.updateMany({
-      where: { workId: losingWorkId },
-      data: { workId: survivingWorkId },
-    });
-
-    // Delete the losing work (cascades MatchSuggestion deletion)
-    await db.work.delete({ where: { id: losingWorkId } });
+    // Same transactional merge the Merge Works action uses: reconciles
+    // metadata, carries tags / external links / progress preferences across,
+    // moves the editions and deletes the losing work (which cascades this
+    // suggestion).
+    await mergeWorksById(survivingWorkId, losingWorkId);
 
     return { success: true };
   });

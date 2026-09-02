@@ -36,7 +36,7 @@ describe("DataTablePagination", () => {
   it("shows row count", () => {
     const { table } = makeMockTable();
     render(<DataTablePagination table={asTable(table)} />);
-    expect(screen.getByText("3 row(s) total")).toBeTruthy();
+    expect(screen.getByText("3 rows")).toBeTruthy();
   });
 
   it("shows current page and total pages", () => {

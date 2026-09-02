@@ -73,12 +73,13 @@ describe("librarySearchSchema", () => {
     expect(result).not.toHaveProperty("unknown");
   });
 
-  it("rejects page less than 1", () => {
-    expect(() => librarySearchSchema.parse({ page: 0 })).toThrow();
+  it("falls back to page 1 for a page less than 1 instead of failing the route", () => {
+    expect(librarySearchSchema.parse({ page: 0 }).page).toBe(1);
+    expect(librarySearchSchema.parse({ pageSize: 999 }).pageSize).toBe(50);
   });
 
-  it("rejects invalid sort values", () => {
-    expect(() => librarySearchSchema.parse({ sort: "invalid" })).toThrow();
+  it("falls back to the default sort for unknown sort values", () => {
+    expect(librarySearchSchema.parse({ sort: "invalid" }).sort).toBe("title-asc");
   });
 
   it("rejects invalid format values", () => {
@@ -95,8 +96,8 @@ describe("librarySearchSchema", () => {
     expect(result.view).toBe("editions");
   });
 
-  it("rejects invalid view values", () => {
-    expect(() => librarySearchSchema.parse({ view: "invalid" })).toThrow();
+  it("falls back to the works view for unknown view values", () => {
+    expect(librarySearchSchema.parse({ view: "invalid" }).view).toBe("works");
   });
 
   it.each([

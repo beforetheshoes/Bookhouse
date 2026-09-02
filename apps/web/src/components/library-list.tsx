@@ -53,6 +53,12 @@ interface LibraryListProps {
   /** Scroll this row to the top, once. Null while no jump is pending. */
   scrollToIndex?: number | null;
   onScrolledToIndex?: () => void;
+  /**
+   * How many rows are loaded before any client-side filter. `works` may be
+   * empty because a filter hid a whole page, and the next page must still be
+   * asked for in that case.
+   */
+  loadedCount?: number;
 }
 
 /** Roughly one row: 64px cover + padding. Measured rows correct this. */
@@ -164,6 +170,7 @@ export function LibraryList({
   prependedCount,
   scrollToIndex,
   onScrolledToIndex,
+  loadedCount,
 }: LibraryListProps) {
   const nodeRef = useRef<HTMLDivElement | null>(null);
   const [offset, setOffset] = useState(0);
@@ -192,17 +199,27 @@ export function LibraryList({
     estimateSize: () => ESTIMATED_ROW,
     overscan: 6,
     scrollMargin: offset,
+    // Measured heights are cached by key. Keyed by index, a prepend applied
+    // old row i's height to the different book now at i until every row was
+    // re-measured, which jittered the re-anchor below.
+    getItemKey: (index) => works[index]?.id ?? index,
   });
 
   const items = virtualizer.getVirtualItems();
   const lastIndex = items.at(-1)?.index ?? 0;
   const firstIndex = items[0]?.index ?? 0;
+  // `items[0]` is the first *rendered* row, which sits up to `overscan` rows
+  // above the viewport. Re-anchoring to it after a prepend put the reader up
+  // to six rows above where they were, so the anchor is the first row that
+  // is actually on screen.
+  const firstVisibleIndex =
+    virtualizer.getVirtualItemForOffset(virtualizer.scrollOffset ?? 0)?.index ?? firstIndex;
 
   // The first row on screen as of the last committed render. Read by the
   // re-anchor below, which runs before this is updated for the render that
   // brought the new rows in - so it holds the row the reader was on.
-  const firstIndexBeforeRef = useRef(firstIndex);
-  useEffect(() => { firstIndexBeforeRef.current = firstIndex; }, [firstIndex]);
+  const firstIndexBeforeRef = useRef(firstVisibleIndex);
+  useEffect(() => { firstIndexBeforeRef.current = firstVisibleIndex; }, [firstVisibleIndex]);
 
   // Rows arriving above the reader push everything down by their height, and
   // the browser holds the scroll position - so the book they were reading
@@ -218,26 +235,31 @@ export function LibraryList({
 
   // A jump from the A-Z rail. The parent clears its request once this fires,
   // so the same letter twice in a row still scrolls both times.
+  const [scrolledUp, setScrolledUp] = useState(false);
   useEffect(() => {
     if (scrollToIndex === undefined || scrollToIndex === null) return;
     virtualizer.scrollToIndex(scrollToIndex, { align: "start" });
+    // The jump's own scroll is not the reader scrolling up; upward loading
+    // waits for a real scroll after it.
+    setScrolledUp(false);
     onScrolledToIndex?.();
   }, [scrollToIndex, onScrolledToIndex, virtualizer]);
 
   // Fetch the next page while the reader is still six rows from the end, so
-  // the list does not visibly stall at the boundary.
+  // the list does not visibly stall at the boundary. A page the reading
+  // filter emptied out counts as "at the end" too, or the list would sit on
+  // "no books" with more pages unrequested.
   useEffect(() => {
     if (hasMore !== true || loadingMore === true || !onLoadMore) return;
-    if (works.length === 0) return;
-    if (lastIndex >= works.length - 6) onLoadMore();
-  }, [lastIndex, works.length, hasMore, loadingMore, onLoadMore]);
+    if ((loadedCount ?? works.length) === 0) return;
+    if (works.length === 0 || lastIndex >= works.length - 6) onLoadMore();
+  }, [lastIndex, works.length, loadedCount, hasMore, loadingMore, onLoadMore]);
 
   // And the page before - but only once the reader has actually scrolled back.
   // A list that has just jumped sits near the top of its window with nobody
   // asking for anything, and prepending a page there would move the row the
   // jump aimed at, landing them at the top of the page instead of on their
   // letter. Scrolling up is the ask.
-  const [scrolledUp, setScrolledUp] = useState(false);
   useEffect(() => {
     let lastY = window.scrollY;
     const onScroll = () => {
@@ -251,9 +273,9 @@ export function LibraryList({
   useEffect(() => {
     if (!scrolledUp) return;
     if (hasPrevious !== true || loadingPrevious === true || !onLoadPrevious) return;
-    if (works.length === 0) return;
+    if ((loadedCount ?? works.length) === 0) return;
     if (firstIndex <= 6) onLoadPrevious();
-  }, [scrolledUp, firstIndex, works.length, hasPrevious, loadingPrevious, onLoadPrevious]);
+  }, [scrolledUp, firstIndex, works.length, loadedCount, hasPrevious, loadingPrevious, onLoadPrevious]);
 
   return (
     <div className={selectionActive === true ? "pb-48" : undefined}>

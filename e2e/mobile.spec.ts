@@ -637,7 +637,7 @@ test.describe("Mobile layout", () => {
     await expect(page.getByText("1 work selected")).toBeVisible();
 
     await page.getByTestId("remove-selected-btn").click();
-    await expect(page.getByText("No editions on this shelf yet.")).toBeVisible();
+    await expect(page.getByText("No books on this shelf yet.")).toBeVisible();
     await expectNoHorizontalOverflow(page);
   });
 

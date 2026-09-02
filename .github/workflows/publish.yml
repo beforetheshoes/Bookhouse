@@ -15,8 +15,39 @@ env:
   IMAGE_NAMESPACE: ${{ github.repository_owner }}
 
 jobs:
+  # The CI workflow only runs on pull requests, so a direct push to main (or a
+  # manual dispatch) used to publish `latest` without a single gate. Run the
+  # same gates here and make the image build depend on them.
+  gates:
+    name: Lint, typecheck, test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://placeholder/placeholder
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm db:generate
+      - name: Generate route tree
+        working-directory: apps/web
+        run: pnpm exec tsr generate
+      - name: Lint
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Test
+        run: pnpm test
+
   publish:
     name: Build and push ${{ matrix.target }}
+    needs: gates
     runs-on: ubuntu-latest
     permissions:
       contents: read

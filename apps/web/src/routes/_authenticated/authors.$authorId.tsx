@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouter, notFound } from "@tanstack/react-router";
 import { Camera, ChevronRight, ImagePlus, Link2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
@@ -17,6 +17,8 @@ export const Route = createFileRoute("/_authenticated/authors/$authorId")({
     const author = await getAuthorDetailServerFn({
       data: { authorId: params.authorId },
     });
+    // eslint-disable-next-line @typescript-eslint/only-throw-error -- TanStack's notFound() is router control flow, not an Error
+    if (!author) throw notFound();
     return { author };
   },
   pendingComponent: GridPageSkeleton,
@@ -73,10 +75,12 @@ function AuthorDetailPage() {
   async function handlePhotoUrl() {
     setUploading(true);
     try {
-      await runMutation(
+      const result = await runMutation(
         () => fetchAuthorPhotoFromUrlServerFn({ data: { contributorId: author.id, imageUrl: photoUrl.trim() } }),
         { success: "Author photo updated" },
       );
+      // On failure keep the URL in the box so it can be corrected.
+      if (result === null) return;
       setPhotoVersion((v) => v + 1);
       setShowUrlInput(false);
       setPhotoUrl("");

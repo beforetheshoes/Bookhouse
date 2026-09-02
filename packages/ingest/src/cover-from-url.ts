@@ -36,6 +36,13 @@ export async function applyCoverFromUrl(
     throw new Error("Invalid workId");
   }
 
+  // Confirm the work exists before fetching or writing anything, so a stale
+  // id cannot leave an orphan cover directory behind.
+  const work = await db.findWork(workId);
+  if (!work) {
+    throw new Error("Work not found");
+  }
+
   const { buffer, contentType } = await deps.fetchUrl(imageUrl);
 
   if (buffer.length > MAX_FILE_SIZE) {
@@ -58,11 +65,6 @@ export async function applyCoverFromUrl(
     coverColors = await deps.extractColors(buffer);
   } catch {
     // Color extraction is non-critical — proceed without
-  }
-
-  const work = await db.findWork(workId);
-  if (!work) {
-    throw new Error("Work not found");
   }
 
   const mergedEdited = [...new Set([...work.editedFields, "coverPath"])];

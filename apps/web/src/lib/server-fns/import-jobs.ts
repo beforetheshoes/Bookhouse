@@ -19,6 +19,9 @@ const importJobKindValues = [
   "REFRESH_METADATA",
   "DETECT_DUPLICATES",
   "MATCH_SUGGESTIONS",
+  "ENRICH_AUTHOR_PHOTOS",
+  "BULK_ENRICH",
+  "UPLOAD_INGEST",
 ] as const;
 
 const getImportJobsSchema = z.object({
@@ -170,8 +173,11 @@ export const getActiveJobCountServerFn = createServerFn({
   const { getImportJobLiveActivity, getLibraryJobSnapshot } = await import("@bookhouse/shared");
   const now = Date.now();
 
+  // A SUCCEEDED scan cannot be live, and the ghost/deadlock fix-ups below only
+  // apply to QUEUED/RUNNING rows; `status != FAILED` scanned every scan ever
+  // recorded and hit Redis for each one on every poll.
   const jobs = await db.importJob.findMany({
-    where: { kind: "SCAN_ROOT", status: { not: "FAILED" } },
+    where: { kind: "SCAN_ROOT", status: { in: ["QUEUED", "RUNNING"] } },
     select: { id: true, bullmqJobId: true, updatedAt: true, status: true },
   });
 

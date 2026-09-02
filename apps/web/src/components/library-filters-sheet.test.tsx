@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
 import type { FacetCounts, LibraryFilterValues } from "./library-filters";
@@ -95,7 +95,9 @@ describe("LibraryFiltersSheet", () => {
 
     await user.click(screen.getByRole("button", { name: /Filters/ }));
     await user.type(screen.getByRole("textbox", { name: "Filter by title or author" }), "d");
-    expect(onSearchChange).toHaveBeenCalledWith("d");
+    // Debounced: the URL (and the full loader behind it) is not hit per keystroke.
+    expect(onSearchChange).not.toHaveBeenCalled();
+    await waitFor(() => { expect(onSearchChange).toHaveBeenCalledWith("d"); });
   });
 
   it("shows an empty box before anything has been typed", async () => {
@@ -125,5 +127,26 @@ describe("LibraryFiltersSheet", () => {
 
     await user.click(screen.getByRole("button", { name: /Filters/ }));
     expect(screen.getByTestId("library-filters")).toBeTruthy();
+  });
+
+  it("follows a search value that changed in the URL", async () => {
+    const user = userEvent.setup();
+    const { rerender } = renderSheet({}, { searchValue: "", onSearchChange: vi.fn() });
+    await user.click(screen.getByRole("button", { name: /Filters/ }));
+    rerender(
+      <LibraryFiltersSheet
+        facetCounts={facetCounts}
+        totalFacetCounts={facetCounts}
+        filters={{}}
+        onFiltersChange={vi.fn()}
+        filterValue="all"
+        onFilterChange={vi.fn()}
+        sortValue="title-asc"
+        onSortChange={vi.fn()}
+        searchValue="from-url"
+        onSearchChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("textbox", { name: "Filter by title or author" }).getAttribute("value")).toBe("from-url");
   });
 });

@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { isFileAccessError } from "./fs-errors";
 import { parseFile } from "music-metadata";
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
@@ -114,7 +115,13 @@ export async function parseAudioId3Tags(
       warnings: [],
     };
   } catch (error) {
-    // All ID3 parsing errors are non-fatal: the file exists, we just can't
+    // A file that cannot be opened at all (gone, unreadable, NFS hiccup) must
+    // surface so the caller can mark it MISSING or retry; swallowing it here
+    // stored a vanished track as "parsed" and PRESENT.
+    if (error instanceof Error && isFileAccessError(error)) {
+      throw error;
+    }
+    // Tag-level parsing errors are non-fatal: the file exists, we just can't
     // read its tags. Return empty tags with the error as a warning so the
     // file continues through the pipeline instead of being stuck as
     // "unparseable" forever.

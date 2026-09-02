@@ -3,7 +3,7 @@ import { existsSync, createReadStream } from "node:fs";
 import { Readable } from "node:stream";
 import { defineEventHandler, setResponseHeader } from "h3";
 import { ZipArchive } from "archiver";
-import { createDownloadAllHandler } from "../download-all-handler";
+import { createDownloadAllHandler, type DownloadArchive } from "../download-all-handler";
 
 export default defineEventHandler(async (event) => {
   const { db } = await import("@bookhouse/db");
@@ -34,10 +34,7 @@ export default defineEventHandler(async (event) => {
       // archiver's Archiver type can't be structurally narrowed to the handler's
       // archive interface without an `unknown` bridge (TS requires it).
       // eslint-disable-next-line no-restricted-syntax
-      return archive as unknown as NodeJS.ReadableStream & {
-        append: (source: NodeJS.ReadableStream, opts: { name: string }) => void;
-        finalize: () => Promise<void>;
-      };
+      return archive as unknown as DownloadArchive;
     },
     setResponseHeader,
     sendStream: (_event, stream) =>

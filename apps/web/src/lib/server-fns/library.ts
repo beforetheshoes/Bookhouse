@@ -101,8 +101,11 @@ function buildWhere(data: z.infer<typeof filterSchema>): Prisma.WorkWhereInput {
     where.editions = { some: { AND: editionConditions } };
   }
 
+  // Both series filters go into AND below: assigning `where.seriesId` twice
+  // let `inSeries` silently replace a specific series selection.
+  const seriesConditions: Prisma.WorkWhereInput[] = [];
   if (data.seriesId && data.seriesId.length > 0) {
-    where.seriesId = { in: data.seriesId };
+    seriesConditions.push({ seriesId: { in: data.seriesId } });
   }
 
   if (data.hasCover === true) {
@@ -124,12 +127,13 @@ function buildWhere(data: z.infer<typeof filterSchema>): Prisma.WorkWhereInput {
   }
 
   if (data.inSeries === true) {
-    where.seriesId = { not: null };
+    seriesConditions.push({ seriesId: { not: null } });
   } else if (data.inSeries === false) {
-    where.seriesId = null;
+    seriesConditions.push({ seriesId: null });
   }
 
   where.AND = [
+    ...seriesConditions,
     {
       editions: {
         some: {
@@ -644,9 +648,10 @@ export const getWorkOffsetForLetterServerFn = createServerFn({
     const letter = parsed.letter.toLowerCase();
     const ascending = parsed.sort === "title-asc";
 
-    // "#" is everything that sorts before "a" - digits, punctuation, and the
-    // titles with no sortTitle at all. Ascending, that bucket is the top of
-    // the list, so nothing is ahead of it: null rather than a bound.
+    // "#" is everything that sorts before "a" - digits and punctuation.
+    // (Works with no sortTitle sort last in both directions, so no letter
+    // reaches them.) Ascending, that bucket is the top of the list, so
+    // nothing is ahead of it: null rather than a bound.
     const beforeFirstMatch = letter === "#"
       ? ascending
         ? null

@@ -1,6 +1,7 @@
 import { defineEventHandler, readBody } from "h3";
 import type { H3Event } from "h3";
 import type { Prisma } from "@bookhouse/db";
+import { isForeignKeyConstraintError } from "@bookhouse/shared";
 import type { KoboAuthDeps } from "../../../../auth-helper";
 import type { ReadingProgressRecord, KoboReadingState, KoboRequestResult, LocatorData, KoboLocation } from "@bookhouse/kobo";
 import { httpError } from "../../../../../../utils/http-error";
@@ -15,6 +16,7 @@ export interface StateHandlerDeps {
     percent: number;
     locator: LocatorData;
     source: string;
+    updatedAt: Date;
   }) => Promise<ReadingProgressRecord>;
   getMethod: (event: H3Event) => string;
   readBody: (event: H3Event) => Promise<{
@@ -113,13 +115,28 @@ export function createStateHandler(deps: StateHandlerDeps) {
         }
       }
 
-      await deps.upsertProgress({
-        userId: device.userId,
-        editionId: bookId,
-        percent: parsed.progress,
-        locator: parsed.location ? { koboLocation: parsed.location } : {},
-        source: "kobo",
-      });
+      // Store the device's own LastModified, not the server write time:
+      // resolveConflict compares the next update's LastModified against
+      // updatedAt, so a server clock stamp rejected any position the device
+      // recorded before the previous sync landed (or with its clock a few
+      // seconds behind).
+      const deviceUpdatedAt = new Date(parsed.lastModified);
+      try {
+        await deps.upsertProgress({
+          userId: device.userId,
+          editionId: bookId,
+          percent: parsed.progress,
+          locator: parsed.location ? { koboLocation: parsed.location } : {},
+          source: "kobo",
+          updatedAt: Number.isNaN(deviceUpdatedAt.getTime()) ? new Date() : deviceUpdatedAt,
+        });
+      } catch (error) {
+        // The edition passed the existence check above but was deleted before
+        // the write landed; acknowledge so the device stops retrying.
+        if (!(error instanceof Error && isForeignKeyConstraintError(error))) {
+          throw error;
+        }
+      }
 
       return successResult(bookId);
     }
@@ -154,7 +171,7 @@ export default defineEventHandler(async (event) => {
         updatedAt: record.updatedAt,
       };
     },
-    upsertProgress: async ({ userId, editionId, percent, locator, source }) => {
+    upsertProgress: async ({ userId, editionId, percent, locator, source, updatedAt }) => {
       const jsonLocator = locator as Prisma.InputJsonValue;
       // Atomic upsert keyed on the per-source unique constraint — avoids the
       // find-then-create race and never clobbers another source's row.
@@ -174,8 +191,9 @@ export default defineEventHandler(async (event) => {
           percent,
           locator: jsonLocator,
           source,
+          updatedAt,
         },
-        update: { percent, locator: jsonLocator },
+        update: { percent, locator: jsonLocator, updatedAt },
       });
 
       return {

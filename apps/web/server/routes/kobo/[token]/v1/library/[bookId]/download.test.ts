@@ -21,6 +21,7 @@ const mockFile = {
   basename: "test.epub",
   mimeType: "application/epub+zip",
   availabilityStatus: "PRESENT",
+  fullHash: "sha-1",
 };
 
 function makeEvent(bookId = "ed-1"): H3Event {
@@ -53,7 +54,8 @@ describe("createDownloadHandler", () => {
     const result = await handler(event);
 
     expect(result).toBe("streamed");
-    expect(deps.convertToKepub).toHaveBeenCalledWith("/books/test.epub");
+    // The content hash keys the kepub cache, so a replaced file is reconverted.
+    expect(deps.convertToKepub).toHaveBeenCalledWith("/books/test.epub", "sha-1");
     expect(deps.setResponseHeader).toHaveBeenCalledWith(
       event,
       "Content-Disposition",
@@ -258,5 +260,11 @@ describe("createDownloadHandler", () => {
     const handler = createDownloadHandler(deps);
 
     await expect(handler(makeEvent())).rejects.toThrow();
+  });
+
+  it("keys the kepub cache on an empty fingerprint until the file has been hashed", async () => {
+    const deps = makeDeps({ findEditionFile: vi.fn().mockResolvedValue({ ...mockFile, fullHash: null }) });
+    await createDownloadHandler(deps)(makeEvent());
+    expect(deps.convertToKepub).toHaveBeenCalledWith("/books/test.epub", "");
   });
 });

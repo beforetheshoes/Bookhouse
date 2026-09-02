@@ -216,8 +216,8 @@ describe("health route", () => {
       deleteOrphanedMock.mockResolvedValue({ success: true });
       render(<Page />);
 
-      const deleteButtons = screen.getAllByRole("button", { name: /delete/i });
-      await userEvent.click(deleteButtons[0] as HTMLElement);
+      await userEvent.click(screen.getByRole("button", { name: /Remove record for/ }));
+      await userEvent.click(await screen.findByTestId("confirm-dialog-confirm"));
 
       await waitFor(() => {
         expect(deleteOrphanedMock).toHaveBeenCalledWith({ data: { fileAssetId: "f1" } });

@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
+import { filterByReadingStatus } from "~/lib/library-filter-helpers";
+import { getBulkReadingProgressServerFn } from "~/lib/server-fns/reading-progress";
+import { runMutation } from "~/lib/mutation";
+import { createFileRoute, Link, useRouter, notFound } from "@tanstack/react-router";
 import type { ColumnDef, RowSelectionState } from "@tanstack/react-table";
 import { ChevronRight, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
@@ -35,10 +38,13 @@ import { FloatingActionBar } from "~/components/floating-action-bar";
 
 export const Route = createFileRoute("/_authenticated/shelves/$shelfId")({
   loader: async ({ params }) => {
-    const shelf = await getShelfDetailServerFn({
-      data: { shelfId: params.shelfId },
-    });
-    return { shelf };
+    const [shelf, progressMap] = await Promise.all([
+      getShelfDetailServerFn({ data: { shelfId: params.shelfId } }),
+      getBulkReadingProgressServerFn(),
+    ]);
+    // eslint-disable-next-line @typescript-eslint/only-throw-error -- TanStack's notFound() is router control flow, not an Error
+    if (!shelf) throw notFound();
+    return { shelf, progressMap };
   },
   pendingComponent: GridPageSkeleton,
   component: ShelfDetailPage,
@@ -152,14 +158,14 @@ export function getTableColumns(): ColumnDef<ShelfEdition>[] {
 }
 
 function ShelfDetailPage() {
-  const { shelf } = Route.useLoaderData();
+  const { shelf, progressMap } = Route.useLoaderData();
   const router = useRouter();
   const [view, setView] = useEffectiveLibraryView();
   const [tileSize, setTileSize] = useEffectiveGridTileSize();
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [sortValue, setSortValue] = useState<SortValue>("title-asc");
   const [readingFilter, setReadingFilter] = useState<ReadingFilter>("all");
-  const [, setToolbarSearch] = useState("");
+  const [toolbarSearch, setToolbarSearch] = useState("");
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [selectMode, setSelectMode] = useState(false);
   // The grid shows works, the table shows editions, so their selections are
@@ -167,8 +173,28 @@ function ShelfDetailPage() {
   const [gridSelection, setGridSelection] = useState<Record<string, boolean>>({});
   const [removing, setRemoving] = useState(false);
 
-  const editions = shelf.items.map((item) => item.edition);
-  const works = getWorksWithEditions(shelf.items);
+  // The toolbar's search, sort and status controls used to be stored and
+  // never applied, so changing them did nothing visible.
+  const query = toolbarSearch.trim().toLowerCase();
+  const matchesQuery = useCallback((edition: ShelfEdition) =>
+    query === "" ||
+    edition.work.titleDisplay.toLowerCase().includes(query) ||
+    edition.contributors.some((c) => c.contributor.nameDisplay.toLowerCase().includes(query)), [query]);
+  const editions = shelf.items.map((item) => item.edition).filter(matchesQuery);
+  const works = useMemo(() => {
+    const grouped = getWorksWithEditions(shelf.items.filter((item) => matchesQuery(item.edition)));
+    const byTitle = (a: WorkWithEditions, b: WorkWithEditions) => a.titleDisplay.localeCompare(b.titleDisplay);
+    const authorOf = (w: WorkWithEditions) =>
+      w.editions.flatMap((e) => e.contributors).find((c) => c.role === "AUTHOR")?.contributor.nameDisplay ?? "";
+    const sorted = [...grouped];
+    switch (sortValue) {
+      case "title-desc": sorted.sort((a, b) => byTitle(b, a)); break;
+      case "author-asc": sorted.sort((a, b) => authorOf(a).localeCompare(authorOf(b)) || byTitle(a, b)); break;
+      case "author-desc": sorted.sort((a, b) => authorOf(b).localeCompare(authorOf(a)) || byTitle(a, b)); break;
+      default: sorted.sort(byTitle);
+    }
+    return filterByReadingStatus(sorted, readingFilter, progressMap);
+  }, [shelf.items, matchesQuery, sortValue, readingFilter, progressMap]);
 
 
   // Keyed by edition id via getRowId, so a refreshed list cannot repoint it.
@@ -268,7 +294,7 @@ function ShelfDetailPage() {
       </div>
 
       <LibraryToolbar
-        searchValue=""
+        searchValue={toolbarSearch}
         onSearchChange={setToolbarSearch}
         sortValue={sortValue}
         onSortChange={setSortValue}
@@ -284,10 +310,13 @@ function ShelfDetailPage() {
       />
 
       {editions.length === 0 ? (
-        <p className="text-muted-foreground">No editions on this shelf yet.</p>
+        <p className="text-muted-foreground">
+          {shelf.items.length === 0 ? "No books on this shelf yet." : "No books on this shelf match your search."}
+        </p>
       ) : view === "list" ? (
         <LibraryList
           works={works}
+          progressMap={progressMap}
           selectable={selectMode}
           selectionActive={gridSelectedWorkIds.length > 0}
           rowSelection={gridSelection}
@@ -296,6 +325,7 @@ function ShelfDetailPage() {
       ) : view === "grid" ? (
         <LibraryGrid
           works={works}
+          progressMap={progressMap}
           tileSize={tileSize}
           selectable={selectMode}
           selectionActive={gridSelectedWorkIds.length > 0}
@@ -374,6 +404,8 @@ function AddEditionsDialog({
 }) {
   const [available, setAvailable] = useState<AvailableEdition[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
   const [filter, setFilter] = useState("");
@@ -383,12 +415,13 @@ function AddEditionsDialog({
       setSelected(new Set());
       setFilter("");
       setLoading(true);
+      setLoadError(false);
       void getAvailableEditionsServerFn({ data: { shelfId } })
         .then((editions) => { setAvailable(editions); })
-        .catch(() => { setAvailable([]); })
+        .catch(() => { setAvailable([]); setLoadError(true); })
         .finally(() => { setLoading(false); });
     }
-  }, [open, shelfId]);
+  }, [open, shelfId, reloadKey]);
 
   const handleToggle = (editionId: string) => {
     setSelected((prev) => {
@@ -413,9 +446,15 @@ function AddEditionsDialog({
   const handleAdd = async () => {
     setAdding(true);
     try {
-      for (const editionId of selected) {
-        await addEditionToShelfServerFn({ data: { shelfId, editionId } });
-      }
+      const added = await runMutation(
+        async () => {
+          for (const editionId of selected) {
+            await addEditionToShelfServerFn({ data: { shelfId, editionId } });
+          }
+        },
+        { success: `Added ${String(selected.size)} ${selected.size === 1 ? "edition" : "editions"} to the shelf`, error: "Couldn't add to the shelf" },
+      );
+      if (added === null) return;
       onOpenChange(false);
       onAdded();
     } finally {
@@ -449,7 +488,14 @@ function AddEditionsDialog({
         <div className="flex-1 overflow-y-auto min-h-0 space-y-1" data-testid="add-editions-list">
           {loading && <p className="text-sm text-muted-foreground p-2">Loading editions...</p>}
 
-          {!loading && filtered.length === 0 && (
+          {!loading && loadError && (
+            <div className="space-y-2 p-2 text-sm">
+              <p className="text-destructive">Couldn&apos;t load the editions.</p>
+              <Button variant="outline" size="sm" onClick={() => { setReloadKey((k) => k + 1); }}>Try again</Button>
+            </div>
+          )}
+
+          {!loading && !loadError && filtered.length === 0 && (
             <p className="text-sm text-muted-foreground p-2">No matching editions available.</p>
           )}
 

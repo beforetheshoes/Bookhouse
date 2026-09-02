@@ -716,4 +716,26 @@ describe("LibrarySelectionToolbar", () => {
       });
     });
   });
+
+  it("keeps the delete dialog open while the delete is still running", async () => {
+    let finish: (value: { deletedWorkIds: string[] }) => void = () => undefined;
+    bulkDeleteWorksServerFnMock.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    render(<LibrarySelectionToolbar {...defaultProps} />);
+    fireEvent.click(screen.getByTestId("bulk-delete-works-btn"));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    // The dialog's own close control (same path as Escape / overlay) must not dismiss it mid-flight.
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.getByText(/will remove 1 work/)).toBeTruthy();
+    finish({ deletedWorkIds: ["w1"] });
+    await waitFor(() => { expect(bulkDeleteWorksServerFnMock).toHaveBeenCalled(); });
+  });
+
+  it("lets the delete dialog be dismissed before the delete starts", async () => {
+    render(<LibrarySelectionToolbar {...defaultProps} />);
+    fireEvent.click(screen.getByTestId("bulk-delete-works-btn"));
+    expect(screen.getByText(/will remove 1 work/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => { expect(screen.queryByText(/will remove 1 work/)).toBeNull(); });
+    expect(bulkDeleteWorksServerFnMock).not.toHaveBeenCalled();
+  });
 });

@@ -56,9 +56,16 @@ export type LibraryRootRow = Awaited<
   ReturnType<typeof getLibraryRootsServerFn>
 >[number];
 
-const addLibraryRootSchema = z.object({
+export const addLibraryRootSchema = z.object({
   name: z.string().min(1, "Name is required"),
-  path: z.string().min(1, "Path is required"),
+  path: z
+    .string()
+    .trim()
+    .min(1, "Path is required")
+    .refine((value) => value.startsWith("/"), "Path must be absolute (start with /)")
+    // "/data/books" and "/data/books/" are the same folder; without this both
+    // passed the unique check and the tree was ingested twice.
+    .transform((value) => value.replace(/\/+$/, "") || "/"),
   kind: z.enum(["EBOOKS", "AUDIOBOOKS", "MIXED"]),
   scanMode: z.enum(["FULL", "INCREMENTAL"]).default("FULL"),
 });

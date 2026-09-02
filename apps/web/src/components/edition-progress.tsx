@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { toast } from "sonner";
 import { Loader2, Pencil } from "lucide-react";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -27,14 +28,21 @@ export function EditionProgress({ progress, editions, onUpdate }: EditionProgres
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [saving, setSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   async function handleSave(editionId: string, progressKind: string) {
-    const val = parseInt(editValue, 10);
-    if (isNaN(val) || val < 0 || val > 100) return;
+    const val = /^\d+$/.test(editValue.trim()) ? parseInt(editValue, 10) : NaN;
+    if (isNaN(val) || val < 0 || val > 100) {
+      setEditError("Enter a whole number from 0 to 100");
+      return;
+    }
+    setEditError(null);
     setSaving(true);
     try {
       await onUpdate(editionId, val, progressKind);
       setEditingId(null);
+    } catch (error) {
+      toast.error("Couldn't save progress", error instanceof Error ? { description: error.message } : undefined);
     } finally {
       setSaving(false);
     }
@@ -85,7 +93,7 @@ export function EditionProgress({ progress, editions, onUpdate }: EditionProgres
                             min={0}
                             max={100}
                             value={editValue}
-                            onChange={(e) => { setEditValue(e.target.value); }}
+                            onChange={(e) => { setEditValue(e.target.value); setEditError(null); }}
                             onKeyDown={(e) => {
                               if (e.key === "Enter") { void handleSave(edition.id, progressKind); }
                               if (e.key === "Escape") { setEditingId(null); }
@@ -94,6 +102,7 @@ export function EditionProgress({ progress, editions, onUpdate }: EditionProgres
                             autoFocus
                             disabled={saving}
                           />
+                          {editError && <p className="text-xs text-destructive">{editError}</p>}
                           <span className="text-sm">%</span>
                           <Button
                             size="sm"

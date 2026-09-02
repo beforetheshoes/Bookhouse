@@ -13,8 +13,9 @@ const resizeAndSaveCoverMock = vi.fn().mockResolvedValue(undefined);
 const searchOpenLibraryAuthorsMock = vi.fn();
 const searchHardcoverAuthorsMock = vi.fn();
 const searchWikidataAuthorsMock = vi.fn().mockResolvedValue([]);
-const importJobUpdateMock = vi.fn().mockResolvedValue({});
+const importJobUpdateManyMock = vi.fn().mockResolvedValue({ count: 1 });
 const importJobFindUniqueMock = vi.fn();
+const contributorUpsertMock = vi.fn();
 const redisConstructorMock = vi.fn();
 
 vi.mock("ioredis", () => ({
@@ -53,17 +54,18 @@ const editionContributorDeleteManyMock = vi.fn().mockResolvedValue({});
 const editionContributorCreateManyMock = vi.fn().mockResolvedValue({});
 const externalLinkUpsertMock = vi.fn().mockResolvedValue({});
 
-vi.mock("@bookhouse/db", () => ({
-  db: {
+vi.mock("@bookhouse/db", () => {
+  const db = {
     appSetting: { findUnique: appSettingFindUniqueMock },
     contributor: {
       findUnique: contributorFindUniqueMock,
       update: contributorUpdateMock,
       findFirst: contributorFindFirstMock,
       create: contributorCreateMock,
+      upsert: contributorUpsertMock,
     },
     importJob: {
-      update: importJobUpdateMock,
+      updateMany: importJobUpdateManyMock,
       findUnique: importJobFindUniqueMock,
     },
     work: {
@@ -89,8 +91,10 @@ vi.mock("@bookhouse/db", () => ({
     externalLink: {
       upsert: externalLinkUpsertMock,
     },
-  },
-}));
+    $transaction: (fn: (tx: object) => Promise<object>) => fn(db),
+  };
+  return { db };
+});
 
 vi.mock("@bookhouse/ingest", () => ({
   enrichContributor: enrichContributorMock,
@@ -132,6 +136,9 @@ beforeEach(() => {
   appSettingFindUniqueMock.mockReset();
   contributorFindUniqueMock.mockReset();
   contributorUpdateMock.mockReset();
+  contributorUpsertMock.mockReset();
+  importJobUpdateManyMock.mockReset();
+  importJobUpdateManyMock.mockResolvedValue({ count: 1 });
   applyAuthorPhotoFromUrlMock.mockReset();
   applyAuthorPhotoFromUrlMock.mockResolvedValue({ success: true });
   resizeAndSaveCoverMock.mockReset();
@@ -139,8 +146,6 @@ beforeEach(() => {
   searchHardcoverAuthorsMock.mockReset();
   searchWikidataAuthorsMock.mockReset();
   searchWikidataAuthorsMock.mockResolvedValue([]);
-  importJobUpdateMock.mockReset();
-  importJobUpdateMock.mockResolvedValue({});
   importJobFindUniqueMock.mockReset();
   workFindUniqueMock.mockReset();
   workUpdateMock.mockReset();
@@ -431,7 +436,7 @@ describe("enrichment worker", () => {
       opts: {},
     } as never);
 
-    const updateCall = importJobUpdateMock.mock.calls[0] as [{ where: { id: string }; data: { status: string; processedFiles: { increment: number } } }];
+    const updateCall = importJobUpdateManyMock.mock.calls[0] as [{ where: { id: string }; data: { status: string; processedFiles: { increment: number } } }];
     expect(updateCall[0].where.id).toBe("ij-1");
     expect(updateCall[0].data.status).toBe("RUNNING");
     expect(updateCall[0].data.processedFiles).toEqual({ increment: 1 });
@@ -455,10 +460,10 @@ describe("enrichment worker", () => {
       opts: {},
     } as never);
 
-    // First call: increment progress. Second call: mark SUCCEEDED.
-    expect(importJobUpdateMock).toHaveBeenCalledTimes(2);
-    expect(importJobUpdateMock).toHaveBeenLastCalledWith({
-      where: { id: "ij-2" },
+    // Increment progress, stamp startedAt, then mark SUCCEEDED.
+    expect(importJobUpdateManyMock).toHaveBeenCalledTimes(3);
+    expect(importJobUpdateManyMock).toHaveBeenLastCalledWith({
+      where: { id: "ij-2", status: "RUNNING" },
       data: { status: "SUCCEEDED", finishedAt: expect.any(Date) as Date },
     });
   });
@@ -481,7 +486,7 @@ describe("enrichment worker", () => {
       opts: {},
     } as never);
 
-    const errCall = importJobUpdateMock.mock.calls[0] as [{ where: { id: string }; data: { errorCount: { increment: number } } }];
+    const errCall = importJobUpdateManyMock.mock.calls[0] as [{ where: { id: string }; data: { errorCount: { increment: number } } }];
     expect(errCall[0].where.id).toBe("ij-3");
     expect(errCall[0].data.errorCount).toEqual({ increment: 1 });
   });
@@ -502,19 +507,43 @@ describe("enrichment worker", () => {
         name: "enrich-contributor",
         data: { contributorId: "c1", importJobId: "ij-4" },
         opts: {},
+        attemptsMade: 0,
       } as never),
     ).rejects.toThrow("OL API error");
 
-    const failCall = importJobUpdateMock.mock.calls[0] as [{ where: { id: string }; data: { processedFiles: { increment: number }; errorCount: { increment: number } } }];
+    const failCall = importJobUpdateManyMock.mock.calls[0] as [{ where: { id: string }; data: { processedFiles: { increment: number }; errorCount: { increment: number } } }];
     expect(failCall[0].where.id).toBe("ij-4");
     expect(failCall[0].data.processedFiles).toEqual({ increment: 1 });
     expect(failCall[0].data.errorCount).toEqual({ increment: 1 });
   });
 
+  it("does not count a failure against the batch until the final attempt", async () => {
+    enrichContributorMock.mockRejectedValueOnce(new Error("OL flaky"));
+    appSettingFindUniqueMock.mockResolvedValue(null);
+
+    const { createEnrichmentWorkerProcessor } = await import("./enrichment-worker");
+    const processor = createEnrichmentWorkerProcessor({
+      enrichContributor: enrichContributorMock,
+      processBulkEnrichWork: processBulkEnrichWorkMock,
+    });
+
+    await expect(
+      processor({
+        id: "jretry",
+        name: "enrich-contributor",
+        data: { contributorId: "c1", importJobId: "ij-retry" },
+        opts: { attempts: 5 },
+        attemptsMade: 0,
+      } as never),
+    ).rejects.toThrow("OL flaky");
+
+    expect(importJobUpdateManyMock).not.toHaveBeenCalled();
+  });
+
   it("swallows ImportJob update error on job failure", async () => {
     enrichContributorMock.mockRejectedValueOnce(new Error("OL down"));
     appSettingFindUniqueMock.mockResolvedValue(null);
-    importJobUpdateMock.mockRejectedValueOnce(new Error("DB down"));
+    importJobUpdateManyMock.mockRejectedValueOnce(new Error("DB down"));
 
     const { createEnrichmentWorkerProcessor } = await import("./enrichment-worker");
     const processor = createEnrichmentWorkerProcessor({
@@ -528,6 +557,7 @@ describe("enrichment worker", () => {
         name: "enrich-contributor",
         data: { contributorId: "c1", importJobId: "ij-5" },
         opts: {},
+        attemptsMade: 0,
       } as never),
     ).rejects.toThrow("OL down");
 
@@ -692,7 +722,7 @@ describe("enrichment worker", () => {
       opts: {},
     } as never);
 
-    const errCall = importJobUpdateMock.mock.calls[0] as [{ where: { id: string }; data: { errorCount: { increment: number } } }];
+    const errCall = importJobUpdateManyMock.mock.calls[0] as [{ where: { id: string }; data: { errorCount: { increment: number } } }];
     expect(errCall[0].where.id).toBe("ij-be");
     expect(errCall[0].data.errorCount).toEqual({ increment: 1 });
   });
@@ -775,8 +805,7 @@ describe("enrichment worker", () => {
       workFindUniqueMock.mockResolvedValueOnce({ editedFields: [] });
       editionFindUniqueMock.mockResolvedValueOnce({ editedFields: [] });
       tagFindFirstMock.mockResolvedValueOnce({ id: "t1" });
-      contributorFindFirstMock.mockResolvedValueOnce(null);
-      contributorCreateMock.mockResolvedValueOnce({ id: "c1" });
+      contributorUpsertMock.mockResolvedValueOnce({ id: "c1" });
       editionFindManyMock.mockResolvedValueOnce([{ id: "e1" }]);
 
       const applyFn = deps.applyEnrichmentFields;
@@ -952,7 +981,7 @@ describe("enrichment worker", () => {
       opts: {},
     } as never);
 
-    const errCall = importJobUpdateMock.mock.calls[0] as [{ where: { id: string }; data: { errorCount: { increment: number } } }];
+    const errCall = importJobUpdateManyMock.mock.calls[0] as [{ where: { id: string }; data: { errorCount: { increment: number } } }];
     expect(errCall[0].where.id).toBe("ij-be2");
     expect(errCall[0].data.errorCount).toEqual({ increment: 1 });
   });

@@ -47,7 +47,7 @@ export const getSeriesDetailServerFn = createServerFn({
   .validator(getSeriesDetailSchema)
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
-    return db.series.findUniqueOrThrow({
+    return db.series.findUnique({
       where: { id: data.seriesId },
       include: {
         works: {
@@ -65,6 +65,6 @@ export const getSeriesDetailServerFn = createServerFn({
     });
   });
 
-export type SeriesDetail = Awaited<
+export type SeriesDetail = NonNullable<Awaited<
   ReturnType<typeof getSeriesDetailServerFn>
->;
+>>;

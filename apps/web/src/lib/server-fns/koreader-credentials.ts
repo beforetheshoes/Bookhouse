@@ -41,11 +41,18 @@ export const saveKoreaderCredentialServerFn = createServerFn({
     const { db } = await import("@bookhouse/db");
     const { hashPassword } = await import("@bookhouse/opds");
     const { getCurrentUser } = await import("~/lib/auth-server");
+    // Server-only module: imported here rather than at the top so the file
+    // still bundles for the client, where server functions become stubs.
+    const { createHash } = await import("node:crypto");
 
     const user = await getCurrentUser();
     if (!user) throw new Error("Not authenticated");
 
-    const passwordHash = await hashPassword(data.password);
+    // KOReader never sends the password itself: its kosync plugin sends
+    // md5(password) as x-auth-key. Store the hash of that digest so the
+    // header can be verified directly.
+    const koreaderAuthKey = createHash("md5").update(data.password).digest("hex");
+    const passwordHash = await hashPassword(koreaderAuthKey);
 
     return db.koreaderCredential.upsert({
       where: { userId: user.id },

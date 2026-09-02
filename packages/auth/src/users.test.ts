@@ -344,6 +344,43 @@ describe("user linking", () => {
     ).rejects.toBeInstanceOf(AuthAccessDeniedError);
   });
 
+  it("denies an unverified email that already belongs to another account", async () => {
+    const createUser = vi.fn();
+    const db = {
+      $transaction: async (callback: (tx: MockTransactionClient) => Promise<AuthenticatedUser>) =>
+        callback({
+          userIdentity: {
+            findUnique: vi.fn().mockResolvedValue(null),
+            create: vi.fn(),
+          },
+          user: {
+            count: vi.fn().mockResolvedValue(1),
+            findUnique: vi.fn().mockResolvedValue({ id: "user-2" }),
+            create: createUser,
+          },
+          userRole: { findMany: vi.fn().mockResolvedValue([]), create: vi.fn() },
+          allowedEmail: { findUnique: vi.fn().mockResolvedValue({ id: "allow-1" }) },
+        }),
+    };
+
+    await expect(
+      upsertOidcUser({
+        db: db as never,
+        config: baseConfig,
+        claims: {
+          sub: "subject-3",
+          email: "reader@example.com",
+          emailVerified: false,
+          name: "Reader",
+          preferredUsername: null,
+          image: null,
+          raw: { sub: "subject-3" },
+        },
+      }),
+    ).rejects.toBeInstanceOf(AuthAccessDeniedError);
+    expect(createUser).not.toHaveBeenCalled();
+  });
+
   it("links by verified email to an existing user and preserves their roles", async () => {
     const createIdentity = vi.fn().mockResolvedValue(undefined);
     const createUser = vi.fn();

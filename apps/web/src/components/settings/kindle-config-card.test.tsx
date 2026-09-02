@@ -150,6 +150,15 @@ describe("KindleConfigCard", () => {
       expect(screen.getByText("me@kindle.com")).toBeTruthy();
     });
 
+    it("lets the user back out of editing without retyping anything", async () => {
+      const user = userEvent.setup();
+      render(<KindleConfigCard configured={true} />);
+      await waitFor(() => { expect(screen.getByText("Edit")).toBeTruthy(); });
+      await user.click(screen.getByText("Edit"));
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(screen.getByText("Edit")).toBeTruthy();
+    });
+
     it("shows edit form when Edit is clicked", async () => {
       const user = userEvent.setup();
       render(<KindleConfigCard configured={true} />);
@@ -281,4 +290,5 @@ describe("KindleConfigCard", () => {
       });
     });
   });
+
 });

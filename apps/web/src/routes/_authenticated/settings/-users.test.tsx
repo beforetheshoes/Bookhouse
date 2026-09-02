@@ -206,6 +206,7 @@ describe("UsersPage", () => {
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
     fireEvent.click(screen.getByLabelText("Remove pending@example.com"));
+    fireEvent.click(await screen.findByTestId("confirm-dialog-confirm"));
     await waitFor(() => {
       expect(removeAllowedEmailServerFnMock).toHaveBeenCalledWith({
         data: { id: "ae-1" },
@@ -220,6 +221,7 @@ describe("UsersPage", () => {
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
     fireEvent.click(screen.getByLabelText("Remove pending@example.com"));
+    fireEvent.click(await screen.findByTestId("confirm-dialog-confirm"));
     await waitFor(() => {
       expect(mockToast.error).toHaveBeenCalledWith("nope");
     });
@@ -231,6 +233,7 @@ describe("UsersPage", () => {
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
     fireEvent.click(screen.getByLabelText("Remove pending@example.com"));
+    fireEvent.click(await screen.findByTestId("confirm-dialog-confirm"));
     await waitFor(() => {
       expect(mockToast.error).toHaveBeenCalledWith("Failed to remove");
     });
@@ -264,6 +267,7 @@ describe("UsersPage", () => {
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
     fireEvent.click(screen.getByLabelText("Remove viewer@example.com"));
+    fireEvent.click(await screen.findByTestId("confirm-dialog-confirm"));
     await waitFor(() => {
       expect(removeUserServerFnMock).toHaveBeenCalledWith({
         data: { userId: "viewer-1" },
@@ -301,6 +305,7 @@ describe("UsersPage", () => {
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
     fireEvent.click(screen.getByLabelText("Remove v@example.com"));
+    fireEvent.click(await screen.findByTestId("confirm-dialog-confirm"));
     await waitFor(() => {
       expect(mockToast.error).toHaveBeenCalledWith("cannot");
     });
@@ -334,6 +339,7 @@ describe("UsersPage", () => {
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
     fireEvent.click(screen.getByLabelText("Remove v@example.com"));
+    fireEvent.click(await screen.findByTestId("confirm-dialog-confirm"));
     await waitFor(() => {
       expect(mockToast.error).toHaveBeenCalledWith("Failed to remove user");
     });
@@ -379,5 +385,24 @@ describe("UsersPage", () => {
     }) => Promise<MockLoaderData>;
     const result = await loader({ context: {} });
     expect(result.currentUserId).toBe("");
+  });
+
+  it("names a user without an email by their name, and by id when both are missing", async () => {
+    mockLoaderData = {
+      users: [
+        { id: "u-name", email: null, name: "Nameless Email", image: null, createdAt: new Date("2026-05-03"), roles: ["VIEWER"] },
+        { id: "u-bare", email: null, name: null, image: null, createdAt: new Date("2026-05-04"), roles: ["VIEWER"] },
+      ],
+      allowedEmails: [],
+      currentUserId: "owner-1",
+    };
+    const { Route } = await import("./users");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    fireEvent.click(screen.getByLabelText("Remove u-name"));
+    expect(await screen.findByText(/Nameless Email will lose access/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByLabelText("Remove u-bare"));
+    expect(await screen.findByText(/u-bare will lose access/)).toBeTruthy();
   });
 });

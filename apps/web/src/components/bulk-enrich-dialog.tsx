@@ -48,12 +48,20 @@ export function BulkEnrichDialog({
     const ctrl = { cancelled: false };
 
     void (async () => {
-      const status = await getIntegrationStatusServerFn();
-      if (!ctrl.cancelled) {
-        setSources(status);
-        // Pre-select all configured sources
-        const configured = SOURCE_ORDER.filter((s) => status[s]?.configured); // eslint-disable-line @typescript-eslint/no-unnecessary-condition -- status[s] may be undefined before load
-        setSelectedSources(new Set(configured.length > 0 ? configured : ["openlibrary"]));
+      try {
+        const status = await getIntegrationStatusServerFn();
+        if (!ctrl.cancelled) {
+          setSources(status);
+          // Pre-select all configured sources
+          const configured = SOURCE_ORDER.filter((s) => status[s]?.configured); // eslint-disable-line @typescript-eslint/no-unnecessary-condition -- status[s] may be undefined before load
+          setSelectedSources(new Set(configured.length > 0 ? configured : ["openlibrary"]));
+        }
+      } catch {
+        // Open Library needs no key; fall back to it rather than an empty picker.
+        if (!ctrl.cancelled) {
+          toast.error("Couldn't check which metadata sources are configured");
+          setSelectedSources(new Set(["openlibrary"]));
+        }
       }
     })();
 

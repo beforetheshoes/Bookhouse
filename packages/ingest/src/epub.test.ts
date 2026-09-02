@@ -416,4 +416,16 @@ describe("EPUB cover extraction", () => {
       EPUB_INTERNALS.readZipEntryBuffer("/definitely/missing.epub", "cover.png"),
     ).rejects.toThrow();
   });
+
+  it("refuses to buffer an entry larger than the cap", async () => {
+    const epubPath = await createEpub({
+      "small.txt": "tiny",
+      "big.bin": Buffer.alloc(4096, 1),
+    });
+
+    await expect(EPUB_INTERNALS.readZipEntryBuffer(epubPath, "small.txt", 1024)).resolves.toEqual(Buffer.from("tiny"));
+    await expect(EPUB_INTERNALS.readZipEntryBuffer(epubPath, "big.bin", 1024)).rejects.toThrow(
+      'EPUB entry "big.bin" exceeds 1024 bytes',
+    );
+  });
 });

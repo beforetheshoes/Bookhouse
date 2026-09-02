@@ -2,6 +2,7 @@ import path from "node:path";
 import { defineEventHandler } from "h3";
 import type { H3Event } from "h3";
 import { httpError } from "../../../../utils/http-error";
+import type { OpdsAuthDeps } from "../../auth-helper";
 
 const VALID_ID = /^[a-zA-Z0-9_-]+$/;
 const VALID_SIZES: Record<string, string> = {
@@ -10,6 +11,7 @@ const VALID_SIZES: Record<string, string> = {
 };
 
 export interface OpdsCoverHandlerDeps {
+  auth: OpdsAuthDeps;
   coverCacheDir: string;
   existsSync: (path: string) => boolean;
   readFile: (path: string) => Promise<Buffer>;
@@ -19,6 +21,11 @@ export interface OpdsCoverHandlerDeps {
 
 export function createOpdsCoverHandler(deps: OpdsCoverHandlerDeps) {
   return async (event: H3Event) => {
+    // Same Basic auth as every other OPDS route; covers were the one
+    // unauthenticated endpoint on the surface.
+    const { createOpdsAuth } = await import("../../auth-helper");
+    await createOpdsAuth(deps.auth)(event);
+
     const params = event.context.params as Record<string, string>;
     const workId = params.workId as string;
     const size = params.size as string;
@@ -52,10 +59,17 @@ export function createOpdsCoverHandler(deps: OpdsCoverHandlerDeps) {
 export default defineEventHandler(async (event) => {
   const { existsSync } = await import("node:fs");
   const { readFile } = await import("node:fs/promises");
+  const { db } = await import("@bookhouse/db");
+  const { verifyPassword } = await import("@bookhouse/opds");
 
   const COVER_CACHE_DIR = process.env.COVER_CACHE_DIR ?? "/data/covers";
 
   const handler = createOpdsCoverHandler({
+    auth: {
+      findCredentialByUsername: (username) =>
+        db.opdsCredential.findUnique({ where: { username } }),
+      verifyPassword,
+    },
     coverCacheDir: COVER_CACHE_DIR,
     existsSync,
     readFile,

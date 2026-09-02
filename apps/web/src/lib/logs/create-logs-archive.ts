@@ -35,6 +35,11 @@ export async function createLogsArchive(
     }
   }
 
-  void archive.finalize();
+  // An archiver failure (a log file disappearing mid-read) must end the
+  // response with an error rather than hang the download.
+  archive.on("error", (error: Error) => {
+    output.destroy(error);
+  });
+  void archive.finalize().catch(() => undefined);
   return output;
 }

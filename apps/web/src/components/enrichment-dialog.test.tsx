@@ -1231,4 +1231,21 @@ describe("formatDuration", () => {
   it("formats minutes only when less than an hour", () => {
     expect(formatDuration(1800)).toBe("30m");
   });
+
+  it("offers Close and Try again when the search fails", async () => {
+    searchEnrichmentMock.mockRejectedValueOnce(new Error("boom")).mockResolvedValue({ status: "no-results" });
+    const onOpenChange = vi.fn();
+    render(<EnrichmentDialog {...baseProps} onOpenChange={onOpenChange} />);
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    expect(searchEnrichmentMock).toHaveBeenCalledTimes(2);
+    expect(screen.getByText(/no results/i)).toBeTruthy();
+
+    // The last "Close" is the footer button; the first is the dialog's X.
+    const closeButtons = screen.getAllByRole("button", { name: "Close" });
+    await userEvent.click(closeButtons[closeButtons.length - 1] as HTMLElement);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
 });

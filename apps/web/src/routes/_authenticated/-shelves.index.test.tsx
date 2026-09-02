@@ -318,4 +318,43 @@ describe("ShelvesPage", () => {
     expect(cancelBtn).toBeTruthy();
     fireEvent.click(cancelBtn);
   });
+
+  it("keeps the create dialog open and reports the error when creating fails", async () => {
+    const { createShelfServerFn } = await import("~/lib/server-fns/shelves");
+    vi.mocked(createShelfServerFn).mockRejectedValue(new Error("nope"));
+    const { Route } = await import("./shelves.index");
+    const ShelvesPage = (Route.options.component as React.ComponentType);
+    render(<ShelvesPage />);
+    fireEvent.click(screen.getByTestId("create-shelf-btn"));
+    fireEvent.change(screen.getByTestId("create-shelf-name"), { target: { value: "Broken" } });
+    fireEvent.click(screen.getByTestId("create-shelf-submit"));
+    await waitFor(() => { expect(vi.mocked(createShelfServerFn)).toHaveBeenCalled(); });
+    await waitFor(() => { expect(screen.getByTestId("create-shelf-name")).toBeTruthy(); });
+  });
+
+  it("keeps the rename and delete dialogs open when the server rejects", async () => {
+    const { renameShelfServerFn, deleteShelfServerFn } = await import("~/lib/server-fns/shelves");
+    vi.mocked(renameShelfServerFn).mockRejectedValue(new Error("nope"));
+    vi.mocked(deleteShelfServerFn).mockRejectedValue(new Error("nope"));
+    mockLoaderData = {
+      shelves: [{ id: "s1", name: "Fantasy", kind: "MANUAL", formatFilter: "ALL", _count: { items: 5 } }],
+    };
+    const { Route } = await import("./shelves.index");
+    const ShelvesPage = (Route.options.component as React.ComponentType);
+    render(<ShelvesPage />);
+
+    fireEvent.click(screen.getByTestId("actions-s1"));
+    fireEvent.click(screen.getByText("Rename"));
+    fireEvent.change(screen.getByTestId("rename-shelf-name"), { target: { value: "Renamed" } });
+    fireEvent.click(screen.getByTestId("rename-shelf-submit"));
+    await waitFor(() => { expect(vi.mocked(renameShelfServerFn)).toHaveBeenCalled(); });
+    await waitFor(() => { expect(screen.getByTestId("rename-shelf-name")).toBeTruthy(); });
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+
+    fireEvent.click(screen.getByTestId("actions-s1"));
+    fireEvent.click(screen.getByText("Delete"));
+    fireEvent.click(screen.getByTestId("delete-shelf-confirm"));
+    await waitFor(() => { expect(vi.mocked(deleteShelfServerFn)).toHaveBeenCalled(); });
+    await waitFor(() => { expect(screen.getByTestId("delete-shelf-confirm")).toBeTruthy(); });
+  });
 });

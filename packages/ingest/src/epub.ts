@@ -11,7 +11,7 @@ export interface ParsedEpubMetadataRaw {
 
 interface ZipEntry {
   filename: string;
-  openReadStream(): Promise<NodeJS.ReadableStream>;
+  openReadStream(): Promise<NodeJS.ReadableStream & { destroy(): void }>;
 }
 
 interface ZipArchive extends AsyncIterable<ZipEntry> {
@@ -23,7 +23,14 @@ const yauzl = require("yauzl-promise") as {
   open(path: string): Promise<ZipArchive>;
 };
 
-async function readZipEntryBuffer(absolutePath: string, entryPath: string): Promise<Buffer> {
+/** Largest single entry we will buffer out of an EPUB (cover images, OPF, container.xml). */
+export const MAX_EPUB_ENTRY_BYTES = 20 * 1024 * 1024;
+
+async function readZipEntryBuffer(
+  absolutePath: string,
+  entryPath: string,
+  maxBytes: number = MAX_EPUB_ENTRY_BYTES,
+): Promise<Buffer> {
   const zip = await yauzl.open(absolutePath);
 
   try {
@@ -34,8 +41,16 @@ async function readZipEntryBuffer(absolutePath: string, entryPath: string): Prom
 
       const stream = await entry.openReadStream();
       const chunks: Buffer[] = [];
+      let total = 0;
 
+      // Cap while streaming: a crafted archive can declare a multi-GB cover
+      // that would otherwise be buffered whole and take the worker down.
       for await (const chunk of stream) {
+        total += chunk.length;
+        if (total > maxBytes) {
+          stream.destroy();
+          throw new Error(`EPUB entry "${entryPath}" exceeds ${String(maxBytes)} bytes`);
+        }
         chunks.push(Buffer.from(chunk));
       }
 

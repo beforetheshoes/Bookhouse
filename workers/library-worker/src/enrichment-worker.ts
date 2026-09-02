@@ -29,6 +29,7 @@ import {
   type BulkEnrichDeps,
   type BulkEnrichResult,
   type ApplyEnrichmentDeps,
+  generateNameSort,
 } from "@bookhouse/ingest";
 import {
   ENRICHMENT_JOB_NAMES,
@@ -48,7 +49,8 @@ const logger = createLogger("enrichment-worker");
 const olLimiter = new TokenBucketLimiter(3);
 const hcLimiter = new TokenBucketLimiter(1);
 const wdLimiter = new TokenBucketLimiter(1);
-const olFetch = createOLFetcher("bookhouse@teamsnail.org");
+// Open Library asks for a contact in the User-Agent so they can reach the operator.
+const olFetch = createOLFetcher(process.env.OPENLIBRARY_CONTACT ?? process.env.APP_URL ?? "bookhouse");
 
 function getCoverCacheDir(): string {
   if (process.env.COVER_CACHE_DIR) return process.env.COVER_CACHE_DIR;
@@ -202,6 +204,9 @@ function buildBulkEnrichDeps(
         searchAudible: (t: string, a: string | undefined) => searchAudible(t, a, fetch),
         lookupAudibleByAsin: (asin: string) => lookupAudibleByAsin(asin, fetch),
         checkRateLimit: () => rateLimiter.check(),
+        onProviderError: (provider: string, error: Error) => {
+          logger.warn({ err: error, provider, title }, "Metadata provider search failed");
+        },
       };
       return searchAllSources(title, author, searchDeps, options);
     },
@@ -226,22 +231,21 @@ function buildBulkEnrichDeps(
             update: {},
           });
         },
-        findContributorByCanonical: async (canonical) => {
-          const c = await db.contributor.findFirst({ where: { nameCanonical: canonical } });
-          return c?.id ?? null;
-        },
-        createContributor: async (name, canonical) => {
-          const c = await db.contributor.create({ data: { nameDisplay: name, nameCanonical: canonical } });
+        upsertContributor: async (name, canonical) => {
+          const c = await db.contributor.upsert({
+            where: { nameCanonical: canonical },
+            create: { nameDisplay: name, nameCanonical: canonical, nameSort: generateNameSort(name) },
+            update: {},
+          });
           return c.id;
         },
         findEditionIdsByWorkId: async (workId) => {
           const editions = await db.edition.findMany({ where: { workId }, select: { id: true } });
           return editions.map((e: { id: string }) => e.id);
         },
-        deleteAuthorContributors: async (editionIds) => {
-          await db.editionContributor.deleteMany({ where: { editionId: { in: editionIds }, role: "AUTHOR" } });
-        },
-        createEditionContributors: async (editionIds, contributorIds) => {
+        // Delete + insert in one transaction: a SIGTERM between the two left
+        // every author stripped from the work's editions.
+        replaceAuthorContributors: async (editionIds, contributorIds) => {
           const data = editionIds.flatMap((editionId: string) =>
             contributorIds.map((contributorId) => ({
               editionId,
@@ -249,18 +253,17 @@ function buildBulkEnrichDeps(
               role: "AUTHOR" as const,
             })),
           );
-          await db.editionContributor.createMany({ data, skipDuplicates: true });
+          await db.$transaction(async (tx) => {
+            await tx.editionContributor.deleteMany({ where: { editionId: { in: editionIds }, role: "AUTHOR" } });
+            await tx.editionContributor.createMany({ data, skipDuplicates: true });
+          });
         },
-        deleteNarratorContributors: async (editionId) => {
-          await db.editionContributor.deleteMany({ where: { editionId, role: "NARRATOR" } });
-        },
-        createNarratorContributors: async (editionId, contributorIds) => {
-          const data = contributorIds.map((contributorId) => ({
-            editionId,
-            contributorId,
-            role: "NARRATOR" as const,
-          }));
-          await db.editionContributor.createMany({ data, skipDuplicates: true });
+        replaceNarratorContributors: async (editionId, contributorIds) => {
+          const data = contributorIds.map((contributorId) => ({ editionId, contributorId, role: "NARRATOR" as const }));
+          await db.$transaction(async (tx) => {
+            await tx.editionContributor.deleteMany({ where: { editionId, role: "NARRATOR" } });
+            await tx.editionContributor.createMany({ data, skipDuplicates: true });
+          });
         },
         upsertExternalLink: async (linkData) => {
           await db.externalLink.upsert({
@@ -376,6 +379,16 @@ const defaultHandlers: EnrichmentWorkerHandlers = {
 
 const ENRICHMENT_ERROR_STATUSES = new Set(["no-results", "no-photo", "not-found", "no-editions"]);
 
+/** The entity ids from a job payload, so a failure log says which work or contributor broke. */
+function jobContext(data: EnrichmentJobPayload<EnrichmentJobName>): Record<string, string> {
+  const context: Record<string, string> = {};
+  for (const key of ["workId", "contributorId", "importJobId"] as const) {
+    const value = (data as Partial<Record<typeof key, string>>)[key];
+    if (typeof value === "string") context[key] = value;
+  }
+  return context;
+}
+
 export function createEnrichmentWorkerProcessor(
   handlers: EnrichmentWorkerHandlers = defaultHandlers,
 ) {
@@ -394,8 +407,12 @@ export function createEnrichmentWorkerProcessor(
       }
       return result;
     } catch (error) {
-      logger.error({ jobId: job.id, jobName: job.name, err: error }, "Enrichment job failed");
-      if (importJobId) {
+      logger.error({ jobId: job.id, jobName: job.name, ...jobContext(job.data), err: error }, "Enrichment job failed");
+      // Only the last attempt counts as a processed (failed) file; counting
+      // every retry inflated processedFiles past totalFiles and closed the
+      // batch as SUCCEEDED while jobs were still queued.
+      const finalAttempt = job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
+      if (importJobId && finalAttempt) {
         await recordBatchJobProgress(importJobId, true).catch(() => {
           /* ImportJob update is best-effort */
         });

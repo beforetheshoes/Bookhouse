@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { isUniqueConstraintError } from "@bookhouse/shared";
 
 const getDuplicatesSchema = z.object({
   status: z.enum(["PENDING", "IGNORED", "CONFIRMED", "MERGED"]).optional(),
@@ -100,15 +101,25 @@ export const mergeDuplicateServerFn = createServerFn({
       throw new Error("Duplicate candidate not found");
     }
 
-    const losingEditionId = (
-      candidate.leftEditionId === data.survivingEditionId
-        ? candidate.rightEditionId
-        : candidate.leftEditionId
-    ) as string;
+    const { leftEditionId, rightEditionId } = candidate;
+    // File-level candidates (SAME_HASH) carry no edition ids, and a stale UI
+    // could name an edition outside the pair; both would otherwise re-parent
+    // an unrelated edition's files and delete the wrong row.
+    if (leftEditionId === null || rightEditionId === null) {
+      throw new Error("This duplicate candidate has no editions to merge");
+    }
+    if (data.survivingEditionId !== leftEditionId && data.survivingEditionId !== rightEditionId) {
+      throw new Error("Surviving edition must be one of the candidate's editions");
+    }
+    const losingEditionId = leftEditionId === data.survivingEditionId ? rightEditionId : leftEditionId;
 
     await db.$transaction(async (tx: {
       editionFile: { updateMany: typeof db.editionFile.updateMany };
-      readingProgress: { updateMany: typeof db.readingProgress.updateMany };
+      readingProgress: {
+        findMany: typeof db.readingProgress.findMany;
+        deleteMany: typeof db.readingProgress.deleteMany;
+        updateMany: typeof db.readingProgress.updateMany;
+      };
       editionContributor: {
         findMany: typeof db.editionContributor.findMany;
         create: typeof db.editionContributor.create;
@@ -123,7 +134,24 @@ export const mergeDuplicateServerFn = createServerFn({
         data: { editionId: data.survivingEditionId },
       });
 
-      // Move reading progress
+      // Move reading progress. A user with a row for the same kind + source on
+      // both editions keeps the surviving edition's row; moving the loser's
+      // would hit the (userId, editionId, progressKind, source) unique key.
+      const progressKey = (row: { userId: string; progressKind: string; source: string }) =>
+        `${row.userId}|${row.progressKind}|${row.source}`;
+      const survivingProgress = await tx.readingProgress.findMany({
+        where: { editionId: data.survivingEditionId },
+        select: { userId: true, progressKind: true, source: true },
+      });
+      const taken = new Set(survivingProgress.map(progressKey));
+      const losingProgress = await tx.readingProgress.findMany({
+        where: { editionId: losingEditionId },
+        select: { id: true, userId: true, progressKind: true, source: true },
+      });
+      const colliding = losingProgress.filter((row) => taken.has(progressKey(row))).map((row) => row.id);
+      if (colliding.length > 0) {
+        await tx.readingProgress.deleteMany({ where: { id: { in: colliding } } });
+      }
       await tx.readingProgress.updateMany({
         where: { editionId: losingEditionId },
         data: { editionId: data.survivingEditionId },
@@ -144,7 +172,7 @@ export const mergeDuplicateServerFn = createServerFn({
             },
           });
         } catch (err) {
-          if (err && typeof err === "object" && "code" in err && err.code === "P2002") {
+          if (err instanceof Error && isUniqueConstraintError(err)) {
             // Already exists on surviving edition — skip
             continue;
           }

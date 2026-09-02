@@ -28,6 +28,8 @@ const deleteMock = vi.fn();
 const transactionMock = vi.fn();
 const editionFileUpdateManyMock = vi.fn();
 const readingProgressUpdateManyMock = vi.fn();
+const readingProgressFindManyMock = vi.fn().mockResolvedValue([]);
+const readingProgressDeleteManyMock = vi.fn();
 const editionContributorFindManyMock = vi.fn();
 const editionContributorCreateMock = vi.fn();
 const editionContributorDeleteManyMock = vi.fn();
@@ -196,6 +198,58 @@ describe("mergeDuplicateServerFn", () => {
     ).rejects.toThrow("Duplicate candidate not found");
   });
 
+  it("rejects a surviving edition outside the candidate pair", async () => {
+    findUniqueMock.mockResolvedValue({ id: "dup-1", leftEditionId: "ed-1", rightEditionId: "ed-2" });
+    await expect(
+      mergeDuplicateServerFn({ data: { id: "dup-1", survivingEditionId: "ed-9" } }),
+    ).rejects.toThrow("Surviving edition must be one of the candidate's editions");
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects file-level candidates that carry no edition ids", async () => {
+    findUniqueMock.mockResolvedValue({ id: "dup-1", leftEditionId: null, rightEditionId: null });
+    await expect(
+      mergeDuplicateServerFn({ data: { id: "dup-1", survivingEditionId: "ed-1" } }),
+    ).rejects.toThrow("no editions to merge");
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  it("drops losing progress rows that would collide with the surviving edition's", async () => {
+    findUniqueMock.mockResolvedValue({ id: "dup-1", leftEditionId: "ed-1", rightEditionId: "ed-2" });
+    transactionMock.mockImplementation(async (fn: (tx: object) => Promise<void>) => {
+      await fn({
+        editionFile: { updateMany: editionFileUpdateManyMock },
+        readingProgress: {
+          findMany: readingProgressFindManyMock,
+          deleteMany: readingProgressDeleteManyMock,
+          updateMany: readingProgressUpdateManyMock,
+        },
+        editionContributor: {
+          findMany: editionContributorFindManyMock,
+          create: editionContributorCreateMock,
+          deleteMany: editionContributorDeleteManyMock,
+        },
+        edition: { delete: editionDeleteMock },
+        duplicateCandidate: { update: updateMock },
+      });
+    });
+    readingProgressFindManyMock
+      .mockResolvedValueOnce([{ userId: "u1", progressKind: "EBOOK", source: "kobo" }])
+      .mockResolvedValueOnce([
+        { id: "rp-collide", userId: "u1", progressKind: "EBOOK", source: "kobo" },
+        { id: "rp-keep", userId: "u1", progressKind: "EBOOK", source: "manual" },
+      ]);
+    editionContributorFindManyMock.mockResolvedValue([]);
+
+    await mergeDuplicateServerFn({ data: { id: "dup-1", survivingEditionId: "ed-1" } });
+
+    expect(readingProgressDeleteManyMock).toHaveBeenCalledWith({ where: { id: { in: ["rp-collide"] } } });
+    expect(readingProgressUpdateManyMock).toHaveBeenCalledWith({
+      where: { editionId: "ed-2" },
+      data: { editionId: "ed-1" },
+    });
+  });
+
   it("merges editions: moves files, progress, contributors, deletes loser, sets MERGED", async () => {
     findUniqueMock.mockResolvedValue({
       id: "dup-1",
@@ -206,7 +260,11 @@ describe("mergeDuplicateServerFn", () => {
     transactionMock.mockImplementation(async (fn: (tx: object) => Promise<void>) => {
       const tx = {
         editionFile: { updateMany: editionFileUpdateManyMock },
-        readingProgress: { updateMany: readingProgressUpdateManyMock },
+        readingProgress: {
+          findMany: readingProgressFindManyMock,
+          deleteMany: readingProgressDeleteManyMock,
+          updateMany: readingProgressUpdateManyMock,
+        },
         editionContributor: {
           findMany: editionContributorFindManyMock,
           create: editionContributorCreateMock,
@@ -224,7 +282,7 @@ describe("mergeDuplicateServerFn", () => {
     ]);
     // Surviving edition already has c1/AUTHOR
     editionContributorCreateMock
-      .mockRejectedValueOnce({ code: "P2002" }) // unique constraint for c1
+      .mockRejectedValueOnce(Object.assign(new Error("unique"), { code: "P2002" })) // unique constraint for c1
       .mockResolvedValueOnce({ id: "ec-new" }); // c2 is new
 
     const result = await mergeDuplicateServerFn({
@@ -266,7 +324,11 @@ describe("mergeDuplicateServerFn", () => {
     transactionMock.mockImplementation(async (fn: (tx: object) => Promise<void>) => {
       const tx = {
         editionFile: { updateMany: editionFileUpdateManyMock },
-        readingProgress: { updateMany: readingProgressUpdateManyMock },
+        readingProgress: {
+          findMany: readingProgressFindManyMock,
+          deleteMany: readingProgressDeleteManyMock,
+          updateMany: readingProgressUpdateManyMock,
+        },
         editionContributor: {
           findMany: editionContributorFindManyMock,
           create: editionContributorCreateMock,
@@ -302,7 +364,11 @@ describe("mergeDuplicateServerFn", () => {
     transactionMock.mockImplementation(async (fn: (tx: object) => Promise<void>) => {
       const tx = {
         editionFile: { updateMany: editionFileUpdateManyMock },
-        readingProgress: { updateMany: readingProgressUpdateManyMock },
+        readingProgress: {
+          findMany: readingProgressFindManyMock,
+          deleteMany: readingProgressDeleteManyMock,
+          updateMany: readingProgressUpdateManyMock,
+        },
         editionContributor: {
           findMany: editionContributorFindManyMock,
           create: editionContributorCreateMock,
@@ -316,7 +382,7 @@ describe("mergeDuplicateServerFn", () => {
     editionContributorFindManyMock.mockResolvedValue([
       { contributorId: "c1", role: "AUTHOR" },
     ]);
-    editionContributorCreateMock.mockRejectedValueOnce({ code: "P2002" });
+    editionContributorCreateMock.mockRejectedValueOnce(Object.assign(new Error("unique"), { code: "P2002" }));
 
     // Should not throw
     await mergeDuplicateServerFn({
@@ -335,7 +401,11 @@ describe("mergeDuplicateServerFn", () => {
     transactionMock.mockImplementation(async (fn: (tx: object) => Promise<void>) => {
       const tx = {
         editionFile: { updateMany: editionFileUpdateManyMock },
-        readingProgress: { updateMany: readingProgressUpdateManyMock },
+        readingProgress: {
+          findMany: readingProgressFindManyMock,
+          deleteMany: readingProgressDeleteManyMock,
+          updateMany: readingProgressUpdateManyMock,
+        },
         editionContributor: {
           findMany: editionContributorFindManyMock,
           create: editionContributorCreateMock,

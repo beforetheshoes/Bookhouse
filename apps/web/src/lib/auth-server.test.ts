@@ -141,6 +141,23 @@ describe("auth server helpers", () => {
       "/",
     );
 
+    // Protocol-relative and backslash forms pass a naive leading-slash check
+    // but resolve to another origin.
+    for (const returnTo of ["//evil.example.com/x", "/\\evil.example.com", "http:", "//"]) {
+      getRequestUrlMock.mockReturnValue(
+        new URL(`http://localhost:3000/auth/login?returnTo=${encodeURIComponent(returnTo)}`),
+      );
+      await handleLoginRequest();
+      expect(createAuthorizationRequestMock).toHaveBeenLastCalledWith(expect.anything(), "/");
+    }
+
+    // A same-origin path keeps its query and fragment.
+    getRequestUrlMock.mockReturnValue(
+      new URL("http://localhost:3000/auth/login?returnTo=%2Flibrary%3Fpage%3D2%23top"),
+    );
+    await handleLoginRequest();
+    expect(createAuthorizationRequestMock).toHaveBeenLastCalledWith(expect.anything(), "/library?page=2#top");
+
     resolveAuthenticatedUserMock.mockResolvedValueOnce({ id: "user-1" });
     await expect(getCurrentUserServerFn()).resolves.toEqual({ id: "user-1" });
   });

@@ -34,6 +34,7 @@ export function EditableField({
   async function save() {
     const trimmed = draft.trim();
     if (required && trimmed === "") {
+      toast.error("This field can't be empty");
       setDraft(value);
       setEditing(false);
       return;

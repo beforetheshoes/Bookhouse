@@ -270,3 +270,9 @@ it("still fires onSearchChange when the search is cleared", async () => {
     expect(onSearchChange).toHaveBeenCalledWith("");
   });
 });
+
+it("follows a search value that changed for another reason, like back navigation", () => {
+  const { rerender } = render(<LibraryToolbar {...defaultProps} searchValue="" />);
+  rerender(<LibraryToolbar {...defaultProps} searchValue="from-url" />);
+  expect(screen.getByDisplayValue("from-url")).toBeTruthy();
+});

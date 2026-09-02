@@ -41,6 +41,20 @@ describe("createAuthMiddleware", () => {
     vi.clearAllMocks();
   });
 
+  it("lets KOReader sync routes through without a browser session", async () => {
+    const deps = createMockDeps();
+    const middleware = createAuthMiddleware(deps);
+
+    for (const pathname of [
+      "/api/koreader/users/auth",
+      "/api/koreader/syncs/progress",
+      "/api/koreader/syncs/progress/abcd1234",
+    ]) {
+      await expect(middleware(createMockEvent(pathname))).resolves.toBeUndefined();
+    }
+    expect(deps.getSession).not.toHaveBeenCalled();
+  });
+
   it("returns 401 when session has no data", async () => {
     const deps = createMockDeps();
     const middleware = createAuthMiddleware(deps);

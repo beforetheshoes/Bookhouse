@@ -68,8 +68,8 @@ describe("createLogger", () => {
       flags: "a",
     });
     expect(multistreamMock).toHaveBeenCalledWith([
-      { stream: process.stdout },
-      { stream: "WRITESTREAM" },
+      { stream: process.stdout, level: "info" },
+      { stream: "WRITESTREAM", level: "info" },
     ]);
     expect(pinoFn).toHaveBeenCalledWith(
       { name: "ingest", level: "info" },

@@ -44,6 +44,15 @@ function collectEntries(stream: Readable): Promise<{ header: Headers; body: Buff
   });
 }
 
+/** Consume the stream to its end, rejecting with the stream's own error. */
+function drain(stream: Readable): Promise<void> {
+  return new Promise((resolve, reject) => {
+    stream.on("error", reject);
+    stream.on("end", resolve);
+    stream.resume();
+  });
+}
+
 function createMockDeps(overrides: Partial<CreateBackupDeps> = {}): CreateBackupDeps {
   return {
     execFile: vi.fn().mockResolvedValue({ stdout: Buffer.from("-- pg_dump output\nCREATE TABLE test;") }),
@@ -224,5 +233,29 @@ describe("createBackup", () => {
     });
 
     await expect(createBackup(deps)).rejects.toThrow("pg_dump: connection refused");
+  });
+
+  it("fails the archive stream when a cover cannot be read", async () => {
+    const deps = createMockDeps({
+      readdir: vi.fn()
+        .mockResolvedValueOnce([makeDirent("work-1", false)])
+        .mockResolvedValueOnce([makeDirent("thumb.webp", true)]),
+      readFile: vi.fn().mockRejectedValue(Object.assign(new Error("ENOENT"), { code: "ENOENT" })),
+    });
+
+    const { stream } = await createBackup(deps);
+    await expect(drain(stream)).rejects.toThrow("ENOENT");
+  });
+
+  it("wraps a non-Error cover read failure", async () => {
+    const deps = createMockDeps({
+      readdir: vi.fn()
+        .mockResolvedValueOnce([makeDirent("work-1", false)])
+        .mockResolvedValueOnce([makeDirent("thumb.webp", true)]),
+      readFile: vi.fn().mockRejectedValue("disk gone"),
+    });
+
+    const { stream } = await createBackup(deps);
+    await expect(drain(stream)).rejects.toThrow("disk gone");
   });
 });

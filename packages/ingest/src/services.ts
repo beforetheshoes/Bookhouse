@@ -26,8 +26,10 @@ import {
   type MatchFileAssetToEditionJobPayload,
   type ParseFileAssetMetadataJobPayload,
   enqueueLibraryJob,
+  isUniqueConstraintError,
   selectPreferredMetadataSourceFile,
 } from "@bookhouse/shared";
+import { getErrorCode, isTransientError, type NodeError } from "./fs-errors";
 import { classifyMediaKind, deriveFormatFamily, getFileExtension, IGNORED_BASENAMES, isIgnoredBasename, normalizeRelativePath, normalizeRootPath } from "./classification";
 import { normalizedSimilarity, normalizeForTitleMatching, stripSubtitleForMatching } from "./similarity";
 import { deriveTitleFromPath, stripFilenameAuthorSuffix } from "./filename-title";
@@ -221,7 +223,7 @@ interface WorkCreateArgs {
 }
 
 interface EditionFindFirstArgs {
-  where: Partial<Pick<EditionRecord, "asin" | "id" | "isbn10" | "isbn13">>;
+  where: Partial<Pick<EditionRecord, "asin" | "formatFamily" | "id" | "isbn10" | "isbn13">>;
 }
 
 interface EditionFindManyArgs {
@@ -266,6 +268,10 @@ interface ContributorCreateArgs {
   data: Pick<ContributorRecord, "nameCanonical" | "nameDisplay">;
 }
 
+interface ContributorFindUniqueArgs {
+  where: { nameCanonical: string };
+}
+
 interface ContributorUpsertArgs {
   where: { nameCanonical: string };
   create: Pick<ContributorRecord, "nameCanonical" | "nameDisplay"> & {
@@ -274,12 +280,14 @@ interface ContributorUpsertArgs {
   update: Record<string, never>;
 }
 
-interface EditionContributorFindFirstArgs {
-  where: Pick<EditionContributorRecord, "contributorId" | "editionId" | "role">;
-}
+type EditionContributorLinkFields = Pick<EditionContributorRecord, "contributorId" | "editionId" | "role">;
 
-interface EditionContributorCreateArgs {
-  data: Pick<EditionContributorRecord, "contributorId" | "editionId" | "role">;
+interface EditionContributorUpsertArgs {
+  // Mirrors Prisma's generated compound-unique input for
+  // @@unique([editionId, contributorId, role]) on EditionContributor.
+  where: { editionId_contributorId_role: EditionContributorLinkFields };
+  create: EditionContributorLinkFields;
+  update: Record<string, never>;
 }
 
 interface LibraryRootUpdateArgs {
@@ -313,6 +321,7 @@ export interface IngestDb {
     findFirst(args: EditionFindFirstArgs): Promise<EditionRecord | null>;
     findMany(args: EditionFindManyArgs): Promise<EditionRecord[]>;
     findManyByIds(args: { ids: string[] }): Promise<EditionRecord[]>;
+    findManyByWorkId(args: { workId: string }): Promise<EditionRecord[]>;
     findUnique(args: { where: { id: string } }): Promise<EditionRecord | null>;
     update(args: { where: { id: string }; data: Partial<Pick<Edition, "asin" | "isbn10" | "isbn13" | "language" | "publisher" | "publishedAt" | "workId">> }): Promise<EditionRecord>;
     updateMany(args: { where: { workId: string }; data: { workId: string } }): Promise<{ count: number }>;
@@ -329,11 +338,11 @@ export interface IngestDb {
   contributor: {
     create(args: ContributorCreateArgs): Promise<ContributorRecord>;
     findMany(args: ContributorFindManyArgs): Promise<ContributorRecord[]>;
+    findUnique(args: ContributorFindUniqueArgs): Promise<ContributorRecord | null>;
     upsert(args: ContributorUpsertArgs): Promise<ContributorRecord>;
   };
   editionContributor: {
-    create(args: EditionContributorCreateArgs): Promise<EditionContributorRecord>;
-    findFirst(args: EditionContributorFindFirstArgs): Promise<EditionContributorRecord | null>;
+    upsert(args: EditionContributorUpsertArgs): Promise<EditionContributorRecord>;
   };
   duplicateCandidate: {
     create(args: DuplicateCandidateCreateArgs): Promise<DuplicateCandidateRecord>;
@@ -361,6 +370,31 @@ export interface IngestDb {
   completeMove(args: {
     editionFileIds: string[];
     toFileAssetId: string;
+    deleteWorkId: string;
+  }): Promise<void>;
+  /**
+   * Atomically merge one Work into another: apply the reconciled metadata,
+   * carry the losing work's tags, external links and per-user progress
+   * preferences across (the surviving work's own rows win on conflict),
+   * re-parent every edition and delete the losing work. Without the
+   * transaction a failure after the edition move left an empty Work behind,
+   * and deleting the loser silently cascaded its tags and provenance.
+   */
+  completeWorkMerge(args: {
+    survivingWorkId: string;
+    losingWorkId: string;
+    updates: WorkMergeUpdates;
+  }): Promise<void>;
+  /**
+   * Atomically fold a stub's edition into the work it was matched to: repoint
+   * (and update) the edition, then remove the now-empty stub work. Two
+   * concurrent MATCH jobs for files grouped into one stub both reach this
+   * step; the second's delete finds nothing and must not fail the job, and a
+   * crash between the two statements must not strand an empty stub.
+   */
+  completeStubMerge(args: {
+    editionId: string;
+    data: Partial<Pick<Edition, "asin" | "isbn10" | "isbn13" | "language" | "workId">>;
     deleteWorkId: string;
   }): Promise<void>;
 }
@@ -596,31 +630,6 @@ function setDirectoryFileAsset(
   fileAssetsByDirectory.set(directoryPath, nextDirectoryAssets);
 }
 
-interface NodeError extends Error {
-  code?: string;
-}
-
-function getErrorCode(error: NodeError): string | undefined {
-  return error.code;
-}
-
-/** Transient infrastructure errors that should be retried, not permanently stored as "unparseable". */
-const TRANSIENT_ERROR_CODES = new Set([
-  "ENOTCONN",    // socket not connected (NFS/network filesystem)
-  "ECONNRESET",  // connection reset by peer
-  "ECONNREFUSED",// connection refused
-  "ETIMEDOUT",   // operation timed out
-  "EIO",         // I/O error (disk/network issue)
-  "EPIPE",       // broken pipe
-  "ENETUNREACH", // network unreachable
-  "EHOSTUNREACH",// host unreachable
-  "ECONNABORTED",// connection aborted
-]);
-
-function isTransientError(error: NodeError): boolean {
-  const code = getErrorCode(error);
-  return code !== undefined && TRANSIENT_ERROR_CODES.has(code);
-}
 
 function parseStoredMetadata(metadata: FileAsset["metadata"]): ParsedFileAssetMetadata | undefined {
   if (metadata === null || typeof metadata !== "object" || Array.isArray(metadata)) {
@@ -1041,6 +1050,23 @@ async function linkFileToEdition(
   return createdEditionFile;
 }
 
+async function workOwnsOnlyFile(
+  ingestDb: IngestDb,
+  workId: string,
+  fileAssetId: string,
+): Promise<boolean> {
+  const editions = await ingestDb.edition.findManyByWorkId({ workId });
+  for (const edition of editions) {
+    const editionFiles = await ingestDb.editionFile.findMany({
+      where: { editionId: edition.id },
+    });
+    if (editionFiles.some((editionFile) => editionFile.fileAssetId !== fileAssetId)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 async function ensureContributors(
   ingestDb: IngestDb,
   editionId: string,
@@ -1062,29 +1088,63 @@ async function ensureContributors(
   // works by the same author can't race-create duplicate Contributor rows.
   // The empty `update` is intentional — we never want to overwrite the
   // existing display name or sort key from a re-ingest.
+  //
+  // Prisma's upsert can still surface P2002 when a concurrent writer commits
+  // the same canonical name between its select and insert. The row exists
+  // either way, so re-fetch it and link that — mirroring the P2002 handling
+  // on the editionContributor upsert below.
   for (const entry of normalizedNames) {
-    const contributor = await ingestDb.contributor.upsert({
-      where: { nameCanonical: entry.nameCanonical },
-      create: entry,
-      update: {},
-    });
+    let contributor: ContributorRecord;
+    try {
+      contributor = await ingestDb.contributor.upsert({
+        where: { nameCanonical: entry.nameCanonical },
+        create: entry,
+        update: {},
+      });
+    } catch (error) {
+      if (error instanceof Error && isUniqueConstraintError(error)) {
+        const existing = await ingestDb.contributor.findUnique({
+          where: { nameCanonical: entry.nameCanonical },
+        });
+        // Nothing deletes Contributor rows today, so a null here would be an
+        // unexpected state; skip the name rather than fail the whole parse.
+        if (existing === null) {
+          continue;
+        }
+        contributor = existing;
+      } else {
+        throw error;
+      }
+    }
 
-    const existingLink = await ingestDb.editionContributor.findFirst({
-      where: {
-        contributorId: contributor.id,
-        editionId,
-        role,
-      },
-    });
-
-    if (existingLink === null) {
-      await ingestDb.editionContributor.create({
-        data: {
+    // Idempotent link upserted on the (editionId, contributorId, role) unique
+    // key. A findFirst-then-create here raced with concurrent PARSE jobs for
+    // the same book folder: both saw no link, both created one, and the loser
+    // surfaced P2002 as a bogus "unparseable" Library Issue. Prisma's upsert
+    // can still surface P2002 under rare concurrent interleavings, so swallow
+    // it — the link exists either way. Mirrors the P2002 handling used by
+    // duplicate-merge and the enrichment writer.
+    try {
+      await ingestDb.editionContributor.upsert({
+        where: {
+          editionId_contributorId_role: {
+            contributorId: contributor.id,
+            editionId,
+            role,
+          },
+        },
+        create: {
           contributorId: contributor.id,
           editionId,
           role,
         },
+        update: {},
       });
+    } catch (error) {
+      if (error instanceof Error && isUniqueConstraintError(error)) {
+        continue;
+      }
+      throw error;
     }
   }
 }
@@ -1147,7 +1207,7 @@ async function walkRegularFiles(
           continue;
         }
 
-        if (entryStats.isFile()) {
+        if (entryStats.isFile() && !isIgnoredBasename(entry.name)) {
           files.push(absolutePath);
         }
       } catch (error) {
@@ -1229,13 +1289,21 @@ function createDefaultIngestDb(): IngestDb {
     libraryRoot: prisma.libraryRoot as object as IngestDb["libraryRoot"],
     fileAsset: {
       ...(prisma.fileAsset as object as Omit<IngestDb["fileAsset"], "findByDirectory">),
+      // Direct children only. The prefix query also returns files in nested
+      // folders (`Author/Series/Book2.epub` for `Author/`), and every caller
+      // means "the files scanned into this same folder" — the scan groups by
+      // exact `path.dirname`, so a prefix match would link a PDF to a
+      // different book one level down.
       async findByDirectory(args: { directoryPath: string; mediaKinds: MediaKind[] }) {
-        return prisma.fileAsset.findMany({
+        const candidates = await prisma.fileAsset.findMany({
           where: {
             absolutePath: { startsWith: args.directoryPath + "/" },
             mediaKind: { in: args.mediaKinds },
           },
-        }) as object as Promise<FileAssetRecord[]>;
+        }) as object as FileAssetRecord[];
+        return candidates.filter(
+          (fileAsset) => path.dirname(fileAsset.absolutePath) === args.directoryPath,
+        );
       },
       async updateMany(args: FileAssetUpdateManyArgs) {
         return prisma.fileAsset.updateMany(args as never) as object as Promise<{ count: number }>;
@@ -1253,10 +1321,15 @@ function createDefaultIngestDb(): IngestDb {
       },
     },
     edition: {
-      ...(prisma.edition as object as Omit<IngestDb["edition"], "findManyByIds" | "update">),
+      ...(prisma.edition as object as Omit<IngestDb["edition"], "findManyByIds" | "findManyByWorkId" | "update">),
       async findManyByIds(args: { ids: string[] }) {
         return prisma.edition.findMany({
           where: { id: { in: args.ids } },
+        }) as object as Promise<EditionRecord[]>;
+      },
+      async findManyByWorkId(args: { workId: string }) {
+        return prisma.edition.findMany({
+          where: { workId: args.workId },
         }) as object as Promise<EditionRecord[]>;
       },
       async update(args: { where: { id: string }; data: Partial<Pick<Edition, "asin" | "isbn10" | "isbn13" | "language" | "publisher" | "publishedAt" | "workId">> }) {
@@ -1267,16 +1340,80 @@ function createDefaultIngestDb(): IngestDb {
     contributor: prisma.contributor as object as IngestDb["contributor"],
     editionContributor: prisma.editionContributor as object as IngestDb["editionContributor"],
     series: {
+      // Real upsert on the unique name: a find-then-create raced under
+      // concurrent PARSE jobs and split a series into duplicate rows.
       async upsert(args: { name: string }) {
-        const existing = await prisma.series.findFirst({ where: { name: args.name } });
-        if (existing) return { id: existing.id, name: existing.name };
-        const created = await prisma.series.create({ data: { name: args.name } });
-        return { id: created.id, name: created.name };
+        return prisma.series.upsert({
+          where: { name: args.name },
+          create: { name: args.name },
+          update: {},
+          select: { id: true, name: true },
+        });
       },
     },
     duplicateCandidate: prisma.duplicateCandidate as object as IngestDb["duplicateCandidate"],
     matchSuggestion: prisma.matchSuggestion as object as IngestDb["matchSuggestion"],
     externalLink: prisma.externalLink as object as IngestDb["externalLink"],
+    async completeStubMerge({ editionId, data, deleteWorkId }) {
+      await prisma.$transaction(async (tx) => {
+        await tx.edition.update({ where: { id: editionId }, data });
+        // deleteMany: a zero-row delete is not an error inside the transaction
+        // (a concurrent MATCH may already have removed the stub).
+        await tx.work.deleteMany({ where: { id: deleteWorkId } });
+      });
+    },
+    async completeWorkMerge({ survivingWorkId, losingWorkId, updates }) {
+      await prisma.$transaction(async (tx) => {
+        if (Object.keys(updates).length > 0) {
+          await tx.work.update({ where: { id: survivingWorkId }, data: updates });
+        }
+
+        const losingTags = await tx.workTag.findMany({
+          where: { workId: losingWorkId },
+          select: { tagId: true },
+        });
+        if (losingTags.length > 0) {
+          await tx.workTag.createMany({
+            data: losingTags.map(({ tagId }) => ({ workId: survivingWorkId, tagId })),
+            skipDuplicates: true,
+          });
+        }
+
+        // (workId, provider, externalId) is unique: drop the loser's copies of
+        // links the survivor already has, then move the rest.
+        const survivingLinks = await tx.externalLink.findMany({
+          where: { workId: survivingWorkId },
+          select: { provider: true, externalId: true },
+        });
+        if (survivingLinks.length > 0) {
+          await tx.externalLink.deleteMany({
+            where: { workId: losingWorkId, OR: survivingLinks },
+          });
+        }
+        await tx.externalLink.updateMany({
+          where: { workId: losingWorkId },
+          data: { workId: survivingWorkId },
+        });
+
+        // (userId, workId) is unique: same rule for per-user tracking modes.
+        const survivingPreferences = await tx.workProgressPreference.findMany({
+          where: { workId: survivingWorkId },
+          select: { userId: true },
+        });
+        if (survivingPreferences.length > 0) {
+          await tx.workProgressPreference.deleteMany({
+            where: { workId: losingWorkId, userId: { in: survivingPreferences.map(({ userId }) => userId) } },
+          });
+        }
+        await tx.workProgressPreference.updateMany({
+          where: { workId: losingWorkId },
+          data: { workId: survivingWorkId },
+        });
+
+        await tx.edition.updateMany({ where: { workId: losingWorkId }, data: { workId: survivingWorkId } });
+        await tx.work.delete({ where: { id: losingWorkId } });
+      });
+    },
     async completeMove({ editionFileIds, toFileAssetId, deleteWorkId }) {
       await prisma.$transaction([
         ...editionFileIds.map((id) =>
@@ -1296,6 +1433,8 @@ interface ScanRecoveryContext {
   editionFileByFileAssetId: Map<string, EditionFileRecord>;
   fileAssetsByDirectory: Map<string, FileAssetRecord[]>;
   workById: Map<string, WorkRecord>;
+  /** Editions already given a MATCH_SUGGESTIONS job in this scan. */
+  matchSuggestionEditionIds: Set<string>;
 }
 
 function addRecoveryJobIdOnce(enqueuedRecoveryJobs: string[], fileAssetId: string): void {
@@ -1336,20 +1475,20 @@ async function recoverUnchangedFile(
               await enqueueJob(LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA, {
                 fileAssetId: opfSibling.id,
               });
-              enqueuedRecoveryJobs.push(upsertedFileAsset.id);
+              addRecoveryJobIdOnce(enqueuedRecoveryJobs, upsertedFileAsset.id);
             } else {
               logger.info({ fileAssetId: upsertedFileAsset.id, workId: work.id, reason: "work stuck at STUB (no OPF)" }, "Recovery: re-enqueueing MATCH");
               await enqueueJob(LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, {
                 fileAssetId: upsertedFileAsset.id,
               });
-              enqueuedRecoveryJobs.push(upsertedFileAsset.id);
+              addRecoveryJobIdOnce(enqueuedRecoveryJobs, upsertedFileAsset.id);
             }
           } else {
             logger.info({ fileAssetId: upsertedFileAsset.id, workId: work.id, reason: "work stuck at STUB" }, "Recovery: re-enqueueing MATCH");
             await enqueueJob(LIBRARY_JOB_NAMES.MATCH_FILE_ASSET_TO_EDITION, {
               fileAssetId: upsertedFileAsset.id,
             });
-            enqueuedRecoveryJobs.push(upsertedFileAsset.id);
+            addRecoveryJobIdOnce(enqueuedRecoveryJobs, upsertedFileAsset.id);
           }
         }
         if (work && work.coverPath === null) {
@@ -1374,11 +1513,16 @@ async function recoverUnchangedFile(
         addRecoveryJobIdOnce(enqueuedRecoveryJobs, upsertedFileAsset.id);
       }
 
+      // One job per edition, not per track: the suggestion job loads the
+      // whole library to compare titles, and a 20-track audiobook re-enqueued
+      // it 20 times on every incremental scan.
       if (
         upsertedFileAsset.mediaKind === MediaKind.AUDIO &&
         edition &&
-        edition.formatFamily === FormatFamily.AUDIOBOOK
+        edition.formatFamily === FormatFamily.AUDIOBOOK &&
+        !recoveryContext.matchSuggestionEditionIds.has(edition.id)
       ) {
+        recoveryContext.matchSuggestionEditionIds.add(edition.id);
         await enqueueJob(LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS, {
           fileAssetId: upsertedFileAsset.id,
         });
@@ -1494,6 +1638,12 @@ async function detectDuplicatesImpl(
       where: { fullHash: fileAsset.fullHash, NOT: { id: fileAsset.id } },
     });
     for (const match of hashMatches) {
+      // A MISSING copy (a move's leftover, or a deleted duplicate) is not a
+      // reviewable duplicate; pairing it produced candidates the review UI
+      // could not act on.
+      if (match.availabilityStatus !== AvailabilityStatus.PRESENT) {
+        continue;
+      }
       const matchEditionFile = await ingestDb.editionFile.findFirst({
         where: { fileAssetId: match.id },
       });
@@ -1662,6 +1812,8 @@ const SUBTITLE_CONFIDENCE_PENALTY = 0.9;
 
 const MERGE_METADATA_FIELDS = ["description", "coverPath", "seriesId", "seriesPosition", "sortTitle"] as const;
 
+export type WorkMergeUpdates = Partial<Pick<WorkRecord, typeof MERGE_METADATA_FIELDS[number]>>;
+
 interface TitleMatchResult {
   similarity: number;
   matchType: string;
@@ -1720,8 +1872,10 @@ function computeTitleMatch(
       }
     }
   }
-  // Also try: one side stripped, other side canonical (common case: audiobook has no subtitle, ebook has one)
-  if (strippedA || strippedB) {
+  // Also try: one side stripped, other side canonical (common case: audiobook
+  // has no subtitle, ebook has one). With both sides stripped this would just
+  // repeat pass 3, so it only runs when exactly one side had a subtitle.
+  if ((strippedA === undefined) !== (strippedB === undefined)) {
     const effectiveA = strippedA ?? canonicalA;
     const effectiveB = strippedB ?? canonicalB;
     if (hasAuthors) {
@@ -1745,23 +1899,18 @@ async function mergeWorks(
   losingWork: WorkRecord,
 ): Promise<void> {
   // Reconcile metadata: fill nulls on surviving work from losing work
-  const updates: Partial<Pick<WorkRecord, typeof MERGE_METADATA_FIELDS[number]>> = {};
-  let hasUpdates = false;
+  const updates: WorkMergeUpdates = {};
   for (const field of MERGE_METADATA_FIELDS) {
     if (survivingWork[field] === null && losingWork[field] !== null) {
       (updates as Record<string, string | number | null | undefined>)[field] = losingWork[field];
-      hasUpdates = true;
     }
   }
-  if (hasUpdates) {
-    await ingestDb.work.update({ where: { id: survivingWork.id }, data: updates });
-  }
 
-  // Move all editions from losing work to surviving work
-  await ingestDb.edition.updateMany({ where: { workId: losingWork.id }, data: { workId: survivingWork.id } });
-
-  // Delete losing work (cascades CollectionItems, WorkProgressPreferences)
-  await ingestDb.work.delete({ where: { id: losingWork.id } });
+  await ingestDb.completeWorkMerge({
+    survivingWorkId: survivingWork.id,
+    losingWorkId: losingWork.id,
+    updates,
+  });
 }
 
 async function matchSuggestionsImpl(
@@ -1951,6 +2100,7 @@ export function createIngestServices(
       : await ingestDb.edition.findManyByIds({
         ids: [...new Set(existingEditionFiles.map((editionFile) => editionFile.editionId))],
       });
+    const matchSuggestionEditionIds = new Set<string>();
     const editionById = new Map(
       existingEditions.map((edition) => [edition.id, edition]),
     );
@@ -2075,6 +2225,7 @@ export function createIngestServices(
             editionFileByFileAssetId,
             fileAssetsByDirectory,
             workById,
+            matchSuggestionEditionIds,
           },
           logger,
           enqueueJob,
@@ -2322,11 +2473,27 @@ export function createIngestServices(
             const missingMatches = hashMatches.filter(
               (fa) => fa.availabilityStatus === AvailabilityStatus.MISSING,
             );
+            // Completing a move deletes `currentWork` outright, so only a work
+            // that owns nothing but this file may be treated as the moved
+            // file's throwaway stub. A file that is re-hashed because its mtime
+            // changed may already sit in a real Work with sibling editions,
+            // other files and reading progress; a MISSING copy elsewhere is
+            // then a deleted duplicate, not a move, and the Work must stay.
+            const currentWorkOwnsOnlyThisFile =
+              missingMatches.length === 0 ||
+              (await workOwnsOnlyFile(ingestDb, currentWork.id, fileAsset.id));
             // A move can leave behind linkless MISSING "orphan" assets from
             // earlier moves. Skip those and transfer from the first MISSING
             // match that still owns edition links, so repeated renames re-link
             // instead of creating a duplicate.
             for (const missingMatch of missingMatches) {
+              if (!currentWorkOwnsOnlyThisFile) {
+                logger.info(
+                  { currentWorkId: currentWork.id, fileAssetId: fileAsset.id, missingFileAssetId: missingMatch.id },
+                  "Skipping move detection: current work owns other files",
+                );
+                break;
+              }
               const missingEditionFiles = await ingestDb.editionFile.findMany({
                 where: { fileAssetId: missingMatch.id },
               });
@@ -2487,7 +2654,10 @@ export function createIngestServices(
         const directory = path.dirname(fileAsset.absolutePath);
         const siblings = await ingestDb.fileAsset.findByDirectory({
           directoryPath: directory,
-          mediaKinds: [MediaKind.EPUB, MediaKind.PDF, MediaKind.CBZ, MediaKind.AUDIO],
+          // Every ebook variant the scan groups (EPUB, KEPUB, MOBI, AZW…), not
+          // just EPUB: a Calibre folder with metadata.opf + Book.azw3 was
+          // otherwise never enriched and re-parsed on every scan.
+          mediaKinds: [...SCAN_GROUPED_EBOOK_MEDIA_KINDS, MediaKind.PDF, MediaKind.CBZ, MediaKind.AUDIO],
         });
 
         for (const sibling of siblings) {
@@ -2504,8 +2674,9 @@ export function createIngestServices(
           if (!edition) continue;
 
           // Update edition fields (only if null — supplement, not override)
-          const editionUpdates: Partial<Pick<EditionRecord, "publisher" | "publishedAt" | "isbn13" | "isbn10" | "asin">> = {};
+          const editionUpdates: Partial<Pick<EditionRecord, "publisher" | "publishedAt" | "isbn13" | "isbn10" | "asin" | "language">> = {};
           if (!edition.publisher && normalized.publisher) editionUpdates.publisher = normalized.publisher;
+          if (!edition.language && normalized.language) editionUpdates.language = normalized.language;
           if (!edition.publishedAt && normalized.date) {
             const parsedDate = new Date(normalized.date);
             if (!isNaN(parsedDate.getTime())) editionUpdates.publishedAt = parsedDate;
@@ -2531,13 +2702,6 @@ export function createIngestServices(
           const workUpdates: Partial<Pick<WorkRecord, "description" | "seriesId" | "seriesPosition" | "titleDisplay" | "titleCanonical" | "enrichmentStatus">> = {};
           if (!work.description && normalized.description) workUpdates.description = normalized.description;
 
-          if (!edition.language && normalized.language) {
-            await ingestDb.edition.update({
-              where: { id: edition.id },
-              data: { language: normalized.language },
-            });
-          }
-
           if (!work.seriesId && normalized.series) {
             const series = await ingestDb.series.upsert({
               name: normalized.series.name,
@@ -2551,7 +2715,7 @@ export function createIngestServices(
           // Transition STUB works to ENRICHED with title from OPF
           if (work.enrichmentStatus === "STUB" && normalized.title) {
             workUpdates.titleDisplay = normalized.title;
-            workUpdates.titleCanonical = canonicalizeBookTitle(normalized.title);
+            workUpdates.titleCanonical = canonicalizeBookTitle(normalized.title) ?? normalized.title.toLowerCase();
             workUpdates.enrichmentStatus = "ENRICHED";
           }
 
@@ -2994,21 +3158,27 @@ export function createIngestServices(
     }
   }
 
+  // Scoped to the file's own format family: an audiobook's metadata.json
+  // often carries the print ISBN, and matching across families linked EPUBs
+  // as files of AUDIOBOOK editions (and vice versa), where format-specific
+  // delivery (Kobo, OPDS) could never see them.
   async function findEditionByIdentifiers(
     identifiers: NormalizedBookMetadata["identifiers"] | undefined,
+    formatFamily: FormatFamily | null,
   ): Promise<EditionRecord | null> {
     if (!identifiers?.isbn13 && !identifiers?.isbn10 && !identifiers?.asin) {
       return null;
     }
+    const scope = formatFamily === null ? {} : { formatFamily };
     return (
       (identifiers.isbn13
-        ? await ingestDb.edition.findFirst({ where: { isbn13: identifiers.isbn13 } })
+        ? await ingestDb.edition.findFirst({ where: { isbn13: identifiers.isbn13, ...scope } })
         : null) ??
       (identifiers.isbn10
-        ? await ingestDb.edition.findFirst({ where: { isbn10: identifiers.isbn10 } })
+        ? await ingestDb.edition.findFirst({ where: { isbn10: identifiers.isbn10, ...scope } })
         : null) ??
       (identifiers.asin
-        ? await ingestDb.edition.findFirst({ where: { asin: identifiers.asin } })
+        ? await ingestDb.edition.findFirst({ where: { asin: identifiers.asin, ...scope } })
         : null)
     );
   }
@@ -3055,7 +3225,7 @@ export function createIngestServices(
         if (storedMeta?.status === "parsed" && matchableMeta !== undefined) {
           // Check for ISBN/title+author match against other works
           const identifiers = storedMeta.normalized?.identifiers;
-          const editionMatch = await findEditionByIdentifiers(identifiers);
+          const editionMatch = await findEditionByIdentifiers(identifiers, existingEdition.formatFamily);
 
           const matchedDifferentWork = editionMatch !== null && editionMatch.workId !== finalWorkId;
 
@@ -3075,16 +3245,16 @@ export function createIngestServices(
 
             if (titleAuthorMatch) {
               // Merge: re-link edition to matched work, delete orphan stub
-              await ingestDb.edition.update({
-                where: { id: existingEdition.id },
+              await ingestDb.completeStubMerge({
+                editionId: existingEdition.id,
                 data: {
                   workId: titleAuthorMatch.id,
                   isbn13: identifiers?.isbn13 ?? null,
                   isbn10: identifiers?.isbn10 ?? null,
                   asin: identifiers?.asin ?? null,
                 },
+                deleteWorkId: finalWorkId,
               });
-              await ingestDb.work.delete({ where: { id: finalWorkId } });
               mergedIntoWorkId = titleAuthorMatch.id;
               finalWorkId = titleAuthorMatch.id;
               enrichedExistingWork = true;
@@ -3114,11 +3284,11 @@ export function createIngestServices(
             }
           } else {
             // ISBN matched a different work — merge
-            await ingestDb.edition.update({
-              where: { id: existingEdition.id },
+            await ingestDb.completeStubMerge({
+              editionId: existingEdition.id,
               data: { workId: editionMatch.workId },
+              deleteWorkId: finalWorkId,
             });
-            await ingestDb.work.delete({ where: { id: finalWorkId } });
             mergedIntoWorkId = editionMatch.workId;
             finalWorkId = editionMatch.workId;
             enrichedExistingWork = true;
@@ -3356,7 +3526,10 @@ export function createIngestServices(
   async function matchByIdentifiers(
     ctx: MatchContext,
   ): Promise<MatchFileAssetToEditionResult | null> {
-    const editionMatch = await findEditionByIdentifiers(ctx.identifiers);
+    const editionMatch = await findEditionByIdentifiers(
+      ctx.identifiers,
+      deriveFormatFamily(ctx.fileAsset.mediaKind),
+    );
 
     if (editionMatch === null) {
       return null;

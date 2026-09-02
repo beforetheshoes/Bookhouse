@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { runMutation } from "~/lib/mutation";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import { MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
@@ -94,7 +95,7 @@ function ShelvesPage() {
       cell: ({ row }) => (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" data-testid={`actions-${row.original.id}`}>
+            <Button variant="ghost" size="sm" data-testid={`actions-${row.original.id}`} aria-label={`Actions for ${row.original.name}`}>
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
@@ -143,7 +144,10 @@ function ShelvesPage() {
         onCreated={() => { void router.invalidate(); }}
       />
 
+      {/* Keyed so the name field re-seeds for each shelf; the dialog's draft
+          state is initialised once per mount. */}
       <RenameShelfDialog
+        key={renameTarget?.id ?? "none"}
         open={renameTarget !== null}
         onOpenChange={() => { setRenameTarget(null); }}
         shelfId={renameTarget?.id ?? ""}
@@ -184,7 +188,11 @@ function CreateShelfDialog({
   const handleCreate = async () => {
     setSaving(true);
     try {
-      await createShelfServerFn({ data: { name: name.trim(), formatFilter } });
+      const created = await runMutation(
+        () => createShelfServerFn({ data: { name: name.trim(), formatFilter } }),
+        { success: "Shelf created", error: "Couldn't create the shelf" },
+      );
+      if (created === null) return;
       setName("");
       setFormatFilter("ALL");
       onOpenChange(false);
@@ -252,7 +260,11 @@ function RenameShelfDialog({
   const handleRename = async () => {
     setSaving(true);
     try {
-      await renameShelfServerFn({ data: { shelfId, name: name.trim() } });
+      const renamed = await runMutation(
+        () => renameShelfServerFn({ data: { shelfId, name: name.trim() } }),
+        { success: "Shelf renamed", error: "Couldn't rename the shelf" },
+      );
+      if (renamed === null) return;
       onOpenChange(false);
       onRenamed();
     } finally {
@@ -303,7 +315,11 @@ function DeleteShelfDialog({
   const handleDelete = async () => {
     setDeleting(true);
     try {
-      await deleteShelfServerFn({ data: { shelfId } });
+      const deleted = await runMutation(
+        () => deleteShelfServerFn({ data: { shelfId } }),
+        { success: "Shelf deleted", error: "Couldn't delete the shelf" },
+      );
+      if (deleted === null) return;
       onOpenChange(false);
       onDeleted();
     } finally {

@@ -23,8 +23,7 @@ vi.mock("@tanstack/react-start", () => ({
 
 const workFindUniqueMock = vi.fn();
 const workUpdateMock = vi.fn();
-const tagFindFirstMock = vi.fn();
-const tagCreateMock = vi.fn();
+const tagUpsertMock = vi.fn();
 const tagFindManyMock = vi.fn();
 const workTagDeleteManyMock = vi.fn();
 const workTagCreateManyMock = vi.fn();
@@ -37,8 +36,7 @@ vi.mock("@bookhouse/db", () => ({
       update: workUpdateMock,
     },
     tag: {
-      findFirst: tagFindFirstMock,
-      create: tagCreateMock,
+      upsert: tagUpsertMock,
       findMany: tagFindManyMock,
     },
     workTag: {
@@ -57,8 +55,7 @@ import {
 beforeEach(() => {
   workFindUniqueMock.mockReset();
   workUpdateMock.mockReset();
-  tagFindFirstMock.mockReset();
-  tagCreateMock.mockReset();
+  tagUpsertMock.mockReset();
   tagFindManyMock.mockReset();
   workTagDeleteManyMock.mockReset();
   workTagCreateManyMock.mockReset();
@@ -68,9 +65,9 @@ beforeEach(() => {
 describe("updateWorkTagsServerFn", () => {
   it("creates tags and associates them with the work", async () => {
     workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: [] });
-    tagFindFirstMock.mockResolvedValue(null);
-    tagCreateMock.mockResolvedValueOnce({ id: "t1" }).mockResolvedValueOnce({ id: "t2" });
-    transactionMock.mockImplementation(async (fn: () => Promise<object>) => fn());
+    tagUpsertMock.mockResolvedValueOnce({ id: "t1" }).mockResolvedValueOnce({ id: "t2" });
+    transactionMock.mockImplementation(async (fn: (tx: object) => Promise<object>) =>
+      fn({ workTag: { deleteMany: workTagDeleteManyMock, createMany: workTagCreateManyMock } }));
     workTagDeleteManyMock.mockResolvedValue({ count: 0 });
     workTagCreateManyMock.mockResolvedValue({ count: 2 });
     workUpdateMock.mockResolvedValue({ id: "w1" });
@@ -79,12 +76,16 @@ describe("updateWorkTagsServerFn", () => {
       data: { workId: "w1", tags: ["Fiction", "Sci-Fi"] },
     });
 
-    expect(tagCreateMock).toHaveBeenCalledTimes(2);
-    expect(tagCreateMock).toHaveBeenCalledWith({
-      data: { name: "Fiction", nameCanonical: "fiction" },
+    expect(tagUpsertMock).toHaveBeenCalledTimes(2);
+    expect(tagUpsertMock).toHaveBeenCalledWith({
+      where: { nameCanonical: "fiction" },
+      create: { name: "Fiction", nameCanonical: "fiction" },
+      update: {},
     });
-    expect(tagCreateMock).toHaveBeenCalledWith({
-      data: { name: "Sci-Fi", nameCanonical: "sci-fi" },
+    expect(tagUpsertMock).toHaveBeenCalledWith({
+      where: { nameCanonical: "sci-fi" },
+      create: { name: "Sci-Fi", nameCanonical: "sci-fi" },
+      update: {},
     });
     expect(workTagDeleteManyMock).toHaveBeenCalledWith({
       where: { workId: "w1" },
@@ -105,8 +106,9 @@ describe("updateWorkTagsServerFn", () => {
 
   it("reuses existing tags by canonical name", async () => {
     workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: [] });
-    tagFindFirstMock.mockResolvedValue({ id: "existing-t1" });
-    transactionMock.mockImplementation(async (fn: () => Promise<object>) => fn());
+    tagUpsertMock.mockResolvedValue({ id: "existing-t1" });
+    transactionMock.mockImplementation(async (fn: (tx: object) => Promise<object>) =>
+      fn({ workTag: { deleteMany: workTagDeleteManyMock, createMany: workTagCreateManyMock } }));
     workTagDeleteManyMock.mockResolvedValue({ count: 0 });
     workTagCreateManyMock.mockResolvedValue({ count: 1 });
     workUpdateMock.mockResolvedValue({ id: "w1" });
@@ -115,7 +117,7 @@ describe("updateWorkTagsServerFn", () => {
       data: { workId: "w1", tags: ["Fiction"] },
     });
 
-    expect(tagCreateMock).not.toHaveBeenCalled();
+    expect(tagUpsertMock).toHaveBeenCalledTimes(1);
     expect(workTagCreateManyMock).toHaveBeenCalledWith({
       data: [{ workId: "w1", tagId: "existing-t1" }],
       skipDuplicates: true,
@@ -124,9 +126,9 @@ describe("updateWorkTagsServerFn", () => {
 
   it("skips blank tag names", async () => {
     workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: [] });
-    tagFindFirstMock.mockResolvedValue(null);
-    tagCreateMock.mockResolvedValue({ id: "t1" });
-    transactionMock.mockImplementation(async (fn: () => Promise<object>) => fn());
+    tagUpsertMock.mockResolvedValue({ id: "t1" });
+    transactionMock.mockImplementation(async (fn: (tx: object) => Promise<object>) =>
+      fn({ workTag: { deleteMany: workTagDeleteManyMock, createMany: workTagCreateManyMock } }));
     workTagDeleteManyMock.mockResolvedValue({ count: 0 });
     workTagCreateManyMock.mockResolvedValue({ count: 1 });
     workUpdateMock.mockResolvedValue({ id: "w1" });
@@ -135,15 +137,18 @@ describe("updateWorkTagsServerFn", () => {
       data: { workId: "w1", tags: ["Fiction", "", "  "] },
     });
 
-    expect(tagCreateMock).toHaveBeenCalledTimes(1);
-    expect(tagCreateMock).toHaveBeenCalledWith({
-      data: { name: "Fiction", nameCanonical: "fiction" },
+    expect(tagUpsertMock).toHaveBeenCalledTimes(1);
+    expect(tagUpsertMock).toHaveBeenCalledWith({
+      where: { nameCanonical: "fiction" },
+      create: { name: "Fiction", nameCanonical: "fiction" },
+      update: {},
     });
   });
 
   it("clears all tags when empty array is passed", async () => {
     workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: [] });
-    transactionMock.mockImplementation(async (fn: () => Promise<object>) => fn());
+    transactionMock.mockImplementation(async (fn: (tx: object) => Promise<object>) =>
+      fn({ workTag: { deleteMany: workTagDeleteManyMock, createMany: workTagCreateManyMock } }));
     workTagDeleteManyMock.mockResolvedValue({ count: 2 });
     workTagCreateManyMock.mockResolvedValue({ count: 0 });
     workUpdateMock.mockResolvedValue({ id: "w1" });
@@ -162,7 +167,8 @@ describe("updateWorkTagsServerFn", () => {
 
   it("merges editedFields with existing values", async () => {
     workFindUniqueMock.mockResolvedValue({ id: "w1", editedFields: ["description"] });
-    transactionMock.mockImplementation(async (fn: () => Promise<object>) => fn());
+    transactionMock.mockImplementation(async (fn: (tx: object) => Promise<object>) =>
+      fn({ workTag: { deleteMany: workTagDeleteManyMock, createMany: workTagCreateManyMock } }));
     workTagDeleteManyMock.mockResolvedValue({ count: 0 });
     workTagCreateManyMock.mockResolvedValue({ count: 0 });
     workUpdateMock.mockResolvedValue({ id: "w1" });
@@ -179,7 +185,8 @@ describe("updateWorkTagsServerFn", () => {
 
   it("handles work not found for editedFields gracefully", async () => {
     workFindUniqueMock.mockResolvedValue(null);
-    transactionMock.mockImplementation(async (fn: () => Promise<object>) => fn());
+    transactionMock.mockImplementation(async (fn: (tx: object) => Promise<object>) =>
+      fn({ workTag: { deleteMany: workTagDeleteManyMock, createMany: workTagCreateManyMock } }));
     workTagDeleteManyMock.mockResolvedValue({ count: 0 });
     workTagCreateManyMock.mockResolvedValue({ count: 0 });
     workUpdateMock.mockResolvedValue({ id: "w1" });
