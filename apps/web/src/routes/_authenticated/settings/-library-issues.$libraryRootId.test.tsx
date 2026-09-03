@@ -106,7 +106,7 @@ describe("LibraryIssuesPage", () => {
     const Route = extractRoute<MockRoute>(mod);
     const Page = Route.options.component;
     render(<Page />);
-    expect(screen.getByText("42 total issues")).toBeTruthy();
+    expect(screen.getByText("42 issues")).toBeTruthy();
   });
 
   it("loader calls getLibraryIssuesServerFn", async () => {
@@ -265,5 +265,17 @@ describe("LibraryIssuesPage", () => {
     await user.click(screen.getByRole("button", { name: /retry all/i }));
 
     expect(retryLibraryIssuesServerFnMock).toHaveBeenCalled();
+  });
+
+  it("says when only the first page of issues is shown", async () => {
+    mockLoaderData = {
+      libraryRootId: "root-1",
+      issues: { items: [{ id: "fa-1", relativePath: "a.epub", basename: "a.epub", mediaKind: "EPUB", metadata: { status: "unparseable", warnings: ["bad"] } }] as never, total: 42 },
+    };
+    const mod = await import("./library-issues.$libraryRootId");
+    const Route = extractRoute<MockRoute>(mod);
+    const Page = Route.options.component;
+    render(<Page />);
+    expect(screen.getByText("Showing the first 1 of 42 issues")).toBeTruthy();
   });
 });

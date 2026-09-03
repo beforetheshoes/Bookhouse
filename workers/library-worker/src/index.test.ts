@@ -29,6 +29,7 @@ const ingestUploadedBookMock = vi.fn();
 const importJobUpdateMock = vi.fn();
 const importJobUpdateManyMock = vi.fn();
 const importJobFindUniqueMock = vi.fn();
+const libraryRootFindUniqueMock = vi.fn(() => Promise.resolve({ id: "root-1" }));
 const appSettingFindUniqueMock = vi.fn();
 const enqueueLibraryJobMock = vi.fn();
 const enqueueEnrichmentJobMock = vi.fn();
@@ -79,6 +80,9 @@ vi.mock("@bookhouse/db", () => ({
       update: importJobUpdateMock,
       updateMany: importJobUpdateManyMock,
       findUnique: importJobFindUniqueMock,
+    },
+    libraryRoot: {
+      findUnique: libraryRootFindUniqueMock,
     },
   },
 }));
@@ -871,6 +875,7 @@ describe("library worker", () => {
 
     expect(importJobUpdateManyMock).toHaveBeenCalledWith({
       where: {
+        kind: "SCAN_ROOT",
         libraryRootId: "root-1",
         status: { in: ["QUEUED", "RUNNING"] },
         id: { not: "ij-new" },
@@ -1440,20 +1445,25 @@ describe("library worker", () => {
 
     matchSuggestionsMock.mockResolvedValueOnce({ fileAssetId: "file-1", skipped: false, linksCreated: 0 });
     importJobFindUniqueMock.mockResolvedValue({ totalFiles: 5, processedFiles: 1 });
+    importJobUpdateManyMock.mockResolvedValue({ count: 1 });
 
     await processor(createMockJob({
       data: { fileAssetId: "file-1", importJobId: "ij-batch" },
       name: "match-suggestions",
     }) as never);
 
-    expect(importJobUpdateMock).toHaveBeenCalledTimes(1);
-    expect(importJobUpdateMock).toHaveBeenCalledWith({
-      where: { id: "ij-batch" },
+    // Increment on the live row, then stamp startedAt once.
+    expect(importJobUpdateManyMock).toHaveBeenCalledTimes(2);
+    expect(importJobUpdateManyMock).toHaveBeenNthCalledWith(1, {
+      where: { id: "ij-batch", status: { in: ["QUEUED", "RUNNING"] } },
       data: {
         status: "RUNNING",
-        startedAt: expect.any(Date) as Date,
         processedFiles: { increment: 1 },
       },
+    });
+    expect(importJobUpdateManyMock).toHaveBeenNthCalledWith(2, {
+      where: { id: "ij-batch", startedAt: null },
+      data: { startedAt: expect.any(Date) as Date },
     });
   });
 
@@ -1472,15 +1482,16 @@ describe("library worker", () => {
 
     matchSuggestionsMock.mockResolvedValueOnce({ fileAssetId: "file-1", skipped: false, linksCreated: 0 });
     importJobFindUniqueMock.mockResolvedValue({ totalFiles: 1, processedFiles: 1 });
+    importJobUpdateManyMock.mockResolvedValue({ count: 1 });
 
     await processor(createMockJob({
       data: { fileAssetId: "file-1", importJobId: "ij-batch-done" },
       name: "match-suggestions",
     }) as never);
 
-    expect(importJobUpdateMock).toHaveBeenCalledTimes(2);
-    expect(importJobUpdateMock).toHaveBeenLastCalledWith({
-      where: { id: "ij-batch-done" },
+    expect(importJobUpdateManyMock).toHaveBeenCalledTimes(3);
+    expect(importJobUpdateManyMock).toHaveBeenLastCalledWith({
+      where: { id: "ij-batch-done", status: "RUNNING" },
       data: { status: "SUCCEEDED", finishedAt: expect.any(Date) as Date },
     });
   });
@@ -1500,6 +1511,7 @@ describe("library worker", () => {
 
     matchSuggestionsMock.mockRejectedValueOnce(new Error("suggestion boom"));
     importJobFindUniqueMock.mockResolvedValue({ totalFiles: 5, processedFiles: 1 });
+    importJobUpdateManyMock.mockResolvedValue({ count: 1 });
 
     await expect(
       processor(createMockJob({
@@ -1509,16 +1521,17 @@ describe("library worker", () => {
       }) as never),
     ).rejects.toThrow("suggestion boom");
 
-    expect(importJobUpdateManyMock).not.toHaveBeenCalled();
-    expect(importJobUpdateMock).toHaveBeenCalledWith({
-      where: { id: "ij-batch-fail" },
+    expect(importJobUpdateManyMock).toHaveBeenNthCalledWith(1, {
+      where: { id: "ij-batch-fail", status: { in: ["QUEUED", "RUNNING"] } },
       data: {
         status: "RUNNING",
-        startedAt: expect.any(Date) as Date,
         processedFiles: { increment: 1 },
         errorCount: { increment: 1 },
       },
     });
+    // The batch itself is never hard-failed for one bad file.
+    const statuses = importJobUpdateManyMock.mock.calls.map((call) => (call[0] as { data: { status?: string } }).data.status);
+    expect(statuses).not.toContain("FAILED");
   });
 
   it("creates and shuts down a redis-backed worker", async () => {
@@ -1592,6 +1605,67 @@ describe("library worker", () => {
 
     processOnSpy.mockRestore();
     processExitSpy.mockRestore();
+  });
+
+  it("skips a scan whose library root was removed instead of failing the job", async () => {
+    libraryRootFindUniqueMock.mockResolvedValueOnce(null as never);
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor();
+
+    const result = await processor({
+      id: "job-gone",
+      name: "scan-library-root",
+      data: { libraryRootId: "root-gone" },
+      opts: {},
+      attemptsMade: 0,
+      updateProgress: vi.fn(),
+      updateData: vi.fn(),
+      moveToWaitingChildren: vi.fn(() => Promise.resolve(false)),
+    } as never);
+
+    expect(result).toEqual({
+      createdStubWorkIds: [],
+      discoveredPaths: [],
+      enqueuedHashJobs: [],
+      enqueuedRecoveryJobs: [],
+      missingFileAssetIds: [],
+      scannedFileAssetIds: [],
+    });
+    expect(scanLibraryRootMock).not.toHaveBeenCalled();
+    expect(loggerInfoMock).toHaveBeenCalledWith(
+      expect.objectContaining({ libraryRootId: "root-gone" }),
+      "Skipping scan for deleted library root",
+    );
+  });
+
+  it("skips an upload ingest whose library root was removed", async () => {
+    libraryRootFindUniqueMock.mockResolvedValueOnce(null as never);
+    const { createLibraryWorkerProcessor } = await import("./index");
+    const processor = createLibraryWorkerProcessor();
+
+    const result = await processor({
+      id: "job-upload-gone",
+      name: "ingest-uploaded-book",
+      data: { libraryRootId: "root-gone", absolutePaths: ["/data/ebooks/x.epub"] },
+      opts: {},
+      attemptsMade: 0,
+    } as never);
+
+    expect(result).toEqual({ fileAssetIds: [], createdWorkIds: [] });
+    expect(ingestUploadedBookMock).not.toHaveBeenCalled();
+  });
+
+  it("drains the enrichment worker on shutdown and tolerates it never having started", async () => {
+    const { handleEnrichmentWorkerModule, shutdownEnrichmentWorker } = await import("./index");
+    await expect(shutdownEnrichmentWorker(null)).resolves.toBeUndefined();
+
+    const close = vi.fn(() => Promise.resolve());
+    const quit = vi.fn(() => Promise.resolve("OK" as const));
+    handleEnrichmentWorkerModule({ startEnrichmentWorker: () => ({ worker: { close }, connection: { quit } }) });
+    await shutdownEnrichmentWorker();
+
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(quit).toHaveBeenCalledTimes(1);
   });
 
   it("logEnrichmentWorkerError logs the error", async () => {

@@ -1,5 +1,7 @@
 FROM node:24-slim AS base
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Pin to the workspace's packageManager so --frozen-lockfile runs under the
+# same pnpm the lockfile was written with.
+RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 WORKDIR /app
 
 FROM base AS deps
@@ -25,6 +27,9 @@ FROM base AS web
 # feature shells out to pg_dump/psql). The client major must be >= the Postgres
 # server major (17), or pg_dump refuses to dump; Debian bookworm only ships 15,
 # so pull 17 from the PostgreSQL APT (PGDG) repo.
+# Pinned rather than "latest": an unpinned download made image builds
+# non-reproducible and could pull a breaking kepubify release unnoticed.
+ARG KEPUBIFY_VERSION=v4.0.4
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates gosu \
   && case "$(dpkg --print-architecture)" in \
        amd64) KEPUBIFY_ARCH=64bit ;; \
@@ -33,7 +38,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
        i386)  KEPUBIFY_ARCH=32bit ;; \
        *) echo "unsupported arch: $(dpkg --print-architecture)" >&2; exit 1 ;; \
      esac \
-  && curl -fsSL "https://github.com/pgaskin/kepubify/releases/latest/download/kepubify-linux-${KEPUBIFY_ARCH}" -o /usr/local/bin/kepubify \
+  && curl -fsSL "https://github.com/pgaskin/kepubify/releases/download/${KEPUBIFY_VERSION}/kepubify-linux-${KEPUBIFY_ARCH}" -o /usr/local/bin/kepubify \
   && chmod +x /usr/local/bin/kepubify \
   && install -d /usr/share/keyrings \
   && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/keyrings/pgdg.asc \

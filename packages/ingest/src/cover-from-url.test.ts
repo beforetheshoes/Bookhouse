@@ -128,6 +128,8 @@ describe("applyCoverFromUrl", () => {
         db,
       ),
     ).rejects.toThrow("Work not found");
+      expect(deps.fetchUrl).not.toHaveBeenCalled();
+    expect(deps.resizeAndSave).not.toHaveBeenCalled();
   });
 
   it("merges editedFields without duplicates", async () => {

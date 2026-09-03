@@ -62,7 +62,7 @@ export { extractEpubCover } from "./epub";
 export type { EpubCoverResult } from "./epub";
 export { detectAdjacentCover, resizeCoverImage, resizeAndSaveCover, processCoverForWork, processCoverForWorkDefault } from "./covers";
 export type { CoverDependencies, ProcessCoverInput, ProcessCoverResult } from "./covers";
-export { PARTIAL_HASH_BYTES } from "./hashing";
+export { PARTIAL_HASH_BYTES, hashKoreaderDocument } from "./hashing";
 export { SCAN_PROGRESS_INTERVAL } from "./services";
 
 export { searchOpenLibrary, getOpenLibraryEdition, getOpenLibraryWork, searchOpenLibraryAuthors, createOLFetcher } from "./enrichment/open-library";
@@ -86,6 +86,8 @@ export type {
 export { extractDominantColors, extractDominantColorsDefault } from "./cover-colors";
 export { VALID_WORK_ID, MAX_FILE_SIZE, ALLOWED_MIME_TYPES, IMAGE_SIGNATURES, isValidImageData, isAllowedMimeType } from "./cover-validation";
 export { applyCoverFromUrl } from "./cover-from-url";
+export { fetchRemoteImage, isPrivateAddress, MAX_REMOTE_IMAGE_BYTES } from "./fetch-image";
+export type { FetchImageDeps, FetchedImage } from "./fetch-image";
 export type { CoverFromUrlDeps, CoverFromUrlDbDeps, CoverFromUrlInput, CoverFromUrlResult } from "./cover-from-url";
 export { RateLimiter } from "./enrichment/rate-limiter";
 export type { RateLimitResult } from "./enrichment/rate-limiter";

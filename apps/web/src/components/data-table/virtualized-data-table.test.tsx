@@ -97,7 +97,7 @@ describe("VirtualizedDataTable", () => {
       return makeVirtualizer(count);
     });
     render(<VirtualizedDataTable columns={columns} data={data} />);
-    expect(screen.getByText(/row\(s\) total/)).toBeTruthy();
+    expect(screen.getByText(/^\d+ rows?$/)).toBeTruthy();
   });
 
   it("hides built-in pagination when showPagination is false", () => {
@@ -107,7 +107,7 @@ describe("VirtualizedDataTable", () => {
       return makeVirtualizer(count);
     });
     render(<VirtualizedDataTable columns={columns} data={data} showPagination={false} />);
-    expect(screen.queryByText(/row\(s\) total/)).toBeNull();
+    expect(screen.queryByText(/^\d+ rows?$/)).toBeNull();
   });
 
   it("renders with custom pageSize and containerHeight", () => {

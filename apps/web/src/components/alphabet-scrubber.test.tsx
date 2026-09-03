@@ -42,10 +42,33 @@ describe("AlphabetScrubber", () => {
     // clientY 105 is "K" by the rail's arithmetic; the finger is on M.
     fireEvent.pointerDown(m, { clientY: 105, pointerId: 1 });
     fireEvent.pointerUp(rail, { pointerId: 1 });
-    fireEvent.click(m);
+    // A pointer-driven click carries detail >= 1 (in a real browser pointer
+    // capture retargets it to the rail anyway); it must not send again.
+    fireEvent.click(m, { detail: 1 });
 
     expect(onJump).toHaveBeenCalledTimes(1);
     expect(onJump).toHaveBeenCalledWith("M");
+  });
+
+  it("still jumps on a keyboard or screen-reader activation, which has no press before it", () => {
+    const onJump = vi.fn();
+    render(<AlphabetScrubber onJump={onJump} />);
+    const rail = screen.getByTestId("alphabet-scrubber");
+    rail.setPointerCapture = vi.fn();
+    giveRailHeight(rail, 0, 270);
+
+    const m = screen.getByRole("button", { name: "M" });
+    // Enter/Space synthesise a click with detail 0 and no pointerdown.
+    fireEvent.click(m, { detail: 0 });
+
+    expect(onJump).toHaveBeenCalledTimes(1);
+    expect(onJump).toHaveBeenCalledWith("M");
+
+    // And a second press after a pointer tap is not swallowed either.
+    fireEvent.pointerDown(m, { clientY: 105, pointerId: 1 });
+    fireEvent.pointerUp(rail, { pointerId: 1 });
+    fireEvent.click(m, { detail: 0 });
+    expect(onJump).toHaveBeenCalledTimes(3);
   });
 
   it("jumps to the letter under the finger while dragging", () => {

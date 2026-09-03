@@ -259,6 +259,14 @@ describe("parseAudioId3Tags", () => {
     expect(result.tags.trackTotal).toBeUndefined();
   });
 
+  it("rethrows errors that mean the file could not be read at all", async () => {
+    mockedParseFile.mockRejectedValueOnce(Object.assign(new Error("ENOENT: no such file"), { code: "ENOENT" }));
+    await expect(parseAudioId3Tags("/books/gone.mp3")).rejects.toThrow("ENOENT: no such file");
+
+    mockedParseFile.mockRejectedValueOnce(Object.assign(new Error("EIO: i/o error"), { code: "EIO" }));
+    await expect(parseAudioId3Tags("/books/flaky.mp3")).rejects.toThrow("EIO: i/o error");
+  });
+
   it("returns empty tags with warning for Unicode encoding errors", async () => {
     mockedParseFile.mockRejectedValueOnce(new Error("unsupported Unicode escape sequence"));
 

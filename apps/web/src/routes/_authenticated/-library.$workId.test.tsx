@@ -2342,4 +2342,32 @@ describe("WorkDetailPage", () => {
       });
     });
   });
+
+  it("loader raises a not-found for a work that no longer exists", async () => {
+    getWorkDetailServerFnMock.mockResolvedValueOnce(null);
+    getReadingProgressServerFnMock.mockResolvedValueOnce({ progress: [], trackingMode: "BY_EDITION" });
+    const { Route } = await import("./library.$workId");
+    await expect(
+      (Route.options.loader as (args: { params: { workId: string } }) => Promise<object>)({ params: { workId: "gone" } }),
+    ).rejects.toMatchObject({ isNotFound: true });
+  });
+
+  it("keeps the delete dialog open while the delete is still running", async () => {
+    let finish: (value: { deletedWorkId: string }) => void = () => undefined;
+    deleteWorkServerFnMock.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const { Route } = await import("./library.$workId");
+    const Page = Route.options.component as React.ComponentType;
+    const { fireEvent, act } = await import("@testing-library/react");
+    render(<Page />);
+    fireEvent.click(screen.getByTestId("delete-work-btn"));
+    const before = capturedDialogProps.length;
+    fireEvent.click(screen.getByText("Delete"));
+    // Escape / overlay (Radix calls onOpenChange(false)) must not dismiss it mid-flight;
+    // only the handlers rendered after the click know the delete is in progress.
+    const dismissals = capturedDialogProps.slice(before).map((d) => d.onOpenChange);
+    expect(dismissals.length).toBeGreaterThan(0);
+    act(() => { for (const dismiss of dismissals) dismiss?.(false); });
+    expect(screen.getByText("Delete Work")).toBeTruthy();
+    finish({ deletedWorkId: "work-1" });
+  });
 });

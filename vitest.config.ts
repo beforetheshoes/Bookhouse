@@ -12,9 +12,8 @@ export default defineConfig({
     globals: true,
     testTimeout: 30000,
     exclude: [".claude/**", "**/node_modules/**", "**/.output/**", "e2e/**"],
-    environmentMatchGlobs: [
-      ["apps/web/src/**/*.test.{ts,tsx}", "happy-dom"],
-    ],
+    // Browser-environment tests opt in with a `@vitest-environment happy-dom`
+    // pragma; vitest 4 dropped environmentMatchGlobs.
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],
@@ -26,6 +25,7 @@ export default defineConfig({
         "apps/web/server/routes/kobo/**/*.ts",
         "apps/web/server/routes/opds/**/*.ts",
         "apps/web/server/utils/**/*.ts",
+        "apps/web/server/middleware/**/*.ts",
         "workers/**/*.ts",
       ],
       exclude: [
@@ -38,7 +38,6 @@ export default defineConfig({
         "packages/ingest/src/index.ts",
         // Runtime-only files: no testable factory functions, covered by c8 ignore
         "**/*unmatched*",
-        "**/image.jpg.ts",
         "apps/web/server/routes/kobo/**/oauth/.well-known/**",
         "apps/web/server/routes/api/editions/download-all/**",
         "apps/web/server/routes/api/edition-files/download/**",

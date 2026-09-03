@@ -11,6 +11,13 @@ interface EditableTableCellProps {
 export function EditableTableCell({ value, editing, onSave }: EditableTableCellProps) {
   const [draft, setDraft] = useState(value);
   const [saving, setSaving] = useState(false);
+  // A scan or enrichment can change the stored value while edit mode is on;
+  // the draft follows it, or a later blur would write the stale text back.
+  const [seededFrom, setSeededFrom] = useState(value);
+  if (seededFrom !== value) {
+    setSeededFrom(value);
+    setDraft(value);
+  }
 
   async function handleBlur() {
     if (draft === value) return;

@@ -300,7 +300,7 @@ export function LibrarySelectionToolbar({
         </div>
       </FloatingActionBar>
 
-      <Dialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+      <Dialog open={bulkDeleteOpen} onOpenChange={(open) => { if (!bulkDeleting) setBulkDeleteOpen(open); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete {selectedCount} Work{selectedCount === 1 ? "" : "s"}</DialogTitle>

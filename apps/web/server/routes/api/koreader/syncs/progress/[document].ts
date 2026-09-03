@@ -36,11 +36,9 @@ export function createKoreaderProgressGetHandler(deps: KoreaderProgressGetDeps) 
 
     const progress = await deps.findProgress(auth.userId, document.editionId);
     if (!progress?.locator.koreader) {
-      throw new HTTPError({
-        status: 404,
-        statusText: "Not Found",
-        message: "No KOReader progress found",
-      });
+      // The kosync plugin treats any non-2xx as "Sync failed"; a body without
+      // `percentage` is what it expects for a book that has no progress yet.
+      return { document: document.document };
     }
 
     return {

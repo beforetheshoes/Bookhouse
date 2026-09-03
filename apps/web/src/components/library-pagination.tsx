@@ -41,7 +41,7 @@ export function LibraryPagination({
       className="sticky bottom-0 z-20 flex flex-wrap items-center justify-center gap-2 border-t bg-background px-2 py-1.5 sm:gap-4 md:static md:justify-between md:border-0 md:py-0"
     >
       <div className="hidden text-sm text-muted-foreground sm:block">
-        {String(totalCount)} row(s) total
+        {String(totalCount)} {totalCount === 1 ? "item" : "items"}
       </div>
       <div data-testid="library-pagination-nav" className="flex flex-wrap items-center gap-2 sm:gap-4">
         <div className="flex items-center gap-2">

@@ -163,6 +163,8 @@ describe("createStateHandler", () => {
         percent: 55,
         locator: { koboLocation: { Source: "OEBPS/xhtml/chapter02.xhtml", Type: "KoboSpan", Value: "kobo.2.1" } },
         source: "kobo",
+        // The device's LastModified, so the next conflict check compares like with like.
+        updatedAt: new Date("2024-07-01T13:00:00.000Z"),
       });
       expect(result).toEqual({
         RequestResult: "Success",
@@ -209,6 +211,48 @@ describe("createStateHandler", () => {
 
       expect(deps.upsertProgress).not.toHaveBeenCalled();
       expect(result.RequestResult).toBe("Success");
+    });
+
+    it("falls back to the server clock when the device LastModified is unparseable", async () => {
+      const upsertProgress = vi.fn().mockResolvedValue(mockProgress);
+      const payload = {
+        ReadingStates: [{ ...validPayload.ReadingStates[0], LastModified: "not-a-date" }],
+      };
+      const deps = makeDeps({
+        getMethod: vi.fn().mockReturnValue("PUT"),
+        readBody: vi.fn().mockResolvedValue(payload),
+        upsertProgress,
+      });
+      const before = Date.now();
+      await createStateHandler(deps)(makeEvent());
+
+      const { updatedAt } = upsertProgress.mock.calls[0]?.[0] as { updatedAt: Date };
+      expect(updatedAt.getTime()).toBeGreaterThanOrEqual(before);
+      expect(updatedAt.getTime()).toBeLessThanOrEqual(Date.now());
+    });
+
+    it("acknowledges when the edition vanishes between the existence check and the write", async () => {
+      const upsertProgress = vi.fn().mockRejectedValue(
+        Object.assign(new Error("Foreign key constraint failed"), { code: "P2003" }),
+      );
+      const deps = makeDeps({
+        getMethod: vi.fn().mockReturnValue("PUT"),
+        readBody: vi.fn().mockResolvedValue(validPayload),
+        upsertProgress,
+      });
+      const result = await createStateHandler(deps)(makeEvent()) as KoboRequestResult;
+
+      expect(result.RequestResult).toBe("Success");
+    });
+
+    it("rethrows write failures that are not foreign-key violations", async () => {
+      const deps = makeDeps({
+        getMethod: vi.fn().mockReturnValue("PUT"),
+        readBody: vi.fn().mockResolvedValue(validPayload),
+        upsertProgress: vi.fn().mockRejectedValue(new Error("connection reset")),
+      });
+
+      await expect(createStateHandler(deps)(makeEvent())).rejects.toThrow("connection reset");
     });
 
     it("acknowledges without saving when the edition no longer exists", async () => {

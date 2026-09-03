@@ -31,10 +31,12 @@ export const SORT_OPTIONS = [
 
 export const librarySearchSchema = z
   .object({
-    page: z.coerce.number().int().min(1).default(1),
-    pageSize: z.coerce.number().int().min(1).max(100).default(50),
-    sort: z.enum(SORT_OPTIONS).default("title-asc"),
-    view: z.enum(["works", "editions"]).default("works"),
+    // Tolerant: a hand-edited or stale URL (?page=0, ?sort=foo) falls back to
+    // the default instead of throwing the whole page to the error boundary.
+    page: z.coerce.number().int().min(1).catch(1),
+    pageSize: z.coerce.number().int().min(1).max(100).catch(50),
+    sort: z.enum(SORT_OPTIONS).catch("title-asc"),
+    view: z.enum(["works", "editions"]).catch("works"),
     q: z.string().optional(),
     format: coerceToArray(z.enum(["EBOOK", "AUDIOBOOK"])),
     authorId: coerceToArray(z.string()),

@@ -23,15 +23,12 @@ function makeDeps(overrides: Partial<ApplyEnrichmentDeps> = {}): ApplyEnrichment
       Promise.resolve(`tag-${canonical}`),
     ),
     upsertWorkTag: vi.fn().mockResolvedValue(undefined),
-    findContributorByCanonical: vi.fn().mockResolvedValue(null),
-    createContributor: vi.fn().mockImplementation((_name: string, canonical: string) =>
+    upsertContributor: vi.fn().mockImplementation((_name: string, canonical: string) =>
       Promise.resolve(`contrib-${canonical}`),
     ),
     findEditionIdsByWorkId: vi.fn().mockResolvedValue(["e1"]),
-    deleteAuthorContributors: vi.fn().mockResolvedValue(undefined),
-    createEditionContributors: vi.fn().mockResolvedValue(undefined),
-    deleteNarratorContributors: vi.fn().mockResolvedValue(undefined),
-    createNarratorContributors: vi.fn().mockResolvedValue(undefined),
+    replaceAuthorContributors: vi.fn().mockResolvedValue(undefined),
+    replaceNarratorContributors: vi.fn().mockResolvedValue(undefined),
     upsertExternalLink: vi.fn().mockResolvedValue(undefined),
     canonicalizeContributorName: (name: string) => name.toLowerCase(),
     ...overrides,
@@ -77,6 +74,36 @@ describe("applyEnrichmentFields", () => {
     const result = await applyEnrichmentFields(input, deps);
 
     expect(deps.updateWork).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: true, skippedAll: true });
+  });
+
+  it("skips subjects when tags were edited by hand", async () => {
+    deps = makeDeps({
+      findWork: vi.fn().mockResolvedValue({ editedFields: ["tags"] }),
+    });
+    const input = makeInput({
+      workFields: { subjects: ["Fantasy"] },
+    });
+
+    const result = await applyEnrichmentFields(input, deps);
+
+    expect(deps.updateWork).not.toHaveBeenCalled();
+    expect(deps.upsertExternalLink).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: true, skippedAll: true });
+  });
+
+  it("skips publishedDate when publishedAt was edited by hand", async () => {
+    deps = makeDeps({
+      findEdition: vi.fn().mockResolvedValue({ editedFields: ["publishedAt"] }),
+    });
+    const input = makeInput({
+      editionId: "e1",
+      editionFields: { publishedDate: "2001-01-01" },
+    });
+
+    const result = await applyEnrichmentFields(input, deps);
+
+    expect(deps.updateEdition).not.toHaveBeenCalled();
     expect(result).toEqual({ success: true, skippedAll: true });
   });
 
@@ -138,18 +165,16 @@ describe("applyEnrichmentFields", () => {
 
     await applyEnrichmentFields(input, deps);
 
-    expect(deps.findContributorByCanonical).toHaveBeenCalledTimes(2);
-    expect(deps.createContributor).toHaveBeenCalledTimes(2);
-    expect(deps.deleteAuthorContributors).toHaveBeenCalledWith(["e1"]);
-    expect(deps.createEditionContributors).toHaveBeenCalledWith(
+    expect(deps.upsertContributor).toHaveBeenCalledTimes(2);
+    expect(deps.replaceAuthorContributors).toHaveBeenCalledWith(
       ["e1"],
       ["contrib-jane austen", "contrib-charlotte bronte"],
     );
   });
 
-  it("reuses existing contributors by canonical name", async () => {
+  it("links whatever contributor id the upsert resolves to", async () => {
     deps = makeDeps({
-      findContributorByCanonical: vi.fn().mockResolvedValue("existing-contrib-id"),
+      upsertContributor: vi.fn().mockResolvedValue("existing-contrib-id"),
     });
     const input = makeInput({
       workFields: { authors: ["Jane Austen"] },
@@ -157,8 +182,8 @@ describe("applyEnrichmentFields", () => {
 
     await applyEnrichmentFields(input, deps);
 
-    expect(deps.createContributor).not.toHaveBeenCalled();
-    expect(deps.createEditionContributors).toHaveBeenCalledWith(["e1"], ["existing-contrib-id"]);
+    expect(deps.upsertContributor).toHaveBeenCalledWith("Jane Austen", "jane austen");
+    expect(deps.replaceAuthorContributors).toHaveBeenCalledWith(["e1"], ["existing-contrib-id"]);
   });
 
   it("skips empty author strings", async () => {
@@ -168,7 +193,7 @@ describe("applyEnrichmentFields", () => {
 
     await applyEnrichmentFields(input, deps);
 
-    expect(deps.findContributorByCanonical).toHaveBeenCalledTimes(1);
+    expect(deps.upsertContributor).toHaveBeenCalledTimes(1);
   });
 
   it("strips coverUrl from work fields (handled separately)", async () => {
@@ -323,7 +348,7 @@ describe("applyEnrichmentFields", () => {
 
     await applyEnrichmentFields(input, deps);
 
-    expect(deps.findContributorByCanonical).toHaveBeenCalledWith("jane austen");
+    expect(deps.upsertContributor).toHaveBeenCalledWith("Jane Austen", "jane austen");
   });
 
   it("combines work and edition field names in provenance", async () => {
@@ -348,11 +373,9 @@ describe("applyEnrichmentFields", () => {
 
     await applyEnrichmentFields(input, deps);
 
-    expect(deps.findContributorByCanonical).toHaveBeenCalledWith("scott brick");
-    expect(deps.findContributorByCanonical).toHaveBeenCalledWith("julia whelan");
-    expect(deps.createContributor).toHaveBeenCalledTimes(2);
-    expect(deps.deleteNarratorContributors).toHaveBeenCalledWith("e1");
-    expect(deps.createNarratorContributors).toHaveBeenCalledWith(
+    expect(deps.upsertContributor).toHaveBeenCalledWith("Scott Brick", "scott brick");
+    expect(deps.upsertContributor).toHaveBeenCalledWith("Julia Whelan", "julia whelan");
+    expect(deps.replaceNarratorContributors).toHaveBeenCalledWith(
       "e1",
       ["contrib-scott brick", "contrib-julia whelan"],
     );
@@ -360,7 +383,7 @@ describe("applyEnrichmentFields", () => {
 
   it("reuses existing contributors for narrators", async () => {
     deps = makeDeps({
-      findContributorByCanonical: vi.fn().mockResolvedValue("existing-narrator-id"),
+      upsertContributor: vi.fn().mockResolvedValue("existing-narrator-id"),
     });
     const input = makeInput({
       editionFields: { narrators: ["Scott Brick"] },
@@ -368,8 +391,7 @@ describe("applyEnrichmentFields", () => {
 
     await applyEnrichmentFields(input, deps);
 
-    expect(deps.createContributor).not.toHaveBeenCalled();
-    expect(deps.createNarratorContributors).toHaveBeenCalledWith("e1", ["existing-narrator-id"]);
+    expect(deps.replaceNarratorContributors).toHaveBeenCalledWith("e1", ["existing-narrator-id"]);
   });
 
   it("strips narrators from edition column update", async () => {
@@ -381,7 +403,7 @@ describe("applyEnrichmentFields", () => {
 
     const call = (deps.updateEdition as ReturnType<typeof vi.fn>).mock.calls[0] as [string, Record<string, string | string[] | number | Date | null>];
     expect(call[1]).toEqual({ publisher: "Macmillan Audio" });
-    expect(deps.deleteNarratorContributors).toHaveBeenCalledWith("e1");
+    expect(deps.replaceNarratorContributors).toHaveBeenCalledWith("e1", expect.any(Array));
   });
 
   it("skips narrators when in editedFields", async () => {
@@ -394,8 +416,8 @@ describe("applyEnrichmentFields", () => {
 
     await applyEnrichmentFields(input, deps);
 
-    expect(deps.deleteNarratorContributors).not.toHaveBeenCalled();
-    expect(deps.createNarratorContributors).not.toHaveBeenCalled();
+    expect(deps.replaceNarratorContributors).not.toHaveBeenCalled();
+    expect(deps.replaceNarratorContributors).not.toHaveBeenCalled();
   });
 
   it("skips empty narrator strings", async () => {
@@ -405,7 +427,7 @@ describe("applyEnrichmentFields", () => {
 
     await applyEnrichmentFields(input, deps);
 
-    expect(deps.findContributorByCanonical).toHaveBeenCalledTimes(1);
+    expect(deps.upsertContributor).toHaveBeenCalledTimes(1);
   });
 
   it("falls back to lowercase when canonicalize returns null for narrator", async () => {
@@ -418,7 +440,7 @@ describe("applyEnrichmentFields", () => {
 
     await applyEnrichmentFields(input, deps);
 
-    expect(deps.findContributorByCanonical).toHaveBeenCalledWith("scott brick");
+    expect(deps.upsertContributor).toHaveBeenCalledWith(expect.any(String), "scott brick");
   });
 
   it("includes narrators in appliedFields for provenance", async () => {

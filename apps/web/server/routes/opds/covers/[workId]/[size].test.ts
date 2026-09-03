@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { OpdsCoverHandlerDeps } from "./[size]";
 import type { H3Event } from "h3";
+import type * as H3 from "h3";
 
-vi.mock("h3", () => ({
+vi.mock("h3", async (importOriginal) => ({
+  ...(await importOriginal<typeof H3>()),
   defineEventHandler: vi.fn(),
 }));
 
@@ -10,14 +12,28 @@ const { createOpdsCoverHandler } = await import("./[size]");
 
 const jpegBuffer = Buffer.from("jpeg-data");
 
-function makeEvent(workId: string, size: string): H3Event {
+const basicAuth = `Basic ${Buffer.from("reader:secret").toString("base64")}`;
+
+function makeEvent(workId: string, size: string, authorization: string | null = basicAuth): H3Event {
   return {
     context: { params: { workId, size } },
-  } as Partial<H3Event> as H3Event;
+    req: { headers: { get: (name: string) => (name.toLowerCase() === "authorization" ? authorization : null) } },
+    res: { headers: { set: vi.fn() } },
+  } as never;
 }
 
 function makeDeps(overrides: Partial<OpdsCoverHandlerDeps> = {}): OpdsCoverHandlerDeps {
   return {
+    auth: {
+      findCredentialByUsername: vi.fn().mockResolvedValue({
+        id: "cred-1",
+        userId: "user-1",
+        username: "reader",
+        passwordHash: "hash",
+        isEnabled: true,
+      }),
+      verifyPassword: vi.fn().mockResolvedValue(true),
+    },
     coverCacheDir: "/data/covers",
     existsSync: vi.fn().mockReturnValue(true),
     readFile: vi.fn().mockResolvedValue(Buffer.from("webp-data")),
@@ -28,6 +44,14 @@ function makeDeps(overrides: Partial<OpdsCoverHandlerDeps> = {}): OpdsCoverHandl
 }
 
 describe("createOpdsCoverHandler", () => {
+  it("requires OPDS Basic auth like every other catalog route", async () => {
+    const deps = makeDeps();
+    const handler = createOpdsCoverHandler(deps);
+
+    await expect(handler(makeEvent("work-1", "thumb", null))).rejects.toMatchObject({ status: 401 });
+    expect(deps.readFile).not.toHaveBeenCalled();
+  });
+
   it("returns JPEG buffer for valid cover", async () => {
     const deps = makeDeps();
     const handler = createOpdsCoverHandler(deps);

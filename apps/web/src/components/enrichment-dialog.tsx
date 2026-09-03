@@ -329,7 +329,8 @@ export function EnrichmentDialog({
   const [selections, setSelections] = useState<Record<string, FieldSelection>>({});
   const [applying, setApplying] = useState(false);
 
-  // Auto-search when dialog opens
+  // Auto-search when dialog opens (and again on Retry).
+  const [searchAttempt, setSearchAttempt] = useState(0);
   useEffect(() => {
     if (!open) return;
     const ctrl = { cancelled: false };
@@ -366,7 +367,7 @@ export function EnrichmentDialog({
     })();
 
     return () => { ctrl.cancelled = true; };
-  }, [open, workId]);
+  }, [open, workId, searchAttempt]);
 
   const handleToggle = (provider: string, field: FieldDef, value: EnrichmentFieldValue) => {
     setSelections((prev) => {
@@ -459,6 +460,19 @@ export function EnrichmentDialog({
         {/* Rate limited */}
         {status === "rate-limited" && (
           <EmptyState message="Search rate limited. Please try again in a few minutes." />
+        )}
+
+        {/* Only the success branch has its own footer; every other state used
+            to leave the X as the sole way out and no way to try again. */}
+        {(status === "error" || status === "no-results" || status === "rate-limited") && (
+          <DialogFooter className="border-t pt-4">
+            <Button variant="outline" onClick={() => { onOpenChange(false); }}>
+              Close
+            </Button>
+            <Button onClick={() => { setSearchAttempt((n) => n + 1); }}>
+              Try again
+            </Button>
+          </DialogFooter>
         )}
 
         {/* Results */}

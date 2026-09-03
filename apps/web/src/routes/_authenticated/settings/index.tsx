@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
+import { KOBO_DEVICE_STATUS_LABELS, LIBRARY_ROOT_KIND_LABELS, SCAN_MODE_LABELS, labelFor } from "~/lib/labels";
+import { ConfirmDialog } from "~/components/confirm-dialog";
+import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -112,7 +114,16 @@ export interface LibraryRootWithExtras extends LibraryRootRow {
   issueCount: number;
 }
 
+const SETTINGS_TABS = ["library", "appearance", "jobs", "integrations", "backup", "devices", "users"] as const;
+export type SettingsTab = (typeof SETTINGS_TABS)[number];
+
 export const Route = createFileRoute("/_authenticated/settings/")({
+  // The open tab lives in the URL so a refresh, a shared link and "Back to
+  // Jobs" all land on the tab the user was on rather than the first one.
+  validateSearch: (search: Record<string, string | undefined>): { tab?: SettingsTab } => {
+    const tab = search.tab;
+    return SETTINGS_TABS.includes(tab as SettingsTab) ? { tab: tab as SettingsTab } : {};
+  },
   loader: async ({ context }) => {
     const ctx = context as { user?: { roles?: string[] } };
     const isOwner = ctx.user?.roles?.includes("OWNER") ?? false;
@@ -219,6 +230,11 @@ function SettingsPage() {
   const routeContext: { user?: { roles?: string[] } } = Route.useRouteContext();
   const isOwner = routeContext.user?.roles?.includes("OWNER") ?? false;
   const [backupHistory, setBackupHistory] = useState(initialBackupHistory);
+  const { tab } = Route.useSearch();
+  const navigate = useNavigate();
+  const ownerTabs: readonly SettingsTab[] = SETTINGS_TABS;
+  const visibleTabs = isOwner ? ownerTabs : (["devices"] as const);
+  const activeTab: SettingsTab = tab !== undefined && visibleTabs.includes(tab) ? tab : (isOwner ? "library" : "devices");
 
   const handleBackupComplete = async (manifest: BackupManifest) => {
     try {
@@ -239,7 +255,12 @@ function SettingsPage() {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Settings</h1>
 
-      <Tabs defaultValue={isOwner ? "library" : "devices"}>
+      <Tabs
+        value={activeTab}
+        onValueChange={(next) => {
+          void navigate({ to: "/settings", search: { tab: next as SettingsTab }, replace: true });
+        }}
+      >
         <TabsList>
           {isOwner && <TabsTrigger value="library" className="px-4">Library</TabsTrigger>}
           {isOwner && <TabsTrigger value="appearance" className="px-4">Appearance</TabsTrigger>}
@@ -324,9 +345,12 @@ function KoreaderSyncCard({ credential }: { credential: KoreaderCredentialRow })
   const handleSave = async () => {
     setSaving(true);
     try {
-      await saveKoreaderCredentialServerFn({ data: { username, password } });
+      const saved = await runMutation(
+        () => saveKoreaderCredentialServerFn({ data: { username, password } }),
+        { success: "KOReader credentials saved", error: "Couldn't save KOReader credentials" },
+      );
+      if (saved === null) return;
       setPassword("");
-      toast.success("KOReader credentials saved");
       void router.invalidate();
     } finally {
       setSaving(false);
@@ -336,8 +360,13 @@ function KoreaderSyncCard({ credential }: { credential: KoreaderCredentialRow })
   const handleToggle = async (currentCredential: NonNullable<KoreaderCredentialRow>) => {
     setToggling(true);
     try {
-      await toggleKoreaderCredentialServerFn({ data: { isEnabled: !currentCredential.isEnabled } });
-      toast.success(currentCredential.isEnabled ? "KOReader sync disabled" : "KOReader sync enabled");
+      await runMutation(
+        () => toggleKoreaderCredentialServerFn({ data: { isEnabled: !currentCredential.isEnabled } }),
+        {
+          success: currentCredential.isEnabled ? "KOReader sync disabled" : "KOReader sync enabled",
+          error: "Couldn't update KOReader sync",
+        },
+      );
       void router.invalidate();
     } finally {
       setToggling(false);
@@ -705,6 +734,7 @@ const jobColumns: ColumnDef<ImportJobRow>[] = [
         <Link
           to="/settings/jobs/$jobId"
           params={{ jobId: row.original.id }}
+          aria-label="Open job details"
         >
           <ExternalLink className="size-4" />
         </Link>
@@ -1033,11 +1063,11 @@ function LibraryRootCard({ root }: { root: LibraryRootWithExtras }) {
           <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
             <div className="flex items-center gap-1.5">
               <span className="text-muted-foreground">Kind:</span>
-              <Badge variant="outline">{root.kind}</Badge>
+              <Badge variant="outline">{labelFor(LIBRARY_ROOT_KIND_LABELS, root.kind)}</Badge>
             </div>
             <div className="flex items-center gap-1.5">
               <span className="text-muted-foreground">Default Scan:</span>
-              <Badge variant="outline">{root.scanMode}</Badge>
+              <Badge variant="outline">{labelFor(SCAN_MODE_LABELS, root.scanMode)}</Badge>
             </div>
             <div className="flex items-center gap-1.5">
               <span className="text-muted-foreground">Last scanned:</span>
@@ -1297,14 +1327,23 @@ function OpdsCredentialsCard({ credentials }: { credentials: OpdsCredentialRow[]
     }
   };
 
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; username: string } | null>(null);
+
   const handleToggle = async (credentialId: string, isEnabled: boolean) => {
-    await toggleOpdsCredentialServerFn({ data: { credentialId, isEnabled } });
+    await runMutation(
+      () => toggleOpdsCredentialServerFn({ data: { credentialId, isEnabled } }),
+      { success: isEnabled ? "OPDS credential enabled" : "OPDS credential disabled", error: "Couldn't update the credential" },
+    );
     void router.invalidate();
   };
 
   const handleDelete = async (credentialId: string) => {
-    await deleteOpdsCredentialServerFn({ data: { credentialId } });
+    const deleted = await runMutation(
+      () => deleteOpdsCredentialServerFn({ data: { credentialId } }),
+      { success: "OPDS credential deleted", error: "Couldn't delete the credential" },
+    );
     void router.invalidate();
+    return deleted !== null;
   };
 
   useEffect(() => { setCatalogUrl(`${window.location.origin}/opds/catalog`); }, []);
@@ -1353,8 +1392,9 @@ function OpdsCredentialsCard({ credentials }: { credentials: OpdsCredentialRow[]
                 <Button
                   variant="destructive"
                   size="sm"
-                  onClick={() => { void handleDelete(cred.id); }}
+                  onClick={() => { setDeleteTarget({ id: cred.id, username: cred.username }); }}
                   data-testid="delete-opds-credential-btn"
+                  aria-label={`Delete OPDS credential ${cred.username}`}
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
@@ -1388,6 +1428,17 @@ function OpdsCredentialsCard({ credentials }: { credentials: OpdsCredentialRow[]
           </Button>
         </div>
       </CardContent>
+      {deleteTarget !== null && (
+      <ConfirmDialog
+          open
+          onOpenChange={() => { setDeleteTarget(null); }}
+          title={`Delete OPDS credential "${deleteTarget.username}"?`}
+          description="Any reader app using this username will stop being able to open the catalog. This cannot be undone."
+          confirmLabel="Delete credential"
+          destructive
+          onConfirm={() => handleDelete(deleteTarget.id)}
+        />
+      )}
     </Card>
   );
 }
@@ -1399,7 +1450,11 @@ function KoboDevicesTab({ devices, shelves }: { devices: KoboDeviceRow[]; shelve
   const [newDeviceToken, setNewDeviceToken] = useState<string | null>(null);
   const [shelfPickerDeviceId, setShelfPickerDeviceId] = useState<string | null>(null);
 
-  const koboApiBaseUrl = "/kobo";
+  // Absolute: this string is pasted into the e-reader's config, where a bare
+  // path is useless.
+  const [koboApiBaseUrl, setKoboApiBaseUrl] = useState("/kobo");
+  useEffect(() => { setKoboApiBaseUrl(`${window.location.origin}/kobo`); }, []);
+  const [removeTarget, setRemoveTarget] = useState<{ id: string; name: string } | null>(null);
 
   const handleAddDevice = async () => {
     setAdding(true);
@@ -1414,13 +1469,20 @@ function KoboDevicesTab({ devices, shelves }: { devices: KoboDeviceRow[]; shelve
   };
 
   const handleRevoke = async (deviceId: string) => {
-    await revokeKoboDeviceServerFn({ data: { deviceId } });
+    await runMutation(
+      () => revokeKoboDeviceServerFn({ data: { deviceId } }),
+      { success: "Device revoked", error: "Couldn't revoke the device" },
+    );
     void router.invalidate();
   };
 
   const handleRemoveDevice = async (deviceId: string) => {
-    await removeKoboDeviceServerFn({ data: { deviceId } });
+    const removed = await runMutation(
+      () => removeKoboDeviceServerFn({ data: { deviceId } }),
+      { success: "Device removed", error: "Couldn't remove the device" },
+    );
     void router.invalidate();
+    return removed !== null;
   };
 
   const handleToggleShelf = async (deviceId: string, shelfId: string, currentCollections: KoboDeviceRow["collections"]) => {
@@ -1452,7 +1514,7 @@ function KoboDevicesTab({ devices, shelves }: { devices: KoboDeviceRow[]; shelve
               <div>
                 <p className="font-medium">{device.deviceId}</p>
                 <p className="text-sm text-muted-foreground">
-                  Status: <Badge variant={device.status === "ACTIVE" ? "default" : "secondary"}>{device.status}</Badge>
+                  Status: <Badge variant={device.status === "ACTIVE" ? "default" : "secondary"}>{labelFor(KOBO_DEVICE_STATUS_LABELS, device.status)}</Badge>
                   {device.lastSyncAt && (
                     <span className="ml-2">Last sync: {formatDistanceToNow(new Date(device.lastSyncAt))} ago</span>
                   )}
@@ -1468,7 +1530,7 @@ function KoboDevicesTab({ devices, shelves }: { devices: KoboDeviceRow[]; shelve
                 {device.status === "ACTIVE" && (
                   <Button variant="outline" size="sm" onClick={() => { void handleRevoke(device.id); }}>Revoke</Button>
                 )}
-                <Button variant="destructive" size="sm" onClick={() => { void handleRemoveDevice(device.id); }}>
+                <Button variant="destructive" size="sm" onClick={() => { setRemoveTarget({ id: device.id, name: device.deviceId }); }} aria-label={`Remove ${device.deviceId}`}>
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
@@ -1533,6 +1595,17 @@ function KoboDevicesTab({ devices, shelves }: { devices: KoboDeviceRow[]; shelve
           </Button>
         </div>
       </CardContent>
+      {removeTarget !== null && (
+      <ConfirmDialog
+          open
+          onOpenChange={() => { setRemoveTarget(null); }}
+          title={`Remove ${removeTarget.name}?`}
+          description="The device will stop syncing immediately and its sync history is deleted. Books already on the device stay there. To connect it again you will need to add it and re-enter the new URL on the device."
+          confirmLabel="Remove device"
+          destructive
+          onConfirm={() => handleRemoveDevice(removeTarget.id)}
+        />
+      )}
     </Card>
   );
 }

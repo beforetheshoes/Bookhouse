@@ -26,13 +26,16 @@ export function GlobalSearch() {
       return;
     }
 
+    // A slower answer for an earlier prefix must not overwrite the results
+    // for what the user has typed since.
+    let cancelled = false;
     void searchLibraryServerFn({ data: { query: debouncedQuery } }).then(
       (data) => {
-        setResults(data);
-        addSearch(debouncedQuery);
+        if (!cancelled) setResults(data);
       },
     );
-  }, [debouncedQuery, addSearch]);
+    return () => { cancelled = true; };
+  }, [debouncedQuery]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -56,6 +59,14 @@ export function GlobalSearch() {
     setQuery("");
     setResults(null);
   }, []);
+
+  // Remembered when a result is opened, not on every debounced keystroke -
+  // otherwise "harry potter" filled the recents with "har", "harry", ...
+  const handleOpenResult = useCallback(() => {
+    const trimmed = query.trim();
+    if (trimmed) addSearch(trimmed);
+    handleClose();
+  }, [query, addSearch, handleClose]);
 
   const hasResults = results && (results.works.length > 0 || results.authors.length > 0 || results.series.length > 0);
   const showNoResults = results && !hasResults;
@@ -123,8 +134,7 @@ export function GlobalSearch() {
                         key={work.id}
                         to="/library/$workId"
                         params={{ workId: work.id }}
-                        search={{ page: 1, pageSize: 50, sort: "title-asc" as const }}
-                        onClick={() => { handleClose(); }}
+                        onClick={() => { handleOpenResult(); }}
                         className="flex items-center gap-2 rounded min-h-9 px-2 py-2 lg:min-h-0 lg:py-1.5 text-sm hover:bg-accent"
                       >
                         {work.titleDisplay}
@@ -141,7 +151,7 @@ export function GlobalSearch() {
                         key={author.id}
                         to="/authors/$authorId"
                         params={{ authorId: author.id }}
-                        onClick={() => { handleClose(); }}
+                        onClick={() => { handleOpenResult(); }}
                         className="flex items-center gap-2 rounded min-h-9 px-2 py-2 lg:min-h-0 lg:py-1.5 text-sm hover:bg-accent"
                       >
                         {author.nameDisplay}
@@ -158,7 +168,7 @@ export function GlobalSearch() {
                         key={s.id}
                         to="/series/$seriesId"
                         params={{ seriesId: s.id }}
-                        onClick={() => { handleClose(); }}
+                        onClick={() => { handleOpenResult(); }}
                         className="flex items-center gap-2 rounded min-h-9 px-2 py-2 lg:min-h-0 lg:py-1.5 text-sm hover:bg-accent"
                       >
                         {s.name}

@@ -316,4 +316,11 @@ describe("LibraryGrid selection", () => {
     );
     expect(active.firstElementChild?.className).toContain("pb-48");
   });
+
+  it("offers a way out of a filtered-to-nothing grid", () => {
+    const onClearFilters = vi.fn();
+    render(<LibraryGrid works={[]} onClearFilters={onClearFilters} />);
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(onClearFilters).toHaveBeenCalledTimes(1);
+  });
 });

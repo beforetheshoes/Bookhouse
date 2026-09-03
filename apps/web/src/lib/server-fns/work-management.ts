@@ -43,19 +43,25 @@ export const splitEditionToWorkServerFn = createServerFn({
       throw new Error("Cannot split the only edition from a work");
     }
 
-    const newWork = await db.work.create({
-      data: {
-        titleCanonical: edition.work.titleCanonical,
-        titleDisplay: edition.work.titleDisplay,
-        coverPath: edition.work.coverPath,
-        ...(edition.work.coverColors !== null ? { coverColors: edition.work.coverColors } : {}),
-        enrichmentStatus: "STUB",
-      },
-    });
+    // Create + repoint in one transaction so a failure cannot strand an empty
+    // Work that no scan would ever clean up.
+    const newWork = await db.$transaction(async (tx) => {
+      const created = await tx.work.create({
+        data: {
+          titleCanonical: edition.work.titleCanonical,
+          titleDisplay: edition.work.titleDisplay,
+          coverPath: edition.work.coverPath,
+          ...(edition.work.coverColors !== null ? { coverColors: edition.work.coverColors } : {}),
+          enrichmentStatus: "STUB",
+        },
+      });
 
-    await db.edition.update({
-      where: { id: data.editionId },
-      data: { workId: newWork.id },
+      await tx.edition.update({
+        where: { id: data.editionId },
+        data: { workId: created.id },
+      });
+
+      return created;
     });
 
     return { newWorkId: newWork.id, editionId: data.editionId };

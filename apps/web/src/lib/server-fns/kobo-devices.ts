@@ -121,18 +121,22 @@ export const updateDeviceCollectionsServerFn = createServerFn({
       }
     }
 
-    await db.koboDeviceCollection.deleteMany({
-      where: { koboDeviceId: data.deviceId },
-    });
-
-    if (data.collectionIds.length > 0) {
-      await db.koboDeviceCollection.createMany({
-        data: data.collectionIds.map((collectionId) => ({
-          koboDeviceId: data.deviceId,
-          collectionId,
-        })),
+    // One transaction: a failure after the delete must not leave the device
+    // with no shelves at all.
+    await db.$transaction(async (tx) => {
+      await tx.koboDeviceCollection.deleteMany({
+        where: { koboDeviceId: data.deviceId },
       });
-    }
+
+      if (data.collectionIds.length > 0) {
+        await tx.koboDeviceCollection.createMany({
+          data: data.collectionIds.map((collectionId) => ({
+            koboDeviceId: data.deviceId,
+            collectionId,
+          })),
+        });
+      }
+    });
 
     return db.koboDeviceCollection.findMany({
       where: { koboDeviceId: data.deviceId },

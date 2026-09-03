@@ -11,7 +11,16 @@ export interface AuthMiddlewareDeps {
   ) => Promise<AuthenticatedUser | null>;
 }
 
+// KOReader's kosync plugin authenticates every request with its own
+// x-auth-user / x-auth-key headers and never carries the browser session
+// cookie, so its routes verify credentials themselves (createKoreaderAuth)
+// and must not be gated on a session here.
+const SESSION_EXEMPT_PREFIXES = ["/api/koreader/"];
+
 function requiresSessionAuth(path: string): boolean {
+  if (SESSION_EXEMPT_PREFIXES.some((prefix) => path.startsWith(prefix))) {
+    return false;
+  }
   return path.startsWith("/api/") || path.startsWith("/_serverFn/");
 }
 

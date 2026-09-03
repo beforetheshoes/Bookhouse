@@ -74,9 +74,11 @@ export const searchEnrichmentServerFn = createServerFn({
     const edition = work.editions[0];
     if (!edition) return { status: "no-editions" };
 
-    const author = edition.contributors.length > 0
-      ? edition.contributors[0]?.contributor.nameDisplay
-      : undefined;
+    // Prefer a credited AUTHOR; an audiobook edition often lists its narrator
+    // first, and searching providers by narrator finds the wrong book.
+    const author = (
+      edition.contributors.find((c) => c.role === "AUTHOR") ?? edition.contributors[0]
+    )?.contributor.nameDisplay;
 
     // When a specific edition is targeted, use its ASIN; otherwise find the first ASIN (prioritize audiobook editions)
     const targetEdition = data.editionId
@@ -93,7 +95,7 @@ export const searchEnrichmentServerFn = createServerFn({
     ]);
 
     const { createOLFetcher } = await import("@bookhouse/ingest");
-    const olFetch = createOLFetcher("bookhouse@teamsnail.org");
+    const olFetch = createOLFetcher(process.env.OPENLIBRARY_CONTACT ?? process.env.APP_URL ?? "bookhouse");
     const rateLimiter = new RateLimiter();
     const deps = buildSearchDeps(gbKey, hcKey, rateLimiter, olFetch, {
       searchOpenLibrary,
@@ -104,6 +106,11 @@ export const searchEnrichmentServerFn = createServerFn({
       searchAudible,
       lookupAudibleByAsin,
     });
+    const { createLogger } = await import("@bookhouse/shared");
+    const logger = createLogger("enrichment");
+    deps.onProviderError = (provider, error) => {
+      logger.warn({ err: error, provider, workId: data.workId }, "Metadata provider search failed");
+    };
 
     return await searchAllSources(work.titleDisplay, author, deps, asin ? { asin } : undefined);
   });
@@ -144,21 +151,57 @@ export const getEnrichmentDataServerFn = createServerFn({
     return { externalLinks };
   });
 
-const applySchema = z.object({
+// The enrichment vocabulary the dialog can send. Listing the keys (rather
+// than accepting any record) keeps the browser from writing arbitrary Work /
+// Edition columns such as workId, editedFields or enrichmentStatus.
+const workFieldsSchema = z.strictObject({
+  title: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  subjects: z.array(z.string()).optional(),
+  authors: z.array(z.string()).optional(),
+  coverUrl: z.string().nullable().optional(),
+});
+
+const editionFieldsSchema = z.strictObject({
+  publisher: z.string().nullable().optional(),
+  publishedDate: z.string().nullable().optional(),
+  pageCount: z.number().int().nullable().optional(),
+  isbn13: z.string().nullable().optional(),
+  isbn10: z.string().nullable().optional(),
+  asin: z.string().nullable().optional(),
+  language: z.string().nullable().optional(),
+  duration: z.number().int().nullable().optional(),
+  narrators: z.array(z.string()).optional(),
+});
+
+export const applyEnrichmentSchema = z.object({
   workId: z.string(),
   editionId: z.string().optional(),
-  workFields: z.record(z.union([z.string(), z.array(z.string()), z.number(), z.null()])).optional(),
-  editionFields: z.record(z.union([z.string(), z.array(z.string()), z.number(), z.null()])).optional(),
+  workFields: workFieldsSchema.optional(),
+  editionFields: editionFieldsSchema.optional(),
   source: z.object({
     provider: z.string(),
     externalId: z.string(),
   }),
 });
 
+// Manual edits record the column they touched (titleDisplay, publishedAt,
+// tags); enrichment names the same data differently (title, publishedDate,
+// subjects). Both spellings must block an overwrite.
+const EDITED_FIELD_ALIASES: Record<string, string> = {
+  title: "titleDisplay",
+  publishedDate: "publishedAt",
+  subjects: "tags",
+};
+
+function isManuallyEdited(editedFields: string[], key: string): boolean {
+  return editedFields.includes(key) || editedFields.includes(EDITED_FIELD_ALIASES[key] ?? key);
+}
+
 export const applyEnrichmentServerFn = createServerFn({
   method: "POST",
 })
-  .validator(applySchema)
+  .validator(applyEnrichmentSchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
@@ -173,8 +216,8 @@ export const applyEnrichmentServerFn = createServerFn({
         select: { editedFields: true },
       });
       const editedFields = work?.editedFields ?? [];
-      const filteredFields = Object.fromEntries(
-        Object.entries(data.workFields).filter(([key]) => !editedFields.includes(key)),
+      const filteredFields: Record<string, string | string[] | number | null> = Object.fromEntries(
+        Object.entries(data.workFields).filter(([key]) => !isManuallyEdited(editedFields, key)),
       );
 
       // Map enrichment field names to Prisma column names
@@ -207,13 +250,14 @@ export const applyEnrichmentServerFn = createServerFn({
           const trimmed = tagName.trim();
           if (trimmed === "") continue;
           const canonical = trimmed.toLowerCase();
-          const existing = await db.tag.findFirst({ where: { nameCanonical: canonical } });
-          if (existing) {
-            tagIds.push(existing.id);
-          } else {
-            const created = await db.tag.create({ data: { name: trimmed, nameCanonical: canonical } });
-            tagIds.push(created.id);
-          }
+          // nameCanonical is unique; upsert keeps two concurrent applies of the
+          // same subject from racing to a P2002.
+          const tag = await db.tag.upsert({
+            where: { nameCanonical: canonical },
+            create: { name: trimmed, nameCanonical: canonical },
+            update: {},
+          });
+          tagIds.push(tag.id);
         }
         // Add new tags without removing existing ones
         for (const tagId of tagIds) {
@@ -229,7 +273,7 @@ export const applyEnrichmentServerFn = createServerFn({
 
       // Apply authors via Contributor + EditionContributor
       if (authors && authors.length > 0) {
-        const { canonicalizeContributorName } = await import("@bookhouse/ingest");
+        const { canonicalizeContributorName, generateNameSort } = await import("@bookhouse/ingest");
 
         const editions = await db.edition.findMany({
           where: { workId: data.workId },
@@ -244,7 +288,7 @@ export const applyEnrichmentServerFn = createServerFn({
           const canonical = canonicalizeContributorName(trimmed) ?? trimmed.toLowerCase();
           const contributor = await db.contributor.upsert({
             where: { nameCanonical: canonical },
-            create: { nameDisplay: trimmed, nameCanonical: canonical },
+            create: { nameDisplay: trimmed, nameCanonical: canonical, nameSort: generateNameSort(trimmed) },
             update: {},
           });
           contributorIds.push(contributor.id);
@@ -276,7 +320,7 @@ export const applyEnrichmentServerFn = createServerFn({
       });
       const editedFields = edition?.editedFields ?? [];
       const filteredFields: Record<string, string | string[] | number | Date | null> = Object.fromEntries(
-        Object.entries(data.editionFields).filter(([key]) => !editedFields.includes(key)),
+        Object.entries(data.editionFields).filter(([key]) => !isManuallyEdited(editedFields, key)),
       );
 
       // Map enrichment field names to Prisma column names
@@ -301,7 +345,7 @@ export const applyEnrichmentServerFn = createServerFn({
 
       // Apply narrators via Contributor + EditionContributor (scoped to this edition only)
       if (narrators && narrators.length > 0) {
-        const { canonicalizeContributorName } = await import("@bookhouse/ingest");
+        const { canonicalizeContributorName, generateNameSort } = await import("@bookhouse/ingest");
 
         const contributorIds: string[] = [];
         for (const narratorName of narrators) {
@@ -310,7 +354,7 @@ export const applyEnrichmentServerFn = createServerFn({
           const canonical = canonicalizeContributorName(trimmed) ?? trimmed.toLowerCase();
           const contributor = await db.contributor.upsert({
             where: { nameCanonical: canonical },
-            create: { nameDisplay: trimmed, nameCanonical: canonical },
+            create: { nameDisplay: trimmed, nameCanonical: canonical, nameSort: generateNameSort(trimmed) },
             update: {},
           });
           contributorIds.push(contributor.id);
@@ -385,8 +429,9 @@ export const applyCoverFromUrlServerFn = createServerFn({
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
     const { db } = await import("@bookhouse/db");
-    const { applyCoverFromUrl } = await import("@bookhouse/ingest");
+    const { applyCoverFromUrl, fetchRemoteImage } = await import("@bookhouse/ingest");
     const { mkdir, writeFile } = await import("node:fs/promises");
+    const { lookup } = await import("node:dns/promises");
     const sharpModule = await import("sharp");
     const { resizeCoverImage, extractDominantColors } = await import("@bookhouse/ingest");
 
@@ -394,13 +439,8 @@ export const applyCoverFromUrlServerFn = createServerFn({
 
     /* c8 ignore start — runtime wiring, tested via unit tests on applyCoverFromUrl */
     const deps: CoverFromUrlDeps = {
-      fetchUrl: async (url: string) => {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`Failed to fetch image: ${String(res.status)}`);
-        const buffer = Buffer.from(await res.arrayBuffer());
-        const contentType = res.headers.get("content-type");
-        return { buffer, contentType };
-      },
+      // Public http(s) only, redirects re-checked, body capped while streaming.
+      fetchUrl: (url: string) => fetchRemoteImage(url, { fetch, lookup: (hostname) => lookup(hostname, { all: true }) }),
       resizeAndSave: async (imageBuffer, outputDir) => {
         await resizeCoverImage(
           { imageBuffer, outputDir },

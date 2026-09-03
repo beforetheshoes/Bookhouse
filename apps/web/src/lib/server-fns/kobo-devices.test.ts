@@ -29,8 +29,8 @@ const mockDeviceCollectionCreateMany = vi.fn();
 const mockDeviceCollectionFindMany = vi.fn();
 const mockCollectionFindMany = vi.fn();
 
-vi.mock("@bookhouse/db", () => ({
-  db: {
+vi.mock("@bookhouse/db", () => {
+  const db = {
     koboDevice: {
       findMany: mockFindMany,
       findUnique: mockFindUnique,
@@ -46,8 +46,10 @@ vi.mock("@bookhouse/db", () => ({
     collection: {
       findMany: mockCollectionFindMany,
     },
-  },
-}));
+    $transaction: (fn: (tx: object) => Promise<object>) => fn(db),
+  };
+  return { db };
+});
 
 const mockGenerateAuthToken = vi.fn().mockReturnValue("a".repeat(64));
 const mockGenerateUserKey = vi.fn().mockReturnValue("key123");

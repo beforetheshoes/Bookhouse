@@ -54,7 +54,7 @@ describe("DataTable", () => {
 
   it("shows row count in pagination", () => {
     render(<DataTable columns={columns} data={data} />);
-    expect(screen.getByText("2 row(s) total")).toBeTruthy();
+    expect(screen.getByText("2 rows")).toBeTruthy();
   });
 
   it("renders grouped column headers with placeholder (isPlaceholder branch)", () => {

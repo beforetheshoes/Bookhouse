@@ -2,15 +2,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CandidateEditionFile } from "./shared";
 import { resolveKoreaderDocument, resolveKoreaderTimestamp } from "./shared";
 
-const { mockHashFileContents } = vi.hoisted(() => ({
-  mockHashFileContents: vi.fn(),
+const { mockHashKoreaderDocument, mockWarn } = vi.hoisted(() => ({
+  mockHashKoreaderDocument: vi.fn(),
+  mockWarn: vi.fn(),
 }));
 
 vi.mock("@bookhouse/ingest", () => ({
-  hashFileContents: mockHashFileContents,
+  hashKoreaderDocument: mockHashKoreaderDocument,
 }));
 
 vi.mock("@bookhouse/shared", () => ({
+  createLogger: () => ({ warn: mockWarn }),
   selectPreferredKoboDeliveryFile: (
     files: Array<{ id: string; role: string }>,
   ) => files.find((file) => file.role === "DELIVERY") ?? files[0] ?? null,
@@ -90,7 +92,7 @@ describe("resolveKoreaderDocument", () => {
   });
 
   it("lazily hashes unhashed candidates and de-duplicates file asset updates", async () => {
-    mockHashFileContents.mockResolvedValueOnce({ koreaderHash: "lazy-hash-1" });
+    mockHashKoreaderDocument.mockResolvedValueOnce("lazy-hash-1");
 
     const updateFileAssetHash = vi.fn();
     const sharedFileAsset = {
@@ -122,8 +124,8 @@ describe("resolveKoreaderDocument", () => {
       updateFileAssetHash,
     });
 
-    expect(mockHashFileContents).toHaveBeenCalledTimes(1);
-    expect(mockHashFileContents).toHaveBeenCalledWith("/library/book.epub");
+    expect(mockHashKoreaderDocument).toHaveBeenCalledTimes(1);
+    expect(mockHashKoreaderDocument).toHaveBeenCalledWith("/library/book.epub");
     expect(updateFileAssetHash).toHaveBeenCalledTimes(1);
     expect(updateFileAssetHash).toHaveBeenCalledWith("fa-1", "lazy-hash-1");
     expect(result).toEqual({
@@ -131,6 +133,39 @@ describe("resolveKoreaderDocument", () => {
       editionId: "ed-1",
       fileAssetId: "fa-1",
     });
+  });
+
+  it("skips a candidate whose file cannot be hashed instead of failing the request", async () => {
+    mockHashKoreaderDocument
+      .mockRejectedValueOnce(Object.assign(new Error("ENOENT"), { code: "ENOENT" }))
+      .mockResolvedValueOnce("lazy-hash-2");
+    const updateFileAssetHash = vi.fn();
+
+    const result = await resolveKoreaderDocument({
+      document: "lazy-hash-2",
+      findExactCandidates: () => Promise.resolve([]),
+      findUnhashedCandidates: () => Promise.resolve([
+        makeCandidate({
+          id: "ef-gone",
+          editionId: "ed-gone",
+          fileAsset: { id: "fa-gone", absolutePath: "/library/gone.epub", koreaderHash: null },
+        }),
+        makeCandidate({
+          id: "ef-2",
+          editionId: "ed-2",
+          fileAsset: { id: "fa-2", absolutePath: "/library/other.epub", koreaderHash: null },
+        }),
+      ]),
+      updateFileAssetHash,
+    });
+
+    expect(updateFileAssetHash).toHaveBeenCalledTimes(1);
+    expect(updateFileAssetHash).toHaveBeenCalledWith("fa-2", "lazy-hash-2");
+    expect(mockWarn).toHaveBeenCalledWith(
+      expect.objectContaining({ fileAssetId: "fa-gone", absolutePath: "/library/gone.epub" }),
+      "Could not compute KOReader document hash",
+    );
+    expect(result).toEqual({ document: "lazy-hash-2", editionId: "ed-2", fileAssetId: "fa-2" });
   });
 });
 

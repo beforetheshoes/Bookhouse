@@ -22,6 +22,15 @@ afterEach(() => {
 });
 
 describe("packages/db Prisma singleton", () => {
+  it("refuses to start in production without DATABASE_URL", async () => {
+    delete process.env.DATABASE_URL;
+    process.env.NODE_ENV = "production";
+    vi.doMock("@prisma/client", () => ({ PrismaClient: vi.fn() }));
+    vi.doMock("@prisma/adapter-pg", () => ({ PrismaPg: vi.fn() }));
+
+    await expect(import("./index")).rejects.toThrow("DATABASE_URL must be set when NODE_ENV=production");
+  });
+
   it("creates and caches a client outside production, defaulting DATABASE_URL", async () => {
     delete process.env.DATABASE_URL;
     process.env.NODE_ENV = "development";

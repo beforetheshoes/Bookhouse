@@ -51,7 +51,7 @@ export const getShelfDetailServerFn = createServerFn({
   .handler(async ({ data }) => {
     const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
-    return db.collection.findFirstOrThrow({
+    return db.collection.findFirst({
       where: { id: data.shelfId, ownerUserId: user.id },
       include: {
         items: {
@@ -78,7 +78,7 @@ export const getShelfDetailServerFn = createServerFn({
     });
   });
 
-export type ShelfDetail = Awaited<ReturnType<typeof getShelfDetailServerFn>>;
+export type ShelfDetail = NonNullable<Awaited<ReturnType<typeof getShelfDetailServerFn>>>;
 
 export const getShelvesForEditionServerFn = createServerFn({
   method: "GET",
@@ -224,11 +224,43 @@ export const addEditionToShelfServerFn = createServerFn({
   .handler(async ({ data }) => {
     const user = await (await import("./_guards")).authenticatedOnly();
     const { db } = await import("@bookhouse/db");
-    await requireOwnedShelf(db, data.shelfId, user.id);
-    return db.collectionItem.create({
-      data: { collectionId: data.shelfId, editionId: data.editionId },
+    const shelf = await db.collection.findFirstOrThrow({
+      where: { id: data.shelfId, ownerUserId: user.id },
+      select: { formatFilter: true },
+    });
+    // Honour the shelf's format filter like the work-level variants do, and
+    // confirm the edition exists so a stale id is a clean error rather than a
+    // raw foreign-key failure.
+    await db.edition.findFirstOrThrow({
+      where: {
+        id: data.editionId,
+        ...(shelf.formatFilter === "ALL" ? {} : { formatFamily: shelf.formatFilter }),
+      },
+      select: { id: true },
+    });
+    return db.collectionItem.upsert({
+      where: { collectionId_editionId: { collectionId: data.shelfId, editionId: data.editionId } },
+      create: { collectionId: data.shelfId, editionId: data.editionId },
+      update: {},
     });
   });
+
+// One insert with skipDuplicates instead of find-then-create: two overlapping
+// requests (a double-tap) both saw "not on the shelf yet" and the second hit
+// the (collectionId, editionId) unique constraint. `count` is the number of
+// rows actually inserted, so "added" stays accurate.
+async function addEditionsToShelf(
+  db: { collectionItem: { createMany: (args: { data: { collectionId: string; editionId: string }[]; skipDuplicates: true }) => Promise<{ count: number }> } },
+  shelfId: string,
+  editionIds: string[],
+): Promise<{ added: number }> {
+  if (editionIds.length === 0) return { added: 0 };
+  const { count } = await db.collectionItem.createMany({
+    data: editionIds.map((editionId) => ({ collectionId: shelfId, editionId })),
+    skipDuplicates: true,
+  });
+  return { added: count };
+}
 
 export const addEditionsForWorkToShelfServerFn = createServerFn({
   method: "POST",
@@ -248,20 +280,7 @@ export const addEditionsForWorkToShelfServerFn = createServerFn({
       where: { workId: data.workId, ...formatWhere },
       select: { id: true },
     });
-    const editionIds = editions.map((e) => e.id);
-    if (editionIds.length === 0) return { added: 0 };
-    const existing = await db.collectionItem.findMany({
-      where: { collectionId: data.shelfId, editionId: { in: editionIds } },
-      select: { editionId: true },
-    });
-    const existingIds = new Set(existing.map((e) => e.editionId));
-    const newEditionIds = editionIds.filter((id) => !existingIds.has(id));
-    if (newEditionIds.length > 0) {
-      await db.collectionItem.createMany({
-        data: newEditionIds.map((editionId) => ({ collectionId: data.shelfId, editionId })),
-      });
-    }
-    return { added: newEditionIds.length };
+    return addEditionsToShelf(db, data.shelfId, editions.map((e) => e.id));
   });
 
 export const bulkAddToShelfServerFn = createServerFn({
@@ -282,20 +301,7 @@ export const bulkAddToShelfServerFn = createServerFn({
       where: { workId: { in: data.workIds }, ...formatWhere },
       select: { id: true },
     });
-    const editionIds = editions.map((e) => e.id);
-    if (editionIds.length === 0) return { added: 0 };
-    const existing = await db.collectionItem.findMany({
-      where: { collectionId: data.shelfId, editionId: { in: editionIds } },
-      select: { editionId: true },
-    });
-    const existingIds = new Set(existing.map((e) => e.editionId));
-    const newEditionIds = editionIds.filter((id) => !existingIds.has(id));
-    if (newEditionIds.length > 0) {
-      await db.collectionItem.createMany({
-        data: newEditionIds.map((editionId) => ({ collectionId: data.shelfId, editionId })),
-      });
-    }
-    return { added: newEditionIds.length };
+    return addEditionsToShelf(db, data.shelfId, editions.map((e) => e.id));
   });
 
 export const removeEditionFromShelfServerFn = createServerFn({

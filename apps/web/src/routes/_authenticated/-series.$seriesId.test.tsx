@@ -175,4 +175,12 @@ describe("SeriesDetailPage", () => {
     render(<Skeleton />);
     expect(screen.getByText("Loading grid...")).toBeTruthy();
   });
+
+  it("loader raises a not-found for a series that no longer exists", async () => {
+    getSeriesDetailServerFnMock.mockResolvedValueOnce(null);
+    const { Route } = await import("./series.$seriesId");
+    await expect(
+      (Route.options.loader as (args: { params: { seriesId: string } }) => Promise<object>)({ params: { seriesId: "gone" } }),
+    ).rejects.toMatchObject({ isNotFound: true });
+  });
 });

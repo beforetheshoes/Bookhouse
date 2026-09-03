@@ -51,6 +51,10 @@ const getShelfDetailServerFnMock = vi.fn();
 const getAvailableEditionsServerFnMock = vi.fn().mockResolvedValue([]);
 const addEditionToShelfServerFnMock = vi.fn().mockResolvedValue({});
 
+vi.mock("~/lib/server-fns/reading-progress", () => ({
+  getBulkReadingProgressServerFn: vi.fn().mockResolvedValue({}),
+}));
+
 vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
@@ -127,7 +131,9 @@ vi.mock("~/components/skeletons/grid-page-skeleton", () => ({
   GridPageSkeleton: () => <div>Loading...</div>,
 }));
 
-type ToolbarProps = { view: string; onSelectModeChange?: (on: boolean) => void };
+type ToolbarProps = {
+  onSortChange?: (value: string) => void;
+  onSearchChange?: (value: string) => void; view: string; onSelectModeChange?: (on: boolean) => void };
 let capturedToolbarProps: ToolbarProps = { view: "grid" };
 vi.mock("~/components/library-toolbar", () => ({
   LibraryToolbar: (props: ToolbarProps) => {
@@ -178,7 +184,7 @@ describe("ShelfDetailPage", () => {
     ) => Promise<object>;
     const result = await loader({ params: { shelfId: "s1" } });
     expect(getShelfDetailServerFnMock).toHaveBeenCalledWith({ data: { shelfId: "s1" } });
-    expect(result).toEqual({ shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [] } });
+    expect(result).toEqual({ shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [] }, progressMap: {} });
   });
 
   it("renders shelf name as heading", async () => {
@@ -200,7 +206,7 @@ describe("ShelfDetailPage", () => {
     const { Route } = await import("./shelves.$shelfId");
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
-    expect(screen.getByText("No editions on this shelf yet.")).toBeTruthy();
+    expect(screen.getByText("No books on this shelf yet.")).toBeTruthy();
   });
 
   it("renders format badge", async () => {
@@ -403,7 +409,7 @@ describe("ShelfDetailPage", () => {
     expect(addBtn.getAttribute("disabled")).not.toBeNull();
   });
 
-  it("catch handler sets empty available when server fn rejects", async () => {
+  it("shows a retry when the editions cannot be loaded, and retries", async () => {
     getAvailableEditionsServerFnMock.mockRejectedValue(new Error("fail"));
 
     const { Route } = await import("./shelves.$shelfId");
@@ -412,8 +418,15 @@ describe("ShelfDetailPage", () => {
     fireEvent.click(screen.getByTestId("add-editions-btn"));
 
     await waitFor(() => {
+      expect(screen.getByText("Couldn't load the editions.")).toBeTruthy();
+    });
+
+    getAvailableEditionsServerFnMock.mockResolvedValue([]);
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => {
       expect(screen.getByText("No matching editions available.")).toBeTruthy();
     });
+    expect(getAvailableEditionsServerFnMock).toHaveBeenCalledTimes(2);
   });
 
   it("cancel button closes dialog", async () => {
@@ -548,6 +561,54 @@ describe("ShelfDetailPage", () => {
     const Page = Route.options.component as React.ComponentType;
     render(<Page />);
     expect(screen.getByText("Audiobooks")).toBeTruthy();
+  });
+  it("applies the toolbar's search and sort to the shelf", async () => {
+    const edition = (id: string, title: string, author: string) => ({
+      edition: {
+        id,
+        formatFamily: "EBOOK",
+        contributors: [{ role: "AUTHOR", contributor: { nameDisplay: author } }],
+        editionFiles: [],
+        work: { id: `w-${id}`, titleDisplay: title, coverPath: null, series: null },
+      },
+    });
+    mockLoaderData = {
+      shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [edition("e1", "Zebra", "Ann"), edition("e2", "Apple", "Zed"), edition("e3", "Mango", "Bob")] } as never,
+      progressMap: {},
+    } as never;
+    const { Route } = await import("./shelves.$shelfId");
+    const Page = Route.options.component as React.ComponentType;
+    const { rerender } = render(<Page />);
+    const titles = () => capturedGridProps.works.map((w) => (w as { titleDisplay: string }).titleDisplay);
+    expect(titles()).toEqual(["Apple", "Mango", "Zebra"]);
+
+    act(() => { capturedToolbarProps.onSortChange?.("title-desc"); });
+    expect(titles()).toEqual(["Zebra", "Mango", "Apple"]);
+    act(() => { capturedToolbarProps.onSortChange?.("author-asc"); });
+    expect(titles()).toEqual(["Zebra", "Mango", "Apple"]);
+    act(() => { capturedToolbarProps.onSortChange?.("author-desc"); });
+    expect(titles()).toEqual(["Apple", "Mango", "Zebra"]);
+
+    act(() => { capturedToolbarProps.onSearchChange?.("bob"); });
+    expect(titles()).toEqual(["Mango"]);
+    act(() => { capturedToolbarProps.onSearchChange?.(""); });
+
+    // A work with no credited author sorts as an empty author; equal authors fall back to title.
+    mockLoaderData = {
+      shelf: { id: "s1", name: "Fiction", formatFilter: "ALL", items: [
+        { edition: { id: "e9", formatFamily: "EBOOK", contributors: [{ role: "NARRATOR", contributor: { nameDisplay: "Voice" } }], editionFiles: [], work: { id: "w-e9", titleDisplay: "Quiet", coverPath: null, series: null } } },
+        edition("e1", "Zebra", "Ann"),
+        edition("e2", "Apple", "Ann"),
+      ] } as never,
+      progressMap: {},
+    } as never;
+    act(() => { capturedToolbarProps.onSortChange?.("author-asc"); });
+    rerender(<Page />);
+    expect(titles()).toEqual(["Quiet", "Apple", "Zebra"]);
+    act(() => { capturedToolbarProps.onSortChange?.("author-desc"); });
+    expect(titles()).toEqual(["Apple", "Zebra", "Quiet"]);
+    act(() => { capturedToolbarProps.onSearchChange?.("nothing here"); });
+    expect(screen.getByText("No books on this shelf match your search.")).toBeTruthy();
   });
 });
 
@@ -903,5 +964,50 @@ describe("editionLabel", () => {
     await waitFor(() => {
       expect(vi.mocked(toast.success)).toHaveBeenCalledWith("Removed 2 editions from shelf");
     });
+  });
+
+  it("loader raises a not-found for a shelf that no longer exists", async () => {
+    getShelfDetailServerFnMock.mockResolvedValueOnce(null);
+    const { Route } = await import("./shelves.$shelfId");
+    const loader = Route.options.loader as never as (args: { params: { shelfId: string } }) => Promise<object>;
+    await expect(loader({ params: { shelfId: "gone" } })).rejects.toMatchObject({ isNotFound: true });
+  });
+
+
+  it("keeps the add dialog open when adding an edition fails", async () => {
+    getAvailableEditionsServerFnMock.mockResolvedValue([
+      { id: "e2", formatFamily: "EBOOK", publisher: null, work: { titleDisplay: "Brave New World", series: null }, contributors: [] },
+    ]);
+    addEditionToShelfServerFnMock.mockRejectedValueOnce(new Error("nope"));
+
+    const { Route } = await import("./shelves.$shelfId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    fireEvent.click(screen.getByTestId("add-editions-btn"));
+    await waitFor(() => { expect(screen.getByTestId("edition-check-e2")).toBeTruthy(); });
+    fireEvent.click(screen.getByTestId("edition-check-e2"));
+    fireEvent.click(screen.getByTestId("add-selected-btn"));
+
+    await waitFor(() => { expect(addEditionToShelfServerFnMock).toHaveBeenCalled(); });
+    expect(screen.getByTestId("dialog")).toBeTruthy();
+  });
+
+  it("adds every selected edition when more than one is picked", async () => {
+    getAvailableEditionsServerFnMock.mockResolvedValue([
+      { id: "e2", formatFamily: "EBOOK", publisher: null, work: { titleDisplay: "Brave New World", series: null }, contributors: [] },
+      { id: "e3", formatFamily: "EBOOK", publisher: null, work: { titleDisplay: "Island", series: null }, contributors: [] },
+    ]);
+
+    const { Route } = await import("./shelves.$shelfId");
+    const Page = Route.options.component as React.ComponentType;
+    render(<Page />);
+    fireEvent.click(screen.getByTestId("add-editions-btn"));
+    await waitFor(() => { expect(screen.getByTestId("edition-check-e3")).toBeTruthy(); });
+    fireEvent.click(screen.getByTestId("edition-check-e2"));
+    fireEvent.click(screen.getByTestId("edition-check-e3"));
+    fireEvent.click(screen.getByTestId("add-selected-btn"));
+
+    await waitFor(() => { expect(addEditionToShelfServerFnMock).toHaveBeenCalledTimes(2); });
+    expect(addEditionToShelfServerFnMock).toHaveBeenCalledWith({ data: { shelfId: "s1", editionId: "e3" } });
   });
 });

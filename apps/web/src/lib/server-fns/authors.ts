@@ -40,7 +40,7 @@ export const getAuthorDetailServerFn = createServerFn({
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
 
-    const contributor = await db.contributor.findUniqueOrThrow({
+    const contributor = await db.contributor.findUnique({
       where: { id: data.authorId },
       select: {
         id: true,
@@ -54,6 +54,7 @@ export const getAuthorDetailServerFn = createServerFn({
         },
       },
     });
+    if (!contributor) return null;
 
     const workIds = [...new Set(contributor.editions.map((ec) => ec.edition.workId))];
 
@@ -79,9 +80,9 @@ export const getAuthorDetailServerFn = createServerFn({
     };
   });
 
-export type AuthorDetail = Awaited<
+export type AuthorDetail = NonNullable<Awaited<
   ReturnType<typeof getAuthorDetailServerFn>
->;
+>>;
 
 export const getEnrichAuthorPhotosProgressServerFn = createServerFn({
   method: "GET",
@@ -138,20 +139,17 @@ export const fetchAuthorPhotoFromUrlServerFn = createServerFn({
   .validator(fetchAuthorPhotoSchema)
   .handler(async ({ data }) => {
     await (await import("./_guards")).ownerOnly();
-    const { applyAuthorPhotoFromUrl, resizeAndSaveCover } = await import("@bookhouse/ingest");
+    const { applyAuthorPhotoFromUrl, fetchRemoteImage, resizeAndSaveCover } = await import("@bookhouse/ingest");
     const { db } = await import("@bookhouse/db");
+    const { lookup } = await import("node:dns/promises");
 
     const coverCacheDir = process.env.COVER_CACHE_DIR ?? "/data/covers";
 
     await applyAuthorPhotoFromUrl(
       { contributorId: data.contributorId, imageUrl: data.imageUrl, coverCacheDir },
       {
-        fetchUrl: async (url) => {
-          const response = await fetch(url);
-          const buffer = Buffer.from(await response.arrayBuffer());
-          const contentType = response.headers.get("content-type");
-          return { buffer, contentType };
-        },
+        // Public http(s) only, redirects re-checked, body capped while streaming.
+        fetchUrl: (url) => fetchRemoteImage(url, { fetch, lookup: (hostname) => lookup(hostname, { all: true }) }),
         resizeAndSave: (buf, dir) => resizeAndSaveCover(buf, dir),
       },
       {

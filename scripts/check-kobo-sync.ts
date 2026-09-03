@@ -38,7 +38,8 @@ async function main(): Promise<void> {
   for (const d of devices) {
     console.log(`  device.id:   ${d.id}`);
     console.log(`  deviceId:    ${d.deviceId}`);
-    console.log(`  authToken:   ${d.authToken}`);
+    // The token is the device's bearer credential; show enough to match it up, not to reuse it.
+    console.log(`  authToken:   …${d.authToken.slice(-4)}`);
     console.log(`  status:      ${d.status}`);
     console.log(`  userId:      ${d.userId}  (${d.user.email ?? "no email"})`);
     console.log(`  syncedBooks: ${d._count.syncedBooks}`);

@@ -5,7 +5,10 @@ interface UseSSEOptions {
   enabled?: boolean;
 }
 
-const THROTTLE_MS = 2000;
+// Every event re-runs the whole route loader (works, facets, shelves,
+// progress); during a scan that fired every 2s and the library never stopped
+// re-rendering. 5s keeps the page live without the churn.
+const THROTTLE_MS = 5000;
 
 export function useSSE({ enabled = true }: UseSSEOptions = {}) {
   const router = useRouter();

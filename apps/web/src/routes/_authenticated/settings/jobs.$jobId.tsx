@@ -60,7 +60,7 @@ function JobDetailPage() {
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="sm" asChild>
-          <Link to="/settings/jobs">
+          <Link to="/settings" search={{ tab: "jobs" }}>
             <ArrowLeft className="size-4" />
             Back to Jobs
           </Link>

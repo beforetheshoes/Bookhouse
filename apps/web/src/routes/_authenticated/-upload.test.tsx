@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import type * as TanstackRouter from "@tanstack/react-router";
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, act } from "@testing-library/react";
 import type { LibraryRootRow } from "~/lib/server-fns/library-roots";
 
 const { mockLoaderData, getLibraryRootsServerFnMock } = vi.hoisted(() => ({
@@ -17,6 +17,7 @@ vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
     ...actual,
+    Link: ({ children, to }: { children?: React.ReactNode; to: string }) => <a href={to}>{children}</a>,
     createFileRoute: () => (opts: Record<string, object | ((...args: object[]) => object)>) => ({
       ...opts,
       options: opts,
@@ -50,7 +51,25 @@ vi.mock("~/lib/server-fns/upload-status", () => ({
 }));
 
 const fetchMock = vi.fn();
+// The upload goes through the XHR helper (for progress); tests drive it with
+// the same fetch-shaped responses they always used.
+const { uploadCalls } = vi.hoisted(() => ({
+  uploadCalls: [] as Array<{ onProgress?: (p: { loaded: number; total: number }) => void; signal?: AbortSignal }>,
+}));
+vi.mock("~/lib/upload-with-progress", () => ({
+  uploadWithProgress: async (
+    url: string,
+    body: FormData,
+    options: { onProgress?: (p: { loaded: number; total: number }) => void; signal?: AbortSignal } = {},
+  ) => {
+    uploadCalls.push(options);
+    const res = await (globalThis.fetch as (u: string, i: object) => Promise<{ ok: boolean; status?: number; json?: () => object; text?: () => Promise<string> | string }>)(url, { method: "POST", body });
+    const text = res.ok ? JSON.stringify(res.json?.()) : await res.text?.();
+    return { ok: res.ok, status: res.status ?? (res.ok ? 200 : 500), text: text ?? "" };
+  },
+}));
 beforeEach(async () => {
+  uploadCalls.length = 0;
   toastErrorMock.mockReset();
   toastSuccessMock.mockReset();
   fetchMock.mockReset();
@@ -121,6 +140,30 @@ describe("UploadForm", () => {
     const sentBody = (fetchMock.mock.calls[0] as [string, { body: FormData }])[1].body;
     expect(sentBody.has("title")).toBe(false);
     expect(sentBody.has("author")).toBe(false);
+  });
+
+  it("shows upload progress and lets the user cancel", async () => {
+    let finish: (value: { ok: boolean; json: () => object }) => void = () => undefined;
+    fetchMock.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    render(<UploadForm libraryRoots={[makeRoot()]} />);
+    const input = screen.getByTestId("upload-file-input");
+    Object.defineProperty(input, "files", { value: [new File(["x"], "big.m4b")] });
+    fireEvent.change(input);
+    fireEvent.click(screen.getByRole("button", { name: /upload/i }));
+
+    await screen.findByText("Uploading files…");
+    const call = uploadCalls[0];
+    expect(call?.signal).toBeInstanceOf(AbortSignal);
+    act(() => { call?.onProgress?.({ loaded: 40, total: 80 }); });
+    expect(await screen.findByText("Uploading files… 50%")).toBeTruthy();
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("50");
+    act(() => { call?.onProgress?.({ loaded: 0, total: 0 }); });
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("0");
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel upload" }));
+    expect(call?.signal?.aborted).toBe(true);
+    finish({ ok: true, json: () => ({ importJobId: "import-1" }) });
+    await new Promise((r) => setTimeout(r, 5));
   });
 
   it("consumes files stashed by the global drop target on mount", async () => {

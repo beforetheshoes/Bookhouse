@@ -17,8 +17,11 @@ async function cleanupOrphanedFiles(db: { fileAsset: { findMany: (args: object) 
   try {
     const { cleanupOrphanedFileAssets } = await import("@bookhouse/ingest");
     await cleanupOrphanedFileAssets(db, fileAssetIds);
-  } catch {
-    // Non-fatal: orphaned FileAssets will be cleaned up on next scan or via Library Health
+  } catch (error) {
+    // Non-fatal: orphaned FileAssets will be cleaned up on next scan or via
+    // Library Health — but say so, or nobody learns it keeps failing.
+    const { createLogger } = await import("@bookhouse/shared");
+    createLogger("deletion").warn({ err: error, fileAssetIds }, "Orphaned file asset cleanup failed after delete");
   }
 }
 

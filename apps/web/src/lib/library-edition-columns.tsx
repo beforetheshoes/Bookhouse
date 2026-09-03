@@ -73,7 +73,6 @@ export function getEditionColumns(editMode: boolean, router: { invalidate: () =>
         <Link
           to="/library/$workId"
           params={{ workId: row.original.workId }}
-          search={{ page: 1, pageSize: 50, sort: "title-asc" as const }}
           className="flex min-h-9 items-center gap-2 lg:min-h-0"
         >
           {row.original.work.titleDisplay}

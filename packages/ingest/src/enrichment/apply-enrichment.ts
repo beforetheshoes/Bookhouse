@@ -21,13 +21,13 @@ export interface ApplyEnrichmentDeps {
   findTagByCanonical: (canonical: string) => Promise<string | null>;
   createTag: (name: string, canonical: string) => Promise<string>;
   upsertWorkTag: (workId: string, tagId: string) => Promise<void>;
-  findContributorByCanonical: (canonical: string) => Promise<string | null>;
-  createContributor: (name: string, canonical: string) => Promise<string>;
+  /** Find-or-create on the unique canonical name; returns the contributor id. */
+  upsertContributor: (name: string, canonical: string) => Promise<string>;
   findEditionIdsByWorkId: (workId: string) => Promise<string[]>;
-  deleteAuthorContributors: (editionIds: string[]) => Promise<void>;
-  createEditionContributors: (editionIds: string[], contributorIds: string[]) => Promise<void>;
-  deleteNarratorContributors: (editionId: string) => Promise<void>;
-  createNarratorContributors: (editionId: string, contributorIds: string[]) => Promise<void>;
+  /** Atomically swap the AUTHOR links on every edition of the work. */
+  replaceAuthorContributors: (editionIds: string[], contributorIds: string[]) => Promise<void>;
+  /** Atomically swap the NARRATOR links on one edition. */
+  replaceNarratorContributors: (editionId: string, contributorIds: string[]) => Promise<void>;
   upsertExternalLink: (data: {
     workId: string;
     provider: string;
@@ -43,9 +43,16 @@ export interface ApplyEnrichmentResult {
   appliedFields?: string[];
 }
 
-function getEditedFieldKey(fieldKey: string): string {
-  if (fieldKey === "title") return "titleDisplay";
-  return fieldKey;
+// Manual edits record the column they touched; enrichment names the same
+// data differently. Both spellings must block an overwrite.
+const EDITED_FIELD_ALIASES: Record<string, string> = {
+  title: "titleDisplay",
+  publishedDate: "publishedAt",
+  subjects: "tags",
+};
+
+function isManuallyEdited(editedFields: string[], fieldKey: string): boolean {
+  return editedFields.includes(fieldKey) || editedFields.includes(EDITED_FIELD_ALIASES[fieldKey] ?? fieldKey);
 }
 
 export async function applyEnrichmentFields(
@@ -60,7 +67,7 @@ export async function applyEnrichmentFields(
     const work = await deps.findWork(input.workId);
     const editedFields = work?.editedFields ?? [];
     const filteredFields: Record<string, ApplyFieldValue> = Object.fromEntries(
-      Object.entries(input.workFields).filter(([key]) => !editedFields.includes(getEditedFieldKey(key))),
+      Object.entries(input.workFields).filter(([key]) => !isManuallyEdited(editedFields, key)),
     );
 
     // Map enrichment field names to DB column names
@@ -109,11 +116,9 @@ export async function applyEnrichmentFields(
         const trimmed = authorName.trim();
         if (trimmed === "") continue;
         const canonical = deps.canonicalizeContributorName(trimmed) ?? trimmed.toLowerCase();
-        const existing = await deps.findContributorByCanonical(canonical);
-        contributorIds.push(existing ?? await deps.createContributor(trimmed, canonical));
+        contributorIds.push(await deps.upsertContributor(trimmed, canonical));
       }
-      await deps.deleteAuthorContributors(editionIds);
-      await deps.createEditionContributors(editionIds, contributorIds);
+      await deps.replaceAuthorContributors(editionIds, contributorIds);
       appliedAnyFields = true;
       allAppliedFields.push("authors");
     }
@@ -124,7 +129,7 @@ export async function applyEnrichmentFields(
     const edition = await deps.findEdition(input.editionId);
     const editedFields = edition?.editedFields ?? [];
     const filteredFields: Record<string, string | string[] | number | Date | null> = Object.fromEntries(
-      Object.entries(input.editionFields).filter(([key]) => !editedFields.includes(key)),
+      Object.entries(input.editionFields).filter(([key]) => !isManuallyEdited(editedFields, key)),
     );
 
     // Map publishedDate → publishedAt
@@ -151,11 +156,9 @@ export async function applyEnrichmentFields(
         const trimmed = narratorName.trim();
         if (trimmed === "") continue;
         const canonical = deps.canonicalizeContributorName(trimmed) ?? trimmed.toLowerCase();
-        const existing = await deps.findContributorByCanonical(canonical);
-        contributorIds.push(existing ?? await deps.createContributor(trimmed, canonical));
+        contributorIds.push(await deps.upsertContributor(trimmed, canonical));
       }
-      await deps.deleteNarratorContributors(input.editionId);
-      await deps.createNarratorContributors(input.editionId, contributorIds);
+      await deps.replaceNarratorContributors(input.editionId, contributorIds);
       appliedAnyFields = true;
       allAppliedFields.push("narrators");
     }

@@ -101,7 +101,7 @@ describe("searchAllSources", () => {
 
     const result = await searchAllSources("Nonexistent", undefined, deps);
 
-    expect(result).toEqual({ status: "no-results" });
+    expect(result).toEqual({ status: "no-results", failedProviders: [] });
   });
 
   it("returns results from all three sources", async () => {
@@ -208,18 +208,34 @@ describe("searchAllSources", () => {
     expect(hc.edition.isbn10).toBeNull();
   });
 
-  it("gracefully handles one source failing", async () => {
+  it("gracefully handles one source failing and reports which provider failed", async () => {
+    const onProviderError = vi.fn();
     const deps = makeDeps({
       searchOL: vi.fn<SearchSourcesDeps["searchOL"]>().mockRejectedValue(new Error("Network error")),
       searchGB: vi.fn<SearchSourcesDeps["searchGB"]>().mockResolvedValue([gbVolume]),
+      onProviderError,
     });
 
     const result = await searchAllSources("Dune", undefined, deps);
 
     expect(result.status).toBe("success");
-    const results = (result as { status: "success"; results: SourceResult[] }).results;
+    const { results, failedProviders } = result as { status: "success"; results: SourceResult[]; failedProviders: string[] };
     expect(results).toHaveLength(1);
     expect((results[0] as SourceResult).provider).toBe("googlebooks");
+    expect(failedProviders).toEqual(["openlibrary"]);
+    expect(onProviderError).toHaveBeenCalledWith("openlibrary", expect.objectContaining({ message: "Network error" }));
+  });
+
+  it("wraps non-Error provider rejections before reporting them", async () => {
+    const onProviderError = vi.fn();
+    const deps = makeDeps({
+      searchHC: vi.fn<SearchSourcesDeps["searchHC"]>().mockRejectedValue("quota"),
+      onProviderError,
+    });
+
+    await searchAllSources("Dune", undefined, deps);
+
+    expect(onProviderError).toHaveBeenCalledWith("hardcover", expect.objectContaining({ message: "quota" }));
   });
 
   it("gracefully handles two sources failing", async () => {
@@ -246,7 +262,10 @@ describe("searchAllSources", () => {
 
     const result = await searchAllSources("Dune", undefined, deps);
 
-    expect(result).toEqual({ status: "no-results" });
+    expect(result).toEqual({
+      status: "no-results",
+      failedProviders: ["openlibrary", "googlebooks", "hardcover"],
+    });
   });
 
   it("handles null returns from sources", async () => {
@@ -258,7 +277,7 @@ describe("searchAllSources", () => {
 
     const result = await searchAllSources("Nothing", undefined, deps);
 
-    expect(result).toEqual({ status: "no-results" });
+    expect(result).toEqual({ status: "no-results", failedProviders: [] });
   });
 
   it("continues if getOLWork fails after search succeeds", async () => {

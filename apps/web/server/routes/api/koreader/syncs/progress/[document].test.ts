@@ -60,7 +60,7 @@ describe("KOReader progress GET route", () => {
     } as Partial<H3Event> as H3Event)).rejects.toThrow(expect.objectContaining({ statusCode: 400 }));
   });
 
-  it("returns 404 when there is no stored koreader locator", async () => {
+  it("returns only the document id when there is no stored koreader locator", async () => {
     const handler = createKoreaderProgressGetHandler(makeDeps({
       findProgress: vi.fn().mockResolvedValue({
         percent: 55,
@@ -69,6 +69,16 @@ describe("KOReader progress GET route", () => {
       }),
     }));
 
-    await expect(handler(makeEvent())).rejects.toThrow(expect.objectContaining({ statusCode: 404 }));
+    // KOReader shows "No progress found" for a 200 without `percentage`, but
+    // "Sync failed" for any error status.
+    await expect(handler(makeEvent())).resolves.toEqual({ document: "abcd1234" });
+  });
+
+  it("returns only the document id when no progress row exists yet", async () => {
+    const handler = createKoreaderProgressGetHandler(makeDeps({
+      findProgress: vi.fn().mockResolvedValue(null),
+    }));
+
+    await expect(handler(makeEvent())).resolves.toEqual({ document: "abcd1234" });
   });
 });

@@ -35,7 +35,8 @@ interface EditionCardProps {
   onSplitEdition?: () => void;
 }
 
-export function parseDuration(input: string): number {
+/** "10h 32m", "45m", "2h" or plain seconds; null when the text is not a duration at all. */
+export function parseDuration(input: string): number | null {
   const hMatch = /(\d+)\s*h/.exec(input);
   const mMatch = /(\d+)\s*m/.exec(input);
   if (hMatch ?? mMatch) {
@@ -43,7 +44,7 @@ export function parseDuration(input: string): number {
     const minutes = mMatch ? parseInt(mMatch[1] as string, 10) : 0;
     return hours * 3600 + minutes * 60;
   }
-  return parseInt(input, 10) || 0;
+  return /^\d+$/.test(input.trim()) ? parseInt(input.trim(), 10) : null;
 }
 
 function formatBytes(bytes: bigint | number | null): string {
@@ -93,8 +94,19 @@ export function EditionCard({
   );
 
   async function saveField(field: string, val: string) {
+    // EditableField surfaces a thrown error as a toast, so validation
+    // messages from the server ("Pages must be a whole number") reach the user.
     await updateEditionServerFn({ data: { editionId: edition.id, fields: { [field]: val || null } } });
     onEditionFieldSaved();
+  }
+
+  function saveDuration(val: string) {
+    if (!val) return saveField("duration", "");
+    const seconds = parseDuration(val);
+    if (seconds === null) {
+      return Promise.reject(new Error("Enter a duration like 10h 32m, or a number of seconds"));
+    }
+    return saveField("duration", String(seconds));
   }
 
   async function handleSendToKindle() {
@@ -231,7 +243,9 @@ export function EditionCard({
               <EditableField value={edition.publisher ?? ""} onSave={(val) => saveField("publisher", val)} placeholder="—" />
             </MetadataItem>
             <MetadataItem label="Published">
-              <EditableField value={edition.publishedAt ? new Date(edition.publishedAt).toLocaleDateString() : ""} onSave={(val) => saveField("publishedAt", val)} placeholder="—" />
+              {/* ISO in the field: a locale date like 03/04/2007 saved back through
+                  new Date() silently swapped day and month for dd/mm locales. */}
+              <EditableField value={edition.publishedAt ? new Date(edition.publishedAt).toISOString().slice(0, 10) : ""} onSave={(val) => saveField("publishedAt", val)} placeholder="YYYY-MM-DD" />
             </MetadataItem>
             <MetadataItem label="Language">
               <EditableField value={edition.language ?? ""} onSave={(val) => saveField("language", val)} placeholder="—" />
@@ -266,7 +280,7 @@ export function EditionCard({
               <MetadataItem label="Duration">
                 <EditableField
                   value={edition.duration != null ? formatDuration(edition.duration) : ""}
-                  onSave={(val) => saveField("duration", val ? String(parseDuration(val)) : "")}
+                  onSave={saveDuration}
                   placeholder="—"
                 />
               </MetadataItem>
@@ -318,7 +332,7 @@ export function EditionCard({
                     variant={ef.fileAsset.availabilityStatus === "PRESENT" ? "outline" : "destructive"}
                     className="text-[10px]"
                   >
-                    {ef.fileAsset.availabilityStatus}
+                    {ef.fileAsset.availabilityStatus === "PRESENT" ? "Available" : "Missing"}
                   </Badge>
                 </div>
               ))}

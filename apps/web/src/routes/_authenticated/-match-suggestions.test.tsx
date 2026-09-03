@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import type * as TanstackRouter from "@tanstack/react-router";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -181,12 +181,12 @@ describe("MatchSuggestionsPage", () => {
     expect(screen.getByText(/Narrator Name/)).toBeTruthy();
   });
 
-  it("renders Keep Left, Keep Right and Decline buttons for PENDING status", async () => {
+  it("renders Keep A, Keep B and Decline buttons for PENDING status", async () => {
     mockLoaderData = { matchSuggestions: [makeMatchSuggestion({ reviewStatus: "PENDING" })] };
     const { Route } = await import("./match-suggestions");
     const MatchSuggestionsPage = (Route.options.component as React.ComponentType);
     render(<MatchSuggestionsPage />);
-    expect(screen.getByText("Keep Left")).toBeTruthy();
+    expect(screen.getByText("Keep A")).toBeTruthy();
     expect(screen.getByText("Decline")).toBeTruthy();
   });
 
@@ -195,7 +195,7 @@ describe("MatchSuggestionsPage", () => {
     const { Route } = await import("./match-suggestions");
     const MatchSuggestionsPage = (Route.options.component as React.ComponentType);
     render(<MatchSuggestionsPage />);
-    expect(screen.queryByText("Keep Left")).toBeNull();
+    expect(screen.queryByText("Keep A")).toBeNull();
     expect(screen.queryByText("Decline")).toBeNull();
   });
 
@@ -204,7 +204,7 @@ describe("MatchSuggestionsPage", () => {
     const { Route } = await import("./match-suggestions");
     const MatchSuggestionsPage = (Route.options.component as React.ComponentType);
     render(<MatchSuggestionsPage />);
-    expect(screen.queryByText("Keep Left")).toBeNull();
+    expect(screen.queryByText("Keep A")).toBeNull();
     expect(screen.queryByText("Decline")).toBeNull();
   });
 
@@ -271,7 +271,7 @@ describe("MatchSuggestionsPage", () => {
     const { Route } = await import("./match-suggestions");
     const MatchSuggestionsPage = (Route.options.component as React.ComponentType);
     render(<MatchSuggestionsPage />);
-    expect(screen.getByText("EXACT_METADATA")).toBeTruthy();
+    expect(screen.getByText("Exact metadata")).toBeTruthy();
   });
 
   it("renders status badge with fallback variant for unknown status", async () => {
@@ -313,7 +313,8 @@ describe("MatchSuggestionsPage", () => {
     const { Route } = await import("./match-suggestions");
     const MatchSuggestionsPage = (Route.options.component as React.ComponentType);
     render(<MatchSuggestionsPage />);
-    await userEvent.click(screen.getByText("Keep Left"));
+    await userEvent.click(screen.getByText("Keep A"));
+    fireEvent.click(await screen.findByTestId("confirm-dialog-confirm"));
     expect(acceptMatchSuggestionServerFnMock).toHaveBeenCalledWith({ data: { id: "ms-1", survivingWorkId: "work-target" } });
   });
 
@@ -324,7 +325,8 @@ describe("MatchSuggestionsPage", () => {
     const { Route } = await import("./match-suggestions");
     const MatchSuggestionsPage = (Route.options.component as React.ComponentType);
     render(<MatchSuggestionsPage />);
-    await userEvent.click(screen.getByText("Keep Right"));
+    await userEvent.click(screen.getByText("Keep B"));
+    fireEvent.click(await screen.findByTestId("confirm-dialog-confirm"));
     expect(acceptMatchSuggestionServerFnMock).toHaveBeenCalledWith({ data: { id: "ms-1", survivingWorkId: "work-suggested" } });
   });
 
@@ -674,7 +676,7 @@ describe("MatchSuggestionsPage", () => {
     const MatchSuggestionsPage = (Route.options.component as React.ComponentType);
     render(<MatchSuggestionsPage />);
     await user.click(screen.getByRole("button", { name: /table view/i }));
-    expect(screen.getByText("NORMALIZED_TITLE")).toBeTruthy();
+    expect(screen.getByText("Normalised title")).toBeTruthy();
     expect(screen.getByText("92%")).toBeTruthy();
   });
 
@@ -685,7 +687,7 @@ describe("MatchSuggestionsPage", () => {
     const MatchSuggestionsPage = (Route.options.component as React.ComponentType);
     render(<MatchSuggestionsPage />);
     await user.click(screen.getByRole("button", { name: /table view/i }));
-    expect(screen.getByText("PENDING")).toBeTruthy();
+    expect(screen.getAllByText("Pending").length).toBeGreaterThan(0);
   });
 
   it("table view renders Keep A, Keep B and Decline buttons for PENDING suggestions", async () => {
@@ -732,6 +734,7 @@ describe("MatchSuggestionsPage", () => {
     render(<MatchSuggestionsPage />);
     await user.click(screen.getByRole("button", { name: /table view/i }));
     await user.click(screen.getByText("Keep A"));
+    fireEvent.click(await screen.findByTestId("confirm-dialog-confirm"));
     expect(acceptMatchSuggestionServerFnMock).toHaveBeenCalledWith({ data: { id: "ms-1", survivingWorkId: "work-target" } });
   });
 
@@ -745,6 +748,7 @@ describe("MatchSuggestionsPage", () => {
     render(<MatchSuggestionsPage />);
     await user.click(screen.getByRole("button", { name: /table view/i }));
     await user.click(screen.getByText("Keep B"));
+    fireEvent.click(await screen.findByTestId("confirm-dialog-confirm"));
     expect(acceptMatchSuggestionServerFnMock).toHaveBeenCalledWith({ data: { id: "ms-1", survivingWorkId: "work-suggested" } });
   });
 

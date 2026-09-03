@@ -144,6 +144,21 @@ export async function upsertOidcUser(input: {
           })
         : null;
 
+    // An unverified email may not be linked to an existing account (someone
+    // else could claim it at a lax provider), and creating a second user with
+    // the same email would only fail on the unique constraint as a 500.
+    if (!existingUser && normalizedEmail && !normalizedClaims.emailVerified) {
+      const clash = await tx.user.findUnique({
+        where: { email: normalizedEmail },
+        select: { id: true },
+      });
+      if (clash) {
+        throw new AuthAccessDeniedError(
+          "An account with this email already exists. Sign in with a provider that verifies your email address.",
+        );
+      }
+    }
+
     const user =
       existingUser ??
       (await tx.user.create({

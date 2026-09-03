@@ -1,5 +1,7 @@
-import { hashFileContents } from "@bookhouse/ingest";
-import { selectPreferredKoboDeliveryFile } from "@bookhouse/shared";
+import { hashKoreaderDocument } from "@bookhouse/ingest";
+import { createLogger, selectPreferredKoboDeliveryFile } from "@bookhouse/shared";
+
+const logger = createLogger("koreader");
 
 export interface KoreaderResolvedDocument {
   document: string;
@@ -72,13 +74,27 @@ export async function resolveKoreaderDocument(
 
   const unhashedCandidates = await deps.findUnhashedCandidates();
 
-  const seenFileAssetIds = new Set<string>();
+  // Backfill lazily. The partial digest reads at most twelve 1 KiB samples
+  // per file, so even a large library clears in one request. A file that has
+  // gone missing since the scan just stays unhashed rather than failing the
+  // whole sync request.
+  const hashByFileAssetId = new Map<string, string | null>();
   for (const candidate of unhashedCandidates) {
-    if (seenFileAssetIds.has(candidate.fileAsset.id)) continue;
-    seenFileAssetIds.add(candidate.fileAsset.id);
-    const hashes = await hashFileContents(candidate.fileAsset.absolutePath);
-    candidate.fileAsset.koreaderHash = hashes.koreaderHash;
-    await deps.updateFileAssetHash(candidate.fileAsset.id, hashes.koreaderHash);
+    let koreaderHash = hashByFileAssetId.get(candidate.fileAsset.id);
+    if (koreaderHash === undefined) {
+      try {
+        koreaderHash = await hashKoreaderDocument(candidate.fileAsset.absolutePath);
+        await deps.updateFileAssetHash(candidate.fileAsset.id, koreaderHash);
+      } catch (error) {
+        logger.warn(
+          { err: error, fileAssetId: candidate.fileAsset.id, absolutePath: candidate.fileAsset.absolutePath },
+          "Could not compute KOReader document hash",
+        );
+        koreaderHash = null;
+      }
+      hashByFileAssetId.set(candidate.fileAsset.id, koreaderHash);
+    }
+    candidate.fileAsset.koreaderHash = koreaderHash;
   }
 
   return pickMatch(deps.document, unhashedCandidates);

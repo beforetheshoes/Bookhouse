@@ -7,6 +7,33 @@ import { selectPreferredKoboDeliveryFile, isForeignKeyConstraintError } from "@b
 
 const SYNC_ITEM_LIMIT = 100;
 
+/**
+ * What the last response asked the device to add or remove, carried in the
+ * sync token the device echoes back on its next request. Only once it comes
+ * back is the page recorded as delivered: recording it when the response was
+ * *sent* meant a dropped connection (an e-reader on flaky Wi-Fi) silently lost
+ * those books for good, since the next diff no longer included them.
+ */
+interface PendingDelivery {
+  added: string[];
+  removed: string[];
+}
+
+export function readPendingDelivery(tokenHeader: string | null): PendingDelivery {
+  if (!tokenHeader) return { added: [], removed: [] };
+  try {
+    const parsed = JSON.parse(Buffer.from(tokenHeader, "base64").toString("utf8")) as {
+      bookhouse?: { added?: string[]; removed?: string[] };
+    };
+    const ids = (value: string[] | undefined) =>
+      Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : [];
+    return { added: ids(parsed.bookhouse?.added), removed: ids(parsed.bookhouse?.removed) };
+  } catch {
+    // A token we did not mint (Kobo store token, garbage): nothing pending.
+    return { added: [], removed: [] };
+  }
+}
+
 export interface SyncHandlerDeps {
   auth: KoboAuthDeps;
   getDeviceCollectionEditions: (deviceId: string) => Promise<EligibleEdition[]>;
@@ -30,6 +57,27 @@ export function createSyncHandler(deps: SyncHandlerDeps) {
     const filterParam = typeof query.Filter === "string" ? query.Filter : null;
 
     const { findEligibleEditions, computeSyncDiff, buildSyncResponse } = await import("@bookhouse/kobo");
+
+    // The device echoing our token proves it received the previous page.
+    const pending = readPendingDelivery(event.req.headers.get("x-kobo-synctoken"));
+    if (pending.added.length > 0) {
+      try {
+        await deps.markSynced(device.id, pending.added);
+      } catch (error) {
+        // An edition can be deleted between pages, making the FK upsert fail.
+        // Skip recording (it re-syncs next time) rather than 500ing the device.
+        if (!isForeignKeyConstraintError(error as Error)) {
+          throw error;
+        }
+        console.warn(
+          `[kobo] SYNC markSynced skipped: edition removed mid-sync (device=${device.id})`,
+          error,
+        );
+      }
+    }
+    if (pending.removed.length > 0) {
+      await deps.markRemoved(device.id, pending.removed);
+    }
 
     const eligible = await findEligibleEditions(device.id, {
       getDeviceCollectionEditions: deps.getDeviceCollectionEditions,
@@ -62,30 +110,6 @@ export function createSyncHandler(deps: SyncHandlerDeps) {
       baseUrl,
       deviceToken: device.authToken,
     }, progressMap);
-
-    if (pageAdd.length > 0) {
-      try {
-        await deps.markSynced(
-          device.id,
-          pageAdd.map((e) => e.id),
-        );
-      } catch (error) {
-        // An edition can be deleted between selection and this write, making the
-        // FK upsert fail. Skip recording (it re-syncs next time) rather than
-        // 500ing the device. Re-throw anything that isn't an FK violation.
-        if (!isForeignKeyConstraintError(error as Error)) {
-          throw error;
-        }
-        console.warn(
-          `[kobo] SYNC markSynced skipped: edition removed mid-sync (device=${device.id})`,
-          error,
-        );
-      }
-    }
-
-    if (pageRemove.length > 0) {
-      await deps.markRemoved(device.id, pageRemove);
-    }
 
     // Build response array
     const syncResults: Record<string, object>[] = [];
@@ -136,6 +160,10 @@ export function createSyncHandler(deps: SyncHandlerDeps) {
         reading_state_last_modified: nowEpoch,
         tags_last_modified: nowEpoch,
       },
+      // Recorded as delivered when this token comes back (see readPendingDelivery).
+      ...(pageAdd.length > 0 || pageRemove.length > 0
+        ? { bookhouse: { added: pageAdd.map((e) => e.id), removed: pageRemove } }
+        : {}),
     };
     const encodedToken = Buffer.from(JSON.stringify(tokenData)).toString("base64");
     deps.setResponseHeader(event, "x-kobo-synctoken", encodedToken);
@@ -283,8 +311,11 @@ export default defineEventHandler(async (event) => {
       });
     },
     getReadingProgress: async (userId, editionIds) => {
+      // Only the Kobo-sourced row carries a koboLocation the device can use;
+      // without the filter whichever per-source row Postgres returned last
+      // won the Map and could hide the Kobo position behind a KOReader one.
       const records = await db.readingProgress.findMany({
-        where: { userId, editionId: { in: editionIds }, progressKind: "EBOOK" },
+        where: { userId, editionId: { in: editionIds }, progressKind: "EBOOK", source: "kobo" },
       });
       return records.map((r) => ({
         id: r.id,

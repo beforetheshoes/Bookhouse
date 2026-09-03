@@ -8,6 +8,7 @@ let virtualCount = 0;
 let overrunVirtualItems = false;
 /** The first index the window shows, for the "scrolled away from the top" cases. */
 let virtualStartIndex = 0;
+let offsetItemMissing = false;
 const scrollToIndexMock = vi.fn();
 
 vi.mock("@tanstack/react-virtual", () => ({
@@ -15,9 +16,13 @@ vi.mock("@tanstack/react-virtual", () => ({
     count: number;
     estimateSize: () => number;
     scrollMargin: number;
+    getItemKey: (index: number) => string | number;
   }) => {
     virtualCount = opts.count;
     opts.estimateSize();
+    // Keys come from the work id, and fall back to the index past the end.
+    opts.getItemKey(0);
+    opts.getItemKey(opts.count + 1);
     // One object for the life of the test, the way the real hook keeps one
     // instance: an effect that depends on it must not re-run every render.
     return {
@@ -29,6 +34,9 @@ vi.mock("@tanstack/react-virtual", () => ({
         })),
       getTotalSize: () => opts.count * 88,
       measureElement: vi.fn(),
+      // A virtualizer that has not measured yet reports no offset and no item.
+      scrollOffset: offsetItemMissing ? null : 0,
+      getVirtualItemForOffset: () => (offsetItemMissing ? undefined : { index: virtualStartIndex }),
       scrollToIndex: scrollToIndexMock,
     };
   },
@@ -96,6 +104,7 @@ describe("LibraryList", () => {
     virtualCount = 0;
     overrunVirtualItems = false;
     virtualStartIndex = 0;
+    offsetItemMissing = false;
     scrollToIndexMock.mockClear();
   });
 
@@ -230,6 +239,22 @@ describe("LibraryList", () => {
     rerender(<LibraryList works={works(makeWork("Alpha"))} hasMore />);
     rerender(<LibraryList works={works()} hasMore onLoadMore={onLoadMore} />);
     expect(onLoadMore).not.toHaveBeenCalled();
+  });
+
+  it("asks for another page when a filter has emptied the loaded rows", () => {
+    // Fifty rows loaded, all hidden by the reading filter: the list must still
+    // request the next page rather than sit on "no books" forever.
+    const onLoadMore = vi.fn();
+    render(<LibraryList works={works()} loadedCount={50} hasMore onLoadMore={onLoadMore} />);
+    expect(onLoadMore).toHaveBeenCalledTimes(1);
+  });
+
+  it("anchors a prepend on the first rendered row when nothing is under the scroll offset", () => {
+    offsetItemMissing = true;
+    const many = Array.from({ length: 20 }, (_, i) => makeWork(`Work ${String(i)}`));
+    const { rerender } = render(<LibraryList works={works(...many)} prependedCount={0} />);
+    rerender(<LibraryList works={works(...many)} prependedCount={2} />);
+    expect(scrollToIndexMock).toHaveBeenCalledWith(2, { align: "start" });
   });
 
   it("holds off while the visible rows are still far from the end", () => {

@@ -433,11 +433,11 @@ describe("getActiveJobCountServerFn", () => {
     getImportJobLiveActivityMock.mockResolvedValue(null);
   });
 
-  it("queries non-failed scan-root import jobs", async () => {
+  it("queries only queued or running scan-root import jobs", async () => {
     findManyMock.mockResolvedValue([]);
     await getActiveJobCountServerFn();
     expect(findManyMock).toHaveBeenCalledWith({
-      where: { kind: "SCAN_ROOT", status: { not: "FAILED" } },
+      where: { kind: "SCAN_ROOT", status: { in: ["QUEUED", "RUNNING"] } },
       select: { id: true, bullmqJobId: true, updatedAt: true, status: true },
     });
   });

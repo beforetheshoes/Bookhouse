@@ -19,7 +19,9 @@ export const getBackupHistoryServerFn = createServerFn({
   try {
     const parsed = JSON.parse(setting.value) as Record<string, number | string>[];
     return z.array(backupManifestSchema).parse(parsed);
-  } catch {
+  } catch (error) {
+    const { createLogger } = await import("@bookhouse/shared");
+    createLogger("backup").warn({ err: error }, "Backup history setting is unreadable; showing none");
     return [] as BackupManifest[];
   }
 });
@@ -40,8 +42,9 @@ export const recordBackupServerFn = createServerFn({
     if (setting) {
       try {
         existing = z.array(backupManifestSchema).parse(JSON.parse(setting.value));
-      } catch {
-        // ignore corrupt history
+      } catch (error) {
+        const { createLogger } = await import("@bookhouse/shared");
+        createLogger("backup").warn({ err: error }, "Backup history setting is unreadable; starting a new history");
       }
     }
 

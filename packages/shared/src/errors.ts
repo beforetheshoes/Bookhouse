@@ -51,3 +51,13 @@ export class QueueError extends AppError {
 export function isForeignKeyConstraintError(error: Error): boolean {
   return (error as Error & { code?: string }).code === "P2003";
 }
+
+/**
+ * True when a thrown value is a Prisma unique-constraint violation (code
+ * P2002). Used where a concurrent writer may have committed the same row
+ * between a select and an insert: the row exists either way, so callers
+ * re-fetch or skip instead of failing the job.
+ */
+export function isUniqueConstraintError(error: Error): boolean {
+  return (error as Error & { code?: string }).code === "P2002";
+}

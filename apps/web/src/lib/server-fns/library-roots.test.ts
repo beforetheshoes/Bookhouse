@@ -126,6 +126,7 @@ import {
   getLibraryIssueCountServerFn,
   getLibraryIssuesServerFn,
   retryLibraryIssuesServerFn,
+  addLibraryRootSchema,
 } from "./library-roots";
 import { LIBRARY_JOB_NAMES } from "@bookhouse/shared";
 
@@ -1024,5 +1025,20 @@ describe("retryLibraryIssuesServerFn", () => {
 
     expect(parseFileAssetMetadataMock).not.toHaveBeenCalled();
     expect(result).toEqual({ retriedCount: 0 });
+  });
+});
+
+describe("addLibraryRootSchema", () => {
+  it("normalises a trailing slash so the same folder cannot be added twice", () => {
+    const parsed = addLibraryRootSchema.safeParse({ name: "Books", path: " /data/books/// ", kind: "EBOOKS" });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.path).toBe("/data/books");
+    expect(addLibraryRootSchema.safeParse({ name: "Root", path: "/", kind: "MIXED" }).data?.path).toBe("/");
+  });
+
+  it("rejects relative paths", () => {
+    const parsed = addLibraryRootSchema.safeParse({ name: "Books", path: "books", kind: "EBOOKS" });
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.issues[0]?.message).toBe("Path must be absolute (start with /)");
   });
 });

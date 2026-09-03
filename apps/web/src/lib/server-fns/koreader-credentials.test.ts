@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@tanstack/react-start", () => ({
@@ -84,7 +85,8 @@ describe("koreader-credentials server functions", () => {
     });
 
     expect(result).toEqual(saved);
-    expect(mockHashPassword).toHaveBeenCalledWith("supersecret");
+    // KOReader sends md5(password) as x-auth-key, so that digest is what gets hashed.
+    expect(mockHashPassword).toHaveBeenCalledWith(createHash("md5").update("supersecret").digest("hex"));
     expect(mockUpsert).toHaveBeenCalledWith({
       where: { userId: "u1" },
       create: {

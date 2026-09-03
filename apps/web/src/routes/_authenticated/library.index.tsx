@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { countActiveFilters } from "~/lib/library-filter-helpers";
+import { toast } from "sonner";
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { useSSE } from "~/hooks/use-sse";
 import { useEffectiveLibraryView, type LibraryView } from "~/hooks/use-library-view-preference";
@@ -27,6 +29,9 @@ import { getFilteredLibraryWorksServerFn, getFilteredLibraryEditionsServerFn, ge
 import { getActiveJobCountServerFn } from "~/lib/server-fns/import-jobs";
 import { getBulkReadingProgressServerFn } from "~/lib/server-fns/reading-progress";
 import { getShelvesServerFn } from "~/lib/server-fns/shelves";
+
+type PendingJump = { page: number; index: number };
+let carriedJump: PendingJump | null = null;
 
 export const Route = createFileRoute("/_authenticated/library/")({
   validateSearch: (search) => librarySearchSchema.parse(search),
@@ -141,6 +146,7 @@ function LibraryPage() {
         setAppendedWorks((prev) => [...prev, ...result.works]);
         setLastLoadedPage(nextPage);
       })
+      .catch(() => { toast.error("Couldn't load more books"); })
       .finally(() => { setLoadingMore(false); });
   }, [loadingMore, hasMore, lastLoadedPage, search]);
 
@@ -157,6 +163,7 @@ function LibraryPage() {
         setPrependedWorks((prev) => [...result.works, ...prev]);
         setFirstLoadedPage(previousPage);
       })
+      .catch(() => { toast.error("Couldn't load the previous page"); })
       .finally(() => { setLoadingPrevious(false); });
   }, [loadingPrevious, hasPrevious, firstLoadedPage, search]);
 
@@ -212,7 +219,14 @@ function LibraryPage() {
   const [jumpingToLetter, setJumpingToLetter] = useState<string | null>(null);
   // Where the rail asked to land, held until the page carrying it is the one
   // on screen. The list scrolls to that row and says so, which clears this.
-  const [pendingJump, setPendingJump] = useState<{ page: number; index: number } | null>(null);
+  // Mirrored in module scope: a loader slower than the route's pendingMs
+  // swaps this component for the skeleton and back, and a fresh instance
+  // must pick the jump up again rather than land on row 0.
+  const [pendingJump, setPendingJumpState] = useState<PendingJump | null>(() => carriedJump);
+  const setPendingJump = useCallback((next: PendingJump | null) => {
+    carriedJump = next;
+    setPendingJumpState(next);
+  }, []);
   const jumpTokenRef = useRef(0);
 
   /**
@@ -265,6 +279,9 @@ function LibraryPage() {
         setFirstLoadedPage(targetPage);
         setLastLoadedPage(targetPage);
       })
+      .catch(() => {
+        if (jumpTokenRef.current === token) toast.error("Couldn't jump to that letter");
+      })
       .finally(() => {
         if (jumpTokenRef.current === token) setJumpingToLetter(null);
       });
@@ -273,9 +290,17 @@ function LibraryPage() {
 
   // Only once the page carrying it is the one rendered: until then the rows
   // on screen are a different page, and that index points at the wrong book.
-  const jumpIndex = pendingJump !== null && pendingJump.page === search.page
-    ? pendingJump.index
-    : null;
+  // The index counts rows of the page; the list renders the reading-filtered
+  // rows, so it is translated to the same book's position there - or the
+  // first visible book after it when the filter hides the target.
+  const jumpIndex = useMemo(() => {
+    if (pendingJump === null || pendingJump.page !== search.page) return null;
+    if (readingFilter === "all") return pendingJump.index;
+    const visibleIds = new Set(filteredByReading.map((work) => work.id));
+    const target = allLoadedWorks.slice(pendingJump.index).find((work) => visibleIds.has(work.id));
+    if (target === undefined) return filteredByReading.length > 0 ? filteredByReading.length - 1 : null;
+    return filteredByReading.findIndex((work) => work.id === target.id);
+  }, [pendingJump, search.page, readingFilter, filteredByReading, allLoadedWorks]);
   const handleJumpApplied = useCallback(() => { setPendingJump(null); }, []);
 
   // The table passes its updater straight through, which used to leave a
@@ -332,6 +357,11 @@ function LibraryPage() {
     }
   }, []);
 
+  const handleClearFilters = useCallback(() => {
+    handleFiltersChange({});
+    handleSearchChange("");
+  }, [handleFiltersChange, handleSearchChange]);
+
   const handleEditModeToggle = useCallback(() => { setEditMode(!editMode); }, [editMode]);
 
   const handleDisplayViewChange = useCallback((v: LibraryView) => {
@@ -344,6 +374,8 @@ function LibraryPage() {
       appendGenerationRef.current += 1;
       setAppendedWorks([]);
       setLastLoadedPage(search.page);
+      setPrependedWorks([]);
+      setFirstLoadedPage(search.page);
     }
     // The select toggle is hidden in table view, so leaving select mode on
     // would strand the user in it when they come back to the grid.
@@ -387,6 +419,8 @@ function LibraryPage() {
         },
       });
       setAllWorkIds(ids);
+    } catch {
+      toast.error("Couldn't select every matching book");
     } finally {
       setSelectingAll(false);
     }
@@ -504,6 +538,7 @@ function LibraryPage() {
                   loadingPrevious={loadingPrevious}
                   onLoadPrevious={handleLoadPrevious}
                   prependedCount={prependedWorks.length}
+                  loadedCount={allLoadedWorks.length}
                   scrollToIndex={jumpIndex}
                   onScrolledToIndex={handleJumpApplied}
                 />
@@ -516,6 +551,9 @@ function LibraryPage() {
           ) : view === "grid" ? (
             <LibraryGrid
               works={filteredByReading}
+              // A filtered-to-nothing grid used to say "No results." with the
+              // only way out buried in the rail or the phone sheet.
+              onClearFilters={countActiveFilters(currentFilters) > 0 || search.q ? handleClearFilters : undefined}
               progressMap={progressMap}
               scanActive={isScanning}
               tileSize={tileSize}

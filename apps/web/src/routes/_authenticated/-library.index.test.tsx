@@ -207,8 +207,10 @@ vi.mock("~/components/library-list", () => ({
 }));
 
 vi.mock("~/components/library-grid", () => ({
-  LibraryGrid: ({ works, progressMap, tileSize, selectable, rowSelection, onToggleSelect }: { works: { id: string }[]; progressMap?: Record<string, number>; tileSize?: string; selectable?: boolean; rowSelection?: Record<string, boolean>; onToggleSelect?: (id: string) => void }) => (
+  LibraryGrid: ({ works, progressMap, tileSize, selectable, rowSelection, onToggleSelect, onClearFilters }: { works: { id: string }[]; progressMap?: Record<string, number>; tileSize?: string; selectable?: boolean; rowSelection?: Record<string, boolean>; onToggleSelect?: (id: string) => void; onClearFilters?: () => void }) => (
     <div
+      data-clear-filters={onClearFilters ? "yes" : "no"}
+      onClick={onClearFilters}
       data-testid="library-grid"
       data-count={String(works.length)}
       data-progress-map={progressMap ? JSON.stringify(progressMap) : undefined}
@@ -976,6 +978,114 @@ describe("LibraryPage", () => {
       | undefined;
     expect(call?.data?.letter).toBe("M");
     expect(call?.data?.sort).toBe("title-asc");
+  });
+
+  it("tells the reader when a letter jump could not be resolved", async () => {
+    mockView = "list";
+    mockSearch = { page: 1, pageSize: 50, sort: "title-asc" };
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Alpha")],
+        totalCount: 1450,
+        facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
+      },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    getWorkOffsetForLetterServerFnMock.mockRejectedValue(new Error("offline"));
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    fireEvent.click(screen.getByLabelText("jump-M"));
+    await waitFor(() => { expect(mockToast.error).toHaveBeenCalledWith("Couldn't jump to that letter"); });
+  });
+
+  it("maps a jump onto the reading-filtered rows the list actually shows", async () => {
+    mockView = "list";
+    mockSearch = { page: 1, pageSize: 50, sort: "title-asc" };
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Alpha"), makeWork("Beta"), makeWork("Reading"), makeWork("Done")],
+        totalCount: 4,
+        facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
+      },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: { "work-alpha": 20, "work-beta": 30, "work-reading": 50, "work-done": 100 },
+      shelves: [],
+    };
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    const { rerender } = render(<LibraryPage />);
+    const scrollTarget = () => screen.getByTestId("library-list").getAttribute("data-scroll-to-index");
+    const onFilterChange = capturedToolbarProps.onFilterChange as (v: string) => void;
+
+    // Same page: row 2 ("Reading") with no filter.
+    getWorkOffsetForLetterServerFnMock.mockResolvedValue({ offset: 2, total: 4 });
+    fireEvent.click(screen.getByLabelText("jump-M"));
+    await waitFor(() => { expect(scrollTarget()).toBe("2"); });
+
+    // Hidden by the filter: land on the first visible book after it.
+    onFilterChange("finished");
+    rerender(<LibraryPage />);
+    expect(scrollTarget()).toBe("0");
+
+    // Row 3 ("Done"): hidden with nothing visible after it lands on the last visible row.
+    getWorkOffsetForLetterServerFnMock.mockResolvedValue({ offset: 3, total: 4 });
+    onFilterChange("reading");
+    rerender(<LibraryPage />);
+    fireEvent.click(screen.getByLabelText("jump-M"));
+    await waitFor(() => { expect(scrollTarget()).toBe("2"); });
+
+    // Visible under the filter: its own filtered position.
+    onFilterChange("finished");
+    rerender(<LibraryPage />);
+    expect(scrollTarget()).toBe("0");
+
+    // Nothing visible at all: no row to scroll to.
+    onFilterChange("unread");
+    rerender(<LibraryPage />);
+    expect(scrollTarget()).toBe("");
+  });
+
+  it("stays quiet when the jump that failed was already overtaken by a later one", async () => {
+    mockView = "list";
+    mockSearch = { page: 1, pageSize: 50, sort: "title-asc" };
+    mockLoaderData = {
+      libraryResult: {
+        works: [makeWork("Alpha")],
+        totalCount: 1450,
+        facetCounts: defaultFacetCounts,
+        totalFacetCounts: defaultFacetCounts,
+      },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    let rejectFirst: (error: Error) => void = () => undefined;
+    getWorkOffsetForLetterServerFnMock
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectFirst = reject; }))
+      .mockResolvedValueOnce({ offset: 0, total: 1450 });
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    // The same letter twice: the second press supersedes the first request.
+    fireEvent.click(screen.getByLabelText("jump-M"));
+    fireEvent.click(screen.getByLabelText("jump-M"));
+    await waitFor(() => { expect(getWorkOffsetForLetterServerFnMock).toHaveBeenCalledTimes(2); });
+    await act(async () => {
+      rejectFirst(new Error("slow and stale"));
+      await Promise.resolve();
+    });
+
+    expect(mockToast.error).not.toHaveBeenCalled();
   });
 
   it("lands on the letter's own row, not the top of the page it is on", async () => {
@@ -2956,5 +3066,94 @@ describe("LibraryPage", () => {
     render(<LibraryPage />);
 
     expect(capturedPaginationProps.totalCount).toBe(42);
+  });
+
+  it("tells the user when selecting every matching book fails", async () => {
+    mockView = "table";
+    mockSearch = { page: 1, pageSize: 50, sort: "title-asc" };
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Alpha")], totalCount: 5, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    getAllFilteredWorkIdsServerFnMock.mockRejectedValueOnce(new Error("offline"));
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    const selectAllCheckbox = screen.getAllByLabelText("Select all")[0];
+    if (!selectAllCheckbox) throw new Error("expected select-all checkbox");
+    fireEvent.click(selectAllCheckbox);
+    fireEvent.click(screen.getByTestId("select-all-btn"));
+    await waitFor(() => { expect(mockToast.error).toHaveBeenCalledWith("Couldn't select every matching book"); });
+  });
+
+  it("gives a filtered-to-nothing grid a way to clear its filters", async () => {
+    mockView = "grid";
+    mockSearch = { page: 1, pageSize: 50, sort: "title-asc", q: "zzz" };
+    mockLoaderData = {
+      libraryResult: { works: [], totalCount: 0, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    mockNavigate.mockClear();
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+    const grid = screen.getByTestId("library-grid");
+    expect(grid.getAttribute("data-clear-filters")).toBe("yes");
+    fireEvent.click(grid);
+    expect(mockNavigate).toHaveBeenCalled();
+  });
+
+  it("picks a pending jump back up after the route's pending component remounts the page", async () => {
+    mockView = "list";
+    mockSearch = { page: 1, pageSize: 50, sort: "title-asc" };
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Alpha"), makeWork("Beta")], totalCount: 2, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    getWorkOffsetForLetterServerFnMock.mockResolvedValue({ offset: 1, total: 2 });
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    const first = render(<LibraryPage />);
+    fireEvent.click(screen.getByLabelText("jump-M"));
+    await waitFor(() => {
+      expect(screen.getByTestId("library-list").getAttribute("data-scroll-to-index")).toBe("1");
+    });
+    // A slow loader swaps the page for the skeleton and back: a fresh instance.
+    first.unmount();
+    render(<LibraryPage />);
+    expect(screen.getByTestId("library-list").getAttribute("data-scroll-to-index")).toBe("1");
+    fireEvent.click(screen.getByLabelText("scrolled"));
+    expect(screen.getByTestId("library-list").getAttribute("data-scroll-to-index")).toBe("");
+  });
+
+  it("tells the user when loading the next or previous page fails", async () => {
+    mockView = "list";
+    mockSearch = { page: 2, pageSize: 50, sort: "title-asc" };
+    mockLoaderData = {
+      libraryResult: { works: [makeWork("Alpha")], totalCount: 500, facetCounts: defaultFacetCounts, totalFacetCounts: defaultFacetCounts },
+      editionsResult: null,
+      activeJobCount: 0,
+      progressMap: {},
+      shelves: [],
+    };
+    getFilteredLibraryWorksServerFnMock.mockRejectedValue(new Error("offline"));
+    const { Route } = await import("./library.index");
+    const LibraryPage = Route.options.component as React.ComponentType;
+    render(<LibraryPage />);
+
+    fireEvent.click(screen.getByLabelText("load-more"));
+    await waitFor(() => { expect(mockToast.error).toHaveBeenCalledWith("Couldn't load more books"); });
+    fireEvent.click(screen.getByLabelText("load-previous"));
+    await waitFor(() => { expect(mockToast.error).toHaveBeenCalledWith("Couldn't load the previous page"); });
   });
 });

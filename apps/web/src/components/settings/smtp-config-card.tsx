@@ -195,6 +195,8 @@ export function SmtpConfigCard({ configured }: { configured: boolean }) {
             onFromAddressChange={setFromAddress}
             onSecurityChange={handleSecurityChange}
             onSave={() => { void handleSave(); }}
+            // "Edit" used to be a trap: no way back without retyping the password.
+            onCancel={configured ? () => { setEditing(false); } : undefined}
           />
         )}
 
@@ -281,6 +283,7 @@ function SmtpForm({
   onFromAddressChange,
   onSecurityChange,
   onSave,
+  onCancel,
 }: {
   host: string;
   port: string;
@@ -296,6 +299,7 @@ function SmtpForm({
   onFromAddressChange: (v: string) => void;
   onSecurityChange: (v: SmtpSecurity) => void;
   onSave: () => void;
+  onCancel?: () => void;
 }) {
   return (
     <div className="space-y-3">
@@ -367,6 +371,17 @@ function SmtpForm({
           </div>
         </div>
       </div>
+      {onCancel && (
+        <p className="text-xs text-muted-foreground">
+          The stored password is never shown; enter it again to save changes.
+        </p>
+      )}
+      <div className="flex flex-wrap gap-2">
+      {onCancel && (
+        <Button variant="outline" onClick={onCancel} disabled={saving}>
+          Cancel
+        </Button>
+      )}
       <Button onClick={onSave} disabled={saving || !host.trim() || !username.trim() || !password.trim() || !fromAddress.trim()}>
         {saving ? (
           <>
@@ -377,6 +392,7 @@ function SmtpForm({
           "Save Configuration"
         )}
       </Button>
+      </div>
     </div>
   );
 }

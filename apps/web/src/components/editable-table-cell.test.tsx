@@ -84,4 +84,17 @@ describe("EditableTableCell", () => {
     render(<EditableTableCell value="" editing={true} onSave={vi.fn()} />);
     expect(screen.getByDisplayValue("")).toBeTruthy();
   });
+
+  it("follows a stored value that changes while editing, so a blur cannot write stale text back", () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const { rerender } = render(<EditableTableCell value="Old title" editing onSave={onSave} />);
+    expect(screen.getByRole<HTMLInputElement>("textbox").value).toBe("Old title");
+
+    // A scan or enrichment updated the row underneath the open editor.
+    rerender(<EditableTableCell value="New title" editing onSave={onSave} />);
+    expect(screen.getByRole<HTMLInputElement>("textbox").value).toBe("New title");
+
+    fireEvent.blur(screen.getByRole("textbox"));
+    expect(onSave).not.toHaveBeenCalled();
+  });
 });

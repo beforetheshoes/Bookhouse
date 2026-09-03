@@ -53,17 +53,27 @@ export const updateWorkServerFn = createServerFn({
     return { success: true };
   });
 
-const updateEditionSchema = z.object({
+function wholeNumberField(label: string) {
+  return z.string().trim().regex(/^\d+$/, `${label} must be a whole number`);
+}
+
+export const updateEditionSchema = z.object({
   editionId: z.string().min(1),
   fields: z.object({
     isbn13: z.string().nullable().optional(),
     isbn10: z.string().nullable().optional(),
     publisher: z.string().nullable().optional(),
-    publishedAt: z.string().nullable().optional(),
+    publishedAt: z
+      .string()
+      .refine((value) => !Number.isNaN(new Date(value).getTime()), "Published date must be a valid date")
+      .nullable()
+      .optional(),
     asin: z.string().nullable().optional(),
     language: z.string().nullable().optional(),
-    pageCount: z.string().nullable().optional(),
-    duration: z.string().nullable().optional(),
+    // Whole numbers only, as strings from the form; a value like "12a" used to
+    // reach Prisma as NaN and come back as a 500.
+    pageCount: wholeNumberField("Pages").nullable().optional(),
+    duration: wholeNumberField("Duration").nullable().optional(),
   }),
 });
 
@@ -157,9 +167,9 @@ export const updateWorkAuthorsServerFn = createServerFn({
       contributorIds.push(contributor.id);
     }
 
-    await db.$transaction(async () => {
+    await db.$transaction(async (tx) => {
       // Remove all existing AUTHOR contributors from all editions
-      await db.editionContributor.deleteMany({
+      await tx.editionContributor.deleteMany({
         where: {
           editionId: { in: editionIds },
           role: "AUTHOR",
@@ -175,7 +185,7 @@ export const updateWorkAuthorsServerFn = createServerFn({
         })),
       );
 
-      await db.editionContributor.createMany({
+      await tx.editionContributor.createMany({
         data: createData,
         skipDuplicates: true,
       });

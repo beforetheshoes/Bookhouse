@@ -1,10 +1,13 @@
 import { useRef, useState, useCallback } from "react";
+import { Button } from "~/components/ui/button";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { WorkCard } from "~/components/work-card";
 import type { LibraryWork } from "~/lib/server-fns/library";
 import type { GridTileSize } from "~/hooks/use-grid-tile-size";
 
 interface LibraryGridProps {
+  /** Shown in the empty state so a filtered-to-nothing view has a way out. */
+  onClearFilters?: () => void;
   works: LibraryWork[];
   progressMap?: Record<string, number>;
   scanActive?: boolean;
@@ -47,7 +50,7 @@ export function getColumnCount(width: number, tileSize: GridTileSize = "small"):
   return 6;
 }
 
-export function LibraryGrid({ works, progressMap, scanActive, tileSize = "small", selectable, rowSelection, onToggleSelect, selectionActive }: LibraryGridProps) {
+export function LibraryGrid({ works, progressMap, scanActive, tileSize = "small", selectable, rowSelection, onToggleSelect, selectionActive, onClearFilters }: LibraryGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [columnCount, setColumnCount] = useState(5);
   const observerRef = useRef<ResizeObserver | null>(null);
@@ -108,8 +111,13 @@ export function LibraryGrid({ works, progressMap, scanActive, tileSize = "small"
       style={{ maxHeight }}
     >
       {works.length === 0 ? (
-        <div className="flex h-24 items-center justify-center text-muted-foreground">
-          No results.
+        <div className="flex h-24 flex-col items-center justify-center gap-2 text-muted-foreground">
+          <span>No results.</span>
+          {onClearFilters && (
+            <Button variant="outline" size="sm" onClick={onClearFilters}>
+              Clear filters
+            </Button>
+          )}
         </div>
       ) : (
         <div style={{ height: totalSize, position: "relative" }}>

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type DragEvent, type SyntheticEvent } from "react";
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { uploadWithProgress } from "~/lib/upload-with-progress";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { Loader2, Upload as UploadIcon, X } from "lucide-react";
 import { Button } from "~/components/ui/button";
@@ -64,6 +65,8 @@ export function UploadForm({ libraryRoots }: UploadFormProps) {
   const [description, setDescription] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const uploadAbortRef = useRef<AbortController | null>(null);
   const [activeJob, setActiveJob] = useState<UploadJobState | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -152,15 +155,16 @@ export function UploadForm({ libraryRoots }: UploadFormProps) {
         formData.append("file", file, file.name);
       }
 
-      const res = await fetch("/api/upload-book", {
-        method: "POST",
-        body: formData,
+      const controller = new AbortController();
+      uploadAbortRef.current = controller;
+      const res = await uploadWithProgress("/api/upload-book", formData, {
+        signal: controller.signal,
+        onProgress: ({ loaded, total }) => { setUploadProgress(total > 0 ? Math.round((loaded / total) * 100) : 0); },
       });
       if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || `Upload failed: ${String(res.status)}`);
+        throw new Error(res.text || `Upload failed: ${String(res.status)}`);
       }
-      const body = uploadBookResponseSchema.parse(await res.json());
+      const body = uploadBookResponseSchema.parse(JSON.parse(res.text) as object);
 
       setActiveJob({
         importJobId: body.importJobId,
@@ -175,6 +179,8 @@ export function UploadForm({ libraryRoots }: UploadFormProps) {
       toast.error(error instanceof Error ? error.message : "Upload failed");
       setActiveJob(null);
     } finally {
+      uploadAbortRef.current = null;
+      setUploadProgress(null);
       setSubmitting(false);
     }
   }
@@ -194,7 +200,9 @@ export function UploadForm({ libraryRoots }: UploadFormProps) {
           <label className="text-sm font-medium" htmlFor="library-root">Library</label>
           {libraryRoots.length === 0 ? (
             <p className="text-sm text-destructive">
-              No library roots configured. Add one in Settings before uploading.
+              No library roots configured.{" "}
+              <Link to="/settings" search={{ tab: "library" }} className="underline">Add one in Settings</Link>{" "}
+              before uploading.
             </p>
           ) : (
             <Select value={libraryRootId} onValueChange={setLibraryRootId}>
@@ -328,16 +336,25 @@ export function UploadForm({ libraryRoots }: UploadFormProps) {
         </Button>
       </form>
 
-      {activeJob && <UploadStatusPanel job={activeJob} />}
+      {activeJob && (
+        <UploadStatusPanel
+          job={activeJob}
+          uploadProgress={uploadProgress}
+          onCancelUpload={() => { uploadAbortRef.current?.abort(); }}
+        />
+      )}
     </div>
   );
 }
 
 interface UploadStatusPanelProps {
+  /** Percent of the bytes sent so far, while the browser is still uploading. */
+  uploadProgress?: number | null;
+  onCancelUpload?: () => void;
   job: UploadJobState;
 }
 
-export function UploadStatusPanel({ job }: UploadStatusPanelProps) {
+export function UploadStatusPanel({ job, uploadProgress = null, onCancelUpload }: UploadStatusPanelProps) {
   const [latest, setLatest] = useState<UploadJobState>(job);
 
   useEffect(() => {
@@ -382,12 +399,22 @@ export function UploadStatusPanel({ job }: UploadStatusPanelProps) {
       className="rounded-lg border bg-muted/30 p-4"
     >
       <p className="font-medium">
-        {latest.status === "uploading" && "Uploading files…"}
+        {latest.status === "uploading" && (uploadProgress === null ? "Uploading files…" : `Uploading files… ${String(uploadProgress)}%`)}
         {latest.status === "QUEUED" && "Queued for processing…"}
         {latest.status === "RUNNING" && "Processing…"}
         {latest.status === "SUCCEEDED" && "Upload complete"}
         {latest.status === "FAILED" && "Upload failed"}
       </p>
+      {latest.status === "uploading" && uploadProgress !== null && (
+        <div className="mt-2 space-y-2">
+          <div className="h-2 w-full overflow-hidden rounded bg-muted" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={uploadProgress}>
+            <div className="h-full bg-primary transition-[width]" style={{ width: `${String(uploadProgress)}%` }} />
+          </div>
+          <Button variant="outline" size="sm" onClick={onCancelUpload}>
+            Cancel upload
+          </Button>
+        </div>
+      )}
       {(latest.status === "RUNNING" || latest.status === "QUEUED") && (
         <p className="text-sm text-muted-foreground">
           {String(latest.processedFiles)} / {String(latest.totalFiles)} files processed

@@ -168,6 +168,8 @@ let mockRouteContext: { user?: { id: string; roles?: string[] } } = {
   user: { id: "owner-1", roles: ["OWNER"] },
 };
 
+const mockSearch: { tab?: string } = {};
+
 vi.mock("@tanstack/react-router", async () => {
   const actual = await vi.importActual<typeof TanstackRouter>("@tanstack/react-router");
   return {
@@ -182,11 +184,13 @@ vi.mock("@tanstack/react-router", async () => {
       return <a href={href} {...props}>{children}</a>;
     },
     useRouter: () => ({ invalidate: mockInvalidate, navigate: mockNavigate }),
+    useNavigate: () => mockNavigate,
     createFileRoute: (_path: string) => (opts: Record<string, string | boolean | object | ((...a: object[]) => object | undefined | Promise<object>)>) => ({
       ...opts,
       options: opts,
       useLoaderData: () => mockLoaderData,
       useRouteContext: () => mockRouteContext,
+      useSearch: () => mockSearch,
     }),
   };
 });
@@ -1985,6 +1989,7 @@ describe("Kobo Devices Tab", () => {
     const deleteButtons = screen.getAllByRole("button").filter((btn) => btn.querySelector(".lucide-trash-2"));
     const firstDeleteBtn = deleteButtons[0];
     if (firstDeleteBtn) fireEvent.click(firstDeleteBtn);
+    fireEvent.click(await screen.findByTestId("confirm-dialog-confirm"));
 
     await waitFor(() => {
       expect(removeMock).toHaveBeenCalledWith({ data: { deviceId: "d1" } });
@@ -2331,6 +2336,25 @@ describe("Kobo Devices Tab", () => {
     });
   });
 
+  it("keeps the typed password when saving KOReader credentials fails", async () => {
+    const { runMutation } = await import("~/lib/mutation");
+    vi.mocked(runMutation).mockResolvedValueOnce(null);
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+    fireEvent.change(screen.getByTestId("koreader-username-input"), { target: { value: "koreader" } });
+    fireEvent.change(screen.getByTestId("koreader-password-input"), { target: { value: "password123" } });
+    fireEvent.click(screen.getByTestId("save-koreader-credential-btn"));
+
+    await waitFor(() => { expect(vi.mocked(runMutation)).toHaveBeenCalled(); });
+    await waitFor(() => {
+      expect(screen.getByTestId("koreader-password-input").getAttribute("value")).toBe("password123");
+    });
+  });
+
   it("toggles KOReader sync state", async () => {
     mockLoaderData.koreaderCredential = {
       id: "kc1",
@@ -2570,6 +2594,26 @@ describe("Kobo Devices Tab", () => {
     });
   });
 
+  it("enables a disabled OPDS credential", async () => {
+    mockLoaderData.opdsCredentials = [
+      { id: "c1", username: "reader", isEnabled: false, createdAt: new Date().toISOString() },
+    ];
+    const { toggleOpdsCredentialServerFn } = await import("~/lib/server-fns/opds-credentials");
+    const { runMutation } = await import("~/lib/mutation");
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+    fireEvent.click(screen.getByTestId("toggle-opds-credential-btn"));
+
+    await waitFor(() => {
+      expect(vi.mocked(toggleOpdsCredentialServerFn)).toHaveBeenCalledWith({ data: { credentialId: "c1", isEnabled: true } });
+    });
+    expect(vi.mocked(runMutation).mock.calls.at(-1)?.[1]).toMatchObject({ success: "OPDS credential enabled" });
+  });
+
   it("deletes an OPDS credential", async () => {
     mockLoaderData.opdsCredentials = [
       { id: "c1", username: "reader", isEnabled: true, createdAt: new Date().toISOString() },
@@ -2584,10 +2628,30 @@ describe("Kobo Devices Tab", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
     fireEvent.click(screen.getByTestId("delete-opds-credential-btn"));
+    fireEvent.click(await screen.findByTestId("confirm-dialog-confirm"));
 
     await waitFor(() => {
       expect(deleteMock).toHaveBeenCalledWith({ data: { credentialId: "c1" } });
     });
+  });
+
+  it("keeps the OPDS delete dialog open when the delete fails", async () => {
+    mockLoaderData.opdsCredentials = [
+      { id: "c1", username: "reader", isEnabled: true, createdAt: new Date().toISOString() },
+    ];
+    const { runMutation } = await import("~/lib/mutation");
+    vi.mocked(runMutation).mockResolvedValueOnce(null);
+
+    const { Route } = await import("./index");
+    const SettingsPage = (Route.options.component as React.ComponentType);
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+    fireEvent.click(screen.getByTestId("delete-opds-credential-btn"));
+    fireEvent.click(await screen.findByTestId("confirm-dialog-confirm"));
+
+    await waitFor(() => { expect(vi.mocked(runMutation)).toHaveBeenCalled(); });
+    await waitFor(() => { expect(screen.getByTestId("confirm-dialog-confirm")).toBeTruthy(); });
   });
 
   it("disables add button when password is too short", async () => {
@@ -2638,5 +2702,27 @@ describe("Kobo Devices Tab", () => {
     await waitFor(() => {
       expect(createMock).toHaveBeenCalled();
     });
+  });
+
+  it("keeps only known tabs from the URL", async () => {
+    const { Route } = await import("./index");
+    const validate = Route.options.validateSearch as (search: Record<string, string | undefined>) => { tab?: string };
+    expect(validate({ tab: "jobs" })).toEqual({ tab: "jobs" });
+    expect(validate({ tab: "nope" })).toEqual({});
+    expect(validate({})).toEqual({});
+  });
+
+  it("opens the tab named in the URL and writes tab changes back to it", async () => {
+    mockSearch.tab = "backup";
+    try {
+      const { Route } = await import("./index");
+      const SettingsPage = (Route.options.component as React.ComponentType);
+      render(<SettingsPage />);
+      expect(screen.getByRole("tab", { name: "Backup" }).getAttribute("data-state")).toBe("active");
+      fireEvent.mouseDown(screen.getByRole("tab", { name: "Jobs" }));
+      expect(mockNavigate).toHaveBeenCalledWith({ to: "/settings", search: { tab: "jobs" }, replace: true });
+    } finally {
+      delete mockSearch.tab;
+    }
   });
 });

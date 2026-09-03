@@ -133,6 +133,8 @@ interface TestExternalLink {
   appliedFields: string[];
   editionId: string | null;
   workId: string | null;
+  provider?: string;
+  externalId?: string;
 }
 
 function createEmptyState(rootPath = "/tmp/root", scanMode: "FULL" | "INCREMENTAL" = "INCREMENTAL"): TestState {
@@ -209,7 +211,7 @@ function createTestDb(state: TestState): IngestDb {
       async findByDirectory({ directoryPath, mediaKinds }) {
         await Promise.resolve();
         return [...state.fileAssets.values()].filter(
-          (fa) => fa.absolutePath.startsWith(directoryPath + "/") && mediaKinds.includes(fa.mediaKind),
+          (fa) => path.dirname(fa.absolutePath) === directoryPath && mediaKinds.includes(fa.mediaKind),
         );
       },
       async findMany({ where }) {
@@ -385,6 +387,10 @@ function createTestDb(state: TestState): IngestDb {
           .map((id) => state.editions.get(id))
           .filter((edition): edition is TestEdition => edition !== undefined);
       },
+      async findManyByWorkId({ workId }) {
+        await Promise.resolve();
+        return [...state.editions.values()].filter((edition) => edition.workId === workId);
+      },
       async update({ data, where }) {
         await Promise.resolve();
         const existing = state.editions.get(where.id);
@@ -451,6 +457,36 @@ function createTestDb(state: TestState): IngestDb {
         return updated;
       },
     },
+    async completeStubMerge({ editionId, data, deleteWorkId }) {
+      await Promise.resolve();
+      const existing = state.editions.get(editionId);
+      if (!existing) throw new Error(`Unknown edition: ${editionId}`);
+      state.editions.set(editionId, { ...existing, ...data });
+      state.works.delete(deleteWorkId);
+    },
+    async completeWorkMerge({ survivingWorkId, losingWorkId, updates }) {
+      await Promise.resolve();
+      const surviving = state.works.get(survivingWorkId);
+      if (!surviving) throw new Error(`Unknown work: ${survivingWorkId}`);
+      state.works.set(survivingWorkId, { ...surviving, ...updates });
+      const taken = new Set(
+        state.externalLinks
+          .filter((link) => link.workId === survivingWorkId)
+          .map((link) => `${link.provider ?? ""}|${link.externalId ?? ""}`),
+      );
+      state.externalLinks = state.externalLinks.filter(
+        (link) => link.workId !== losingWorkId || !taken.has(`${link.provider ?? ""}|${link.externalId ?? ""}`),
+      );
+      for (const link of state.externalLinks) {
+        if (link.workId === losingWorkId) link.workId = survivingWorkId;
+      }
+      for (const [id, edition] of state.editions) {
+        if (edition.workId === losingWorkId) {
+          state.editions.set(id, { ...edition, workId: survivingWorkId });
+        }
+      }
+      state.works.delete(losingWorkId);
+    },
     async completeMove({ editionFileIds, toFileAssetId, deleteWorkId }) {
       await Promise.resolve();
       for (const id of editionFileIds) {
@@ -482,6 +518,10 @@ function createTestDb(state: TestState): IngestDb {
           .map((nameCanonical) => state.contributorsByCanonical.get(nameCanonical))
           .filter((contributor): contributor is TestContributor => contributor !== undefined);
       },
+      async findUnique({ where }) {
+        await Promise.resolve();
+        return state.contributorsByCanonical.get(where.nameCanonical) ?? null;
+      },
       async upsert({ where, create }) {
         await Promise.resolve();
         const existing = state.contributorsByCanonical.get(where.nameCanonical);
@@ -500,24 +540,24 @@ function createTestDb(state: TestState): IngestDb {
       },
     },
     editionContributor: {
-      async create({ data }) {
+      async upsert({ create, where }) {
         await Promise.resolve();
+        const key = getEditionContributorKey(
+          where.editionId_contributorId_role.editionId,
+          where.editionId_contributorId_role.contributorId,
+          where.editionId_contributorId_role.role,
+        );
+        const existing = state.editionContributors.get(key);
+        if (existing !== undefined) {
+          return existing;
+        }
         editionContributorSequence += 1;
         const created: TestEditionContributor = {
           id: `edition-contributor-${String(editionContributorSequence)}`,
-          ...data,
+          ...create,
         };
-        state.editionContributors.set(
-          getEditionContributorKey(created.editionId, created.contributorId, created.role),
-          created,
-        );
+        state.editionContributors.set(key, created);
         return created;
-      },
-      async findFirst({ where }) {
-        await Promise.resolve();
-        return state.editionContributors.get(
-          getEditionContributorKey(where.editionId, where.contributorId, where.role),
-        ) ?? null;
       },
     },
     duplicateCandidate: {
@@ -850,6 +890,12 @@ describe("ingest services", () => {
               isSymbolicLink: () => false,
               name: "unknown.bin",
             },
+            {
+              isDirectory: () => false,
+              isFile: () => false,
+              isSymbolicLink: () => false,
+              name: ".DS_Store",
+            },
           ] as never;
         }
 
@@ -878,7 +924,7 @@ describe("ingest services", () => {
           } as never;
         }
 
-        if (normalized.endsWith("/book.epub")) {
+        if (normalized.endsWith("/book.epub") || normalized.endsWith("/.DS_Store")) {
           return {
             isDirectory: () => false,
             isFile: () => true,
@@ -2594,6 +2640,46 @@ describe("ingest services", () => {
     });
   });
 
+  it("enqueues MATCH_SUGGESTIONS once per audiobook edition, not once per track", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-recovery-audio-dedupe-"));
+    tempDirectories.push(directory);
+    await mkdir(path.join(directory, "audiobook"));
+    await writeFile(path.join(directory, "audiobook", "chapter1.mp3"), "audio-1");
+    await writeFile(path.join(directory, "audiobook", "chapter2.mp3"), "audio-2");
+
+    const state = createEmptyState(directory);
+    const enqueuedJobs: Array<{ jobName: LibraryJobName; payload: LibraryJobPayloads[LibraryJobName] }> = [];
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: (jobName, payload) => {
+        enqueuedJobs.push({ jobName, payload });
+        return Promise.resolve(undefined);
+      },
+    });
+
+    await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    const edition = [...state.editions.values()][0];
+    if (!edition) throw new Error("expected edition");
+    edition.formatFamily = FormatFamily.AUDIOBOOK;
+    for (const fileAsset of state.fileAssets.values()) {
+      fileAsset.partialHash = "partial";
+      fileAsset.fullHash = `full-${fileAsset.basename}`;
+      fileAsset.metadata = null;
+      addEditionFile(state, { editionId: edition.id, fileAssetId: fileAsset.id, id: `ef-${fileAsset.id}` });
+    }
+    const work = [...state.works.values()][0];
+    if (!work) throw new Error("expected work");
+    work.enrichmentStatus = "ENRICHED";
+    work.coverPath = "/covers/existing.jpg";
+    enqueuedJobs.length = 0;
+
+    await services.scanLibraryRoot({ libraryRootId: "root-1" });
+
+    const suggestionJobs = enqueuedJobs.filter((job) => job.jobName === LIBRARY_JOB_NAMES.MATCH_SUGGESTIONS);
+    expect(suggestionJobs).toHaveLength(1);
+  });
+
   it("re-enqueues PROCESS_COVER for PDF with null metadata but existing EditionFile link", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "bookhouse-recovery-pdf-cover-"));
     tempDirectories.push(directory);
@@ -3672,6 +3758,165 @@ describe("ingest services", () => {
       LIBRARY_JOB_NAMES.PARSE_FILE_ASSET_METADATA,
       expect.anything(),
     );
+  });
+
+  it("does not treat a MISSING duplicate as a move when the current work owns other files", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    // A file whose mtime changed gets re-hashed; it already lives in a real
+    // Work with a second ebook file and a sibling audiobook edition.
+    const file = addFileAsset(state, {
+      absolutePath: "/tmp/root/Book/book.epub",
+      fullHash: null,
+      id: "current-file",
+      relativePath: "Book/book.epub",
+    });
+    const currentWork = addWork(state, { enrichmentStatus: "ENRICHED", id: "current-work" });
+    addEdition(state, { id: "ebook-edition", workId: currentWork.id });
+    addEditionFile(state, { editionId: "ebook-edition", fileAssetId: file.id, id: "current-ef" });
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Book/book.mp3",
+      fullHash: "audio-hash",
+      id: "audio-file",
+      mediaKind: MediaKind.AUDIO,
+      relativePath: "Book/book.mp3",
+    });
+    addEdition(state, { formatFamily: "AUDIOBOOK", id: "audio-edition", workId: currentWork.id });
+    addEditionFile(state, {
+      editionId: "audio-edition",
+      fileAssetId: "audio-file",
+      id: "audio-ef",
+      role: EditionFileRole.AUDIO_TRACK,
+    });
+
+    // A deleted duplicate copy elsewhere, still linked to its own work.
+    const oldFile = addFileAsset(state, {
+      absolutePath: "/tmp/root/Copies/book.epub",
+      availabilityStatus: AvailabilityStatus.MISSING,
+      fullHash: "hash-xyz",
+      id: "old-file",
+      relativePath: "Copies/book.epub",
+    });
+    const oldWork = addWork(state, { enrichmentStatus: "STUB", id: "old-work" });
+    addEdition(state, { id: "old-edition", workId: oldWork.id });
+    addEditionFile(state, { editionId: "old-edition", fileAssetId: oldFile.id, id: "old-ef" });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      hashFile: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          fullHash: "hash-xyz",
+          koreaderHash: "koreader-hash-xyz",
+          mtime: new Date("2025-01-01T00:00:00.000Z"),
+          partialHash: "partial-xyz",
+          sizeBytes: 100n,
+        };
+      }),
+    });
+
+    const result = await services.hashFileAsset({ fileAssetId: "current-file" });
+
+    expect(result.movedFromFileAssetId).toBeUndefined();
+    // The real Work, its audiobook edition and its links all survive.
+    expect(state.works.has("current-work")).toBe(true);
+    expect(state.editions.has("audio-edition")).toBe(true);
+    expect([...state.editionFiles.values()].find((ef) => ef.id === "old-ef")?.fileAssetId).toBe("old-file");
+  });
+
+  it("OPF sidecar enrichment covers Kindle-format siblings and keeps a punctuation-only title", async () => {
+    const state = createEmptyState("/tmp/root");
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Book/metadata.opf",
+      basename: "metadata.opf",
+      extension: "opf",
+      id: "file-opf",
+      mediaKind: MediaKind.SIDECAR,
+      relativePath: "Book/metadata.opf",
+    });
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Book/book.azw3",
+      basename: "book.azw3",
+      extension: "azw3",
+      id: "file-azw3",
+      mediaKind: MediaKind.AZW3,
+      relativePath: "Book/book.azw3",
+    });
+    addWork(state, { enrichmentStatus: "STUB", id: "work-1", titleCanonical: "book", titleDisplay: "book" });
+    addEdition(state, { id: "edition-1", workId: "work-1" });
+    addEditionFile(state, { editionId: "edition-1", fileAssetId: "file-azw3" });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      parseOpf: vi.fn(async () => {
+        await Promise.resolve();
+        return { authors: [], identifiers: [], subjects: [], title: "???", language: "en" };
+      }),
+    });
+
+    await services.parseFileAssetMetadata({ fileAssetId: "file-opf", now: new Date("2025-01-01T00:00:00.000Z") });
+
+    const work = state.works.get("work-1");
+    expect(work?.enrichmentStatus).toBe("ENRICHED");
+    expect(work?.titleDisplay).toBe("???");
+    // Nothing survives canonicalisation, so the lower-cased title stands in.
+    expect(work?.titleCanonical).toBe("???");
+    expect(state.editions.get("edition-1")?.language).toBe("en");
+  });
+
+  it("OPF sidecar enrichment ignores book files in nested folders", async () => {
+    const state = createEmptyState("/tmp/root");
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/metadata.opf",
+      basename: "metadata.opf",
+      extension: "opf",
+      id: "file-opf",
+      mediaKind: MediaKind.SIDECAR,
+      relativePath: "Author/metadata.opf",
+    });
+    // The only "sibling" lives one folder down — a different book.
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/Author/Other Book/other.pdf",
+      basename: "other.pdf",
+      extension: "pdf",
+      id: "file-pdf",
+      mediaKind: MediaKind.PDF,
+      relativePath: "Author/Other Book/other.pdf",
+    });
+    addWork(state, {
+      enrichmentStatus: "STUB",
+      id: "work-nested",
+      titleCanonical: "other",
+      titleDisplay: "Other",
+    });
+    addEdition(state, { id: "edition-nested", workId: "work-nested" });
+    addEditionFile(state, { editionId: "edition-nested", fileAssetId: "file-pdf" });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      parseOpf: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          authors: [{ name: "Barbara Kingsolver" }],
+          identifiers: [],
+          subjects: [],
+          title: "Another America, Orta America",
+        };
+      }),
+    });
+
+    await services.parseFileAssetMetadata({
+      fileAssetId: "file-opf",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    const nested = state.works.get("work-nested");
+    expect(nested?.enrichmentStatus).toBe("STUB");
+    expect(nested?.titleDisplay).toBe("Other");
+    expect(state.editionContributors.size).toBe(0);
   });
 
   it("skips move detection when no MISSING file matches the hash", async () => {
@@ -6229,6 +6474,62 @@ describe("ingest services", () => {
     expect(state.editions.get("stub-edition")?.workId).toBe("enriched-work");
   });
 
+  it("does not merge a stub into an edition of another format that shares its ISBN", async () => {
+    const state = createEmptyState("/tmp/root");
+
+    // The audiobook's metadata carried the print ISBN.
+    const audiobookWork = addWork(state, {
+      id: "audiobook-work",
+      enrichmentStatus: "ENRICHED",
+      titleCanonical: "the fifth season",
+      titleDisplay: "The Fifth Season",
+    });
+    addEdition(state, {
+      id: "audiobook-edition",
+      workId: audiobookWork.id,
+      formatFamily: FormatFamily.AUDIOBOOK,
+      isbn13: "9780316229296",
+    });
+
+    const stubWork = addWork(state, {
+      id: "stub-work",
+      enrichmentStatus: "STUB",
+      titleCanonical: "my great book",
+      titleDisplay: "My Great Book",
+    });
+    const stubEdition = addEdition(state, { id: "stub-edition", workId: stubWork.id });
+    addFileAsset(state, {
+      absolutePath: "/tmp/root/book.epub",
+      basename: "book.epub",
+      extension: "epub",
+      mediaKind: MediaKind.EPUB,
+      metadata: {
+        source: "epub",
+        status: "parsed",
+        version: 1,
+        normalized: {
+          title: "A Different Title",
+          authors: ["Someone Else"],
+          identifiers: { isbn13: "9780316229296" },
+        },
+      },
+    });
+    addEditionFile(state, { editionId: stubEdition.id, fileAssetId: "file-1" });
+
+    const services = createIngestServices({
+      db: createTestDb(state),
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+    });
+
+    const result = await services.matchFileAssetToEdition({ fileAssetId: "file-1" });
+
+    // The EPUB stays in its own (now enriched) work instead of becoming a
+    // file of the audiobook edition, which format-specific delivery could never see.
+    expect(result.mergedIntoWorkId).toBeUndefined();
+    expect(state.editions.get("stub-edition")?.workId).toBe("stub-work");
+    expect(state.works.get("stub-work")?.enrichmentStatus).toBe("ENRICHED");
+  });
+
   it("merges a stub work when ISBN matches an existing edition on a different work", async () => {
     const state = createEmptyState("/tmp/root");
 
@@ -7606,6 +7907,502 @@ describe("ingest services", () => {
       LIBRARY_JOB_NAMES.PROCESS_COVER,
       { workId: "work-1", fileAssetId: "file-pdf" },
     );
+  });
+
+  // Reproduces the race where a concurrent PARSE job commits the same
+  // (editionId, contributorId, role) link between this job's existence check
+  // and its insert: the writer surfaces the losing P2002 and pre-seeds the
+  // winning row exactly like the database would. ensureContributors must
+  // treat that as success instead of marking the sidecar unparseable.
+  function withContendingEditionContributorWriter(
+    db: IngestDb,
+    state: TestState,
+    error: Error,
+  ): IngestDb {
+    return {
+      ...db,
+      editionContributor: {
+        async upsert({ create }) {
+          await Promise.resolve();
+          state.editionContributors.set(
+            getEditionContributorKey(create.editionId, create.contributorId, create.role),
+            {
+              contributorId: create.contributorId,
+              editionId: create.editionId,
+              id: "edition-contributor-contender",
+              role: create.role,
+            },
+          );
+          throw error;
+        },
+      },
+    };
+  }
+
+  it("OPF sidecar enrichment swallows P2002 from a contending author-link writer", async () => {
+    const state = createEmptyState("/tmp/root");
+    const opfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.opf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.opf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "opf",
+      fullHash: "hash",
+      id: "file-opf",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/metadata.opf",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(opfAsset.absolutePath, opfAsset);
+    state.fileAssetsById.set(opfAsset.id, opfAsset);
+
+    const pdfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/book.pdf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.pdf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "pdf",
+      fullHash: "pdf-hash",
+      id: "file-pdf",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.PDF,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "pdf-phash",
+      relativePath: "Author/Book/book.pdf",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(pdfAsset.absolutePath, pdfAsset);
+    state.fileAssetsById.set(pdfAsset.id, pdfAsset);
+
+    addWork(state, {
+      id: "work-1",
+      enrichmentStatus: "STUB",
+      titleDisplay: "Book",
+      titleCanonical: "book",
+      coverPath: null,
+    });
+    addEdition(state, { id: "edition-1", workId: "work-1", publisher: null, publishedAt: null });
+    addEditionFile(state, { editionId: "edition-1", fileAssetId: "file-pdf" });
+
+    const contentionError = Object.assign(
+      new Error("Unique constraint failed on the fields: (`editionId`, `contributorId`, `role`)"),
+      { code: "P2002" },
+    );
+    const db = withContendingEditionContributorWriter(createTestDb(state), state, contentionError);
+
+    const services = createIngestServices({
+      db,
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      parseOpf: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          authors: [{ name: "Barbara Kingsolver" }],
+          identifiers: [],
+          subjects: [],
+          title: "Another America, Orta America",
+          publisher: "Faber and Faber",
+          description: "A story.",
+          language: "en",
+        };
+      }),
+    });
+
+    const result = await services.parseFileAssetMetadata({
+      fileAssetId: "file-opf",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(result.skipped).toBe(false);
+    expect(state.fileAssetsById.get("file-opf")?.metadata).toMatchObject({
+      source: "opf-sidecar",
+      status: "parsed",
+    });
+    expect(state.works.get("work-1")?.enrichmentStatus).toBe("ENRICHED");
+    // The contender's committed link survives; nothing is marked unparseable.
+    expect(state.editionContributors.get(
+      getEditionContributorKey("edition-1", "contributor-1", ContributorRole.AUTHOR),
+    )).toMatchObject({ id: "edition-contributor-contender" });
+  });
+
+  it("OPF sidecar enrichment still marks unparseable for non-P2002 author-link failures", async () => {
+    const state = createEmptyState("/tmp/root");
+    const opfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.opf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.opf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "opf",
+      fullHash: "hash",
+      id: "file-opf",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/metadata.opf",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(opfAsset.absolutePath, opfAsset);
+    state.fileAssetsById.set(opfAsset.id, opfAsset);
+
+    const pdfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/book.pdf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.pdf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "pdf",
+      fullHash: "pdf-hash",
+      id: "file-pdf",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.PDF,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "pdf-phash",
+      relativePath: "Author/Book/book.pdf",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(pdfAsset.absolutePath, pdfAsset);
+    state.fileAssetsById.set(pdfAsset.id, pdfAsset);
+
+    addWork(state, {
+      id: "work-1",
+      enrichmentStatus: "STUB",
+      titleDisplay: "Book",
+      titleCanonical: "book",
+      coverPath: null,
+    });
+    addEdition(state, { id: "edition-1", workId: "work-1", publisher: null, publishedAt: null });
+    addEditionFile(state, { editionId: "edition-1", fileAssetId: "file-pdf" });
+
+    const db = withContendingEditionContributorWriter(createTestDb(state), state, new Error("boom"));
+
+    const services = createIngestServices({
+      db,
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      parseOpf: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          authors: [{ name: "Barbara Kingsolver" }],
+          identifiers: [],
+          subjects: [],
+          title: "Another America, Orta America",
+          publisher: "Faber and Faber",
+          description: "A story.",
+          language: "en",
+        };
+      }),
+    });
+
+    await services.parseFileAssetMetadata({
+      fileAssetId: "file-opf",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(state.fileAssetsById.get("file-opf")?.metadata).toMatchObject({
+      source: "opf-sidecar",
+      status: "unparseable",
+      warnings: ["boom"],
+    });
+  });
+
+  // Reproduces the race where a concurrent PARSE job for another book by the
+  // same author commits the Contributor row between this job's upsert select
+  // and insert: the loser surfaces P2002. ensureContributors must re-fetch
+  // the committed row and link it instead of failing the parse.
+  it("OPF sidecar enrichment swallows P2002 from a contending contributor writer", async () => {
+    const state = createEmptyState("/tmp/root");
+    const opfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.opf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.opf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "opf",
+      fullHash: "hash",
+      id: "file-opf",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/metadata.opf",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(opfAsset.absolutePath, opfAsset);
+    state.fileAssetsById.set(opfAsset.id, opfAsset);
+
+    const pdfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/book.pdf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.pdf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "pdf",
+      fullHash: "pdf-hash",
+      id: "file-pdf",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.PDF,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "pdf-phash",
+      relativePath: "Author/Book/book.pdf",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(pdfAsset.absolutePath, pdfAsset);
+    state.fileAssetsById.set(pdfAsset.id, pdfAsset);
+
+    addWork(state, {
+      id: "work-1",
+      enrichmentStatus: "STUB",
+      titleDisplay: "Book",
+      titleCanonical: "book",
+      coverPath: null,
+    });
+    addEdition(state, { id: "edition-1", workId: "work-1", publisher: null, publishedAt: null });
+    addEditionFile(state, { editionId: "edition-1", fileAssetId: "file-pdf" });
+
+    const contentionError = Object.assign(
+      new Error("Unique constraint failed on the fields: (`nameCanonical`)"),
+      { code: "P2002" },
+    );
+    const db = createTestDb(state);
+    db.contributor.upsert = async ({ create }) => {
+      await Promise.resolve();
+      // Pre-seed the winning row exactly like the database would, then lose.
+      const winner: TestContributor = {
+        id: "contributor-contender",
+        nameCanonical: create.nameCanonical,
+        nameDisplay: create.nameDisplay,
+        nameSort: create.nameSort ?? null,
+      };
+      state.contributors.set(winner.id, winner);
+      state.contributorsByCanonical.set(winner.nameCanonical, winner);
+      throw contentionError;
+    };
+
+    const services = createIngestServices({
+      db,
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      parseOpf: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          authors: [{ name: "Barbara Kingsolver" }],
+          identifiers: [],
+          subjects: [],
+          title: "Another America, Orta America",
+          publisher: "Faber and Faber",
+          description: "A story.",
+          language: "en",
+        };
+      }),
+    });
+
+    const result = await services.parseFileAssetMetadata({
+      fileAssetId: "file-opf",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(result.skipped).toBe(false);
+    expect(state.fileAssetsById.get("file-opf")?.metadata).toMatchObject({
+      source: "opf-sidecar",
+      status: "parsed",
+    });
+    expect(state.works.get("work-1")?.enrichmentStatus).toBe("ENRICHED");
+    // The contender's committed contributor is re-fetched and linked.
+    expect(state.editionContributors.get(
+      getEditionContributorKey("edition-1", "contributor-contender", ContributorRole.AUTHOR),
+    )).toMatchObject({ contributorId: "contributor-contender" });
+  });
+
+  it("OPF sidecar enrichment skips the author link when the contending contributor row vanished", async () => {
+    const state = createEmptyState("/tmp/root");
+    const opfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.opf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.opf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "opf",
+      fullHash: "hash",
+      id: "file-opf",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/metadata.opf",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(opfAsset.absolutePath, opfAsset);
+    state.fileAssetsById.set(opfAsset.id, opfAsset);
+
+    const pdfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/book.pdf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.pdf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "pdf",
+      fullHash: "pdf-hash",
+      id: "file-pdf",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.PDF,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "pdf-phash",
+      relativePath: "Author/Book/book.pdf",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(pdfAsset.absolutePath, pdfAsset);
+    state.fileAssetsById.set(pdfAsset.id, pdfAsset);
+
+    addWork(state, {
+      id: "work-1",
+      enrichmentStatus: "STUB",
+      titleDisplay: "Book",
+      titleCanonical: "book",
+      coverPath: null,
+    });
+    addEdition(state, { id: "edition-1", workId: "work-1", publisher: null, publishedAt: null });
+    addEditionFile(state, { editionId: "edition-1", fileAssetId: "file-pdf" });
+
+    const db = createTestDb(state);
+    db.contributor.upsert = async () => {
+      await Promise.resolve();
+      throw Object.assign(
+        new Error("Unique constraint failed on the fields: (`nameCanonical`)"),
+        { code: "P2002" },
+      );
+    };
+    // The contending row was cascade-cleaned between the P2002 and the re-fetch.
+    db.contributor.findUnique = async () => {
+      await Promise.resolve();
+      return null;
+    };
+
+    const services = createIngestServices({
+      db,
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      parseOpf: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          authors: [{ name: "Barbara Kingsolver" }],
+          identifiers: [],
+          subjects: [],
+          title: "Another America, Orta America",
+          publisher: "Faber and Faber",
+          description: "A story.",
+          language: "en",
+        };
+      }),
+    });
+
+    const result = await services.parseFileAssetMetadata({
+      fileAssetId: "file-opf",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(result.skipped).toBe(false);
+    expect(state.fileAssetsById.get("file-opf")?.metadata).toMatchObject({
+      source: "opf-sidecar",
+      status: "parsed",
+    });
+    // No contributor or link is invented for a row that no longer exists.
+    expect([...state.contributors.values()]).toHaveLength(0);
+    expect(state.editionContributors.size).toBe(0);
+  });
+
+  it("OPF sidecar enrichment still marks unparseable for non-P2002 contributor failures", async () => {
+    const state = createEmptyState("/tmp/root");
+    const opfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/metadata.opf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "metadata.opf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "opf",
+      fullHash: "hash",
+      id: "file-opf",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.SIDECAR,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "phash",
+      relativePath: "Author/Book/metadata.opf",
+      sizeBytes: 2n,
+    };
+    state.fileAssets.set(opfAsset.absolutePath, opfAsset);
+    state.fileAssetsById.set(opfAsset.id, opfAsset);
+
+    const pdfAsset: TestFileAsset = {
+      absolutePath: "/tmp/root/Author/Book/book.pdf",
+      availabilityStatus: AvailabilityStatus.PRESENT,
+      basename: "book.pdf",
+      ctime: new Date("2024-01-01T00:00:00.000Z"),
+      extension: "pdf",
+      fullHash: "pdf-hash",
+      id: "file-pdf",
+      lastSeenAt: null,
+      libraryRootId: "root-1",
+      mediaKind: MediaKind.PDF,
+      metadata: null,
+      mtime: new Date("2024-01-01T00:00:00.000Z"),
+      partialHash: "pdf-phash",
+      relativePath: "Author/Book/book.pdf",
+      sizeBytes: 100n,
+    };
+    state.fileAssets.set(pdfAsset.absolutePath, pdfAsset);
+    state.fileAssetsById.set(pdfAsset.id, pdfAsset);
+
+    addWork(state, {
+      id: "work-1",
+      enrichmentStatus: "STUB",
+      titleDisplay: "Book",
+      titleCanonical: "book",
+      coverPath: null,
+    });
+    addEdition(state, { id: "edition-1", workId: "work-1", publisher: null, publishedAt: null });
+    addEditionFile(state, { editionId: "edition-1", fileAssetId: "file-pdf" });
+
+    const db = createTestDb(state);
+    db.contributor.upsert = () => Promise.reject(new Error("boom"));
+
+    const services = createIngestServices({
+      db,
+      enqueueLibraryJob: vi.fn(() => Promise.resolve(undefined)),
+      parseOpf: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          authors: [{ name: "Barbara Kingsolver" }],
+          identifiers: [],
+          subjects: [],
+          title: "Another America, Orta America",
+          publisher: "Faber and Faber",
+          description: "A story.",
+          language: "en",
+        };
+      }),
+    });
+
+    await services.parseFileAssetMetadata({
+      fileAssetId: "file-opf",
+      now: new Date("2025-01-01T00:00:00.000Z"),
+    });
+
+    expect(state.fileAssetsById.get("file-opf")?.metadata).toMatchObject({
+      source: "opf-sidecar",
+      status: "unparseable",
+      warnings: ["boom"],
+    });
   });
 
   it("OPF sidecar enrichment does NOT override title on ENRICHED work", async () => {
@@ -11801,6 +12598,22 @@ describe("detectDuplicates", () => {
     });
   });
 
+  it("SAME_HASH: ignores MISSING copies left behind by moves or deletions", async () => {
+    const state = createEmptyState();
+    addDetectFileAsset(state, "file-1", "samehash", "/tmp/root/book.epub");
+    const ghost = addDetectFileAsset(state, "file-ghost", "samehash", "/tmp/root/old/book.epub");
+    ghost.availabilityStatus = AvailabilityStatus.MISSING;
+    addDetectWork(state, "work-1", "book title", "Book Title");
+    addDetectEdition(state, "edition-1", "work-1");
+    addDetectEditionFile(state, "ef-1", "edition-1", "file-1");
+    const services = createIngestServices({ db: createTestDb(state) });
+
+    const result = await services.detectDuplicates({ fileAssetId: "file-1" });
+
+    expect(result.candidatesCreated).toBe(0);
+    expect(state.duplicateCandidates.size).toBe(0);
+  });
+
   it("SAME_HASH: does not create candidate when no hash match", async () => {
     const state = createEmptyState();
     addDetectFileAsset(state, "file-1", "hash-a", "/tmp/root/book.epub");
@@ -13568,6 +14381,25 @@ describe("mergeWorksById", () => {
     expect(state.editions.get("edition-2")?.workId).toBe("work-surviving");
     expect(state.editions.get("edition-3")?.workId).toBe("work-surviving");
     expect(state.works.has("work-losing")).toBe(false);
+  });
+
+  it("carries the losing work's external links across, keeping the survivor's on conflict", async () => {
+    const state = createEmptyState();
+    addWork(state, { id: "work-surviving", titleCanonical: "the great gatsby", titleDisplay: "The Great Gatsby" });
+    addWork(state, { id: "work-losing", titleCanonical: "the great gatsby", titleDisplay: "The Great Gatsby" });
+    state.externalLinks.push(
+      { appliedFields: ["description"], editionId: null, workId: "work-surviving", provider: "openlibrary", externalId: "OL1W" },
+      { appliedFields: [], editionId: null, workId: "work-losing", provider: "openlibrary", externalId: "OL1W" },
+      { appliedFields: ["title"], editionId: null, workId: "work-losing", provider: "hardcover", externalId: "hc-9" },
+    );
+
+    const services = createIngestServices({ db: createTestDb(state) });
+    await services.mergeWorksById("work-surviving", "work-losing");
+
+    expect(state.externalLinks).toEqual([
+      { appliedFields: ["description"], editionId: null, workId: "work-surviving", provider: "openlibrary", externalId: "OL1W" },
+      { appliedFields: ["title"], editionId: null, workId: "work-surviving", provider: "hardcover", externalId: "hc-9" },
+    ]);
   });
 
   it("throws when surviving work does not exist", async () => {

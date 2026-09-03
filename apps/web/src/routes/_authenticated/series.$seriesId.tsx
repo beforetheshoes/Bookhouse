@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
 import { Badge } from "~/components/ui/badge";
 import { WorkCard } from "~/components/work-card";
@@ -10,6 +10,8 @@ export const Route = createFileRoute("/_authenticated/series/$seriesId")({
     const series = await getSeriesDetailServerFn({
       data: { seriesId: params.seriesId },
     });
+    // eslint-disable-next-line @typescript-eslint/only-throw-error -- TanStack's notFound() is router control flow, not an Error
+    if (!series) throw notFound();
     return { series };
   },
   pendingComponent: GridPageSkeleton,

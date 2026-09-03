@@ -3,6 +3,7 @@ import type { H3Event } from "h3";
 import type { KoboAuthDeps } from "../../../../auth-helper";
 import { selectPreferredKoboDeliveryFile } from "@bookhouse/shared";
 import { httpError } from "../../../../../../utils/http-error";
+import { attachmentDisposition } from "../../../../../../utils/content-disposition";
 
 export interface DownloadHandlerDeps {
   auth: KoboAuthDeps;
@@ -11,8 +12,10 @@ export interface DownloadHandlerDeps {
     basename: string;
     mimeType: string | null;
     availabilityStatus: string;
+    /** Content fingerprint for the kepub cache; null until the file is hashed. */
+    fullHash: string | null;
   } | null>;
-  convertToKepub: (epubPath: string) => Promise<string>;
+  convertToKepub: (epubPath: string, fingerprint: string) => Promise<string>;
   existsSync: (path: string) => boolean;
   statSync: (path: string) => { size: number };
   createReadStream: (path: string) => NodeJS.ReadableStream;
@@ -60,7 +63,7 @@ export function createDownloadHandler(deps: DownloadHandlerDeps) {
 
     if (isConvertibleEpub) {
       try {
-        filePath = await deps.convertToKepub(file.absolutePath);
+        filePath = await deps.convertToKepub(file.absolutePath, file.fullHash ?? "");
         fileName = fileName.replace(/\.epub$/, ".kepub.epub");
         contentType = "application/x-kobo-epub+zip";
       } catch (error) {
@@ -81,11 +84,7 @@ export function createDownloadHandler(deps: DownloadHandlerDeps) {
     const stat = deps.statSync(filePath);
     deps.setResponseHeader(event, "Content-Type", contentType);
     deps.setResponseHeader(event, "Content-Length", String(stat.size));
-    deps.setResponseHeader(
-      event,
-      "Content-Disposition",
-      `attachment; filename="${fileName}"`,
-    );
+    deps.setResponseHeader(event, "Content-Disposition", attachmentDisposition(fileName));
     deps.setResponseHeader(event, "Cache-Control", "private, no-cache");
 
     return deps.sendStream(event, deps.createReadStream(filePath));
@@ -133,20 +132,23 @@ export default defineEventHandler(async (event) => {
         basename: fileAsset.basename,
         mimeType: fileAsset.mimeType,
         availabilityStatus: fileAsset.availabilityStatus,
+        fullHash: fileAsset.fullHash,
       };
     },
-    convertToKepub: async (epubPath) => {
+    convertToKepub: async (epubPath, fingerprint) => {
       const { convertToKepub: convert } = await import("@bookhouse/kobo");
       const { execFile: execFileCb } = await import("node:child_process");
       const { promisify } = await import("node:util");
       const { existsSync: fsExistsSync, mkdirSync } = await import("node:fs");
+      const { rename } = await import("node:fs/promises");
       const execFile = promisify(execFileCb);
       const cacheDir = process.env.KEPUB_CACHE_DIR ?? "/tmp/kepub-cache";
       return convert(epubPath, cacheDir, {
         execFile: (cmd, args) => execFile(cmd, args),
         existsSync: fsExistsSync,
         mkdirSync,
-      });
+        rename,
+      }, fingerprint);
     },
     existsSync: fs.existsSync,
     statSync: fs.statSync,

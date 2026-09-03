@@ -1,18 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Readable } from "node:stream";
 
-const { appendMock, pipeMock, finalizeMock, ZipArchiveMock } = vi.hoisted(() => {
+const { appendMock, pipeMock, finalizeMock, onMock, ZipArchiveMock } = vi.hoisted(() => {
   const appendMock = vi.fn();
   const pipeMock = vi.fn();
-  const finalizeMock = vi.fn();
+  const finalizeMock = vi.fn(() => Promise.resolve());
+  const onMock = vi.fn();
   return {
     appendMock,
     pipeMock,
     finalizeMock,
+    onMock,
     ZipArchiveMock: class {
       append = appendMock;
       pipe = pipeMock;
       finalize = finalizeMock;
+      on = onMock;
     },
   };
 });
@@ -69,5 +72,19 @@ describe("createLogsArchive", () => {
     });
     expect(createReadStream).not.toHaveBeenCalled();
     expect(finalizeMock).toHaveBeenCalled();
+  });
+
+  it("ends the output with an error when the archiver fails", async () => {
+    const readdir = vi.fn().mockResolvedValue(["web.log"]);
+    const createReadStream = vi.fn((p: string) => Readable.from([p]));
+    finalizeMock.mockImplementationOnce(() => Promise.reject(new Error("zip failed")));
+
+    const output = await createLogsArchive({ logDir: "/logs", readdir, createReadStream });
+    const errorListener = onMock.mock.calls.find((call) => call[0] === "error")?.[1] as (error: Error) => void;
+    const failure = new Error("read failed");
+    const errored = new Promise<Error>((resolve) => output.on("error", resolve));
+    errorListener(failure);
+
+    await expect(errored).resolves.toBe(failure);
   });
 });

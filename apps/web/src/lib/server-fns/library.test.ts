@@ -341,10 +341,25 @@ describe("getFilteredLibraryWorksServerFn", () => {
     expect(findManyMock).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          seriesId: { in: ["series-1"] },
+          AND: expect.arrayContaining([{ seriesId: { in: ["series-1"] } }]) as object,
         }) as object,
       }),
     );
+  });
+
+  it("keeps a specific series selection when inSeries is also set", async () => {
+    findManyMock.mockResolvedValue([]);
+    countMock.mockResolvedValue(0);
+    editionGroupByMock.mockResolvedValue([]);
+    await getFilteredLibraryWorksServerFn({
+      data: { seriesId: ["series-1"], inSeries: true },
+    });
+
+    const call = (findManyMock.mock.calls[0] as [{ where: { AND: object[] } }])[0];
+    expect(call.where.AND).toEqual(expect.arrayContaining([
+      { seriesId: { in: ["series-1"] } },
+      { seriesId: { not: null } },
+    ]));
   });
 
   it("filters by hasCover true", async () => {
@@ -778,7 +793,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
     expect(findManyMock).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          seriesId: { not: null },
+          AND: expect.arrayContaining([{ seriesId: { not: null } }]) as object,
         }) as object,
       }),
     );
@@ -796,7 +811,7 @@ describe("getFilteredLibraryWorksServerFn", () => {
     expect(findManyMock).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          seriesId: null,
+          AND: expect.arrayContaining([{ seriesId: null }]) as object,
         }) as object,
       }),
     );

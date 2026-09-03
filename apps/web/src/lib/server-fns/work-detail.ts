@@ -12,7 +12,9 @@ export const getWorkDetailServerFn = createServerFn({
   .handler(async ({ data }) => {
     const { db } = await import("@bookhouse/db");
 
-    return db.work.findUniqueOrThrow({
+    // null rather than a throw: the loader turns it into a proper 404 page
+    // instead of the generic "Something went wrong" boundary.
+    return db.work.findUnique({
       where: { id: data.workId },
       include: {
         series: true,
@@ -27,4 +29,4 @@ export const getWorkDetailServerFn = createServerFn({
     });
   });
 
-export type WorkDetail = Awaited<ReturnType<typeof getWorkDetailServerFn>>;
+export type WorkDetail = NonNullable<Awaited<ReturnType<typeof getWorkDetailServerFn>>>;

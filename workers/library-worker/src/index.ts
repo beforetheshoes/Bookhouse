@@ -153,6 +153,23 @@ async function updateImportJobIfPresent(
   }
 }
 
+const EMPTY_SCAN_RESULT: ScanLibraryRootResult = {
+  createdStubWorkIds: [],
+  discoveredPaths: [],
+  enqueuedHashJobs: [],
+  enqueuedRecoveryJobs: [],
+  missingFileAssetIds: [],
+  scannedFileAssetIds: [],
+};
+
+// Jobs for an entity that no longer exists skip silently (see
+// docs/DATA_MODEL.md). Removing a root deletes its ImportJobs but the queued
+// BullMQ jobs stay behind and were failing through every attempt.
+async function libraryRootExists(libraryRootId: string): Promise<boolean> {
+  const root = await db.libraryRoot.findUnique({ where: { id: libraryRootId }, select: { id: true } });
+  return root !== null;
+}
+
 async function dispatch(
   handlers: LibraryWorkerHandlers,
   job: Job<LibraryJobPayload<LibraryJobName>, LibraryJobResult, LibraryJobName>,
@@ -162,6 +179,10 @@ async function dispatch(
   switch (job.name) {
     case LIBRARY_JOB_NAMES.SCAN_LIBRARY_ROOT: {
       const payload = job.data as ScanLibraryRootJobPayload;
+      if (!(await libraryRootExists(payload.libraryRootId))) {
+        logger.info({ jobId: job.id, libraryRootId: payload.libraryRootId }, "Skipping scan for deleted library root");
+        return EMPTY_SCAN_RESULT;
+      }
       activeScanType = deriveScanType(payload);
       let scanResult: ScanLibraryRootResult;
       if (importJobId) {
@@ -222,6 +243,10 @@ async function dispatch(
       return handlers.matchSuggestions(job.data as MatchSuggestionsJobPayload);
     case LIBRARY_JOB_NAMES.INGEST_UPLOADED_BOOK: {
       const uploadPayload = job.data as IngestUploadedBookJobPayload;
+      if (!(await libraryRootExists(uploadPayload.libraryRootId))) {
+        logger.info({ jobId: job.id, libraryRootId: uploadPayload.libraryRootId }, "Skipping upload ingest for deleted library root");
+        return { fileAssetIds: [], createdWorkIds: [] };
+      }
       const ingestResult = await handlers.ingestUploadedBook({
         libraryRootId: uploadPayload.libraryRootId,
         absolutePaths: uploadPayload.absolutePaths,
@@ -300,8 +325,11 @@ export function createLibraryWorkerProcessor(
     // Clean up stale ImportJobs when a new scan starts
     if (importJobId && isScanJob) {
       const scanPayload = job.data as ScanLibraryRootJobPayload;
+      // Only other scans of this root: an upload ingest carries the same
+      // libraryRootId and was being marked FAILED while still running.
       await db.importJob.updateMany({
         where: {
+          kind: "SCAN_ROOT",
           libraryRootId: scanPayload.libraryRootId,
           status: { in: ["QUEUED", "RUNNING"] },
           id: { not: importJobId },
@@ -497,8 +525,22 @@ export function logEnrichmentWorkerError(err: Error): void {
   logger.error({ err }, "Failed to start enrichment worker");
 }
 
-export function handleEnrichmentWorkerModule(m: { startEnrichmentWorker: () => void }): void {
-  m.startEnrichmentWorker();
+export interface EnrichmentWorkerHandle {
+  worker: Pick<Worker, "close">;
+  connection: Pick<IORedis, "quit">;
+}
+
+let enrichmentWorkerHandle: EnrichmentWorkerHandle | null = null;
+
+export function handleEnrichmentWorkerModule(m: { startEnrichmentWorker: () => EnrichmentWorkerHandle }): void {
+  enrichmentWorkerHandle = m.startEnrichmentWorker();
+}
+
+/** Drain the enrichment worker too; a SIGTERM used to kill its active job mid-write. */
+export async function shutdownEnrichmentWorker(handle: EnrichmentWorkerHandle | null = enrichmentWorkerHandle): Promise<void> {
+  if (handle === null) return;
+  await handle.worker.close();
+  await handle.connection.quit();
 }
 
 export function bootstrapLibraryWorker(): void {
@@ -516,7 +558,10 @@ export function bootstrapLibraryWorker(): void {
 
   const shutdown = async () => {
     logger.info("Shutting down worker");
-    await shutdownLibraryWorker(worker, connection, pollInterval);
+    await Promise.all([
+      shutdownLibraryWorker(worker, connection, pollInterval),
+      shutdownEnrichmentWorker(),
+    ]);
     process.exit(0);
   };
 

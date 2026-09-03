@@ -88,11 +88,19 @@ export function LibraryToolbar({
       isFirstSearchSync.current = false;
       return;
     }
+    lastSentRef.current = debouncedSearch;
     onSearchChange(debouncedSearch);
   }, [debouncedSearch, onSearchChange]);
 
+  // Follow the URL only when it changed for another reason (back/forward, a
+  // link). A slow answer for an earlier prefix resolving after the user has
+  // typed more used to snap the field back to that prefix.
+  const lastSentRef = useRef(searchValue);
   useEffect(() => {
-    setLocalSearch(searchValue);
+    if (searchValue !== lastSentRef.current) {
+      lastSentRef.current = searchValue;
+      setLocalSearch(searchValue);
+    }
   }, [searchValue]);
 
   return (

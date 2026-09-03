@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useDebounce } from "~/hooks/use-debounce";
 import { SlidersHorizontal } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import {
@@ -79,6 +80,24 @@ export function LibraryFiltersSheet({
   searchValue,
   onSearchChange,
 }: LibraryFiltersSheetProps) {
+  // Typed text is debounced before it hits the URL: every keystroke used to
+  // run the full library loader (works, facets, shelves, progress) and the
+  // field lagged behind what was typed.
+  const [localSearch, setLocalSearch] = useState(searchValue ?? "");
+  const debouncedSearch = useDebounce(localSearch, 300);
+  const lastSentRef = useRef(searchValue ?? "");
+  useEffect(() => {
+    if (debouncedSearch === lastSentRef.current) return;
+    lastSentRef.current = debouncedSearch;
+    onSearchChange?.(debouncedSearch);
+  }, [debouncedSearch, onSearchChange]);
+  useEffect(() => {
+    const next = searchValue ?? "";
+    if (next !== lastSentRef.current) {
+      lastSentRef.current = next;
+      setLocalSearch(next);
+    }
+  }, [searchValue]);
   const [open, setOpen] = useState(false);
   const activeCount = countActiveFilters(filters);
 
@@ -116,8 +135,8 @@ export function LibraryFiltersSheet({
               <Input
                 aria-label="Filter by title or author"
                 placeholder="Filter by title or author..."
-                value={searchValue ?? ""}
-                onChange={(e) => { onSearchChange(e.target.value); }}
+                value={localSearch}
+                onChange={(e) => { setLocalSearch(e.target.value); }}
               />
             </div>
           )}

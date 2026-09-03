@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
+import { ConfirmDialog } from "~/components/confirm-dialog";
 import {
   Card,
   CardContent,
@@ -67,10 +69,14 @@ function computeHealthScore(checks: HealthCheck[]): number {
 function OrphanedFilesList({ files }: { files: OrphanedFile[] }) {
   const router = useRouter();
 
+  const [removeTarget, setRemoveTarget] = useState<OrphanedFile | null>(null);
+
+  // Only the database record goes; the file on disk is untouched. The old
+  // "Delete" / "File removed" wording said otherwise.
   async function handleDelete(fileAssetId: string) {
     await runMutation(
       () => deleteOrphanedFileServerFn({ data: { fileAssetId } }),
-      { success: "File removed" },
+      { success: "Record removed" },
     );
     await router.invalidate();
   }
@@ -89,14 +95,24 @@ function OrphanedFilesList({ files }: { files: OrphanedFile[] }) {
           <Button
             variant="ghost"
             size="sm"
-            aria-label={`Delete ${file.relativePath}`}
-            onClick={() => void handleDelete(file.id)}
+            aria-label={`Remove record for ${file.relativePath}`}
+            onClick={() => { setRemoveTarget(file); }}
           >
             <Trash2 className="size-3" />
-            Delete
+            Remove record
           </Button>
         </li>
       ))}
+      {removeTarget !== null && (
+      <ConfirmDialog
+          open
+          onOpenChange={() => { setRemoveTarget(null); }}
+          title="Remove this file record?"
+          description={`${removeTarget.relativePath} will be forgotten by the library. The file itself stays on disk and would be picked up again by a scan.`}
+          confirmLabel="Remove record"
+          onConfirm={() => handleDelete(removeTarget.id)}
+        />
+      )}
     </ul>
   );
 }
@@ -205,7 +221,7 @@ function HealthPage() {
 
   return (
     <div className="flex flex-1 flex-col gap-6">
-      <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-200">
+      <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-800 dark:text-yellow-200">
         <strong>Experimental.</strong> This page is a work in progress — counts may be misleading and some checks are not yet actionable.
       </div>
 

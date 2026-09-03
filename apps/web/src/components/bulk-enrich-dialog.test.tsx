@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { render, screen, act } from "@testing-library/react";
+import { render, screen, act, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -313,5 +313,22 @@ describe("BulkEnrichDialog", () => {
         sources: ["openlibrary", "googlebooks", "hardcover"],
       }) as object,
     });
+  });
+
+  it("falls back to Open Library and says so when the source status cannot be loaded", async () => {
+    integrationStatusMock.mockRejectedValueOnce(new Error("offline"));
+    render(<BulkEnrichDialog {...baseProps} />);
+    await waitFor(() => {
+      expect(mockToast.error).toHaveBeenCalledWith("Couldn't check which metadata sources are configured");
+    });
+  });
+
+  it("does not toast about the source status if the dialog was closed before it failed", async () => {
+    let fail: (error: Error) => void = () => undefined;
+    integrationStatusMock.mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject; }));
+    const { unmount } = render(<BulkEnrichDialog {...baseProps} />);
+    unmount();
+    await act(async () => { fail(new Error("offline")); await Promise.resolve(); });
+    expect(mockToast.error).not.toHaveBeenCalled();
   });
 });

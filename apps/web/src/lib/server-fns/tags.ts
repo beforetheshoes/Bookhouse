@@ -25,26 +25,22 @@ export const updateWorkTagsServerFn = createServerFn({
       const trimmed = tagName.trim();
       if (trimmed === "") continue;
       const canonical = trimmed.toLowerCase();
-      const existing = await db.tag.findFirst({
+      // nameCanonical is unique; upsert keeps two concurrent saves of the same
+      // tag from racing to a P2002.
+      const tag = await db.tag.upsert({
         where: { nameCanonical: canonical },
+        create: { name: trimmed, nameCanonical: canonical },
+        update: {},
       });
-
-      if (existing) {
-        tagIds.push(existing.id);
-      } else {
-        const created = await db.tag.create({
-          data: { name: trimmed, nameCanonical: canonical },
-        });
-        tagIds.push(created.id);
-      }
+      tagIds.push(tag.id);
     }
 
-    await db.$transaction(async () => {
-      await db.workTag.deleteMany({
+    await db.$transaction(async (tx) => {
+      await tx.workTag.deleteMany({
         where: { workId: data.workId },
       });
 
-      await db.workTag.createMany({
+      await tx.workTag.createMany({
         data: tagIds.map((tagId) => ({
           workId: data.workId,
           tagId,

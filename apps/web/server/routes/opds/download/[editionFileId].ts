@@ -2,6 +2,7 @@ import { defineEventHandler } from "h3";
 import type { H3Event } from "h3";
 import type { OpdsAuthDeps } from "../auth-helper";
 import { httpError } from "../../../utils/http-error";
+import { attachmentDisposition } from "../../../utils/content-disposition";
 
 const VALID_ID = /^[a-zA-Z0-9_-]+$/;
 
@@ -47,7 +48,7 @@ export function createOpdsDownloadHandler(deps: OpdsDownloadHandlerDeps) {
     }
 
     deps.setResponseHeader(event, "Content-Type", record.mimeType ?? "application/epub+zip");
-    deps.setResponseHeader(event, "Content-Disposition", `attachment; filename="${record.basename}"`);
+    deps.setResponseHeader(event, "Content-Disposition", attachmentDisposition(record.basename));
     deps.setResponseHeader(event, "Cache-Control", "private, no-cache");
 
     return deps.sendStream(event, deps.createReadStream(record.absolutePath));

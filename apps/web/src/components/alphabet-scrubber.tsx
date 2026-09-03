@@ -23,10 +23,6 @@ interface AlphabetScrubberProps {
 export function AlphabetScrubber({ onJump, pending }: AlphabetScrubberProps) {
   const lastSentRef = useRef<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  // Set when a press landed on a letter, so that letter's own click does not
-  // send a second, different one. A keyboard activation has no press before
-  // it and still goes through.
-  const pressSentRef = useRef(false);
 
   // The rail comes from the event rather than a ref: the handlers only ever
   // fire on the rail itself, so there is no "no rail" case to guard.
@@ -65,7 +61,6 @@ export function AlphabetScrubber({ onJump, pending }: AlphabetScrubberProps) {
         // under the finger is indistinguishable from a broken jump.
         const pressed = (e.target as HTMLElement).closest("button");
         const letter = pressed?.dataset.letter;
-        pressSentRef.current = letter !== undefined;
         if (letter !== undefined) {
           lastSentRef.current = letter;
           onJump(letter);
@@ -81,13 +76,13 @@ export function AlphabetScrubber({ onJump, pending }: AlphabetScrubberProps) {
         <button
           key={letter}
           type="button"
-          // The rail owns the pointer; these exist for tapping and for anyone
-          // arrowing through with a keyboard or a screen reader.
-          onClick={() => {
-            if (pressSentRef.current) {
-              pressSentRef.current = false;
-              return;
-            }
+          // The rail owns the pointer: with capture set on pointerdown the
+          // browser retargets the click to the rail, so a pointer-driven click
+          // never reaches this handler and the press already sent the letter.
+          // Keyboard and screen-reader activations arrive with detail 0 and
+          // are the only ones that should go through here.
+          onClick={(e) => {
+            if (e.detail !== 0) return;
             onJump(letter);
           }}
           data-letter={letter}

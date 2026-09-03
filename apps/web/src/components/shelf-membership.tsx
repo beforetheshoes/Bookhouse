@@ -31,10 +31,17 @@ export function ShelfMembership({ workId, shelves, onToggled }: ShelfMembershipP
           key={shelf.id}
           variant={shelf.isMember ? "default" : "outline"}
           className="max-w-full cursor-pointer select-none whitespace-normal [overflow-wrap:anywhere] "
-          onClick={() => { void handleToggle(shelf.id, shelf.isMember); }}
-          data-testid={`shelf-toggle-${shelf.id}`}
+          asChild
         >
-          {shelf.name}
+          {/* A real button: the badge is a span and was unreachable by keyboard. */}
+          <button
+            type="button"
+            aria-pressed={shelf.isMember}
+            onClick={() => { void handleToggle(shelf.id, shelf.isMember); }}
+            data-testid={`shelf-toggle-${shelf.id}`}
+          >
+            {shelf.name}
+          </button>
         </Badge>
       ))}
     </div>

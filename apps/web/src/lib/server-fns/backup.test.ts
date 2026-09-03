@@ -143,4 +143,18 @@ describe("recordBackupServerFn", () => {
     expect(parsed).toHaveLength(20);
     expect(parsed[0]).toEqual(entry);
   });
+
+});
+
+describe("recordBackupServerFn with an unreadable history", () => {
+  it("starts a fresh history instead of failing the backup", async () => {
+    appSettingFindUniqueMock.mockResolvedValue({ key: "backupHistory", value: "not json" });
+    const entry = { version: 1 as const, timestamp: "2026-03-28T12:00:00.000Z", databaseSize: 100, coverCount: 5, coverSize: 500 };
+
+    await recordBackupServerFn({ data: entry } as never);
+
+    expect(appSettingUpsertMock).toHaveBeenCalledWith(expect.objectContaining({
+      update: { value: JSON.stringify([entry]) },
+    }));
+  });
 });
