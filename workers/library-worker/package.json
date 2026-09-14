@@ -18,20 +18,20 @@
     "@bookhouse/domain": "workspace:*",
     "@bookhouse/ingest": "workspace:*",
     "@bookhouse/shared": "workspace:*",
-    "@prisma/adapter-pg": "^7.9.0",
-    "@prisma/client": "^7.9.0",
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.10.0",
     "bullmq": "^5.81.2",
-    "fast-xml-parser": "^5.10.1",
+    "fast-xml-parser": "^5.11.1",
     "ioredis": "5.11.1",
-    "music-metadata": "^11.14.0",
+    "music-metadata": "^11.15.0",
     "pino": "^10.3.1",
-    "sharp": "^0.35.0",
+    "sharp": "^0.35.4",
     "yauzl-promise": "^4.0.0"
   },
   "devDependencies": {
-    "@types/node": "^26.1.1",
+    "@types/node": "^26.5.1",
     "tsup": "^8.5.1",
-    "tsx": "^4.23.1",
+    "tsx": "^4.23.13",
     "typescript": "^6.0.3"
   }
 }
